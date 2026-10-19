@@ -1,0 +1,264 @@
+<title>Stationwagon Project Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: masthead, a radio-dial milestone track with a red needle at "you are here", then the
+   parts grid beside a narrow column for the next step, the one decision and today's changes. */
+:root{
+  color-scheme: light;
+  --ground:#f4f6f3; --panel:#ffffff; --line:#dbe2da; --tick:#c7d0c6;
+  --ink:#14201a; --muted:#56635b; --faint:#88938b;
+  --accent:#12844a; --accent-soft:#e1f2e7;
+  --warn:#a86400; --warn-soft:#fff0d6;
+  --onair:#c7303f; --onair-soft:#fbe7e9;
+  --cue:#2b62c0; --cue-soft:#e5edfb;
+  --f-ui:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"DM Mono",ui-monospace,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{background:var(--ground)}
+body{color:var(--ink);font:15px/1.5 var(--f-ui);padding-block:28px 56px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1140px;margin:0 auto;display:grid;gap:22px}
+a{color:var(--accent)}
+
+/* masthead */
+.mast{display:flex;align-items:baseline;gap:8px 18px;flex-wrap:wrap}
+.brand{font:800 26px/1 var(--f-ui);letter-spacing:-.03em}
+.mast .sub{color:var(--muted);font-weight:500}
+.mast .meta{display:flex;gap:6px 16px;flex-wrap:wrap;color:var(--muted);font-size:14px}
+.mast .meta b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+.mast .waiting{color:var(--onair);font-weight:600}
+.mast .waiting::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--onair);margin-right:6px;vertical-align:1px}
+
+/* milestone dial */
+.dial{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px 20px 18px}
+.track{--n:6;--cur:1;position:relative;display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr));padding-top:30px}
+.track::before,.track .fill{content:"";position:absolute;top:calc(30px + 17px);height:4px;border-radius:4px;
+  left:calc(100% / (var(--n) * 2));}
+.track::before{right:calc(100% / (var(--n) * 2));background:var(--line)}
+.track .fill{width:calc((100% - 100% / var(--n)) * var(--cur) / (var(--n) - 1));background:var(--accent)}
+.ticks{position:absolute;top:calc(30px + 26px);height:9px;left:calc(100% / (var(--n) * 2));right:calc(100% / (var(--n) * 2));
+  background:repeating-linear-gradient(90deg,var(--tick) 0 1px,transparent 1px 12px),
+             repeating-linear-gradient(90deg,var(--faint) 0 1px,transparent 1px 60px);
+  background-size:auto 5px,auto 9px;background-repeat:repeat-x;opacity:.8}
+.ms{position:relative;display:grid;align-content:start;justify-items:center;text-align:center;gap:6px;min-width:0;padding:0 4px}
+.node{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--panel);border:2px solid var(--line);position:relative;z-index:1}
+.ms.done .node{background:var(--accent);border-color:var(--accent);color:#fff}
+.ms.done .node svg{width:16px;height:16px}
+.ms.now .node{border:3px solid var(--ink);box-shadow:0 0 0 5px var(--accent-soft)}
+.ms.now .node::after{content:"";width:12px;height:12px;border-radius:50%;background:var(--ink)}
+.ms.next .node::after{content:"";width:9px;height:9px;border-radius:50%;background:var(--faint)}
+.ms .name{font:700 15px/1.25 var(--f-ui);margin-top:14px;text-wrap:balance}
+.ms .when{font-size:13px;color:var(--faint)}
+.ms.done .when{color:var(--accent);font-weight:600}
+.ms.now .when{color:var(--ink);font-weight:600}
+.ms .ver{font:500 12px var(--f-mono);color:var(--faint)}
+.needle{position:absolute;top:-30px;left:50%;transform:translateX(-50%);display:grid;justify-items:center;z-index:2;pointer-events:none}
+.needle span{background:var(--onair);color:#fff;font:700 12px/1 var(--f-ui);padding:5px 10px;border-radius:999px;white-space:nowrap}
+.needle i{width:2px;height:58px;background:var(--onair);margin-top:-1px}
+.left{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;justify-content:center;margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)}
+.left .count{font:800 24px/1 var(--f-ui)}
+.left .lbl{font:600 12px var(--f-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 11px;font:600 13px var(--f-ui);border:1px solid var(--line);background:var(--panel)}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--faint)}
+.chip.progress{background:var(--warn-soft);border-color:transparent;color:var(--warn)}
+.chip.progress::before{background:var(--warn)}
+.chip.waiting{background:var(--onair-soft);border-color:transparent;color:var(--onair)}
+.chip.waiting::before{background:var(--onair)}
+
+@media (max-width:760px){
+  .track{grid-template-columns:minmax(0,1fr);padding-top:0;gap:18px}
+  .track::before{top:19px;left:17px;right:auto;width:4px;height:auto;bottom:19px}
+  .track .fill,.ticks,.needle i{display:none}
+  .ms{grid-template-columns:38px minmax(0,1fr);justify-items:start;text-align:left;column-gap:14px;row-gap:0;padding:0}
+  .ms .node{grid-row:span 3}
+  .ms .name{margin-top:0}
+  .needle{position:static;transform:none;grid-column:2;order:-1;margin-bottom:4px}
+}
+
+/* main grid */
+.main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start}
+@media (max-width:980px){.main{grid-template-columns:minmax(0,1fr)}}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px}
+.boxhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:12px}
+.kicker{font:700 12px var(--f-ui);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.boxhead .done{font-size:13px;color:var(--muted)} .boxhead .done b{color:var(--accent)}
+.parts{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.part{border-radius:14px;padding:13px 14px;display:grid;gap:8px;align-content:start;min-height:128px;background:var(--ground);border:1px solid transparent}
+.part h3{margin:0;font:700 15px/1.25 var(--f-ui)}
+.part .ms-of{font:500 12px var(--f-mono);color:var(--faint)}
+.part .foot{font-size:13px;color:var(--muted);margin-top:auto}
+.pill{justify-self:start;border-radius:999px;padding:2px 9px;font:700 12px/1.6 var(--f-ui)}
+.part.done .pill{background:var(--accent-soft);color:var(--accent)}
+.part.progress{background:var(--panel);border-color:var(--warn)}
+.part.progress .pill{background:var(--warn-soft);color:var(--warn)}
+.bar{height:6px;border-radius:6px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--warn);border-radius:6px}
+.part.waiting{background:repeating-linear-gradient(135deg,var(--onair-soft) 0 10px,var(--panel) 10px 20px);border-color:var(--onair)}
+.part.waiting .pill{background:var(--onair);color:#fff}
+.part.waiting .foot{color:var(--ink)} .part.waiting .foot b{color:var(--onair)}
+.part.designed{background:var(--panel);border:1px solid var(--line)}
+.part.designed .pill{background:var(--cue-soft);color:var(--cue)}
+.part.todo{background:var(--panel);border:1px dashed var(--tick)}
+.part.todo .pill{background:var(--ground);color:var(--muted)}
+.part.todo h3{color:var(--muted)}
+
+.side{display:grid;gap:14px}
+.side h2{margin:4px 0 6px;font:800 19px/1.25 var(--f-ui);text-wrap:balance}
+.side p{margin:0;color:var(--muted);font-size:14px}
+.call{border-color:var(--onair);background:linear-gradient(var(--onair-soft),var(--panel) 70%)}
+.call .kicker{color:var(--onair)}
+.call .opts{display:grid;gap:6px;margin-top:10px}
+.call .opts div{font-size:14px;padding:8px 10px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
+.call .opts b{display:block;font-weight:700}
+.feed{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+.feed li{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:10px;align-items:baseline;font-size:14px}
+.feed li::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent);transform:translateY(-1px)}
+.feed li.progress::before{background:var(--warn)}
+.feed li.info::before{background:var(--cue)}
+.feed b{font-weight:700}
+.feed .arrow{color:var(--muted)}
+.feed time{font:500 12px var(--f-mono);color:var(--faint);font-variant-numeric:tabular-nums}
+.note{font-size:13px;color:var(--faint);text-align:center}
+@media (prefers-reduced-motion:no-preference){.needle span{animation:pulse 2.4s ease-in-out infinite}}
+@keyframes pulse{50%{box-shadow:0 0 0 6px var(--onair-soft)}}
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <span class="brand">stationwagon</span>
+    <span class="sub">Project map</span>
+    <span class="meta" id="meta"></span>
+  </header>
+
+  <section class="dial" aria-label="Milestones">
+    <div class="track" id="track"><span class="fill"></span><span class="ticks"></span></div>
+    <div class="left" id="left"></div>
+  </section>
+
+  <div class="main">
+    <section class="box" aria-labelledby="partsTitle">
+      <div class="boxhead"><span class="kicker" id="partsTitle">Parts</span><span class="done" id="partsDone"></span></div>
+      <div class="parts" id="parts"></div>
+    </section>
+
+    <aside class="side">
+      <section class="box">
+        <span class="kicker">Next step</span>
+        <h2 id="nextTitle"></h2>
+        <p id="nextText"></p>
+      </section>
+      <section class="box call">
+        <span class="kicker">Needs your call</span>
+        <h2 id="callTitle"></h2>
+        <p id="callText"></p>
+        <div class="opts" id="callOpts"></div>
+      </section>
+      <section class="box">
+        <div class="boxhead"><span class="kicker" id="feedTitle"></span></div>
+        <ul class="feed" id="feed"></ul>
+      </section>
+    </aside>
+  </div>
+
+  <p class="note">Dates after 19 October are estimates. Source: <code>docs/project-map.html</code>, updated with <code>HANDOVER.md</code> after each round.</p>
+</div>
+
+<script>
+/* Everything on the map comes from this one object. Update it after each round. */
+const MAP = {
+  updated: "19 Oct · 23:25",
+  commits: 5,
+  milestones: [
+    { name: "Plan & design", when: "Done · 19 Oct", state: "done" },
+    { name: "Proof of concept", when: "In progress", state: "now" },
+    { name: "Core & manager", when: "Next · est. Nov", ver: "v0.1", state: "next" },
+    { name: "Player & studio", when: "est. Dec", ver: "v0.4", state: "later" },
+    { name: "WordWave pilot", when: "est. Jan", ver: "v0.8", state: "later" },
+    { name: "Launch", when: "est. Feb–Mar", ver: "v1.0", state: "later" }
+  ],
+  left: [
+    { text: "Mic test: gate and headset", state: "progress" },
+    { text: "cPanel test round", state: "waiting" },
+    { text: "Cloudflare caching", state: "todo" }
+  ],
+  parts: [
+    { name: "Host check (P0)", ms: "Proof of concept", state: "done", foot: "Every required check green on Laragon" },
+    { name: "Timeline engine", ms: "Proof of concept", state: "done", foot: "42 command-line checks pass" },
+    { name: "HLS AutoDJ (P1)", ms: "Proof of concept", state: "done", foot: "PC and phone locked at 20.03 s" },
+    { name: "Crossfade player (P2)", ms: "Proof of concept", state: "done", foot: "6 s fades, devices within 10 ms" },
+    { name: "Live studio (P4)", ms: "Proof of concept", state: "done", foot: "Go live, end show and safety net tested" },
+    { name: "Mic chain (P3)", ms: "Proof of concept", state: "progress", pct: 70, foot: "Mic and ducking heard. Gate, recording and headset left" },
+    { name: "cPanel test round", ms: "Proof of concept", state: "waiting", foot: "<b>Waiting on you:</b> where to host the test" },
+    { name: "Cloudflare caching", ms: "Proof of concept", state: "todo", foot: "After the cPanel round" },
+    { name: "Database & installer", ms: "Core & manager", state: "todo", foot: "MySQL, WordPress-style setup" },
+    { name: "Station manager", ms: "Core & manager", state: "designed", foot: "Library, playlists, schedule, DJs" },
+    { name: "Listener player & notes", ms: "Player & studio", state: "designed", foot: "Studio notes editor still to design" },
+    { name: "Windows studio app", ms: "Launch", state: "todo", foot: "Same studio in WebView2 (Tauri)" }
+  ],
+  next: {
+    title: "Finish the mic test (P3)",
+    text: "Check that room noise disappears between sentences without clipping the first word, listen to a 20 s recording, then try a USB headset. After that comes the cPanel round."
+  },
+  call: {
+    title: "Where should the cPanel test run?",
+    text: "The prototypes need HTTPS and a writable data folder. Until you choose, the cPanel round waits; Laragon testing carries on.",
+    opts: [
+      { b: "A new subdomain (suggested)", t: "For example radio.controll.co.za, kept apart from the live site" },
+      { b: "A separate hosting account", t: "Safest if the main account is busy or shared" }
+    ]
+  },
+  feedTitle: "Changed today · 19 Oct",
+  feed: [
+    { what: "Pushed to GitHub", to: "private repo", at: "23:25", kind: "info" },
+    { what: "Handover doc", to: "added", at: "23:24", kind: "info" },
+    { what: "Mic chain (P3)", to: "70 %", at: "23:24", kind: "progress" },
+    { what: "HLS, crossfade, live", to: "pass on 2 devices", at: "23:08" },
+    { what: "Skip and crossfade fixes", to: "done", at: "22:54" },
+    { what: "Plan, designs, prototypes", to: "first commit", at: "22:38" }
+  ]
+};
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const LABEL = { done: "Done", progress: "In progress", waiting: "Waiting on you", designed: "Designed", todo: "Not started" };
+const CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+const waiting = MAP.parts.filter((p) => p.state === "waiting").length;
+$("meta").innerHTML = `<span>Updated <b>${esc(MAP.updated)}</b></span><span><b>${MAP.commits}</b> commits</span>` +
+  (waiting ? `<span class="waiting">${waiting} waiting on you</span>` : "");
+
+const track = $("track"), cur = MAP.milestones.findIndex((m) => m.state === "now");
+track.style.setProperty("--n", MAP.milestones.length);
+track.style.setProperty("--cur", Math.max(0, cur));
+MAP.milestones.forEach((m) => {
+  const el = document.createElement("div");
+  el.className = "ms " + m.state;
+  el.innerHTML = (m.state === "now" ? '<span class="needle"><span>You are here</span><i></i></span>' : "") +
+    `<span class="node">${m.state === "done" ? CHECK : ""}</span>` +
+    `<span class="name">${esc(m.name)}</span><span class="when">${esc(m.when)}</span>` +
+    (m.ver ? `<span class="ver">${esc(m.ver)}</span>` : "");
+  track.appendChild(el);
+});
+$("left").innerHTML = `<span class="count">${MAP.left.length}</span><span class="lbl">left for ${esc(MAP.milestones[cur].name)}</span>` +
+  MAP.left.map((l) => `<span class="chip ${l.state}">${esc(l.text)}</span>`).join("");
+
+const done = MAP.parts.filter((p) => p.state === "done").length;
+$("partsDone").innerHTML = `<b>${done}</b> of ${MAP.parts.length} done`;
+$("parts").innerHTML = MAP.parts.map((p) =>
+  `<article class="part ${p.state}"><span class="ms-of">${esc(p.ms)}</span><h3>${esc(p.name)}</h3>` +
+  `<span class="pill">${LABEL[p.state]}${p.pct ? " · " + p.pct + " %" : ""}</span>` +
+  (p.pct ? `<div class="bar" role="progressbar" aria-valuenow="${p.pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${p.pct}%"></i></div>` : "") +
+  `<span class="foot">${p.foot}</span></article>`).join("");
+
+$("nextTitle").textContent = MAP.next.title;
+$("nextText").textContent = MAP.next.text;
+$("callTitle").textContent = MAP.call.title;
+$("callText").textContent = MAP.call.text;
+$("callOpts").innerHTML = MAP.call.opts.map((o) => `<div><b>${esc(o.b)}</b>${esc(o.t)}</div>`).join("");
+$("feedTitle").textContent = MAP.feedTitle;
+$("feed").innerHTML = MAP.feed.map((f) =>
+  `<li class="${f.kind || ""}"><span><b>${esc(f.what)}</b> <span class="arrow">→ ${esc(f.to)}</span></span><time>${esc(f.at)}</time></li>`).join("");
+</script>

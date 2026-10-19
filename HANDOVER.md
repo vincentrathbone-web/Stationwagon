@@ -4,7 +4,7 @@ Read this first. It records where the work stands, what was decided and why, and
 each round, so that anyone (a person or a new agent session) can pick up where the last one
 stopped.
 
-**Last updated:** 2026-10-19, after round 5 (GitHub repo created; `main` pushed).
+**Last updated:** 2026-10-19, after round 6 (project map added).
 
 ## How to keep this file useful
 
@@ -19,6 +19,9 @@ After every round of code changes, before or with its commit:
    commit" and replace it with the real hash (`git log`) at the start of the next round.
 6. Add or close items in **Open issues**.
 7. If a version number changes, record it in **Versions**.
+8. Update the `MAP` object at the top of the script in `docs/project-map.html` (milestones,
+   parts, next step, the decision waiting on the user, today's changes) and republish it to
+   https://claude.ai/artifact/VZEEnB474YasBfzULhRz9z
 
 Keep entries short and factual. Don't put passwords, keys or other secrets in this file.
 
@@ -44,6 +47,7 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | `HANDOVER.md` | This file |
 | `CLAUDE.md` | Short standing instructions for agent sessions in this repo |
 | `README.md` | Project summary |
+| `docs/project-map.html` | Visual project map (milestones, parts, next step, open decision). Published at https://claude.ai/artifact/VZEEnB474YasBfzULhRz9z |
 | `docs/POC-PLAN.md` | Risks R1–R7, prototypes P0–P4, pass criteria, **test log**, build-out order |
 | `design/DESIGN.md` | Screens, skin tokens, type, shape, copy rules |
 | `design/skins/hifi/`, `design/skins/green/` | Mock-ups: `player.html`, `studio.html`, `manager.html` |
@@ -143,6 +147,13 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-19 | Out of the POC on purpose (see `POC-PLAN.md`): MySQL/accounts/manager UI, upload-time audio prep (ffmpeg.wasm), the Windows app (Tauri), the Apache clock-rewrite playlist trick, recording/podcasts/stats |
 | 2026-10-19 | Lowering the 20 s listener delay (to about 10 s) is low priority, since only station staff press Skip |
 
+## Milestone plan (estimates)
+
+Plan & design (done 19 Oct) → **Proof of concept** (now) → Core & manager `v0.1` (est. Nov) →
+Player & studio `v0.4` (est. Dec) → WordWave pilot `v0.8`, running beside AzuraCast before the
+switch (est. Jan) → Launch `v1.0` with the Windows app (est. Feb–Mar). Only the first date is
+real.
+
 ## Versions
 
 No version numbers yet: the POC is unversioned and the commits are the record. Proposal for when
@@ -156,7 +167,8 @@ build-out starts: begin at `0.1.0` and record every bump here.
 | 2 | 2026-10-19 | `a63ddb6` | First Laragon tests: full-length crossfades; no repeat after a cut; Skip uses `heard`; 24-hour clock; `prototypes/.htaccess` no-cache; engine test now 42 checks; test log started |
 | 3 | 2026-10-19 | `a36a512` | Phone tests over USB: P1 fixed 20 s delay; `tools/phone.mjs` (eval/nav/offline); README "Testing on an Android phone over USB"; P1/P2/P4 pass on two devices |
 | 4 | 2026-10-19 | `91bdc0b` | `HANDOVER.md` and `CLAUDE.md` added; P3 partly passed (user heard the mic, ducking works) |
-| 5 | 2026-10-19 | this round's commit | Private GitHub repo created; `origin` set and `main` pushed |
+| 5 | 2026-10-19 | `d7403dd` | Private GitHub repo created; `origin` set and `main` pushed |
+| 6 | 2026-10-19 | this round's commit | `docs/project-map.html` project map added and published (light theme); milestone plan with estimates |
 
 ## Open issues
 
@@ -179,6 +191,8 @@ build-out starts: begin at `0.1.0` and record every bump here.
 ## Working agreements
 
 - Commit and push only when the user asks. End commit messages with the `Co-Authored-By` line.
+- Artifacts are light theme only and never navy (the user's standing rule). The radio skins in
+  `design/` are the one dark exception, by explicit request.
 - Ask the user questions as multiple choice (pick-from-options), never as open prose.
 - Never store or repeat passwords or keys in the repo, chat or this file.
 - After each code round: run the engine test, update the POC test log if tests ran, and update
