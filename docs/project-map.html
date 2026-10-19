@@ -169,8 +169,8 @@ a{color:var(--accent)}
 <script>
 /* Everything on the map comes from this one object. Update it after each round. */
 const MAP = {
-  updated: "20 Oct · 00:57",
-  commits: 10,
+  updated: "20 Oct · 01:08",
+  commits: 11,
   milestones: [
     { name: "Plan & design", when: "Done · 19 Oct", state: "done" },
     { name: "Proof of concept", when: "Done · 20 Oct", state: "done" },
@@ -183,7 +183,7 @@ const MAP = {
     { text: "Database schema", state: "done" },
     { text: "Web installer", state: "done" },
     { text: "Install on the test server", state: "done" },
-    { text: "Sign-in and roles", state: "todo" },
+    { text: "Sign-in and roles", state: "done" },
     { text: "Planner as a service", state: "todo" },
     { text: "Station manager screens", state: "todo" }
   ],
@@ -197,26 +197,27 @@ const MAP = {
     { name: "cPanel test server", ms: "Proof of concept", state: "done", foot: "wordwave.controll.co.za, deploy script" },
     { name: "Cloudflare caching", ms: "Proof of concept", state: "done", foot: "100 listeners: 97 % served from cache" },
     { name: "Database & installer", ms: "Core & manager", state: "done", foot: "12 tables; installed on the test server" },
+    { name: "Sign-in & roles", ms: "Core & manager", state: "done", foot: "Admin, manager, DJ; 98 checks pass" },
     { name: "Station manager", ms: "Core & manager", state: "designed", foot: "Library, playlists, schedule, DJs" },
     { name: "Listener player & notes", ms: "Player & studio", state: "designed", foot: "Studio notes editor still to design" },
     { name: "Windows studio app", ms: "Launch", state: "todo", foot: "Same studio in WebView2 (Tauri)" }
   ],
   next: {
-    title: "Sign-in, then the planner",
-    text: "Sign-in with admin, manager and DJ roles, then the timeline planner moved onto MySQL. After that, the station manager screens."
+    title: "Move the planner onto MySQL",
+    text: "The timeline planner from the proof of concept becomes a proper service on the database. Then the station manager screens: library, playlists, schedule and DJs."
   },
   call: null,
   feedTitle: "Changed 20 Oct",
   feed: [
+    { what: "Sign-in tests on the server", to: "all pass", at: "01:05" },
+    { what: "Sign-in, account, sign-out", to: "built", at: "01:00" },
     { what: "App on the test server", to: "installed", at: "00:55" },
     { what: "Installer test on MariaDB", to: "31 checks pass", at: "00:42" },
     { what: "Web installer", to: "works on Laragon", at: "00:38" },
     { what: "Database schema", to: "v1, 12 tables", at: "00:36" },
     { what: "Database", to: "MySQL chosen", at: "00:33", kind: "info" },
     { what: "Proof of concept", to: "passed", at: "00:31" },
-    { what: "100 simulated listeners", to: "97 % from cache", at: "00:27", kind: "info" },
-    { what: "Playlist edge cache", to: "on (2 s)", at: "00:24" },
-    { what: "Station address", to: "wordwave.controll.co.za", at: "00:18", kind: "info" }
+    { what: "100 simulated listeners", to: "97 % from cache", at: "00:27", kind: "info" }
   ]
 };
 

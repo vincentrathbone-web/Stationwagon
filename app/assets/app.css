@@ -18,7 +18,19 @@ code, pre { font-family: var(--f-mono); font-size: 13px; }
 code { background: var(--raised); padding: 1px 6px; border-radius: 6px; }
 
 .top { max-width: 760px; margin: 0 auto; padding-block: 22px 8px; display: flex; align-items: baseline; gap: 10px; }
-.brand { font-weight: 800; font-size: 20px; letter-spacing: -.02em; }
+.brand { font-weight: 800; font-size: 20px; letter-spacing: -.02em; color: var(--ink); text-decoration: none; }
+.who { margin-left: auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; font-weight: 600; font-size: 14px; }
+.who a { color: var(--muted); text-decoration: none; }
+.who a:hover, .who .link:hover { color: var(--ink); }
+.who form { margin: 0; }
+.link { appearance: none; border: 0; background: none; padding: 0; color: var(--muted); font: inherit; cursor: pointer; }
+.narrow { max-width: 420px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.tile { background: var(--panel); border-radius: 16px; padding: 16px; display: grid; gap: 4px; }
+.tile b { font-size: 16px; }
+.tile span { color: var(--muted); font-size: 13px; }
+.tile .soon { font: 500 11px var(--f-mono); color: var(--faint); text-transform: uppercase; letter-spacing: .08em; }
+.role { font: 500 12px var(--f-mono); color: var(--amber); text-transform: uppercase; letter-spacing: .08em; }
 .ver { font: 500 12px var(--f-mono); color: var(--faint); }
 .page { max-width: 760px; margin: 0 auto; display: grid; gap: 18px; }
 h1 { font-weight: 800; font-size: 32px; line-height: 1.1; letter-spacing: -.02em; margin: 18px 0 0; text-wrap: balance; }

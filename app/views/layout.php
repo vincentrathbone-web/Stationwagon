@@ -10,7 +10,18 @@
 <link rel="stylesheet" href="<?= h(App::url('assets/app.css')) ?>?v=<?= h(Config::version()) ?>">
 </head>
 <body>
-<header class="top"><span class="brand">stationwagon</span><span class="ver"><?= h(Config::version()) ?></span></header>
+<header class="top">
+  <a class="brand" href="<?= h(App::url('')) ?>">stationwagon</a><span class="ver"><?= h(Config::version()) ?></span>
+  <nav class="who">
+    <?php if (!empty($me)): ?>
+      <a href="<?= h(App::url('manage')) ?>">Manage</a>
+      <a href="<?= h(App::url('account')) ?>" title="Your account"><?= h($me['name']) ?></a>
+      <form method="post" action="<?= h(App::url('signout')) ?>"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><button class="link" type="submit">Sign out</button></form>
+    <?php elseif (Config::isInstalled() && ($title ?? '') !== 'Sign in'): ?>
+      <a href="<?= h(App::url('signin')) ?>">Sign in</a>
+    <?php endif ?>
+  </nav>
+</header>
 <main class="page"><?= $content ?></main>
 </body>
 </html>

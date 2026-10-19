@@ -8,6 +8,10 @@ final class View
 {
     public static function render(string $name, array $vars = []): void
     {
+        $vars['me'] ??= App::me();
+        if ($vars['me'] !== null) {
+            $vars['csrf'] ??= Session::csrf(); // the header's sign-out button
+        }
         extract($vars, EXTR_SKIP);
         ob_start();
         require SW_ROOT . "/views/$name.php";

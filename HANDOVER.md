@@ -61,10 +61,10 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | `prototypes/config.local.php` | Server-only overrides (its control key). Never committed; denied by `.htaccess` |
 | `prototypes/media/`, `prototypes/data/` | Test MP3s and runtime state; gitignored except their README / `.htaccess` |
 | `app/` | **The real app** (Core & manager, `v0.1`). Front controller `index.php` → `src/App.php`; version in `app/VERSION` |
-| `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`), `Installer`, `InstallPage`, `View` |
+| `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`), `Installer`, `InstallPage`, `View`, `Session` (cookie settings, form keys), `Auth` (sign-in, roles, lock-out), `AuthPage` (sign-in / sign-out / account pages), `Request` (visitor address through Cloudflare) |
 | `app/views/`, `app/assets/app.css` | PHP page templates (wrapped in `layout.php`) and the green-skin styles |
-| `app/tests/install_test.php` | Command-line installer test against real MySQL/MariaDB (31 checks) |
-| `app/cli/install.php` | Install over SSH instead of the web page: the form's fields as JSON on stdin (`php cli/install.php < answers.json`) |
+| `app/tests/` | `install_test.php` (31 checks), `auth_test.php` (sign-in logic, 39), `web_test.php` (sign-in pages over HTTP, 37; `--public`: 22), `lib.php` (shared helpers: throwaway database and install) |
+| `app/cli/` | `install.php` (install over SSH: the form's fields as JSON on stdin), `set-password.php <email>` (new password on stdin; for when nobody can sign in) |
 | `app/storage/` | Songs, live pieces, cache (`media/`, `live/`, `cache/`); gitignored; only `.mp3` is served |
 | `app/config.local.php`, `app/install.key` | Written by the installer / the deploy script. Gitignored and denied by `.htaccess` |
 | `tools/deploy-app.sh` | Upload `app/` to cPanel over SSH (keeps the server's settings and storage) |
@@ -101,8 +101,11 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
   `bash tools/deploy-app.sh controll public_html/wordwave.controll.co.za/stationwagon-app`: it replaces
   the code, keeps `config.local.php` and `storage/`, and until installed leaves a one-time `install.key`
   (copy in `tools/deploy/controll.install-key.local.txt`) that the web installer asks for and then deletes.
-  The server's `tests/install_test.php` run needs an empty database, so it can't run against
-  `controllco_stationwagon` any more (it now holds the station); make a second database for that.
+  **Tests on the server** use the empty database `controllco_swtest` (same user), never the station's:
+  `SW_TEST_DB_HOST=localhost SW_TEST_DB_USER=controllco_swapp SW_TEST_DB_PASS=… SW_TEST_DB_NAME=controllco_swtest php tests/auth_test.php`
+  (and `install_test.php`). Web test: `php tests/web_test.php https://wordwave.controll.co.za/stationwagon-app --public`
+  (from the server or this PC). The signed-in web checks run only on Laragon: no test accounts are
+  made on the public server.
 - **Deploy (POC):** `bash prototypes/tools/deploy-cpanel.sh controll public_html/wordwave.controll.co.za/stationwagon-poc`.
   It replaces the code and keeps the server's `data/`. The server's control key is in
   `prototypes/tools/deploy/controll.config.local.php` (gitignored). Paste it into the page's
@@ -121,7 +124,12 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
   so it opens at `http://localhost:8080/stationwagon-app/`. Installed into database `stationwagon_dev`
   (Laragon MySQL 8.4.3, root with no password, `127.0.0.1`). The local admin's sign-in is in
   `app/tests/dev-admin.local.txt` (gitignored). To reinstall, delete `app/config.local.php` and drop
-  the `sw_` tables. Installer test: `php app/tests/install_test.php` (makes and drops its own database).
+  the `sw_` tables. Tests (each makes and drops its own database or throwaway account):
+  ```
+  php app/tests/install_test.php                                   # installer, 31 checks
+  php app/tests/auth_test.php                                      # sign-in logic, 39 checks
+  php app/tests/web_test.php http://localhost:8080/stationwagon-app # sign-in pages over HTTP, 37 checks
+  ```
   Laragon's `mysql` client is MariaDB's and fails on MySQL 8 logins; use the MySQL 8.4.3 client in
   `C:\laragon\bin\mysql\`.
 - **Node** v24 (has a built-in WebSocket; `phone.mjs` relies on it).
@@ -158,16 +166,20 @@ web installer. The installer test passes on Laragon (MySQL 8.4.3) and on the ser
 the browser install works on Laragon. **The test server is installed** (over SSH): the home page
 shows the station connected, `/install` says "Already installed", and the private files return 403.
 
+**Sign-in works** (2026-10-20): `/signin`, sign-out, `/manage` (the manager home, tiles for the screens
+still to build) and `/account` (change password). All tests pass on Laragon and on the server.
+
 ## Next steps
 
 Continue **Core & manager (`v0.1`)** per the build-out order in `docs/POC-PLAN.md`:
 
 1. ~~Project layout~~, ~~MySQL schema~~, ~~web installer~~ (done 2026-10-20).
 2. ~~Install on the test server~~ (done 2026-10-20 over SSH).
-3. Sign-in (sessions, the `users` table, roles admin / manager / dj) and the manager shell.
+3. ~~Sign-in, roles and the manager shell~~ (done 2026-10-20).
 4. Move the timeline planner into a service class backed by MySQL (`timeline` table), keeping lazy
    planning (a MySQL named lock instead of the file lock) and adding an optional cron.
-5. Station manager screens from `design/` (library upload, playlists, schedule, DJs).
+5. Station manager screens from `design/` (library upload, playlists, schedule, DJs), including
+   adding users (the DJs screen) and an admin "set a new password" for them.
 
 ## Decisions
 
@@ -206,6 +218,12 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-20 | The **green skin** is the default for new stations (station setting `skin`) | It is the one with presenter notes |
 | 2026-10-20 | A **command-line installer** (`cli/install.php`, JSON on stdin) sits beside the web one; it reads `install.key` itself | Lets an agent or admin with SSH install without typing passwords into a web form; stdin keeps them out of the process list |
 | 2026-10-20 | Test-server admin is **vincent@controll.co.za**; the station name is "Radio WordWave / Radio WoordGolf" | User's choice |
+| 2026-10-20 | Sign-in with PHP sessions stored in `storage/sessions`; cookie `sw_session` is HttpOnly, SameSite=Lax, Secure on https, scoped to the app's folder; 12 h idle limit; every form has a key (CSRF) | Safe defaults on shared hosting, away from the host's shared `/tmp` |
+| 2026-10-20 | Public pages never start a session | Listeners get no cookie, which keeps their pages cacheable later |
+| 2026-10-20 | Roles rank **dj < manager < admin**; a page names the lowest role it needs | Simple and matches the designs |
+| 2026-10-20 | Lock-out: 5 wrong tries per email or 20 per address in 15 min. The address comes from `CF-Connecting-IP` only when the request really comes from a Cloudflare range | Behind Cloudflare every visitor would otherwise look like a few Cloudflare addresses |
+| 2026-10-20 | Changing a password signs out the account's other sessions; forgotten passwords are reset by an admin (or `cli/set-password.php`), no email reset for now | No mail setup needed yet |
+| 2026-10-20 | **Claude writes, deploys, sets up and tests everything itself**; the user only answers decisions | User, 2026-10-20: "I need you to fully automate the writing and testing please" |
 | 2026-10-20 | Default station settings are the values the POC proved: 6 s pieces, 6 s crossfade, 2 s skip fade, 3 h plan ahead, 5 recent, 1 s cut lead, 8 s live timeout, 20 s listener delay | Proven on the real host |
 
 ## Scope changes
@@ -247,7 +265,8 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
 | 7 | 2026-10-20 | `c56b6a1` | Test server: subdomain + Cloudflare record, `tools/deploy-cpanel.sh`, `config.local.php` override, `.htaccess` denies it and caches MP3s for a year; P0–P4 pass on cPanel; P3 passed |
 | 8 | 2026-10-20 | `36b122a` | Address decision (wordwave.controll.co.za); playlist edge cache (Cache Rule + `.htaccess` override of the host's no-cache); `tools/load-listeners.mjs`; load test 961/990 HIT; POC result summary; MySQL chosen |
 | 9 | 2026-10-20 | `67f6fa4` | Core & manager started: `app/` layout and front controller, schema v1 (12 tables), web installer with a one-time setup key, `tests/install_test.php` (31 checks; Laragon MySQL 8.4 and server MariaDB 10.11), `tools/deploy-app.sh`; test-server database made with uapi; app deployed to `/stationwagon-app/`; version `0.1.0-dev` |
-| 10 | 2026-10-20 | this round's commit | `app/cli/install.php` (install over SSH, JSON on stdin; tested on a throwaway copy); test server installed with it; live checks: home connected, `/install` locked, private files 403 |
+| 10 | 2026-10-20 | `c1f47c6` | `app/cli/install.php` (install over SSH, JSON on stdin; tested on a throwaway copy); test server installed with it; live checks: home connected, `/install` locked, private files 403 |
+| 11 | 2026-10-20 | this round's commit | Sign-in: `Session`, `Auth`, `AuthPage`, `Request`; pages `/signin`, `/signout`, `/manage`, `/account`; header shows who's signed in; `cli/set-password.php`; tests `auth_test.php` (39) and `web_test.php` (37 / 22 public) with shared `tests/lib.php`; test database `controllco_swtest` on the server; all tests pass on both |
 
 ## Open issues
 
@@ -268,8 +287,11 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
 - **BUTT on the user's PC:** the only remaining copy is in an old session folder that the app
   clears about a week after 2026-10-19. Reinstall BUTT before the next live show; its server
   settings are kept in `%APPDATA%\buttrc`.
-- There is **no sign-in page yet**, so the test-server admin can't be used until the next round. The
-  password was generated; there's no way to change it from the app yet.
+- The test-server admin (`vincent@controll.co.za`) has a generated password, kept in
+  `tools/deploy/controll.admin.local.txt`. It can be changed on `/account` after signing in.
+- No way yet to **add users** from the app (comes with the DJs screen); for now only via SQL.
+- The **signed-in** web checks run only on Laragon. On the server they're covered by `auth_test.php`
+  and the public web checks.
 - `design/skins/make_green_skin.py` still expects the original `wordwave-*.html` file names.
 
 ## Working agreements
@@ -278,6 +300,10 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
 - Artifacts are light theme only and never navy (the user's standing rule). The radio skins in
   `design/` are the one dark exception, by explicit request.
 - Ask the user questions as multiple choice (pick-from-options), never as open prose.
+- **Do the whole loop yourself**: write, deploy, set up and test. Never end a round by handing the
+  user a manual step (setup, sign-in, clicking through). Credentials you need: generate them and keep
+  them in gitignored `tools/deploy/*.local.txt`.
 - Never store or repeat passwords or keys in the repo, chat or this file.
-- After each code round: run the engine test and `app/tests/install_test.php`, update the POC
-  test log if tests ran, and update this file and the project map.
+- After each code round: run the engine test (if the engine changed) and all of `app/tests/`
+  locally and on the server, update the POC test log if prototype tests ran, and update this file and
+  the project map.
