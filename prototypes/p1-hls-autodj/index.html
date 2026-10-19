@@ -129,7 +129,7 @@ setInterval(() => {
   const pd = playingDate();
   const now = clock.now();
   $("pdt").textContent = pd ? clockText(pd) : "–";
-  $("behind").textContent = pd ? `${(now - pd).toFixed(1)} s` : "–";
+  if (!pd) $("behind").textContent = "–";
   const b = audio.buffered.length ? audio.buffered.end(audio.buffered.length - 1) - audio.currentTime : 0;
   $("buf").textContent = `${b.toFixed(1)} s`;
   $("errs").textContent = `${stalls} / ${errors}`;
@@ -142,6 +142,27 @@ setInterval(() => {
     }
   }
 }, 250);
+// Hold every listener at the same delay behind the server clock, so two devices hear the same
+// moment. hls.js on its own joins anywhere within a piece of its target, which left a phone and
+// a laptop a second apart. Small gaps are closed by playing up to 3 % faster or slower (pitch is
+// kept), big ones by a seek.
+const TARGET_LAG = 20;
+let lagFixes = 0;
+setInterval(() => {
+  const pd = playingDate();
+  if (!pd || audio.paused || !clock.samples) return;
+  const err = clock.now() - pd - TARGET_LAG; // positive: too far behind
+  if (Math.abs(err) > 2) {
+    audio.currentTime += err; audio.playbackRate = 1; lagFixes++;
+    log(`Re-aligned by ${err.toFixed(2)} s to hold ${TARGET_LAG} s behind live`);
+  } else if (Math.abs(err) > 0.03) {
+    audio.playbackRate = 1 + Math.max(-0.03, Math.min(0.03, err * 0.1));
+  } else {
+    audio.playbackRate = 1;
+  }
+  $("behind").textContent = `${(TARGET_LAG + err).toFixed(2)} s` + (audio.playbackRate !== 1 ? ` · ${audio.playbackRate > 1 ? "catching up" : "easing back"} ${(Math.abs(audio.playbackRate - 1) * 100).toFixed(1)} %` : " · locked");
+}, 500);
+
 setInterval(refresh, 5000);
 clock.sync(3).then(refresh);
 </script>

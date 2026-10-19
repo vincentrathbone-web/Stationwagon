@@ -61,6 +61,24 @@ php prototypes/tests/engine_test.php
 4. Use an HTTPS address: browsers only allow the microphone on HTTPS.
 5. Open P0 first. Every required row must be green.
 
+## Testing on an Android phone over USB
+
+With USB debugging on and the phone plugged in, the phone can reach Laragon as `localhost`. That
+counts as a secure page, so the microphone works there too, with no HTTPS needed:
+
+```bash
+adb reverse tcp:8080 tcp:8080
+adb shell am start -a android.intent.action.VIEW -d "http://localhost:8080/stationwagon/p1-hls-autodj/index.html" -p com.android.chrome
+```
+
+To read or press things on the phone's page from the PC (handy for timing two devices), forward
+Chrome's debugger and use `tools/phone.mjs`:
+
+```bash
+adb forward tcp:9222 localabstract:chrome_devtools_remote
+node tools/phone.mjs eval "document.querySelector('#behind').textContent"
+```
+
 ## Two-device sync test (P1 and P2)
 
 Open the same page on a laptop and a phone, side by side, and compare the **stream clock** (P1)

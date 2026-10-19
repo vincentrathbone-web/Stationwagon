@@ -119,10 +119,10 @@ Fill in as you go (copy this table into an issue or keep it here). ☑ passed ·
 | Prototype | Laragon | cPanel | Notes |
 |---|---|---|---|
 | P0 Host check | ☑ 2026-10-19 | ☐ | All required checks pass (PHP 8.3.33, Apache 2.4.68, ranges 206, data/ blocked 403, clock offset 0.00 s). ffmpeg not found, no HTTPS: both fine locally. |
-| P1 HLS AutoDJ | ◐ 2026-10-19 | ☐ | One device: plays with no stalls, ~19 s behind live. Skip lands 1–6 s ahead with no stall. Fixed: the song that was cut could play again straight after; Skip from a lagging listener cut the next song instead of the one they were hearing; clock showed "PM.5". Two-device test still to do. |
-| P2 Crossfade player | ◐ 2026-10-19 | ☐ | One device: joins in sync (drift ~130 ms, settles to under 10 ms), crossfade 6.0 s, Skip fade 2.0 s, no corrections needed. Fixed: crossfades were 0–6 s long depending on where the last piece ended; the planner now always leaves a full 6 s. Two-device test still to do. |
-| P3 Mic chain | ◐ 2026-10-19 | n/a | Page and AudioWorklet load. Needs a person with a mic and headphones. |
-| P4 Live studio | ◐ 2026-10-19 | ☐ | Page, lamejs and the mic API load. Needs the live test with P1 on a phone. |
+| P1 HLS AutoDJ | ☑ 2026-10-19 | ☐ | PC (built-in browser) + Android phone (Chrome 155 over USB): no stalls. Skip from the phone heard on both in the same second. Fixed: a cut song could come straight back; Skip from a lagging listener cut the next song; clock showed "PM.5"; hls.js left the two devices 1.0 s apart, so P1 now holds a fixed 20 s delay against the server clock (both lock at 20.03 s). Skip is heard ~20–26 s after the press. |
+| P2 Crossfade player | ☑ 2026-10-19 | ☐ | PC + phone: both crossfaded in the same second, 6.0 s; drift −3 ms vs −7 ms; Skip fade 2.0 s. Phone clock was 0.15 s off and was corrected. Fixed: crossfades were 0–6 s long; the planner now always leaves a full 6 s. |
+| P3 Mic chain | ◐ 2026-10-19 | n/a | The chain runs on the phone inside P4 (gate opens, ducking −12 dB, meters move). How it sounds still needs a person with headphones. |
+| P4 Live studio | ☑ 2026-10-19 | ☐ | Phone as studio, PC as listener. Go live: Deck A picked up the current song (drift −90 ms), pieces uploaded every 6 s with an empty queue, the listener moved to the live show with no stall. End show: AutoDJ back at once. Safety net: phone taken offline mid-show, the server closed the show (timeout) and the listener went back to the AutoDJ with no stall; the phone got 410 and said so. |
 | Cloudflare caching (P1 behind a proxied subdomain) | n/a | ☐ | |
 
 ## What we deliberately left out of the POC
