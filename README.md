@@ -11,6 +11,7 @@ Radio WoordGolf.
 
 | Path | What |
 |---|---|
+| [`HANDOVER.md`](HANDOVER.md) | Where the work stands, decisions, change log and open issues. Read this first |
 | [`docs/POC-PLAN.md`](docs/POC-PLAN.md) | What we must prove first, how, and the build-out order afterwards |
 | [`prototypes/`](prototypes/) | Runnable tests for each risky part (host check, HLS AutoDJ, crossfade player, mic chain, live studio) |
 | [`design/DESIGN.md`](design/DESIGN.md) | Screens, skin tokens and copy rules |
