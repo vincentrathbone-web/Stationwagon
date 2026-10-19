@@ -11,6 +11,7 @@ $tiles = [
 <span class="role"><?= h($me['role']) ?></span>
 <h1>Hello, <?= h($me['name']) ?></h1>
 <p class="lede">You’re managing <b><?= h($station['name'] ?? '') ?></b>. The station clock is <?= h($station['timezone'] ?? '') ?>.</p>
+<?php require __DIR__ . '/_onair.php' ?>
 <div class="tiles">
   <?php foreach ($tiles as [$name, $what, $role]): if (!Auth::allows($me, $role)) { continue; } ?>
     <div class="tile"><b><?= h($name) ?></b><span><?= h($what) ?></span><span class="soon">Next in the build</span></div>

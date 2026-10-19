@@ -33,13 +33,13 @@ final class Browser
     }
 
     /** @return array{status:int,headers:array<string,list<string>>,body:string} */
-    public function go(string $path, ?array $post = null): array
+    public function go(string $path, ?array $post = null, array $extra = []): array
     {
         $ch = curl_init($this->base . '/' . ltrim($path, '/'));
         $headers = [];
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => false, CURLOPT_TIMEOUT => 20,
-            CURLOPT_HTTPHEADER => $this->cookies ? ['Cookie: ' . implode('; ', array_map(fn($k, $v) => "$k=$v", array_keys($this->cookies), $this->cookies))] : [],
+            CURLOPT_HTTPHEADER => array_merge($extra, $this->cookies ? ['Cookie: ' . implode('; ', array_map(fn($k, $v) => "$k=$v", array_keys($this->cookies), $this->cookies))] : []),
             CURLOPT_HEADERFUNCTION => function ($ch, $line) use (&$headers) {
                 if (str_contains($line, ':')) {
                     [$k, $v] = explode(':', $line, 2);
@@ -113,7 +113,33 @@ try {
     check('a link to another site after sign-in is ignored', str_contains($r['body'], 'name="next" value="manage"'));
     $r = $b->go('signout', ['csrf' => 'wrong']);
     check('sign-out without the right key does nothing harmful', $r['status'] === 303 && str_ends_with($location($r), '/signin'));
-    foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/'] as $private) {
+    echo "Stream\n";
+    $s = new Browser($base);
+    $r = $s->go('api/stream.php');
+    $cc = implode(',', $r['headers']['cache-control'] ?? []);
+    check('playlist is an HLS playlist', in_array($r['status'], [200, 503], true) && str_starts_with($r['body'], '#EXTM3U') && str_contains(implode(',', $r['headers']['content-type'] ?? []), 'mpegurl'), (string) $r['status']);
+    check('playlist may be kept 2 s by Cloudflare, never by browsers', str_contains($cc, 's-maxage=2') && str_contains($cc, 'max-age=0'), $cc);
+    check('listeners get no cookie from the stream', $s->setCookies === []);
+    if ($r['status'] === 200) {
+        preg_match_all('/^#EXT-X-BYTERANGE:(\d+)@(\d+)\n(\S+)$/m', $r['body'], $m);
+        $count = substr_count($r['body'], '#EXTINF:');
+        check('playlist lists the last 5 pieces (fewer just after the station starts)', $count >= 1 && $count <= 5, "$count");
+        if ($m[0]) {
+            $len = (int) $m[1][0]; $off = (int) $m[2][0];
+            $file = (new Browser($base))->go('api/' . $m[3][0], null, ['Range: bytes=' . $off . '-' . ($off + $len - 1)]);
+            check('a piece is served as a byte range', $file['status'] === 206 && strlen($file['body']) === $len, $file['status'] . ', ' . strlen($file['body']) . " of $len bytes");
+            check('and starts on an MP3 frame', strlen($file['body']) > 1 && ord($file['body'][0]) === 0xFF && (ord($file['body'][1]) & 0xE0) === 0xE0);
+            $fcc = implode(',', $file['headers']['cache-control'] ?? []);
+            check('songs are cached for a year', str_contains($fcc, 'max-age=31536000') && str_contains($fcc, 'immutable'), $fcc);
+        }
+    } else {
+        check('with an empty library the playlist says so', str_contains($r['body'], 'library'));
+    }
+    $r = $s->go('api/timeline.php');
+    $j = json_decode($r['body'], true);
+    check('player feed gives the server clock and settings', $r['status'] === 200 && is_float($j['server_now'] ?? null) && abs($j['server_now'] - microtime(true)) < 30 && ($j['settings']['crossfade_seconds'] ?? 0) == 6, (string) $r['status']);
+    check('player feed is never cached', str_contains(implode(',', $r['headers']['cache-control'] ?? []), 'no-store'));
+    foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/'] as $private) {
         $code = (new Browser($base))->go($private)['status'];
         check("$private is not served", in_array($code, [403, 404], true), (string) $code);
     }

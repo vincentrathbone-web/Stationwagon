@@ -93,13 +93,27 @@ final class App
     private static function home(): void
     {
         $station = self::station();
-        View::render('home', ['title' => $station['name'] ?? 'Stationwagon', 'station' => $station]);
+        View::render('home', ['title' => $station['name'] ?? 'Stationwagon', 'station' => $station, 'onAir' => self::onAir()]);
     }
 
     private static function manage(): void
     {
         $me = self::requireRole('dj');
-        View::render('manage', ['title' => 'Station manager', 'me' => $me, 'station' => self::station(), 'csrf' => Session::csrf()]);
+        View::render('manage', ['title' => 'Station manager', 'me' => $me, 'station' => self::station(), 'onAir' => self::onAir(), 'csrf' => Session::csrf()]);
+    }
+
+    /** What's on air now and next, plus the library size; null if the planner can't answer. */
+    private static function onAir(): ?array
+    {
+        try {
+            $planner = Planner::forFirstStation();
+            $db = Db::fromConfig();
+            $songs = (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('tracks') . " WHERE station_id = ? AND status = 'ready'", [$planner->station()['id']])->fetchColumn();
+            return $planner->nowPlaying(microtime(true)) + ['songs' => $songs, 'tz' => $planner->station()['timezone']];
+        } catch (\Throwable $ex) {
+            error_log('Stationwagon on air: ' . $ex);
+            return null;
+        }
     }
 
     private static function notFound(): void

@@ -88,3 +88,26 @@ function test_install(array $t, string $root): array
     (new Installer($root))->install(install_form($t));
     return require "$root/config.local.php";
 }
+
+/**
+ * Write a playable MP3 of about $seconds: MPEG-1 Layer III frames, 128 kbps, 44.1 kHz, silent
+ * audio. Real frame headers are all the planner reads. $tags adds an ID3v2.3 title/artist.
+ */
+function make_mp3(string $path, float $seconds, array $tags = [], int $salt = 0): void
+{
+    $frame = "\xFF\xFB\x90\x00" . str_repeat("\0", 413); // 417 bytes, 1152 samples
+    $id3 = '';
+    foreach (['TIT2' => $tags['title'] ?? null, 'TPE1' => $tags['artist'] ?? null] as $id => $text) {
+        if ($text !== null) {
+            $body = "\x03" . $text; // UTF-8
+            $id3 .= $id . pack('N', strlen($body)) . "\0\0" . $body;
+        }
+    }
+    if ($id3 !== '') {
+        $n = strlen($id3);
+        $id3 = "ID3\x03\x00\x00" . chr(($n >> 21) & 0x7f) . chr(($n >> 14) & 0x7f) . chr(($n >> 7) & 0x7f) . chr($n & 0x7f) . $id3;
+    }
+    $frames = (int) ceil($seconds * 44100 / 1152);
+    // $salt changes one silent byte so files of the same length still differ
+    file_put_contents($path, $id3 . str_repeat($frame, $frames - 1) . substr_replace($frame, chr($salt & 0xff), 100, 1));
+}

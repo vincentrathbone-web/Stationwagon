@@ -61,11 +61,12 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | `prototypes/config.local.php` | Server-only overrides (its control key). Never committed; denied by `.htaccess` |
 | `prototypes/media/`, `prototypes/data/` | Test MP3s and runtime state; gitignored except their README / `.htaccess` |
 | `app/` | **The real app** (Core & manager, `v0.1`). Front controller `index.php` → `src/App.php`; version in `app/VERSION` |
-| `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`), `Installer`, `InstallPage`, `View`, `Session` (cookie settings, form keys), `Auth` (sign-in, roles, lock-out), `AuthPage` (sign-in / sign-out / account pages), `Request` (visitor address through Cloudflare) |
+| `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`), `Installer`, `InstallPage`, `View`, `Session` (cookie settings, form keys), `Auth` (sign-in, roles, lock-out), `AuthPage` (sign-in / sign-out / account pages), `Request` (visitor address through Cloudflare), `Mp3` (frame scanner + ID3 tags), `Library` (add songs, stored by content hash), `Planner` (the timeline on MySQL: plan, skip, go live, pieces, schedule), `Stream` (HLS playlist) |
+| `app/api/` | `stream.php` (listener HLS playlist; real file so `.htaccess` gives it the 2 s Cloudflare header) and `timeline.php` (JSON for the two-deck player and studio) |
 | `app/views/`, `app/assets/app.css` | PHP page templates (wrapped in `layout.php`) and the green-skin styles |
-| `app/tests/` | `install_test.php` (31 checks), `auth_test.php` (sign-in logic, 39), `web_test.php` (sign-in pages over HTTP, 37; `--public`: 22), `lib.php` (shared helpers: throwaway database and install) |
-| `app/cli/` | `install.php` (install over SSH: the form's fields as JSON on stdin), `set-password.php <email>` (new password on stdin; for when nobody can sign in) |
-| `app/storage/` | Songs, live pieces, cache (`media/`, `live/`, `cache/`); gitignored; only `.mp3` is served |
+| `app/tests/` | `install_test.php` (31 checks), `auth_test.php` (sign-in logic, 39), `planner_test.php` (library + planner, 71), `web_test.php` (pages and stream over HTTP, 48; `--public`: 32), `lib.php` (shared helpers: throwaway database and install) |
+| `app/cli/` | `install.php` (install over SSH: the form's fields as JSON on stdin), `set-password.php <email>` (new password on stdin; for when nobody can sign in), `import.php <mp3s>` (add songs), `plan.php` (cron: plan ahead) |
+| `app/storage/` | Songs (`media/<sha1>.mp3`), live pieces (`live/<show id>/00000.mp3`), `cache/`, `sessions/`; gitignored; only `.mp3` is served |
 | `app/config.local.php`, `app/install.key` | Written by the installer / the deploy script. Gitignored and denied by `.htaccess` |
 | `tools/deploy-app.sh` | Upload `app/` to cPanel over SSH (keeps the server's settings and storage) |
 | `tools/deploy/` | Gitignored secrets for the test server: setup key, database password, admin sign-in |
@@ -89,14 +90,20 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
 - DNS: Cloudflare account `vincent.rathbone@gmail.com` (the user signs in; no API token on this
   PC). Record `wordwave` A → 169.239.217.60, **proxied**, like `demo`. The same Cloudflare account also holds
   `wordwave.co.za`, which the user owns.
-- **Cloudflare Cache Rule** "Stationwagon playlist (2 s)" on the controll.co.za zone: `http.request.full_uri wildcard "https://wordwave.controll.co.za/*/api/stream.php*"` → Eligible for cache, Edge TTL from the origin header. Covers the POC and a future station at the root.
+- **Cloudflare Cache Rule** "Stationwagon playlist (2 s)" on the controll.co.za zone: `http.request.full_uri wildcard "https://wordwave.controll.co.za/*/api/stream.php*"` → Eligible for cache, Edge TTL from the origin header, **Browser TTL: Respect origin TTL** (added 2026-10-20 with the user's OK). Covers the POC, the app and a future station at the root.
+  Without the Browser TTL setting Cloudflare rewrote the playlist's `max-age=0` to the zone's 2 h
+  Browser Cache TTL (it overrides any browser header on cached responses, `no-cache` and `no-store`
+  too), which would freeze browser players. `web_test.php` checks the header through Cloudflare.
 - The main site's `~/public_html/.htaccess` (WordPress, "Flying Pages Plugin Fix") sets `Cache-Control: no-cache` on everything below it, the subdomain included, and Wordfence WAF is prepended to every PHP request. Don't edit that file; override headers in our own `.htaccess`.
 - Origin certificate is self-signed until AutoSSL replaces it (check started 2026-10-20). Cloudflare
   currently accepts it.
 - **App (Core & manager):** **https://wordwave.controll.co.za/stationwagon-app/**, **installed**
   2026-10-20 over SSH with `cli/install.php`: station "Radio WordWave / Radio WoordGolf"
   (Africa/Johannesburg), admin `vincent@controll.co.za`. The admin password is in
-  `tools/deploy/controll.admin.local.txt` (gitignored). Database `controllco_stationwagon`, user `controllco_swapp` (All Privileges), both made
+  `tools/deploy/controll.admin.local.txt` (gitignored). On air: the POC's 4 test tones (imported with
+  `cli/import.php`); stream at `/stationwagon-app/api/stream.php`. **Cron** (added to the account's
+  crontab next to an existing `ostic` job; keep that one): `*/5 * * * * /opt/cpanel/ea-php81/root/usr/bin/php
+  …/stationwagon-app/cli/plan.php > /dev/null 2>&1`. Database `controllco_stationwagon`, user `controllco_swapp` (All Privileges), both made
   with `uapi Mysql …`; the password is in `tools/deploy/controll.db.local.txt` (gitignored). Deploy with
   `bash tools/deploy-app.sh controll public_html/wordwave.controll.co.za/stationwagon-app`: it replaces
   the code, keeps `config.local.php` and `storage/`, and until installed leaves a one-time `install.key`
@@ -128,7 +135,8 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
   ```
   php app/tests/install_test.php                                   # installer, 31 checks
   php app/tests/auth_test.php                                      # sign-in logic, 39 checks
-  php app/tests/web_test.php http://localhost:8080/stationwagon-app # sign-in pages over HTTP, 37 checks
+  php app/tests/planner_test.php                                   # library and planner, 71 checks
+  php app/tests/web_test.php http://localhost:8080/stationwagon-app # pages and stream over HTTP, 48 checks
   ```
   Laragon's `mysql` client is MariaDB's and fails on MySQL 8 logins; use the MySQL 8.4.3 client in
   `C:\laragon\bin\mysql\`.
@@ -169,6 +177,11 @@ shows the station connected, `/install` says "Already installed", and the privat
 **Sign-in works** (2026-10-20): `/signin`, sign-out, `/manage` (the manager home, tiles for the screens
 still to build) and `/account` (change password). All tests pass on Laragon and on the server.
 
+**The planner runs on MySQL** (2026-10-20): `Planner` replaces the POC's JSON timeline, follows
+playlists (shuffle / in order) and the weekly schedule, and serves the listener stream at
+`api/stream.php`. The test server streams the 4 test tones; a real browser (hls.js) played it
+through Cloudflare with no errors. "On air" shows on the station page and `/manage`.
+
 ## Next steps
 
 Continue **Core & manager (`v0.1`)** per the build-out order in `docs/POC-PLAN.md`:
@@ -176,10 +189,12 @@ Continue **Core & manager (`v0.1`)** per the build-out order in `docs/POC-PLAN.m
 1. ~~Project layout~~, ~~MySQL schema~~, ~~web installer~~ (done 2026-10-20).
 2. ~~Install on the test server~~ (done 2026-10-20 over SSH).
 3. ~~Sign-in, roles and the manager shell~~ (done 2026-10-20).
-4. Move the timeline planner into a service class backed by MySQL (`timeline` table), keeping lazy
-   planning (a MySQL named lock instead of the file lock) and adding an optional cron.
-5. Station manager screens from `design/` (library upload, playlists, schedule, DJs), including
-   adding users (the DJs screen) and an admin "set a new password" for them.
+4. ~~Planner on MySQL, with a cron~~ (done 2026-10-20).
+5. Station manager screens from `design/`: library upload (browser → `Library::import`), playlists,
+   schedule (call `Planner::replan` after edits), DJs (adding users, an admin "set a new password"),
+   and Skip from the manager (`Planner::skip`).
+6. Then **Player & studio (`v0.4`)**: the listener player on `api/timeline.php` / `api/stream.php`,
+   and studio endpoints for `Planner::goLive` / `addPiece` / `endLive` (the planner already does these).
 
 ## Decisions
 
@@ -224,6 +239,13 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-20 | Lock-out: 5 wrong tries per email or 20 per address in 15 min. The address comes from `CF-Connecting-IP` only when the request really comes from a Cloudflare range | Behind Cloudflare every visitor would otherwise look like a few Cloudflare addresses |
 | 2026-10-20 | Changing a password signs out the account's other sessions; forgotten passwords are reset by an admin (or `cli/set-password.php`), no email reset for now | No mail setup needed yet |
 | 2026-10-20 | **Claude writes, deploys, sets up and tests everything itself**; the user only answers decisions | User, 2026-10-20: "I need you to fully automate the writing and testing please" |
+| 2026-10-20 | **Planner on MySQL**: `timeline` rows hold numbering and piece counts; a song's pieces come from `tracks.pieces`, a live show's from `live_pieces`; "recent songs" come from the timeline itself | One source of truth; a cut just shortens a row and deletes the rows after it |
+| 2026-10-20 | Planning runs under a MySQL **named lock** (`GET_LOCK`), named from the database, table prefix and station | Named locks are server-wide on shared MariaDB; another account's app must never share ours |
+| 2026-10-20 | Timeline history is kept 24 h. After a quiet spell (plan ran out more than 60 s ago) the stream restarts at "now" with numbering carrying on | Found by the test: the POC would have filled two quiet days with ~900 unheard songs on the first request. Gaps under 60 s (an ended live show) carry on seamlessly |
+| 2026-10-20 | Songs are stored once as `storage/media/<sha1>.mp3`; titles and artists come from ID3 tags, else the file name | A file's address never changes, so the year-long immutable cache is always safe |
+| 2026-10-20 | Playlists: shuffle (never one of the last 5) or in order. The schedule's playlist blocks use the station's clock, days as a bitmask (Mon = 1 … Sun = 64), overnight blocks belong to their start day, start = end means all day, newest block wins | Matches the schedule table from schema v1 |
+| 2026-10-20 | Optional cron every 5 minutes (`cli/plan.php`); listeners' requests still plan lazily | Keeps the plan ready when nobody listens |
+| 2026-10-20 | Cloudflare Cache Rule gets **Browser TTL: Respect origin TTL** | The user's OK, 2026-10-20. Origin-only fixes don't work: Cloudflare overrides every browser header on responses it caches |
 | 2026-10-20 | Default station settings are the values the POC proved: 6 s pieces, 6 s crossfade, 2 s skip fade, 3 h plan ahead, 5 recent, 1 s cut lead, 8 s live timeout, 20 s listener delay | Proven on the real host |
 
 ## Scope changes
@@ -266,7 +288,8 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
 | 8 | 2026-10-20 | `36b122a` | Address decision (wordwave.controll.co.za); playlist edge cache (Cache Rule + `.htaccess` override of the host's no-cache); `tools/load-listeners.mjs`; load test 961/990 HIT; POC result summary; MySQL chosen |
 | 9 | 2026-10-20 | `67f6fa4` | Core & manager started: `app/` layout and front controller, schema v1 (12 tables), web installer with a one-time setup key, `tests/install_test.php` (31 checks; Laragon MySQL 8.4 and server MariaDB 10.11), `tools/deploy-app.sh`; test-server database made with uapi; app deployed to `/stationwagon-app/`; version `0.1.0-dev` |
 | 10 | 2026-10-20 | `c1f47c6` | `app/cli/install.php` (install over SSH, JSON on stdin; tested on a throwaway copy); test server installed with it; live checks: home connected, `/install` locked, private files 403 |
-| 11 | 2026-10-20 | this round's commit | Sign-in: `Session`, `Auth`, `AuthPage`, `Request`; pages `/signin`, `/signout`, `/manage`, `/account`; header shows who's signed in; `cli/set-password.php`; tests `auth_test.php` (39) and `web_test.php` (37 / 22 public) with shared `tests/lib.php`; test database `controllco_swtest` on the server; all tests pass on both |
+| 11 | 2026-10-20 | `1738762` | Sign-in: `Session`, `Auth`, `AuthPage`, `Request`; pages `/signin`, `/signout`, `/manage`, `/account`; header shows who's signed in; `cli/set-password.php`; tests `auth_test.php` (39) and `web_test.php` (37 / 22 public) with shared `tests/lib.php`; test database `controllco_swtest` on the server; all tests pass on both |
+| 12 | 2026-10-20 | this round's commit | Planner on MySQL: `Mp3`, `Library`, `Planner`, `Stream`; `api/stream.php`, `api/timeline.php`; `cli/import.php`, `cli/plan.php` + cron on the server; "On air" card; `planner_test.php` (71, makes its own silent MP3s) and stream checks in `web_test.php`; fixed: quiet-spell restart; Cloudflare Browser TTL fixed (the POC had the same latent bug); test tones on air on the server |
 
 ## Open issues
 
@@ -290,6 +313,11 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
 - The test-server admin (`vincent@controll.co.za`) has a generated password, kept in
   `tools/deploy/controll.admin.local.txt`. It can be changed on `/account` after signing in.
 - No way yet to **add users** from the app (comes with the DJs screen); for now only via SQL.
+- No **upload** in the app yet: songs go in with `cli/import.php` (comes with the library screen).
+- Track pieces are cut at the station's `segment_seconds` when imported; changing that setting
+  later needs a rescan (not built).
+- Live studio and Skip have no web endpoints yet (the planner methods are tested; endpoints come
+  with the studio and manager screens).
 - The **signed-in** web checks run only on Laragon. On the server they're covered by `auth_test.php`
   and the public web checks.
 - `design/skins/make_green_skin.py` still expects the original `wordwave-*.html` file names.
