@@ -1,0 +1,61 @@
+/* Stationwagon app styles, green skin (design/DESIGN.md): soft near-black ground, rounded cards,
+   one bright green for the main action. Tokens first; components only use tokens. */
+:root {
+  color-scheme: dark;
+  --ground: #121212; --panel: #181818; --raised: #242424; --edge: #2e2e2e;
+  --ink: #ffffff; --muted: #b3b3b3; --faint: #7c7c7c;
+  --amber: #1ed760; --amber-soft: #1db954; --amber-dim: #1f5133;
+  --onair: #f15e6c; --ok: #1ed760; --warn: #ffa42b; --cue: #509bf5;
+  --f-ui: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "DM Mono", ui-monospace, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--ground); }
+body { color: var(--ink); font: 15px/1.55 var(--f-ui); padding-block: 0 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+a { color: var(--amber); }
+code, pre { font-family: var(--f-mono); font-size: 13px; }
+code { background: var(--raised); padding: 1px 6px; border-radius: 6px; }
+
+.top { max-width: 760px; margin: 0 auto; padding-block: 22px 8px; display: flex; align-items: baseline; gap: 10px; }
+.brand { font-weight: 800; font-size: 20px; letter-spacing: -.02em; }
+.ver { font: 500 12px var(--f-mono); color: var(--faint); }
+.page { max-width: 760px; margin: 0 auto; display: grid; gap: 18px; }
+h1 { font-weight: 800; font-size: 32px; line-height: 1.1; letter-spacing: -.02em; margin: 18px 0 0; text-wrap: balance; }
+h2 { font-weight: 700; font-size: 18px; margin: 0 0 10px; }
+.lede { color: var(--muted); margin: 0; max-width: 60ch; }
+.muted { color: var(--muted); margin: 0 0 14px; font-size: 14px; max-width: 65ch; }
+.stack { display: grid; gap: 18px; }
+
+.card { background: var(--panel); border-radius: 16px; padding: 18px 18px 20px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.field { display: grid; gap: 5px; min-width: 0; }
+.field .lbl { font-weight: 600; font-size: 13px; color: var(--muted); }
+.field input, .field select { width: 100%; border: 1px solid transparent; border-radius: 10px; background: var(--raised);
+  color: var(--ink); font: 500 15px var(--f-ui); padding: 10px 12px; }
+.field input:focus-visible, .field select:focus-visible, .btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.field .hint { font-size: 12px; color: var(--faint); }
+.field .err { font-size: 12px; color: var(--onair); font-weight: 600; }
+.field.bad input, .field.bad select { border-color: var(--onair); }
+
+.btn { appearance: none; border: 0; border-radius: 999px; background: var(--raised); color: var(--ink);
+  font: 700 14px/1 var(--f-ui); padding: 12px 20px; cursor: pointer; text-decoration: none; display: inline-flex; }
+.btn:hover { background: #2f2f2f; }
+.btn.primary { background: var(--amber); color: #000; }
+.btn.primary:hover { background: #3be477; }
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
+.actions { display: flex; justify-content: flex-end; }
+
+.alert { border-radius: 12px; padding: 10px 14px; margin: 0 0 14px; font-weight: 600; font-size: 14px; }
+.alert.ok { background: #173a25; color: var(--amber); }
+.alert.bad { background: #2a1517; color: #ffb3bb; }
+
+.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.checks li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 12px; align-items: baseline;
+  padding: 9px 12px; border-radius: 10px; background: var(--raised); }
+.checks .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); transform: translateY(-1px); }
+.checks li.warn .dot { background: var(--warn); }
+.checks li.bad .dot { background: var(--onair); }
+.checks .what small { display: block; color: var(--muted); font-size: 12px; }
+.checks .found { font: 500 13px var(--f-mono); color: var(--muted); text-align: right; }
+.code { background: var(--raised); border-radius: 12px; padding: 14px; overflow-x: auto; white-space: pre; margin: 0 0 14px; }

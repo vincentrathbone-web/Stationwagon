@@ -1,0 +1,5 @@
+# Uploaded songs and live pieces are served as files; everything else in storage stays private
+Require all denied
+<FilesMatch "\.mp3$">
+  Require all granted
+</FilesMatch>

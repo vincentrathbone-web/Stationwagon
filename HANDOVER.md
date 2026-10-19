@@ -60,6 +60,14 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | `prototypes/tools/` | `make-test-mp3s.js` (test tones), `phone.mjs` (drive the phone's Chrome over adb), `deploy-cpanel.sh` (upload to cPanel over SSH), `load-listeners.mjs` (simulated listeners) |
 | `prototypes/config.local.php` | Server-only overrides (its control key). Never committed; denied by `.htaccess` |
 | `prototypes/media/`, `prototypes/data/` | Test MP3s and runtime state; gitignored except their README / `.htaccess` |
+| `app/` | **The real app** (Core & manager, `v0.1`). Front controller `index.php` → `src/App.php`; version in `app/VERSION` |
+| `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`), `Installer`, `InstallPage`, `View` |
+| `app/views/`, `app/assets/app.css` | PHP page templates (wrapped in `layout.php`) and the green-skin styles |
+| `app/tests/install_test.php` | Command-line installer test against real MySQL/MariaDB (31 checks) |
+| `app/storage/` | Songs, live pieces, cache (`media/`, `live/`, `cache/`); gitignored; only `.mp3` is served |
+| `app/config.local.php`, `app/install.key` | Written by the installer / the deploy script. Gitignored and denied by `.htaccess` |
+| `tools/deploy-app.sh` | Upload `app/` to cPanel over SSH (keeps the server's settings and storage) |
+| `tools/deploy/` | Gitignored secrets for the test server: setup key, database password |
 
 ### Published design mock-ups (claude.ai artifacts, private)
 
@@ -84,7 +92,15 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
 - The main site's `~/public_html/.htaccess` (WordPress, "Flying Pages Plugin Fix") sets `Cache-Control: no-cache` on everything below it, the subdomain included, and Wordfence WAF is prepended to every PHP request. Don't edit that file; override headers in our own `.htaccess`.
 - Origin certificate is self-signed until AutoSSL replaces it (check started 2026-10-20). Cloudflare
   currently accepts it.
-- **Deploy:** `bash prototypes/tools/deploy-cpanel.sh controll public_html/wordwave.controll.co.za/stationwagon-poc`.
+- **App (Core & manager):** **https://wordwave.controll.co.za/stationwagon-app/** (deployed
+  2026-10-20). Database `controllco_stationwagon`, user `controllco_swapp` (All Privileges), both made
+  with `uapi Mysql …`; the password is in `tools/deploy/controll.db.local.txt` (gitignored). Deploy with
+  `bash tools/deploy-app.sh controll public_html/wordwave.controll.co.za/stationwagon-app`: it replaces
+  the code, keeps `config.local.php` and `storage/`, and until installed leaves a one-time `install.key`
+  (copy in `tools/deploy/controll.install-key.local.txt`) that the web installer asks for and then deletes.
+  Server test: run `tests/install_test.php` there with `SW_TEST_DB_NAME=controllco_stationwagon` (plus
+  the DB user and password in `SW_TEST_DB_*`). It only works on an empty database, so before the real install.
+- **Deploy (POC):** `bash prototypes/tools/deploy-cpanel.sh controll public_html/wordwave.controll.co.za/stationwagon-poc`.
   It replaces the code and keeps the server's `data/`. The server's control key is in
   `prototypes/tools/deploy/controll.config.local.php` (gitignored). Paste it into the page's
   "Control key" field to use Skip or Go live on the server. Never print it in chat or docs.
@@ -98,6 +114,13 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
   prototypes open at `http://localhost:8080/stationwagon/…` (P0: `p0-host-check/index.php`).
 - Engine test: `php prototypes/tests/engine_test.php` (use the full PHP path above; `php` isn't
   on PATH in Git Bash).
+- **App on Laragon:** junction `C:\laragon\www\stationwagon-app` → `D:\VS Code\Stationwagon\app`,
+  so it opens at `http://localhost:8080/stationwagon-app/`. Installed into database `stationwagon_dev`
+  (Laragon MySQL 8.4.3, root with no password, `127.0.0.1`). The local admin's sign-in is in
+  `app/tests/dev-admin.local.txt` (gitignored). To reinstall, delete `app/config.local.php` and drop
+  the `sw_` tables. Installer test: `php app/tests/install_test.php` (makes and drops its own database).
+  Laragon's `mysql` client is MariaDB's and fails on MySQL 8 logins; use the MySQL 8.4.3 client in
+  `C:\laragon\bin\mysql\`.
 - **Node** v24 (has a built-in WebSocket; `phone.mjs` relies on it).
 - **Android phone over USB:** adb at `D:\Android\platform-tools\adb.exe`; phone Xiaomi
   25062RN2DA, Android 16, Chrome 155. `adb reverse tcp:8080 tcp:8080` lets the phone open
@@ -127,16 +150,22 @@ under "Result" in `docs/POC-PLAN.md`.
 | P4 Live studio | ☑ including the safety net | ☑ phone studio on 4G → PC listener |
 | Cloudflare caching | n/a | ☑ audio HIT; playlist 961/990 HIT with 100 simulated listeners |
 
+**Core & manager (`v0.1`) has started.** Done: the app layout (`app/`), schema v1 (12 tables) and the
+web installer. The installer test passes on Laragon (MySQL 8.4.3) and on the server (MariaDB 10.11);
+the browser install works on Laragon. On the test server the app is deployed and waits for the user
+to run the web installer (it needs their own admin sign-in).
+
 ## Next steps
 
-Start **Core & manager (`v0.1`)** per the build-out order in `docs/POC-PLAN.md`:
+Continue **Core & manager (`v0.1`)** per the build-out order in `docs/POC-PLAN.md`:
 
-1. Project layout for the real app (outside `prototypes/`), versioning from `0.1.0`.
-2. MySQL schema (decided 2026-10-20; stations, tracks, playlists, schedule, DJs, timeline entries, live shows) and a
-   WordPress-style web installer that writes `config.local.php`.
-3. Move the timeline planner into a service class backed by MySQL, keeping lazy planning and
-   adding an optional cron.
-4. Station manager screens from `design/` (library upload, playlists, schedule, DJs).
+1. ~~Project layout~~, ~~MySQL schema~~, ~~web installer~~ (done 2026-10-20).
+2. The user runs the web installer on the test server; then check that `config.local.php` and
+   `install.key` both return 403 and `/install` says "Already installed".
+3. Sign-in (sessions, the `users` table, roles admin / manager / dj) and the manager shell.
+4. Move the timeline planner into a service class backed by MySQL (`timeline` table), keeping lazy
+   planning (a MySQL named lock instead of the file lock) and adding an optional cron.
+5. Station manager screens from `design/` (library upload, playlists, schedule, DJs).
 
 ## Decisions
 
@@ -167,6 +196,13 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-20 | Playlist is cached at Cloudflare for 2 s (Cache Rule + `s-maxage=2`; browsers `max-age=0`) | Without it every listener runs PHP every ~6 s. With it PHP runs about once per 2 s per Cloudflare location; 2 s of staleness is harmless at a 20 s delay |
 | 2026-10-20 | **POC closed as passed**; next milestone is Core & manager | All seven risks answered on the real host |
 | 2026-10-20 | The real app uses **MySQL** on the cPanel account (not SQLite) | User's choice; standard on shared hosting and room to grow to more stations |
+| 2026-10-20 | The app lives in **`app/`**: plain PHP 8.1+, no Composer and no framework, one front controller, PSR-4-style autoloader | Upload-and-go on shared hosting, like the POC |
+| 2026-10-20 | Schema: InnoDB, utf8mb4, a table prefix (default `sw_`), **no JSON columns** (MEDIUMTEXT holding JSON), stream times as `DECIMAL(15,3)` unix seconds, other times UTC `DATETIME`; the version is stored in `settings.schema_version` | Same behaviour on MySQL 8 and MariaDB 10.5+; the timeline needs millisecond stream times |
+| 2026-10-20 | Supported databases: **MySQL 8.0+ or MariaDB 10.5+** (the installer checks) | The server has MariaDB 10.11, this PC MySQL 8.4 |
+| 2026-10-20 | A WordPress-style **web installer** writes `config.local.php`. If the file can't be written, it shows the text to upload instead. It runs only until that file says installed | Users set up on cPanel without SSH |
+| 2026-10-20 | On a public server the deploy leaves a **one-time setup key** (`install.key`) that the installer asks for and then deletes | Otherwise anyone who finds a fresh copy could install first and become admin |
+| 2026-10-20 | The **green skin** is the default for new stations (station setting `skin`) | It is the one with presenter notes |
+| 2026-10-20 | Default station settings are the values the POC proved: 6 s pieces, 6 s crossfade, 2 s skip fade, 3 h plan ahead, 5 recent, 1 s cut lead, 8 s live timeout, 20 s listener delay | Proven on the real host |
 
 ## Scope changes
 
@@ -186,8 +222,13 @@ real.
 
 ## Versions
 
-No version numbers yet: the POC is unversioned and the commits are the record. Proposal for when
-build-out starts: begin at `0.1.0` and record every bump here.
+The POC is unversioned (its commits are the record). The app's version is in `app/VERSION`.
+
+| Date | Version | Why |
+|---|---|---|
+| 2026-10-20 | `0.1.0-dev` | Core & manager build started (app layout, schema v1, installer). It becomes `0.1.0` when the v0.1 milestone is done |
+
+Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at install).
 
 ## Change log
 
@@ -200,7 +241,8 @@ build-out starts: begin at `0.1.0` and record every bump here.
 | 5 | 2026-10-19 | `d7403dd` | Private GitHub repo created; `origin` set and `main` pushed |
 | 6 | 2026-10-19 | `3565f27` | `docs/project-map.html` project map added and published (light theme); milestone plan with estimates |
 | 7 | 2026-10-20 | `c56b6a1` | Test server: subdomain + Cloudflare record, `tools/deploy-cpanel.sh`, `config.local.php` override, `.htaccess` denies it and caches MP3s for a year; P0–P4 pass on cPanel; P3 passed |
-| 8 | 2026-10-20 | this round's commit | Address decision (wordwave.controll.co.za); playlist edge cache (Cache Rule + `.htaccess` override of the host's no-cache); `tools/load-listeners.mjs`; load test 961/990 HIT; POC result summary; MySQL chosen |
+| 8 | 2026-10-20 | `36b122a` | Address decision (wordwave.controll.co.za); playlist edge cache (Cache Rule + `.htaccess` override of the host's no-cache); `tools/load-listeners.mjs`; load test 961/990 HIT; POC result summary; MySQL chosen |
+| 9 | 2026-10-20 | this round's commit | Core & manager started: `app/` layout and front controller, schema v1 (12 tables), web installer with a one-time setup key, `tests/install_test.php` (31 checks; Laragon MySQL 8.4 and server MariaDB 10.11), `tools/deploy-app.sh`; test-server database made with uapi; app deployed to `/stationwagon-app/`; version `0.1.0-dev` |
 
 ## Open issues
 
@@ -221,6 +263,11 @@ build-out starts: begin at `0.1.0` and record every bump here.
 - **BUTT on the user's PC:** the only remaining copy is in an old session folder that the app
   clears about a week after 2026-10-19. Reinstall BUTT before the next live show; its server
   settings are kept in `%APPDATA%\buttrc`.
+- **The test server app isn't installed yet:** the user runs the web installer at
+  https://wordwave.controll.co.za/stationwagon-app/install (the setup key and database details are in
+  `tools/deploy/`). Nobody can install without the setup key.
+- After the server install, `config.local.php` must return 403 (before install it redirects to
+  `/install`, because the file doesn't exist yet).
 - `design/skins/make_green_skin.py` still expects the original `wordwave-*.html` file names.
 
 ## Working agreements
@@ -230,5 +277,5 @@ build-out starts: begin at `0.1.0` and record every bump here.
   `design/` are the one dark exception, by explicit request.
 - Ask the user questions as multiple choice (pick-from-options), never as open prose.
 - Never store or repeat passwords or keys in the repo, chat or this file.
-- After each code round: run the engine test, update the POC test log if tests ran, and update
-  this file.
+- After each code round: run the engine test and `app/tests/install_test.php`, update the POC
+  test log if tests ran, and update this file and the project map.

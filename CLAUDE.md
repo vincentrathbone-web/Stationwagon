@@ -7,5 +7,7 @@
   republish it) as part of the same change. The handover's first section lists the steps.
 - Run the engine test after engine changes:
   `"C:\laragon\bin\php\php-8.3.33-Win32-vs16-x64\php.exe" prototypes/tests/engine_test.php`
+- Run the installer test after app changes (makes and drops its own database on Laragon MySQL):
+  `"C:\laragon\bin\php\php-8.3.33-Win32-vs16-x64\php.exe" app/tests/install_test.php`
 - Record test results in the test log in `docs/POC-PLAN.md`.
 - Commit and push only when the user asks.

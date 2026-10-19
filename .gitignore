@@ -8,9 +8,22 @@ prototypes/data/*
 prototypes/config.local.php
 prototypes/tools/deploy/
 
+# app: settings written by the installer, the one-time setup key, uploaded songs and live pieces
+app/config.local.php
+app/config.local.php.*.tmp
+app/install.key
+app/storage/*
+!app/storage/.htaccess
+
+# app deploy secrets (setup keys, database passwords for the test server)
+tools/deploy/
+
 # local tooling
 node_modules/
 .env
 *.log
 .DS_Store
 Thumbs.db
+
+# local dev notes with test credentials
+*.local.txt
