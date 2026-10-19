@@ -4,7 +4,7 @@ Read this first. It records where the work stands, what was decided and why, and
 each round, so that anyone (a person or a new agent session) can pick up where the last one
 stopped.
 
-**Last updated:** 2026-10-19, after round 6 (project map added).
+**Last updated:** 2026-10-20, after round 7 (cPanel test server live; P0–P4 pass there).
 
 ## How to keep this file useful
 
@@ -57,7 +57,8 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | `prototypes/api/` | `stream.php` (HLS), `timeline.php` (JSON), `control.php`, `upload.php` |
 | `prototypes/p0…p4-*/` | The five prototype pages |
 | `prototypes/tests/engine_test.php` | Command-line engine test (42 checks) |
-| `prototypes/tools/` | `make-test-mp3s.js` (test tones), `phone.mjs` (drive the phone's Chrome over adb) |
+| `prototypes/tools/` | `make-test-mp3s.js` (test tones), `phone.mjs` (drive the phone's Chrome over adb), `deploy-cpanel.sh` (upload to cPanel over SSH) |
+| `prototypes/config.local.php` | Server-only overrides (its control key). Never committed; denied by `.htaccess` |
 | `prototypes/media/`, `prototypes/data/` | Test MP3s and runtime state; gitignored except their README / `.htaccess` |
 
 ### Published design mock-ups (claude.ai artifacts, private)
@@ -69,6 +70,22 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | Station manager | https://claude.ai/artifact/NeuMPpuuQxvEAmBcF3cd5h | https://claude.ai/artifact/QxYADjUAtv1qbaQVugHuCq |
 
 The repo copies in `design/skins/` are the source: edit those and republish to the same URL.
+
+## Test server (cPanel)
+
+- **https://wordwave.controll.co.za/stationwagon-poc/** (P0: `p0-host-check/index.php`).
+  Subdomain made 2026-10-19 with `uapi SubDomain addsubdomain` on the `controll` SSH account;
+  document root `~/public_html/wordwave.controll.co.za`; the POC is in `stationwagon-poc/` under it.
+- Server: LiteSpeed (honours `.htaccess`), PHP 8.1.34, IP 169.239.217.60.
+- DNS: Cloudflare account `vincent.rathbone@gmail.com` (the user signs in; no API token on this
+  PC). Record `wordwave` A → 169.239.217.60, **proxied**, like `demo`. The same Cloudflare account also holds
+  `wordwave.co.za`, which the user owns.
+- Origin certificate is self-signed until AutoSSL replaces it (check started 2026-10-20). Cloudflare
+  currently accepts it.
+- **Deploy:** `bash prototypes/tools/deploy-cpanel.sh controll public_html/wordwave.controll.co.za/stationwagon-poc`.
+  It replaces the code and keeps the server's `data/`. The server's control key is in
+  `prototypes/tools/deploy/controll.config.local.php` (gitignored). Paste it into the page's
+  "Control key" field to use Skip or Go live on the server. Never print it in chat or docs.
 
 ## Dev environment (this PC)
 
@@ -90,30 +107,34 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
   pages pick up changes. Before that, browsers ran stale copies.
 - Run `node prototypes/tools/phone.mjs` from a short working directory. Node fails to start from
   the very long temp/scratchpad paths on this PC.
+- `phone.mjs offline` can leave that Chrome tab offline afterwards (pages then fail with
+  NAME_NOT_RESOLVED or TIMED_OUT). Open a fresh tab with `adb shell am start …` and close the old
+  one (`curl http://localhost:9222/json/close/<id>`).
 
-## Current status (2026-10-19)
+## Current status (2026-10-20)
 
-Proof of concept: built and mostly tested on Laragon. Nothing is tested on cPanel yet.
+Proof of concept: every prototype passes on Laragon and on the cPanel test server. One item is
+left: the playlist load check for many listeners (R7).
 
 | Prototype | Laragon | cPanel |
 |---|---|---|
-| P0 Host check | ☑ | ☐ |
-| P1 HLS AutoDJ | ☑ PC + phone | ☐ |
-| P2 Crossfade player | ☑ PC + phone | ☐ |
-| P3 Mic chain | ◐ user heard the mic and ducking ("works perfectly"); gate, record and USB headset not reported yet | n/a |
-| P4 Live studio | ☑ phone studio → PC listener, including the safety net | ☐ |
-| Cloudflare caching | n/a | ☐ |
+| P0 Host check | ☑ | ☑ |
+| P1 HLS AutoDJ | ☑ PC + phone | ☑ PC (fibre) + phone (4G), both locked at ~20.0 s |
+| P2 Crossfade player | ☑ PC + phone | ☑ PC + phone, same-second 6 s crossfades |
+| P3 Mic chain | ☑ user: "All good" | n/a |
+| P4 Live studio | ☑ including the safety net | ☑ phone studio on 4G → PC listener; safety net not repeated |
+| Cloudflare caching | n/a | ◐ audio HIT; playlist still PHP per listener |
 
 Details are in the test log in `docs/POC-PLAN.md`.
 
 ## Next steps
 
-1. Finish P3: confirm the gate (room noise gone in pauses, no clipped first words), Record 20 s,
-   and a USB headset. Tune presets from the user's feedback.
-2. cPanel round: change `control_key` in `config.php`, upload `prototypes/` with a few MP3s,
-   make `data/` writable, use HTTPS, then run P0 → P4 there. Then Cloudflare caching (R7).
-3. Then the build-out order in `docs/POC-PLAN.md` (core with MySQL and an installer, station
-   manager, player and embed, studio, Windows app).
+1. R7 playlist load: each listener asks `api/stream.php` (PHP) for the playlist about every 6 s.
+   Either let Cloudflare cache it for 1–2 s (a Cache Rule plus `max-age`), or measure how many
+   listeners the account handles. Then write a short POC summary in `docs/POC-PLAN.md`.
+2. Optional: repeat the safety-net test on cPanel.
+3. Start the build-out (Core & manager, `v0.1`): MySQL schema, installer, planner as a service
+   class, cron plus lazy planning, settings, then the station manager.
 
 ## Decisions
 
@@ -137,6 +158,9 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-19 | Skip carries `heard` (the presser's stream time); if that song already ended at the live edge, nothing is cut | Skip from a lagging HLS listener used to cut the next, unheard song |
 | 2026-10-19 | HLS player holds a **fixed 20 s delay** against the server clock (playback rate ±3 %, seek if off by more than 2 s) | hls.js alone left two devices 1.0 s apart; now both lock at 20.03 s |
 | 2026-10-19 | **Listeners never skip.** Skip is a station control only (manager/DJ) | User, 2026-10-19: "There is no reason for a listener to skip." The listener player has no Skip; the one on the P1 page is a test stand-in for the manager |
+| 2026-10-20 | Test server at **wordwave.controll.co.za**, POC in `/stationwagon-poc/`, DNS proxied through Cloudflare | User's choice. Proxied so the Cloudflare caching test (R7) runs on the real setup |
+| 2026-10-20 | Server settings live in `config.local.php` (gitignored, denied by `.htaccess`), made by the deploy script | Keeps the control key out of the repo and off the web |
+| 2026-10-20 | MP3s (songs and live pieces) are sent as `public, max-age=31536000, immutable` | The host's default (`max-age=7200, must-revalidate`) made Cloudflare re-check with the server on every request. File names must change if a file's content changes |
 
 ## Scope changes
 
@@ -168,13 +192,19 @@ build-out starts: begin at `0.1.0` and record every bump here.
 | 3 | 2026-10-19 | `a36a512` | Phone tests over USB: P1 fixed 20 s delay; `tools/phone.mjs` (eval/nav/offline); README "Testing on an Android phone over USB"; P1/P2/P4 pass on two devices |
 | 4 | 2026-10-19 | `91bdc0b` | `HANDOVER.md` and `CLAUDE.md` added; P3 partly passed (user heard the mic, ducking works) |
 | 5 | 2026-10-19 | `d7403dd` | Private GitHub repo created; `origin` set and `main` pushed |
-| 6 | 2026-10-19 | this round's commit | `docs/project-map.html` project map added and published (light theme); milestone plan with estimates |
+| 6 | 2026-10-19 | `3565f27` | `docs/project-map.html` project map added and published (light theme); milestone plan with estimates |
+| 7 | 2026-10-20 | this round's commit | Test server: subdomain + Cloudflare record, `tools/deploy-cpanel.sh`, `config.local.php` override, `.htaccess` denies it and caches MP3s for a year; P0–P4 pass on cPanel; P3 passed |
 
 ## Open issues
 
-- **P3 unfinished:** gate behaviour, Record 20 s and the USB headset aren't reported yet.
-- **Not tested on cPanel at all**, Cloudflare included. The default `control_key` must be changed
-  before any upload.
+- **USB headset** not tried with P3 (the user's PC test passed).
+- **Playlist load (R7):** `api/stream.php` runs PHP for every listener about every 6 s. Not
+  measured yet.
+- Cloudflare still holds the old copies of the 4 test MP3s with the old 2-hour header. They expire
+  on their own; new files cache correctly.
+- **Safety net** (silence → AutoDJ) was only tested on Laragon.
+- The origin's **self-signed certificate** should be replaced by AutoSSL; check
+  `uapi SSL installed_hosts` on the server.
 - The **studio has no notes editor** yet, and the **hi-fi player** doesn't have the presenter
   notes panel (only the green one does).
 - **P1 and P2 listeners are 20 s apart.** P2 plays at the live edge, P1 holds 20 s behind. Fine

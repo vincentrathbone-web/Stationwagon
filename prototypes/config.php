@@ -1,6 +1,7 @@
 <?php
 // Shared settings for all Stationwagon prototypes.
-// Change control_key before uploading to a public host.
+// On a public host, put a different control_key in config.local.php (not committed);
+// tools/deploy-cpanel.sh does that for you.
 return [
     'media_dir'            => __DIR__ . '/media',   // drop test MP3s here
     'data_dir'             => __DIR__ . '/data',    // generated: library index, timeline, live pieces

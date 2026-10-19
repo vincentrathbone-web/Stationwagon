@@ -4,6 +4,10 @@ prototypes/media/*
 prototypes/data/*
 !prototypes/data/.htaccess
 
+# server-only settings and deploy secrets
+prototypes/config.local.php
+prototypes/tools/deploy/
+
 # local tooling
 node_modules/
 .env

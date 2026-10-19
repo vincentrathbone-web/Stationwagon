@@ -6,6 +6,11 @@ function sw_config(): array
     static $config = null;
     if ($config === null) {
         $config = require __DIR__ . '/../config.php';
+        // A server keeps its own settings (above all its control key) in config.local.php,
+        // which is never committed
+        if (is_file(__DIR__ . '/../config.local.php')) {
+            $config = array_replace($config, require __DIR__ . '/../config.local.php');
+        }
         if (PHP_SAPI === 'cli' && getenv('SW_DATA_DIR')) {
             $config['data_dir'] = getenv('SW_DATA_DIR'); // tests use a throwaway data folder
         }
@@ -70,7 +75,7 @@ function sw_require_key(): void
 {
     $key = $_SERVER['HTTP_X_KEY'] ?? ($_POST['key'] ?? ($_GET['key'] ?? ''));
     if (!hash_equals(sw_config()['control_key'], (string) $key)) {
-        sw_json(['error' => 'Wrong control key. Use the key from prototypes/config.php.'], 403);
+        sw_json(['error' => 'Wrong control key. Use the key from prototypes/config.php, or config.local.php on a server.'], 403);
         exit;
     }
 }

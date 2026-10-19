@@ -163,61 +163,60 @@ a{color:var(--accent)}
     </aside>
   </div>
 
-  <p class="note">Dates after 19 October are estimates. Source: <code>docs/project-map.html</code>, updated with <code>HANDOVER.md</code> after each round.</p>
+  <p class="note">Dates after 20 October are estimates. Source: <code>docs/project-map.html</code>, updated with <code>HANDOVER.md</code> after each round.</p>
 </div>
 
 <script>
 /* Everything on the map comes from this one object. Update it after each round. */
 const MAP = {
-  updated: "19 Oct · 23:25",
-  commits: 5,
+  updated: "20 Oct · 00:15",
+  commits: 7,
   milestones: [
     { name: "Plan & design", when: "Done · 19 Oct", state: "done" },
-    { name: "Proof of concept", when: "In progress", state: "now" },
+    { name: "Proof of concept", when: "Almost done", state: "now" },
     { name: "Core & manager", when: "Next · est. Nov", ver: "v0.1", state: "next" },
     { name: "Player & studio", when: "est. Dec", ver: "v0.4", state: "later" },
     { name: "WordWave pilot", when: "est. Jan", ver: "v0.8", state: "later" },
     { name: "Launch", when: "est. Feb–Mar", ver: "v1.0", state: "later" }
   ],
   left: [
-    { text: "Mic test: gate and headset", state: "progress" },
-    { text: "cPanel test round", state: "waiting" },
-    { text: "Cloudflare caching", state: "todo" }
+    { text: "Playlist load for many listeners", state: "progress" }
   ],
   parts: [
-    { name: "Host check (P0)", ms: "Proof of concept", state: "done", foot: "Every required check green on Laragon" },
+    { name: "Host check (P0)", ms: "Proof of concept", state: "done", foot: "Green on Laragon and on cPanel" },
     { name: "Timeline engine", ms: "Proof of concept", state: "done", foot: "42 command-line checks pass" },
-    { name: "HLS AutoDJ (P1)", ms: "Proof of concept", state: "done", foot: "PC and phone locked at 20.03 s" },
-    { name: "Crossfade player (P2)", ms: "Proof of concept", state: "done", foot: "6 s fades, devices within 10 ms" },
-    { name: "Live studio (P4)", ms: "Proof of concept", state: "done", foot: "Go live, end show and safety net tested" },
-    { name: "Mic chain (P3)", ms: "Proof of concept", state: "progress", pct: 70, foot: "Mic and ducking heard. Gate, recording and headset left" },
-    { name: "cPanel test round", ms: "Proof of concept", state: "waiting", foot: "<b>Waiting on you:</b> where to host the test" },
-    { name: "Cloudflare caching", ms: "Proof of concept", state: "todo", foot: "After the cPanel round" },
+    { name: "HLS AutoDJ (P1)", ms: "Proof of concept", state: "done", foot: "Fibre PC and 4G phone locked at 20 s" },
+    { name: "Crossfade player (P2)", ms: "Proof of concept", state: "done", foot: "Same-second 6 s fades over the internet" },
+    { name: "Live studio (P4)", ms: "Proof of concept", state: "done", foot: "Live from a 4G phone to the real server" },
+    { name: "Mic chain (P3)", ms: "Proof of concept", state: "done", foot: "Gate, recording and ducking all good" },
+    { name: "cPanel test server", ms: "Proof of concept", state: "done", foot: "wordwave.controll.co.za, deploy script" },
+    { name: "Cloudflare caching", ms: "Proof of concept", state: "progress", pct: 70, foot: "Audio cached. Playlist still hits PHP per listener" },
     { name: "Database & installer", ms: "Core & manager", state: "todo", foot: "MySQL, WordPress-style setup" },
     { name: "Station manager", ms: "Core & manager", state: "designed", foot: "Library, playlists, schedule, DJs" },
     { name: "Listener player & notes", ms: "Player & studio", state: "designed", foot: "Studio notes editor still to design" },
     { name: "Windows studio app", ms: "Launch", state: "todo", foot: "Same studio in WebView2 (Tauri)" }
   ],
   next: {
-    title: "Finish the mic test (P3)",
-    text: "Check that room noise disappears between sentences without clipping the first word, listen to a 20 s recording, then try a USB headset. After that comes the cPanel round."
+    title: "Check playlist load, then close the POC",
+    text: "Each listener asks the server for the playlist about every 6 s. Let Cloudflare cache it for a second or two, or measure what the account handles. Then write the POC summary and start the core build."
   },
   call: {
-    title: "Where should the cPanel test run?",
-    text: "The prototypes need HTTPS and a writable data folder. Until you choose, the cPanel round waits; Laragon testing carries on.",
+    title: "Which address will the real station use?",
+    text: "Not needed until the WordWave pilot (est. Jan). The test server stays where it is either way.",
     opts: [
-      { b: "A new subdomain (suggested)", t: "For example radio.controll.co.za, kept apart from the live site" },
-      { b: "A separate hosting account", t: "Safest if the main account is busy or shared" }
+      { b: "wordwave.controll.co.za", t: "Already set up; the test server lives here" },
+      { b: "wordwave.co.za", t: "You own it and it's on Cloudflare; cleanest for listeners" }
     ]
   },
-  feedTitle: "Changed today · 19 Oct",
+  feedTitle: "Changed 19–20 Oct",
   feed: [
-    { what: "Pushed to GitHub", to: "private repo", at: "23:25", kind: "info" },
-    { what: "Handover doc", to: "added", at: "23:24", kind: "info" },
-    { what: "Mic chain (P3)", to: "70 %", at: "23:24", kind: "progress" },
-    { what: "HLS, crossfade, live", to: "pass on 2 devices", at: "23:08" },
-    { what: "Skip and crossfade fixes", to: "done", at: "22:54" },
-    { what: "Plan, designs, prototypes", to: "first commit", at: "22:38" }
+    { what: "Live show from a 4G phone", to: "passes on cPanel", at: "00:09" },
+    { what: "Crossfade player", to: "passes on cPanel", at: "00:07" },
+    { what: "Cloudflare audio caching", to: "HIT", at: "00:06", kind: "progress" },
+    { what: "HLS on PC and phone", to: "locked at 20 s", at: "00:05" },
+    { what: "Host check on cPanel", to: "all green", at: "00:02" },
+    { what: "wordwave.controll.co.za", to: "live", at: "23:59", kind: "info" },
+    { what: "Mic chain (P3)", to: "done", at: "23:57" }
   ]
 };
 

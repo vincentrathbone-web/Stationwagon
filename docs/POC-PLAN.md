@@ -118,12 +118,12 @@ Fill in as you go (copy this table into an issue or keep it here). ☑ passed ·
 
 | Prototype | Laragon | cPanel | Notes |
 |---|---|---|---|
-| P0 Host check | ☑ 2026-10-19 | ☐ | All required checks pass (PHP 8.3.33, Apache 2.4.68, ranges 206, data/ blocked 403, clock offset 0.00 s). ffmpeg not found, no HTTPS: both fine locally. |
-| P1 HLS AutoDJ | ☑ 2026-10-19 | ☐ | PC (built-in browser) + Android phone (Chrome 155 over USB): no stalls. Skip from the phone heard on both in the same second. Fixed: a cut song could come straight back; Skip from a lagging listener cut the next song; clock showed "PM.5"; hls.js left the two devices 1.0 s apart, so P1 now holds a fixed 20 s delay against the server clock (both lock at 20.03 s). Skip is heard ~20–26 s after the press. |
-| P2 Crossfade player | ☑ 2026-10-19 | ☐ | PC + phone: both crossfaded in the same second, 6.0 s; drift −3 ms vs −7 ms; Skip fade 2.0 s. Phone clock was 0.15 s off and was corrected. Fixed: crossfades were 0–6 s long; the planner now always leaves a full 6 s. |
-| P3 Mic chain | ◐ 2026-10-19 | n/a | PC with headphones: the user heard the processed mic, and ducking under music "works perfectly". Still to report: gate in pauses (room noise gone, first words intact), Record 20 s, a USB headset. The chain also runs on the phone inside P4. |
-| P4 Live studio | ☑ 2026-10-19 | ☐ | Phone as studio, PC as listener. Go live: Deck A picked up the current song (drift −90 ms), pieces uploaded every 6 s with an empty queue, the listener moved to the live show with no stall. End show: AutoDJ back at once. Safety net: phone taken offline mid-show, the server closed the show (timeout) and the listener went back to the AutoDJ with no stall; the phone got 410 and said so. |
-| Cloudflare caching (P1 behind a proxied subdomain) | n/a | ☐ | |
+| P0 Host check | ☑ 2026-10-19 | ☑ 2026-10-20 | Laragon: all required checks pass. cPanel (wordwave.controll.co.za, LiteSpeed, PHP 8.1.34, HTTPS, Cloudflare JNB): all required checks pass; clock 0.12 s off, round trip 328 ms. |
+| P1 HLS AutoDJ | ☑ 2026-10-19 | ☑ 2026-10-20 | Laragon: PC + phone over USB. Fixed: cut song could come straight back; Skip from a lagging listener cut the next song; clock showed "PM.5"; devices 1.0 s apart, so P1 now holds a fixed 20 s delay. cPanel: PC (fibre) + phone (4G) both lock at 19.98–19.99 s, no stalls. |
+| P2 Crossfade player | ☑ 2026-10-19 | ☑ 2026-10-20 | Laragon: same-second 6.0 s crossfades, drift under 10 ms; fixed variable-length crossfades. cPanel: PC + phone (4G) crossfaded in the same second, 6.0 s, drift −13 ms and 7 ms, round trip ~60 ms. |
+| P3 Mic chain | ☑ 2026-10-20 | n/a | User, PC with headphones: mic, gate, recording and ducking all good ("All good"). Also runs on the phone inside P4. |
+| P4 Live studio | ☑ 2026-10-19 | ☑ 2026-10-20 | Laragon: phone studio → PC listener, end show, safety net (phone offline → timeout → AutoDJ). cPanel: phone studio on 4G uploads every 6 s with an empty queue; PC listener went live with no stall; AutoDJ back right after End show. Safety net not repeated on cPanel (same code path). |
+| Cloudflare caching (P1 behind a proxied subdomain) | n/a | ◐ 2026-10-20 | MP3 byte ranges: HIT after the first request once MP3s are sent as `public, max-age=31536000, immutable`. Still open: the playlist (`api/stream.php`) is PHP for every listener about every 6 s; measure or cache it for 1–2 s. |
 
 ## What we deliberately left out of the POC
 

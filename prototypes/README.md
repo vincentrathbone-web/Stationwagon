@@ -54,12 +54,19 @@ php prototypes/tests/engine_test.php
 
 ## Run it on the cPanel account
 
-1. Change `control_key` in `config.php`.
-2. Upload the whole `prototypes/` folder (for example to `public_html/stationwagon-poc/`)
-   together with a few MP3s in `media/`.
-3. Make sure `data/` is writable (755 or 775 is usually enough).
-4. Use an HTTPS address: browsers only allow the microphone on HTTPS.
-5. Open P0 first. Every required row must be green.
+Deploy over SSH with:
+
+```bash
+bash prototypes/tools/deploy-cpanel.sh <ssh-host> <remote-folder-with-stationwagon-in-its-name>
+```
+
+The script packs the prototypes (no runtime data, tests or tools), gives the server its own
+control key in `config.local.php` (kept locally in `tools/deploy/`, never committed), uploads,
+and keeps the server's `data/` folder. Use an HTTPS address: browsers only allow the microphone
+on HTTPS. Open P0 first; every required row must be green.
+
+The current test server is `https://wordwave.controll.co.za/stationwagon-poc/` (see
+`HANDOVER.md`).
 
 ## Testing on an Android phone over USB
 
