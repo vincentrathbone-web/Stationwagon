@@ -169,8 +169,8 @@ a{color:var(--accent)}
 <script>
 /* Everything on the map comes from this one object. Update it after each round. */
 const MAP = {
-  updated: "20 Oct · 00:46",
-  commits: 9,
+  updated: "20 Oct · 00:57",
+  commits: 10,
   milestones: [
     { name: "Plan & design", when: "Done · 19 Oct", state: "done" },
     { name: "Proof of concept", when: "Done · 20 Oct", state: "done" },
@@ -182,7 +182,7 @@ const MAP = {
   left: [
     { text: "Database schema", state: "done" },
     { text: "Web installer", state: "done" },
-    { text: "Install on the test server", state: "waiting" },
+    { text: "Install on the test server", state: "done" },
     { text: "Sign-in and roles", state: "todo" },
     { text: "Planner as a service", state: "todo" },
     { text: "Station manager screens", state: "todo" }
@@ -196,26 +196,19 @@ const MAP = {
     { name: "Mic chain (P3)", ms: "Proof of concept", state: "done", foot: "Gate, recording and ducking all good" },
     { name: "cPanel test server", ms: "Proof of concept", state: "done", foot: "wordwave.controll.co.za, deploy script" },
     { name: "Cloudflare caching", ms: "Proof of concept", state: "done", foot: "100 listeners: 97 % served from cache" },
-    { name: "Database & installer", ms: "Core & manager", state: "waiting", foot: "12 tables, 31 checks pass; run setup on the server" },
+    { name: "Database & installer", ms: "Core & manager", state: "done", foot: "12 tables; installed on the test server" },
     { name: "Station manager", ms: "Core & manager", state: "designed", foot: "Library, playlists, schedule, DJs" },
     { name: "Listener player & notes", ms: "Player & studio", state: "designed", foot: "Studio notes editor still to design" },
     { name: "Windows studio app", ms: "Launch", state: "todo", foot: "Same studio in WebView2 (Tauri)" }
   ],
   next: {
     title: "Sign-in, then the planner",
-    text: "Once the test server is set up: sign-in with admin, manager and DJ roles, then the timeline planner moved onto MySQL. After that, the station manager screens."
+    text: "Sign-in with admin, manager and DJ roles, then the timeline planner moved onto MySQL. After that, the station manager screens."
   },
-  call: {
-    title: "Run the installer on the test server",
-    text: "The app is on wordwave.controll.co.za/stationwagon-app. Setup takes about a minute and makes your own admin sign-in.",
-    opts: [
-      { b: "Setup key", t: "In tools/deploy/controll.install-key.local.txt on your PC" },
-      { b: "Database", t: "Name, user and password in tools/deploy/controll.db.local.txt" }
-    ]
-  },
+  call: null,
   feedTitle: "Changed 20 Oct",
   feed: [
-    { what: "App on the test server", to: "waiting for setup", at: "00:44", kind: "info" },
+    { what: "App on the test server", to: "installed", at: "00:55" },
     { what: "Installer test on MariaDB", to: "31 checks pass", at: "00:42" },
     { what: "Web installer", to: "works on Laragon", at: "00:38" },
     { what: "Database schema", to: "v1, 12 tables", at: "00:36" },

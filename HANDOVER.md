@@ -64,10 +64,11 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`), `Installer`, `InstallPage`, `View` |
 | `app/views/`, `app/assets/app.css` | PHP page templates (wrapped in `layout.php`) and the green-skin styles |
 | `app/tests/install_test.php` | Command-line installer test against real MySQL/MariaDB (31 checks) |
+| `app/cli/install.php` | Install over SSH instead of the web page: the form's fields as JSON on stdin (`php cli/install.php < answers.json`) |
 | `app/storage/` | Songs, live pieces, cache (`media/`, `live/`, `cache/`); gitignored; only `.mp3` is served |
 | `app/config.local.php`, `app/install.key` | Written by the installer / the deploy script. Gitignored and denied by `.htaccess` |
 | `tools/deploy-app.sh` | Upload `app/` to cPanel over SSH (keeps the server's settings and storage) |
-| `tools/deploy/` | Gitignored secrets for the test server: setup key, database password |
+| `tools/deploy/` | Gitignored secrets for the test server: setup key, database password, admin sign-in |
 
 ### Published design mock-ups (claude.ai artifacts, private)
 
@@ -92,14 +93,16 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
 - The main site's `~/public_html/.htaccess` (WordPress, "Flying Pages Plugin Fix") sets `Cache-Control: no-cache` on everything below it, the subdomain included, and Wordfence WAF is prepended to every PHP request. Don't edit that file; override headers in our own `.htaccess`.
 - Origin certificate is self-signed until AutoSSL replaces it (check started 2026-10-20). Cloudflare
   currently accepts it.
-- **App (Core & manager):** **https://wordwave.controll.co.za/stationwagon-app/** (deployed
-  2026-10-20). Database `controllco_stationwagon`, user `controllco_swapp` (All Privileges), both made
+- **App (Core & manager):** **https://wordwave.controll.co.za/stationwagon-app/**, **installed**
+  2026-10-20 over SSH with `cli/install.php`: station "Radio WordWave / Radio WoordGolf"
+  (Africa/Johannesburg), admin `vincent@controll.co.za`. The admin password is in
+  `tools/deploy/controll.admin.local.txt` (gitignored). Database `controllco_stationwagon`, user `controllco_swapp` (All Privileges), both made
   with `uapi Mysql …`; the password is in `tools/deploy/controll.db.local.txt` (gitignored). Deploy with
   `bash tools/deploy-app.sh controll public_html/wordwave.controll.co.za/stationwagon-app`: it replaces
   the code, keeps `config.local.php` and `storage/`, and until installed leaves a one-time `install.key`
   (copy in `tools/deploy/controll.install-key.local.txt`) that the web installer asks for and then deletes.
-  Server test: run `tests/install_test.php` there with `SW_TEST_DB_NAME=controllco_stationwagon` (plus
-  the DB user and password in `SW_TEST_DB_*`). It only works on an empty database, so before the real install.
+  The server's `tests/install_test.php` run needs an empty database, so it can't run against
+  `controllco_stationwagon` any more (it now holds the station); make a second database for that.
 - **Deploy (POC):** `bash prototypes/tools/deploy-cpanel.sh controll public_html/wordwave.controll.co.za/stationwagon-poc`.
   It replaces the code and keeps the server's `data/`. The server's control key is in
   `prototypes/tools/deploy/controll.config.local.php` (gitignored). Paste it into the page's
@@ -152,16 +155,15 @@ under "Result" in `docs/POC-PLAN.md`.
 
 **Core & manager (`v0.1`) has started.** Done: the app layout (`app/`), schema v1 (12 tables) and the
 web installer. The installer test passes on Laragon (MySQL 8.4.3) and on the server (MariaDB 10.11);
-the browser install works on Laragon. On the test server the app is deployed and waits for the user
-to run the web installer (it needs their own admin sign-in).
+the browser install works on Laragon. **The test server is installed** (over SSH): the home page
+shows the station connected, `/install` says "Already installed", and the private files return 403.
 
 ## Next steps
 
 Continue **Core & manager (`v0.1`)** per the build-out order in `docs/POC-PLAN.md`:
 
 1. ~~Project layout~~, ~~MySQL schema~~, ~~web installer~~ (done 2026-10-20).
-2. The user runs the web installer on the test server; then check that `config.local.php` and
-   `install.key` both return 403 and `/install` says "Already installed".
+2. ~~Install on the test server~~ (done 2026-10-20 over SSH).
 3. Sign-in (sessions, the `users` table, roles admin / manager / dj) and the manager shell.
 4. Move the timeline planner into a service class backed by MySQL (`timeline` table), keeping lazy
    planning (a MySQL named lock instead of the file lock) and adding an optional cron.
@@ -202,6 +204,8 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-20 | A WordPress-style **web installer** writes `config.local.php`. If the file can't be written, it shows the text to upload instead. It runs only until that file says installed | Users set up on cPanel without SSH |
 | 2026-10-20 | On a public server the deploy leaves a **one-time setup key** (`install.key`) that the installer asks for and then deletes | Otherwise anyone who finds a fresh copy could install first and become admin |
 | 2026-10-20 | The **green skin** is the default for new stations (station setting `skin`) | It is the one with presenter notes |
+| 2026-10-20 | A **command-line installer** (`cli/install.php`, JSON on stdin) sits beside the web one; it reads `install.key` itself | Lets an agent or admin with SSH install without typing passwords into a web form; stdin keeps them out of the process list |
+| 2026-10-20 | Test-server admin is **vincent@controll.co.za**; the station name is "Radio WordWave / Radio WoordGolf" | User's choice |
 | 2026-10-20 | Default station settings are the values the POC proved: 6 s pieces, 6 s crossfade, 2 s skip fade, 3 h plan ahead, 5 recent, 1 s cut lead, 8 s live timeout, 20 s listener delay | Proven on the real host |
 
 ## Scope changes
@@ -242,7 +246,8 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
 | 6 | 2026-10-19 | `3565f27` | `docs/project-map.html` project map added and published (light theme); milestone plan with estimates |
 | 7 | 2026-10-20 | `c56b6a1` | Test server: subdomain + Cloudflare record, `tools/deploy-cpanel.sh`, `config.local.php` override, `.htaccess` denies it and caches MP3s for a year; P0–P4 pass on cPanel; P3 passed |
 | 8 | 2026-10-20 | `36b122a` | Address decision (wordwave.controll.co.za); playlist edge cache (Cache Rule + `.htaccess` override of the host's no-cache); `tools/load-listeners.mjs`; load test 961/990 HIT; POC result summary; MySQL chosen |
-| 9 | 2026-10-20 | this round's commit | Core & manager started: `app/` layout and front controller, schema v1 (12 tables), web installer with a one-time setup key, `tests/install_test.php` (31 checks; Laragon MySQL 8.4 and server MariaDB 10.11), `tools/deploy-app.sh`; test-server database made with uapi; app deployed to `/stationwagon-app/`; version `0.1.0-dev` |
+| 9 | 2026-10-20 | `67f6fa4` | Core & manager started: `app/` layout and front controller, schema v1 (12 tables), web installer with a one-time setup key, `tests/install_test.php` (31 checks; Laragon MySQL 8.4 and server MariaDB 10.11), `tools/deploy-app.sh`; test-server database made with uapi; app deployed to `/stationwagon-app/`; version `0.1.0-dev` |
+| 10 | 2026-10-20 | this round's commit | `app/cli/install.php` (install over SSH, JSON on stdin; tested on a throwaway copy); test server installed with it; live checks: home connected, `/install` locked, private files 403 |
 
 ## Open issues
 
@@ -263,11 +268,8 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
 - **BUTT on the user's PC:** the only remaining copy is in an old session folder that the app
   clears about a week after 2026-10-19. Reinstall BUTT before the next live show; its server
   settings are kept in `%APPDATA%\buttrc`.
-- **The test server app isn't installed yet:** the user runs the web installer at
-  https://wordwave.controll.co.za/stationwagon-app/install (the setup key and database details are in
-  `tools/deploy/`). Nobody can install without the setup key.
-- After the server install, `config.local.php` must return 403 (before install it redirects to
-  `/install`, because the file doesn't exist yet).
+- There is **no sign-in page yet**, so the test-server admin can't be used until the next round. The
+  password was generated; there's no way to change it from the app yet.
 - `design/skins/make_green_skin.py` still expects the original `wordwave-*.html` file names.
 
 ## Working agreements
