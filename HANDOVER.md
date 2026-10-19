@@ -4,7 +4,7 @@ Read this first. It records where the work stands, what was decided and why, and
 each round, so that anyone (a person or a new agent session) can pick up where the last one
 stopped.
 
-**Last updated:** 2026-10-19, after round 4 (handover doc created; P3 heard by the user).
+**Last updated:** 2026-10-19, after round 5 (GitHub repo created; `main` pushed).
 
 ## How to keep this file useful
 
@@ -36,6 +36,8 @@ straight to the Liquidsoap harbor on port 8345, which works. The user then asked
 designed from scratch for shared hosting, and named it Stationwagon.
 
 ## Where things are
+
+**GitHub:** https://github.com/vincentrathbone-web/Stationwagon (private, `main` tracks `origin/main`).
 
 | Path | What |
 |---|---|
@@ -153,7 +155,8 @@ build-out starts: begin at `0.1.0` and record every bump here.
 | 1 | 2026-10-19 | `08a24dc` | First commit: POC plan, `DESIGN.md`, both skins (green player with presenter notes), prototypes P0–P4, engine, test, tools |
 | 2 | 2026-10-19 | `a63ddb6` | First Laragon tests: full-length crossfades; no repeat after a cut; Skip uses `heard`; 24-hour clock; `prototypes/.htaccess` no-cache; engine test now 42 checks; test log started |
 | 3 | 2026-10-19 | `a36a512` | Phone tests over USB: P1 fixed 20 s delay; `tools/phone.mjs` (eval/nav/offline); README "Testing on an Android phone over USB"; P1/P2/P4 pass on two devices |
-| 4 | 2026-10-19 | this round's commit | `HANDOVER.md` and `CLAUDE.md` added; P3 partly passed (user heard the mic, ducking works) |
+| 4 | 2026-10-19 | `91bdc0b` | `HANDOVER.md` and `CLAUDE.md` added; P3 partly passed (user heard the mic, ducking works) |
+| 5 | 2026-10-19 | this round's commit | Private GitHub repo created; `origin` set and `main` pushed |
 
 ## Open issues
 
@@ -172,11 +175,10 @@ build-out starts: begin at `0.1.0` and record every bump here.
   clears about a week after 2026-10-19. Reinstall BUTT before the next live show; its server
   settings are kept in `%APPDATA%\buttrc`.
 - `design/skins/make_green_skin.py` still expects the original `wordwave-*.html` file names.
-- Repo has **no remote**; nothing is pushed.
 
 ## Working agreements
 
-- Commit only when the user asks. End commit messages with the `Co-Authored-By` line.
+- Commit and push only when the user asks. End commit messages with the `Co-Authored-By` line.
 - Ask the user questions as multiple choice (pick-from-options), never as open prose.
 - Never store or repeat passwords or keys in the repo, chat or this file.
 - After each code round: run the engine test, update the POC test log if tests ran, and update
