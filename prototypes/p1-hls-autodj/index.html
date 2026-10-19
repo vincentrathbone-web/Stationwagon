@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P1 HLS AutoDJ · Stationwagon</title>
+<link rel="stylesheet" href="../shared/proto.css">
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="faint">Stationwagon prototype P1</p>
+    <h1>HLS AutoDJ stream</h1>
+    <p class="muted">Plays <code>api/stream.php</code>: byte ranges inside the original MP3s, planned by the timeline. Open this page on two devices and compare the stream clock.</p>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Player</h2>
+      <p class="big" id="title">Press Listen</p>
+      <p class="muted" id="sub">–</p>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" id="play">Listen</button>
+        <button id="stop">Stop</button>
+        <label style="flex:1;min-width:140px">Volume<input type="range" id="vol" min="0" max="1" step="0.01" value="0.8"></label>
+      </div>
+      <dl class="kv" style="margin-top:14px">
+        <dt>Stream clock</dt><dd id="pdt">–</dd>
+        <dt>Behind live</dt><dd id="behind">–</dd>
+        <dt>Buffered ahead</dt><dd id="buf">–</dd>
+        <dt>Engine</dt><dd id="engine">–</dd>
+        <dt>Stalls / errors</dt><dd id="errs">0 / 0</dd>
+      </dl>
+    </section>
+
+    <section class="card">
+      <h2>Station control</h2>
+      <p class="muted">Skip cuts the song at the next piece boundary (about 1–6 s ahead). Every listener hears the change at the same moment.</p>
+      <div class="row" style="margin-top:12px">
+        <label style="flex:1">Control key<input type="password" id="key" autocomplete="off"></label>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="skip">Skip song</button>
+        <button id="rescan">Rescan media</button>
+        <button id="reset">Reset timeline</button>
+      </div>
+      <h2 style="margin-top:16px">Coming up</h2>
+      <div class="tablewrap"><table><thead><tr><th>Starts</th><th>What</th><th>Length</th></tr></thead><tbody id="upcoming"></tbody></table></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Log</h2>
+    <pre class="log" id="log"></pre>
+  </section>
+</div>
+
+<script type="module">
+import { ServerClock, fmt, clockText, getKey, setKey, control } from "../shared/js/clock.js";
+
+const STREAM = new URL("../api/stream.php", location.href).href;
+const clock = new ServerClock(new URL("../api/timeline.php", location.href).href);
+const audio = new Audio();
+audio.preload = "none";
+let hls = null, stalls = 0, errors = 0;
+const $ = (id) => document.getElementById(id);
+const log = (m) => { const p = $("log"); p.textContent = `${new Date().toLocaleTimeString()}  ${m}\n` + p.textContent.slice(0, 6000); };
+
+$("key").value = getKey();
+$("key").onchange = (e) => setKey(e.target.value);
+$("vol").oninput = (e) => (audio.volume = +e.target.value);
+audio.volume = 0.8;
+
+function start() {
+  stop();
+  if (window.Hls && Hls.isSupported()) {
+    hls = new Hls({ liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 6, lowLatencyMode: false });
+    hls.on(Hls.Events.MANIFEST_PARSED, () => audio.play().catch((e) => log("Play blocked: " + e.message)));
+    hls.on(Hls.Events.FRAG_CHANGED, (_, d) => log(`Playing piece #${d.frag.sn}${d.frag.title ? " · " + d.frag.title : ""}`));
+    hls.on(Hls.Events.ERROR, (_, d) => {
+      if (d.details === "bufferStalledError") { stalls++; } else { errors++; log(`Error: ${d.type} / ${d.details}${d.fatal ? " (fatal)" : ""}`); }
+      if (d.fatal) { d.type === Hls.ErrorTypes.MEDIA_ERROR ? hls.recoverMediaError() : hls.startLoad(); }
+    });
+    hls.loadSource(STREAM);
+    hls.attachMedia(audio);
+    $("engine").textContent = `hls.js ${Hls.version}`;
+  } else if (audio.canPlayType("application/vnd.apple.mpegurl")) {
+    audio.src = STREAM;
+    audio.play().catch((e) => log("Play blocked: " + e.message));
+    $("engine").textContent = "Native HLS (Safari)";
+  } else {
+    log("This browser can't play HLS.");
+    return;
+  }
+  log("Listening");
+}
+function stop() {
+  if (hls) { hls.destroy(); hls = null; }
+  audio.pause(); audio.removeAttribute("src"); audio.load();
+}
+$("play").onclick = start;
+$("stop").onclick = () => { stop(); log("Stopped"); };
+audio.addEventListener("waiting", () => log("Buffering…"));
+
+async function act(action) {
+  try { const r = await control(action); log(`${action}: ${JSON.stringify(r)}`); refresh(); }
+  catch (e) { log(`${action} failed: ${e.message}`); }
+}
+$("skip").onclick = () => act("skip");
+$("rescan").onclick = () => act("rescan");
+$("reset").onclick = () => act("reset");
+
+function playingDate() {
+  if (hls && hls.playingDate) return hls.playingDate.getTime() / 1000;
+  if (audio.getStartDate && !hls) { const d = audio.getStartDate(); if (d && !isNaN(d.getTime())) return d.getTime() / 1000 + audio.currentTime; }
+  return null;
+}
+
+async function refresh() {
+  try {
+    const tl = await clock.fetchTimeline();
+    const now = clock.now();
+    $("upcoming").innerHTML = tl.entries.filter((e) => e.end > now).slice(0, 6).map((e) =>
+      `<tr><td class="mono">${clockText(e.start)}</td><td>${e.type === "live" ? `<span class="pill bad">LIVE</span> ${e.dj}` : e.title}${e.cut ? ' <span class="pill warn">cut</span>' : ""}</td><td class="mono">${e.type === "live" ? (e.open ? "open" : fmt(e.end - e.start)) : fmt(e.play)}</td></tr>`).join("");
+  } catch (e) { log(e.message); }
+}
+
+setInterval(() => {
+  const pd = playingDate();
+  const now = clock.now();
+  $("pdt").textContent = pd ? clockText(pd) : "–";
+  $("behind").textContent = pd ? `${(now - pd).toFixed(1)} s` : "–";
+  const b = audio.buffered.length ? audio.buffered.end(audio.buffered.length - 1) - audio.currentTime : 0;
+  $("buf").textContent = `${b.toFixed(1)} s`;
+  $("errs").textContent = `${stalls} / ${errors}`;
+  const tl = clock.last;
+  if (pd && tl) {
+    const e = tl.entries.find((x) => x.start <= pd && pd < x.end + 0.01) || tl.entries.find((x) => x.type === "live" && x.open && x.start <= pd);
+    if (e) {
+      $("title").textContent = e.type === "live" ? `LIVE · ${e.dj}` : e.title;
+      $("sub").textContent = e.type === "live" ? `${fmt(pd - e.start)} into the show` : `${fmt(pd - e.start)} / ${fmt(e.play)}`;
+    }
+  }
+}, 250);
+setInterval(refresh, 5000);
+clock.sync(3).then(refresh);
+</script>
+</body>
+</html>

@@ -1,0 +1,301 @@
+<title>WordWave Station Manager</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=Share+Tech+Mono&display=swap">
+<style>
+/* Layout: app shell. Slim header with on-air state, a six-item side rail, one working view at a time; the rail becomes a scrolling tab row on phones. */
+:root{
+  color-scheme: dark;
+  --ground:#141311; --panel:#1f1d1a; --raised:#2a2723; --edge:#3a3630; --hi:#4b463e; --shade:#0a0908;
+  --ink:#ece6da; --muted:#a49c8d; --faint:#70695e;
+  --lcd:#0d0c09; --amber:#ffb24a; --amber-soft:#c98a3a; --amber-dim:#5c4220;
+  --onair:#ff5442; --ok:#6fd398; --warn:#f2c14e; --cue:#7cc4ff;
+  --f-ui:"Barlow Semi Condensed","Arial Narrow",Arial,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-lcd:"Share Tech Mono",ui-monospace,Consolas,monospace;
+  --bevel: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--shade);
+  --sunken: inset 1px 1px 0 var(--shade), inset -1px -1px 0 var(--hi);
+}
+*{box-sizing:border-box}
+html,body{background:var(--ground)}
+body{color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.5;
+  padding-block:16px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.app{max-width:1240px;margin:0 auto;display:grid;grid-template-columns:200px minmax(0,1fr);gap:14px}
+.hdr{grid-column:1 / -1;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 12px;background:var(--panel);border:1px solid #000;box-shadow:var(--bevel);border-radius:3px}
+.brand{font:700 18px/1 var(--f-ui);letter-spacing:.04em}
+.brand small{display:block;font:600 10px var(--f-ui);letter-spacing:.16em;color:var(--faint);text-transform:uppercase;margin-top:3px}
+.now{margin-left:auto;display:flex;align-items:center;gap:10px;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px;padding:7px 10px;font:13px var(--f-lcd);color:var(--amber);min-width:0;max-width:100%}
+.now span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.lamp{width:8px;height:8px;border-radius:50%;background:var(--amber);box-shadow:0 0 6px var(--amber);flex:none}
+.rail{display:grid;gap:2px;align-content:start;position:sticky;top:calc(12px + env(safe-area-inset-top,0px))}
+.rail button{appearance:none;background:transparent;border:0;color:var(--muted);text-align:left;padding:9px 12px;font:600 14px var(--f-ui);letter-spacing:.05em;border-radius:2px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+.rail button:hover{background:var(--panel);color:var(--ink)}
+.rail button[aria-current="page"]{background:var(--panel);color:var(--amber);box-shadow:inset 3px 0 0 var(--amber);border-radius:0}
+.rail .count{font:12px var(--f-lcd);color:var(--faint)}
+.rail .warnc{color:var(--warn)}
+main{min-width:0}
+h1{font:700 26px/1.15 var(--f-ui);margin:0;letter-spacing:.01em;text-wrap:balance}
+h2{font:600 13px var(--f-ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.vhead{display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.vhead p{margin:4px 0 0;color:var(--muted);max-width:62ch}
+.card{background:var(--panel);border:1px solid #000;box-shadow:var(--bevel);border-radius:3px;padding:12px;min-width:0}
+.grid2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:12px}
+.btn{appearance:none;border:1px solid #000;background:var(--raised);color:var(--ink);box-shadow:var(--bevel);border-radius:2px;font:600 12px/1 var(--f-ui);letter-spacing:.08em;text-transform:uppercase;padding:9px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{background:#322e29}.btn:active{box-shadow:var(--sunken)}
+.btn.primary{background:#3a2a10;color:var(--amber)}
+.btn.sm{padding:6px 8px;font-size:11px}
+.btn:focus-visible,input:focus-visible,select:focus-visible,.rail button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+input[type=search],select{background:var(--lcd);color:var(--amber-soft);border:1px solid #000;box-shadow:var(--sunken);font:13px var(--f-lcd);padding:8px 10px;border-radius:2px}
+input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:18px;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:6px;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px}
+input[type=range]::-moz-range-track{height:6px;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:16px;margin-top:-5px;background:var(--raised);border:1px solid #000;box-shadow:var(--bevel);border-radius:2px}
+input[type=range]::-moz-range-thumb{width:12px;height:16px;background:var(--raised);border:1px solid #000;box-shadow:var(--bevel);border-radius:2px}
+.sw{appearance:none;width:32px;height:17px;border-radius:9px;background:var(--lcd);box-shadow:var(--sunken);position:relative;cursor:pointer;flex:none;margin:0;vertical-align:middle}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--faint);transition:transform .15s}
+.sw:checked::after{transform:translateX(15px);background:var(--amber)}
+.pill{font:600 10px var(--f-ui);letter-spacing:.12em;text-transform:uppercase;padding:3px 7px;border-radius:2px;border:1px solid var(--edge);color:var(--muted);white-space:nowrap;display:inline-block}
+.pill.ok{color:var(--ok);border-color:#24533a;background:#13221a}
+.pill.warn{color:var(--warn);border-color:#5b4a1c;background:#231d0d}
+.pill.live{color:#ff9a8c;border-color:#6b2a22;background:#26120f}
+.pill.auto{color:var(--amber);border-color:var(--amber-dim);background:#241a0c}
+.tablewrap{overflow-x:auto;background:var(--panel);border:1px solid #000;box-shadow:var(--bevel);border-radius:3px}
+table{width:100%;border-collapse:collapse;min-width:620px}
+th{font:600 11px var(--f-ui);letter-spacing:.12em;text-transform:uppercase;color:var(--faint);text-align:left;padding:9px 12px;border-bottom:1px solid var(--edge)}
+td{padding:9px 12px;border-bottom:1px solid #26231f;vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--f-lcd);font-size:13px;color:var(--muted)}
+td .sub{display:block;font-size:12px;color:var(--faint);font-family:var(--f-lcd)}
+.lcdbox{background:var(--lcd);box-shadow:var(--sunken);border-radius:2px;padding:12px;font-family:var(--f-lcd);color:var(--amber)}
+.onair .t{font-size:18px}
+.onair .a{color:var(--amber-soft)}
+.prog{height:8px;background:#000;border-radius:2px;margin:10px 0 4px;overflow:hidden}
+.prog i{display:block;height:100%;width:42%;background:linear-gradient(var(--amber-soft),var(--amber-dim))}
+.row{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.checks li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 10px;background:var(--raised);border-radius:2px}
+.checks li b{font-weight:600;font-family:var(--f-ui);font-size:15px;letter-spacing:.02em;display:block}
+.checks li span.sub{color:var(--faint);font-size:12.5px}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.stat{background:var(--raised);border-radius:2px;padding:10px}
+.stat b{display:block;font:24px/1.1 var(--f-lcd);color:var(--amber);font-variant-numeric:tabular-nums}
+.stat span{font:600 11px var(--f-ui);letter-spacing:.1em;color:var(--faint);text-transform:uppercase}
+.storage{height:8px;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px;overflow:hidden;margin-top:6px}
+.storage i{display:block;height:100%;width:20.4%;background:var(--amber-soft)}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.toolbar input{flex:1 1 220px;min-width:0}
+.drop{border:1px dashed var(--edge);border-radius:3px;padding:14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;color:var(--muted)}
+.drop b{color:var(--ink);font-family:var(--f-ui);font-size:15px;letter-spacing:.02em}
+.hint{margin-top:10px;font-size:13px;color:var(--warn)}
+.week{display:grid;grid-template-columns:48px repeat(7,minmax(70px,1fr));grid-template-rows:28px repeat(18,26px);gap:2px;min-width:640px;padding:10px;position:relative}
+.week .dh{font:600 11px var(--f-ui);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);text-align:center;align-self:center}
+.week .dh.today{color:var(--amber)}
+.week .hr{font:11px var(--f-lcd);color:var(--faint);text-align:right;padding-right:6px;line-height:26px}
+.week .cell{background:#1a1816;border-radius:1px}
+.week .blk{border-radius:2px;padding:4px 6px;font:600 12px/1.2 var(--f-ui);letter-spacing:.02em;overflow:hidden;z-index:1}
+.week .blk span{display:block;font:500 11px var(--f-ui);opacity:.8}
+.week .blk.live{background:#3a1712;color:#ffd2cc;box-shadow:inset 3px 0 0 var(--onair)}
+.week .blk.auto{background:#2a2012;color:var(--amber-soft);box-shadow:inset 3px 0 0 var(--amber-dim)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:10px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.set{display:grid;gap:12px}
+.setrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,260px);gap:16px;align-items:center;padding:10px 0;border-top:1px solid #26231f}
+.setrow:first-of-type{border-top:0}
+.setrow b{font:600 15px var(--f-ui);letter-spacing:.02em;display:block}
+.setrow p{margin:2px 0 0;color:var(--faint);font-size:13px;max-width:56ch}
+.ctl{display:grid;grid-template-columns:minmax(0,1fr) 64px;gap:10px;align-items:center}
+.ctl output{font:13px var(--f-lcd);color:var(--amber-soft);text-align:right;font-variant-numeric:tabular-nums}
+.curve{width:100%;height:70px;display:block}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--raised);border:1px solid #000;box-shadow:var(--bevel);padding:9px 14px;font:600 12px var(--f-ui);letter-spacing:.06em;color:var(--ink);border-radius:2px;max-width:calc(100% - 32px)}
+@media (max-width:900px){.grid2{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:760px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .rail{position:static;display:flex;overflow-x:auto;gap:4px;padding-bottom:4px}
+  .rail button{flex:none}
+  .rail button[aria-current="page"]{box-shadow:inset 0 -3px 0 var(--amber)}
+  .now{margin-left:0;width:100%}
+  .setrow{grid-template-columns:minmax(0,1fr)}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+</style>
+
+<div class="app">
+  <header class="hdr">
+    <div class="brand">WordWave Manager<small>Radio WordWave / Radio WoordGolf</small></div>
+    <div class="now" aria-label="On air"><i class="lamp"></i><span>AutoDJ · Matt Redman — Abide with Me · 2:14 / 5:20</span></div>
+  </header>
+
+  <nav class="rail" aria-label="Sections">
+    <button data-v="overview" aria-current="page">Overview</button>
+    <button data-v="library">Music library <span class="count">1,299</span></button>
+    <button data-v="playlists">Playlists <span class="count warnc">5</span></button>
+    <button data-v="schedule">Schedule</button>
+    <button data-v="djs">DJs <span class="count">3</span></button>
+    <button data-v="sound">Sound &amp; safety</button>
+  </nav>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section data-view="overview">
+      <div class="vhead"><div><h1>Good afternoon</h1><p>Everything the station is doing right now, and anything that needs you.</p></div><a class="btn primary" href="#studio" onclick="toast('Opens the DJ studio in a new window');return false">Open DJ studio</a></div>
+      <div class="grid2">
+        <div class="card">
+          <h2>On air now</h2>
+          <div class="lcdbox onair">
+            <div class="row"><span class="t">Abide with Me</span><span class="pill auto">AutoDJ</span></div>
+            <div class="a">Matt Redman · Christian Playlist 3</div>
+            <div class="prog"><i></i></div>
+            <div class="row"><span>2:14</span><span>Next: A Ti Adoramos (We Praise You) · crossfade 6 s</span><span>5:20</span></div>
+          </div>
+          <div class="stats">
+            <div class="stat"><b>38</b><span>Listening now</span></div>
+            <div class="stat"><b>14:00</b><span>Next live show</span></div>
+            <div class="stat"><b>22:00</b><span>Planned until</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Needs attention</h2>
+          <ul class="checks">
+            <li><div><b>Song titles are hidden on 4 playlists</b><span class="sub">Listeners only see “Radio WordWave”. Usually meant for jingles.</span></div><button class="btn sm" data-goto="playlists">Review</button></li>
+            <li><div><b>4 copies of “Above All”</b><span class="sub">Possible duplicates in the library</span></div><button class="btn sm" data-goto="library">Show</button></li>
+          </ul>
+          <h2 style="margin-top:14px">Health</h2>
+          <ul class="checks">
+            <li><div><b>Timeline planned</b><span class="sub">Last planning run 42 s ago</span></div><span class="pill ok">Good</span></li>
+            <li><div><b>Storage</b><span class="sub">10.2 GB of 50 GB used</span><div class="storage"><i></i></div></div><span class="pill ok">Good</span></li>
+            <li><div><b>Live input</b><span class="sub">Last DJ: Sidney Lottering, today 17:09</span></div><span class="pill ok">Ready</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- LIBRARY -->
+    <section data-view="library" hidden>
+      <div class="vhead"><div><h1>Music library</h1><p>1,299 files · 10.2 GB. New songs are checked, levelled and given short fades in your browser before they upload.</p></div></div>
+      <div class="drop"><div><b>Drop songs here to add them</b><br>MP3, AAC, FLAC or WAV. Folders work too.</div><button class="btn" onclick="toast('Choose files to upload')">Choose files</button></div>
+      <div class="toolbar">
+        <input type="search" id="q" placeholder="Search title or artist" aria-label="Search the library">
+        <select id="pf" aria-label="Filter by playlist"><option value="">All playlists</option><option>Christian Playlist 3</option><option>Christian Music Playlist 1</option><option>Royalty Free 2</option></select>
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Title</th><th>Playlist</th><th class="num">Length</th><th class="num">Size</th><th>Added</th></tr></thead>
+        <tbody id="lib"></tbody>
+      </table></div>
+      <p class="hint" id="dupHint">Four versions of “Above All” are in the library. Keep the one that sounds best and remove the rest.</p>
+    </section>
+
+    <!-- PLAYLISTS -->
+    <section data-view="playlists" hidden>
+      <div class="vhead"><div><h1>Playlists</h1><p>Playlists with a higher weight play more often. Turn on “Show song titles” so listeners can see what is playing.</p></div><button class="btn primary" onclick="toast('New playlist')">New playlist</button></div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Playlist</th><th class="num">Songs</th><th class="num">Length</th><th class="num">Weight</th><th>Show song titles</th></tr></thead>
+        <tbody id="pls"></tbody>
+      </table></div>
+    </section>
+
+    <!-- SCHEDULE -->
+    <section data-view="schedule" hidden>
+      <div class="vhead"><div><h1>Weekly schedule</h1><p>The AutoDJ plays whenever no live show is booked. Live slots open the studio for that DJ only.</p></div><button class="btn primary" onclick="toast('Add a show')">Add show</button></div>
+      <div class="tablewrap"><div class="week" id="week"></div></div>
+      <div class="legend"><span><i style="background:#3a1712;box-shadow:inset 3px 0 0 var(--onair)"></i>Live show</span><span><i style="background:#2a2012;box-shadow:inset 3px 0 0 var(--amber-dim)"></i>AutoDJ block</span><span>Station time zone: Africa/Harare</span></div>
+    </section>
+
+    <!-- DJS -->
+    <section data-view="djs" hidden>
+      <div class="vhead"><div><h1>DJs</h1><p>Each DJ logs in to the studio with their own username. They can only go live in their slots unless set to “Any time”.</p></div><button class="btn primary" onclick="toast('Add a DJ')">Add DJ</button></div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>DJ</th><th>Username</th><th>When they can go live</th><th>Last on air</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>Bennie Conradie</td><td><code>bconradie</code></td><td>Friday 18:00–20:00</td><td><span class="sub">Not yet</span></td><td><button class="btn sm" onclick="toast('A reset link goes to Bennie')">Reset password</button></td></tr>
+          <tr><td>Pastor Rita Rudolph</td><td><code>rrudolph</code></td><td>Mon &amp; Fri · 10:00–11:00, 14:00–17:00</td><td><span class="sub">Not yet</span></td><td><button class="btn sm" onclick="toast('A reset link goes to Rita')">Reset password</button></td></tr>
+          <tr><td>Sidney Lottering</td><td><code>slottering</code></td><td><span class="pill ok">Any time</span></td><td>Today 17:09 · 2 min</td><td><button class="btn sm" onclick="toast('A reset link goes to Sidney')">Reset password</button></td></tr>
+        </tbody>
+      </table></div>
+      <div class="card" style="margin-top:12px">
+        <h2>How DJs go live</h2>
+        <p style="margin:0;color:var(--muted);max-width:70ch">Open the studio in Chrome or Edge, or in the Windows app, and log in. DJs who prefer BUTT or Mixxx can use the Windows app’s bridge, which forwards their broadcast to the station.</p>
+      </div>
+    </section>
+
+    <!-- SOUND & SAFETY -->
+    <section data-view="sound" hidden>
+      <div class="vhead"><div><h1>Sound &amp; safety</h1><p>How songs blend, how live shows cut in, and what happens when something goes quiet.</p></div><button class="btn primary" id="saveBtn">Save changes</button></div>
+      <div class="grid2">
+        <div class="card set">
+          <h2>Transitions</h2>
+          <div class="setrow"><div><b>Crossfade between songs</b><p>Both songs overlap for this long.</p></div><div class="ctl"><input type="range" id="xfLen" min="0" max="12" value="6" aria-label="Crossfade length"><output id="xfLenO">6 s</output></div></div>
+          <div class="setrow"><div><b>Fade shape</b><p>Equal power keeps the volume steady through the blend.</p></div><select id="curve" aria-label="Fade shape"><option value="eq">Equal power</option><option value="lin">Linear</option><option value="s">S-curve</option></select></div>
+          <svg class="curve" id="curveSvg" viewBox="0 0 300 70" preserveAspectRatio="none" aria-label="Fade shape preview"></svg>
+          <div class="setrow"><div><b>Skip fade</b><p>Used when someone presses Skip or cuts a song short.</p></div><div class="ctl"><input type="range" id="skip" min="0" max="6" step="0.5" value="2" aria-label="Skip fade"><output id="skipO">2 s</output></div></div>
+          <div class="setrow"><div><b>Live cut-in fade</b><p>Music fades out this fast when a DJ takes over.</p></div><div class="ctl"><input type="range" id="cut" min="0" max="8" step="0.5" value="3" aria-label="Live cut-in fade"><output id="cutO">3 s</output></div></div>
+          <div class="setrow"><div><b>Music under the voice</b><p>How far music drops while a DJ speaks.</p></div><div class="ctl"><input type="range" id="duckD" min="-24" max="0" value="-12" aria-label="Ducking depth"><output id="duckDO">-12 dB</output></div></div>
+        </div>
+        <div class="card set">
+          <h2>Safety nets</h2>
+          <div class="setrow"><div><b>Back to AutoDJ if a DJ drops</b><p>No live audio for this long switches back to music.</p></div><div class="ctl"><input type="range" id="dead" min="3" max="30" value="8" aria-label="Dead air fallback"><output id="deadO">8 s</output></div></div>
+          <div class="setrow"><div><b>Silence detection</b><p>Catches a muted mic or a silent track.</p></div><div class="ctl"><input type="range" id="sil" min="5" max="60" value="15" aria-label="Silence detection"><output id="silO">15 s</output></div></div>
+          <div class="setrow"><div><b>Let the DJ rejoin</b><p>A DJ who reconnects within this window fades straight back in.</p></div><div class="ctl"><input type="range" id="grace" min="0" max="120" step="5" value="30" aria-label="Rejoin window"><output id="graceO">30 s</output></div></div>
+          <h2 style="margin-top:6px">Stream</h2>
+          <div class="setrow"><div><b>Sound quality</b><p>Higher quality uses more data per listener.</p></div><select id="kbps" aria-label="Sound quality"><option value="128">128 kbps · 58 MB/hour</option><option value="192" selected>192 kbps · 86 MB/hour</option><option value="256">256 kbps · 115 MB/hour</option></select></div>
+          <div class="setrow"><div><b>Listener delay</b><p>Shorter pieces mean less delay but more requests to your server.</p></div><select id="piece" aria-label="Piece length"><option value="4">4 s pieces · about 8 s behind</option><option value="6" selected>6 s pieces · about 12 s behind</option><option value="10">10 s pieces · about 20 s behind</option></select></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const $=id=>document.getElementById(id);
+function toast(t){const el=$("toast");el.textContent=t;el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>el.hidden=true,2600)}
+function show(v){document.querySelectorAll("[data-view]").forEach(s=>s.hidden=s.dataset.view!==v);document.querySelectorAll(".rail button").forEach(b=>b.toggleAttribute("aria-current",b.dataset.v===v)&&b.setAttribute("aria-current","page"));try{localStorage.setItem("ww-view",v)}catch(e){}}
+document.querySelectorAll(".rail button").forEach(b=>b.onclick=()=>show(b.dataset.v));
+document.querySelectorAll("[data-goto]").forEach(b=>b.onclick=()=>show(b.dataset.goto));
+try{const v=localStorage.getItem("ww-view");if(v&&document.querySelector(`[data-view="${v}"]`))show(v)}catch(e){}
+
+/* library */
+const lib=[
+ ["A Little Longer","Jenn Johnson","Christian Playlist 3","7:41","14.08 MB","26 Aug 2026"],
+ ["A Ti Adoramos (We Praise You)","Matt Redman","Christian Playlist 3","7:58","10.96 MB","26 Aug 2026"],
+ ["Aaronic Benediction (Hebrew & English)","Traditional","Christian Playlist 3","0:57","0.90 MB","26 Aug 2026"],
+ ["Abide with Me","Matt Redman","Christian Playlist 3","5:20","9.78 MB","26 Aug 2026"],
+ ["Above All","Michael W. Smith","Christian Playlist 3","4:23","10.07 MB","26 Aug 2026",1],
+ ["Above All","Michael W. Smith","Christian Playlist 3","4:31","6.21 MB","26 Aug 2026",1],
+ ["Above All [Studio Version]","Michael W. Smith","Christian Playlist 3","4:36","10.56 MB","26 Aug 2026",1],
+ ["Above All (with lyrics)","Michael W. Smith","Christian Playlist 3","4:31","6.21 MB","26 Aug 2026",1]
+];
+function renderLib(){
+  const q=$("q").value.toLowerCase(),pf=$("pf").value;
+  const rows=lib.filter(r=>(!q||(r[0]+" "+r[1]).toLowerCase().includes(q))&&(!pf||r[2]===pf));
+  $("lib").innerHTML=rows.map(r=>`<tr><td>${r[0]} ${r[6]?'<span class="pill warn">Duplicate?</span>':''}<span class="sub">${r[1]}</span></td><td>${r[2]}</td><td class="num">${r[3]}</td><td class="num">${r[4]}</td><td>${r[5]}</td></tr>`).join("")||`<tr><td colspan="5" style="color:var(--faint)">No songs match. Try a shorter search.</td></tr>`;
+}
+$("q").oninput=renderLib;$("pf").onchange=renderLib;renderLib();
+
+/* playlists */
+const pls=[["Christian Music Playlist 1","Various Christian songs",494,"1 d 21 h",3,false],["Christian Music Playlist 2 Royaltyfree","",16,"1 h 17 m",3,false],["Christian Playlist 3","",664,"2 d 16 h",4,false],["Royalty Free 2","",162,"9 h 30 m",5,false],["default","Empty, never plays",0,"—",3,true]];
+$("pls").innerHTML=pls.map((p,i)=>`<tr><td>${p[0]}${p[1]?`<span class="sub">${p[1]}</span>`:""}</td><td class="num">${p[2]}</td><td class="num">${p[3]}</td><td class="num">${p[4]}</td><td><label style="display:inline-flex;gap:10px;align-items:center;cursor:pointer"><input type="checkbox" class="sw" id="pt${i}" ${p[5]?"checked":""}><span id="pts${i}">${p[5]?'<span class="pill ok">Shown</span>':'<span class="pill warn">Hidden</span>'}</span></label></td></tr>`).join("");
+pls.forEach((p,i)=>$("pt"+i).onchange=e=>{$("pts"+i).innerHTML=e.target.checked?'<span class="pill ok">Shown</span>':'<span class="pill warn">Hidden</span>';toast(e.target.checked?"Song titles show from the next song":"Song titles hidden for this playlist")});
+
+/* schedule */
+const days=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],H0=6;
+let w='<div></div>'+days.map((d,i)=>`<div class="dh${i===0?" today":""}">${d}${i===0?" · today":""}</div>`).join("");
+for(let h=H0;h<24;h++){w+=`<div class="hr" style="grid-row:${h-H0+2};grid-column:1">${String(h).padStart(2,"0")}:00</div>`;for(let d=0;d<7;d++)w+=`<div class="cell" style="grid-row:${h-H0+2};grid-column:${d+2}"></div>`}
+const blocks=[[0,6,10,"auto","Morning worship","Playlist 1"],[0,10,11,"live","Pastor Rita Rudolph","Live"],[0,11,14,"auto","Midday praise","Playlist 3"],[0,14,17,"live","Pastor Rita Rudolph","Live"],
+ [4,10,11,"live","Pastor Rita Rudolph","Live"],[4,14,17,"live","Pastor Rita Rudolph","Live"],[4,18,20,"live","Bennie Conradie","Live"],
+ [1,6,12,"auto","Morning worship","Playlist 1"],[2,6,12,"auto","Morning worship","Playlist 1"],[3,6,12,"auto","Morning worship","Playlist 1"],[5,8,12,"auto","Saturday praise","Royalty Free 2"],[6,6,9,"auto","Sunday morning","Playlist 3"]];
+blocks.forEach(b=>w+=`<div class="blk ${b[3]}" style="grid-column:${b[0]+2};grid-row:${b[1]-H0+2} / ${b[2]-H0+2}">${b[4]}<span>${b[5]}</span></div>`);
+$("week").innerHTML=w;
+
+/* sound & safety */
+const bind=(id,suf)=>{const el=$(id),o=$(id+"O");const f=()=>o.textContent=el.value+suf;el.oninput=()=>{f();if(id==="xfLen")drawCurve()};f()};
+bind("xfLen"," s");bind("skip"," s");bind("cut"," s");bind("duckD"," dB");bind("dead"," s");bind("sil"," s");bind("grace"," s");
+function drawCurve(){
+  const t=$("curve").value,len=+$("xfLen").value,W=300,H=70,pts=40;let a="",b="";
+  for(let i=0;i<=pts;i++){const x=i/pts;let out,inn;
+    if(t==="lin"){out=1-x;inn=x}else if(t==="eq"){out=Math.cos(x*Math.PI/2);inn=Math.sin(x*Math.PI/2)}else{const s=x*x*(3-2*x);out=1-s;inn=s}
+    const px=(x*W).toFixed(1);a+=(i?"L":"M")+px+","+(H-4-out*(H-12)).toFixed(1);b+=(i?"L":"M")+px+","+(H-4-inn*(H-12)).toFixed(1)}
+  $("curveSvg").innerHTML=`<rect x="0" y="0" width="${W}" height="${H}" fill="#0d0c09"/><path d="${a}" fill="none" stroke="#c98a3a" stroke-width="2"/><path d="${b}" fill="none" stroke="#ffb24a" stroke-width="2"/><text x="6" y="14" fill="#a49c8d" font-size="11" font-family="Share Tech Mono,monospace">outgoing song</text><text x="${W-6}" y="14" fill="#ffb24a" font-size="11" text-anchor="end" font-family="Share Tech Mono,monospace">next song · ${len} s</text>`;
+}
+$("curve").onchange=drawCurve;drawCurve();
+$("saveBtn").onclick=()=>toast("Saved. New settings apply from the next song.");
+</script>

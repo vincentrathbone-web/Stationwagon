@@ -1,0 +1,6 @@
+# Tests whether Apache can read the clock in rewrite rules (%{TIME_SEC}).
+# The scale-up plan uses this to pick a ready-made playlist file without running PHP.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^time-probe$ probe.php?apache_sec=%{TIME_SEC}&apache_min=%{TIME_MIN} [L,QSA]
+</IfModule>

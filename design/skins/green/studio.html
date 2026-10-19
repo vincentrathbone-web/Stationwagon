@@ -1,0 +1,440 @@
+<title>WordWave Green Studio</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a hardware console. Top bar with the on-air control; two decks flank the mixer; mic channel strip and the show running order below; status strip last. */
+:root{
+  color-scheme: dark;
+  /* Green skin: soft near-black ground, rounded cards that lift on hover, one bright green for play and live-ready actions. */
+  --ground:#121212; --panel:#181818; --raised:#242424; --edge:#2e2e2e; --hi:transparent; --shade:transparent;
+  --ink:#ffffff; --muted:#b3b3b3; --faint:#7c7c7c;
+  --lcd:#1f1f1f; --amber:#1ed760; --amber-soft:#1db954; --amber-dim:#1f5133;
+  --onair:#f15e6c; --ok:#1ed760; --warn:#ffa42b; --cue:#509bf5;
+  --f-ui:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-lcd:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"DM Mono",ui-monospace,Consolas,monospace;
+  --bevel: 0 0 0 transparent;
+  --sunken: 0 0 0 transparent;
+}
+*{box-sizing:border-box}
+html,body{background:var(--ground)}
+body{color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.45;
+  padding-block:16px 36px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.console{max-width:1280px;margin:0 auto;display:grid;gap:10px}
+.win{background:var(--panel);border:0 solid transparent;box-shadow:var(--bevel);border-radius:3px;min-width:0}
+.titlebar{display:flex;align-items:center;gap:10px;padding:5px 8px;font:600 11px/1 var(--f-ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.titlebar .grip{flex:1;height:7px;background:repeating-linear-gradient(to bottom,var(--edge) 0 1px,transparent 1px 3px)}
+.titlebar .grip.short{flex:0 0 18px}
+.body{padding:8px 10px 12px}
+.lcd{background:var(--lcd);box-shadow:var(--sunken);border-radius:2px;color:var(--amber);font-family:var(--f-lcd)}
+.label{font:600 11px var(--f-ui);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.btn{appearance:none;border:0 solid transparent;background:var(--raised);color:var(--ink);box-shadow:var(--bevel);border-radius:2px;font:600 12px/1 var(--f-ui);letter-spacing:.08em;text-transform:uppercase;padding:9px 11px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.btn:hover{background:#2a2a2a}
+.btn:active,.btn[aria-pressed="true"]{box-shadow:var(--sunken);background:#1f1f1f}
+.btn[aria-pressed="true"]{color:var(--amber)}
+.btn.cue[aria-pressed="true"]{color:var(--cue)}
+.btn.sm{padding:6px 8px;font-size:11px}
+.btn svg{width:13px;height:13px;fill:currentColor}
+.btn:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:18px;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:6px;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px}
+input[type=range]::-moz-range-track{height:6px;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:16px;margin-top:-5px;background:var(--raised);border:0 solid transparent;box-shadow:var(--bevel);border-radius:2px}
+input[type=range]::-moz-range-thumb{width:12px;height:16px;background:var(--raised);border:0 solid transparent;box-shadow:var(--bevel);border-radius:2px}
+select{background:var(--lcd);color:var(--amber-soft);border:0 solid transparent;box-shadow:var(--sunken);font:13px var(--f-lcd);padding:6px 8px;border-radius:2px;width:100%}
+
+/* top bar */
+.top{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:14px;align-items:center;padding:10px 12px}
+.brand{font:700 18px/1 var(--f-ui);letter-spacing:.04em}
+.brand small{display:block;font:600 10px var(--f-ui);letter-spacing:.16em;color:var(--faint);text-transform:uppercase;margin-top:3px}
+.show{min-width:0;display:grid;gap:4px}
+.show b{font:600 15px var(--f-ui);letter-spacing:.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.showbar{height:6px;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px;position:relative;overflow:hidden}
+.showbar i{position:absolute;inset:0 auto 0 0;background:var(--amber-soft);width:38%}
+.showmeta{display:flex;gap:12px;flex-wrap:wrap;font:12px var(--f-lcd);color:var(--muted);font-variant-numeric:tabular-nums}
+.clock{font:26px/1 var(--f-lcd);color:var(--amber);padding:8px 10px;font-variant-numeric:tabular-nums;text-shadow:0 0 8px rgba(30,215,96,.3)}
+.golive{min-width:150px;padding:14px 16px;font-size:14px;letter-spacing:.14em}
+.golive .dot{width:9px;height:9px;border-radius:50%;background:var(--faint)}
+.golive.on{background:#4a1c22;color:#ffe1e5;border-color:#000}
+.golive.on .dot{background:var(--onair);box-shadow:0 0 10px var(--onair)}
+.golive.joining .dot{background:var(--warn)}
+.banner{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:9px 12px;font:500 14px var(--f-ui);letter-spacing:.02em;border:1px solid var(--edge);border-radius:3px;background:#15301f;color:var(--amber)}
+.banner.end{background:#26121a;color:#ffc9d0;border-color:#5a2430}
+.banner .acts{display:flex;gap:6px}
+
+/* decks + mixer */
+.row1{display:grid;grid-template-columns:minmax(0,1fr) 250px minmax(0,1fr);gap:10px}
+.deck .info{padding:9px 10px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:end}
+.deck .t{font-size:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.deck .a{font-size:12px;color:var(--amber-soft);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.deck .rem{grid-row:1 / span 2;grid-column:2;font-size:30px;line-height:1;font-variant-numeric:tabular-nums;text-shadow:0 0 8px rgba(30,215,96,.3)}
+.deck .src{grid-column:1 / -1;font-size:11px;color:var(--amber-dim);margin-top:4px}
+.wave{display:block;width:100%;height:64px;margin-top:8px;cursor:pointer}
+.deck .ctl{display:flex;gap:6px;margin-top:8px;align-items:center;flex-wrap:wrap}
+.deck .fader{display:flex;gap:8px;align-items:center;flex:1 1 140px;min-width:120px}
+.deck .fader output{font:12px var(--f-lcd);color:var(--amber-soft);width:34px;text-align:right}
+.mixer .body{display:grid;gap:12px}
+.meters{display:flex;gap:10px;justify-content:center;align-items:flex-end;height:120px;padding:8px}
+.meter{width:16px;height:100%;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px;position:relative;overflow:hidden}
+.meter i{position:absolute;left:2px;right:2px;bottom:2px;height:0;background:linear-gradient(to top,var(--ok) 0 65%,var(--warn) 65% 85%,var(--onair) 85%);border-radius:1px;transition:height .08s linear}
+.meter-col{display:grid;justify-items:center;gap:4px;height:100%;grid-template-rows:1fr auto}
+.meter-col span{font:600 10px var(--f-ui);letter-spacing:.1em;color:var(--faint)}
+.xf{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:center}
+.xf b{font:700 13px var(--f-ui);color:var(--muted)}
+.talk{padding:14px;font-size:13px;letter-spacing:.14em;width:100%}
+.talk[aria-pressed="true"]{background:#1ed760;color:var(--amber)}
+.duck{font:12px var(--f-lcd);color:var(--muted);text-align:center;min-height:18px}
+.duck.on{color:var(--amber)}
+
+/* mic strip + show order */
+.row2{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:10px}
+.chain{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.mod{background:var(--raised);border:0 solid transparent;box-shadow:var(--bevel);border-radius:2px;padding:8px 9px 10px;display:grid;gap:8px;align-content:start;min-width:0}
+.mod.off{opacity:.55}
+.mod header{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.mod h3{margin:0;font:700 12px var(--f-ui);letter-spacing:.12em;text-transform:uppercase}
+.sw{appearance:none;width:30px;height:16px;border-radius:8px;background:var(--lcd);box-shadow:var(--sunken);position:relative;cursor:pointer;flex:none;margin:0}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--faint);transition:transform .15s}
+.sw:checked::after{transform:translateX(14px);background:var(--amber)}
+.ctrl{display:grid;gap:2px}
+.ctrl .lbl{display:flex;justify-content:space-between;gap:6px;font:500 11px var(--f-ui);letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.ctrl output{font:12px var(--f-lcd);color:var(--amber-soft);font-variant-numeric:tabular-nums;text-transform:none}
+.grm{height:6px;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px;position:relative;overflow:hidden}
+.grm i{position:absolute;top:0;bottom:0;right:0;width:0;background:var(--amber-soft);transition:width .1s}
+.lampline{display:flex;align-items:center;gap:6px;font:500 11px var(--f-ui);letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.lampline i{width:7px;height:7px;border-radius:50%;background:var(--amber-dim)}
+.lampline.open i{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+.chain-head{display:grid;grid-template-columns:minmax(0,1fr) 160px;gap:8px;margin-bottom:8px}
+.runorder{list-style:none;margin:0;padding:4px 0;font-family:var(--f-lcd);font-size:13px}
+.runorder li{display:grid;grid-template-columns:44px 18px minmax(0,1fr) auto auto;gap:8px;align-items:center;padding:6px 10px;color:var(--amber-soft)}
+.runorder li+li{border-top:1px solid #262626}
+.runorder .at{color:var(--amber-dim);font-variant-numeric:tabular-nums}
+.runorder .k{font:700 10px var(--f-ui);letter-spacing:.06em;text-align:center;color:var(--faint)}
+.runorder .k.song{color:var(--amber)}
+.runorder .k.talk{color:var(--cue)}
+.runorder .k.jingle{color:var(--ok)}
+.runorder .nm{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.runorder .d{font-variant-numeric:tabular-nums;color:var(--amber-dim)}
+.runorder .ld{display:flex;gap:4px}
+.runorder li.done{opacity:.4}
+.runorder li.now{background:#173a25;color:var(--amber)}
+.fill{margin-top:10px;display:grid;gap:4px}
+.fillbar{height:10px;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px;display:flex;overflow:hidden;padding:2px;gap:2px}
+.fillbar span{background:var(--amber-soft);border-radius:1px}
+.fillbar span.talk{background:#3f6f94}
+.fillbar span.jingle{background:#3f7a57}
+.fillbar span.rest{background:repeating-linear-gradient(90deg,#333333 0 3px,transparent 3px 6px)}
+.fillmeta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font:12px var(--f-lcd);color:var(--muted)}
+
+/* status */
+.status{display:flex;flex-wrap:wrap;gap:8px 22px;padding:9px 12px;font:500 12px var(--f-ui);letter-spacing:.04em;color:var(--muted)}
+.status b{color:var(--ink);font-weight:600}
+.status .okd{color:var(--ok)}
+
+@media (max-width:1050px){.row1{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.mixer{grid-column:1 / -1;order:3}.mixer .body{grid-template-columns:auto minmax(0,1fr);align-items:center}.row2{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:720px){.top{grid-template-columns:minmax(0,1fr) auto}.show{grid-column:1 / -1;order:3}.clock{display:none}.row1{grid-template-columns:minmax(0,1fr)}.mixer .body{grid-template-columns:minmax(0,1fr)}.chain{grid-template-columns:repeat(2,minmax(0,1fr))}.chain-head{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:440px){.chain{grid-template-columns:minmax(0,1fr)}.runorder li{grid-template-columns:40px 16px minmax(0,1fr) auto}.runorder .ld{display:none}}
+
+/* ---- green skin: shape and type overrides ---- */
+body{font-family:var(--f-body)}
+.win,.card,.embed,.tablewrap,.hdr,.mod,.preview{border:0;border-radius:16px;box-shadow:none}
+.win{background:var(--panel)}
+.win:hover,.card:hover{background:#1c1c1c}
+.titlebar{padding:14px 16px 4px;font:700 15px/1.2 var(--f-ui);letter-spacing:0;text-transform:none;color:var(--ink)}
+.titlebar .grip{visibility:hidden}
+.titlebar .grip.short{display:none}
+.win-body,.body{padding:8px 16px 16px}
+.lcd,.lcdbox{border-radius:12px;box-shadow:none;background:var(--lcd);text-shadow:none}
+.lcd *,.clock,.time,.rem{text-shadow:none!important}
+.btn{border:0;border-radius:999px;box-shadow:none;background:var(--raised);font:700 13px/1 var(--f-ui);letter-spacing:0;text-transform:none;padding:10px 16px}
+.btn:hover{background:#2f2f2f;transform:scale(1.03)}
+.btn:active,.btn[aria-pressed="true"]{box-shadow:none;background:#333}
+.btn.sm{padding:7px 12px;font-size:12px}
+.btn.primary,.btn.play{background:var(--amber);color:#000}
+.btn.primary:hover,.btn.play:hover{background:#3be477}
+.btn.play[aria-pressed="true"]{background:#fff;color:#000}
+.btn.cue[aria-pressed="true"]{background:#1d2f45;color:var(--cue)}
+.btn[aria-pressed="true"]:not(.play):not(.cue){color:var(--amber)}
+@media (prefers-reduced-motion:reduce){.btn:hover{transform:none}}
+input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:999px;box-shadow:none;background:#4d4d4d}
+input[type=range]::-moz-range-track{height:5px;border-radius:999px;box-shadow:none;background:#4d4d4d}
+input[type=range]::-webkit-slider-thumb{width:14px;height:14px;margin-top:-4.5px;border-radius:50%;border:0;box-shadow:none;background:#fff}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;border:0;box-shadow:none;background:#fff}
+select,input[type=search]{border:0;box-shadow:none;border-radius:999px;background:var(--raised);color:var(--ink);font:500 14px var(--f-ui);padding:9px 14px}
+.label,h2,.eyebrow,.seek-meta,.tag,.pill,th,.lbl,.mod h3,.lampline,.rail button,.meter-col span,.stat span,.dh,.brand small,.health,.status,.pl-foot,.showmeta,.fillmeta,.duck,.xf b{text-transform:none!important;letter-spacing:0!important}
+h1{font-family:var(--f-ui);font-weight:800;letter-spacing:-.02em}
+h2{font:700 18px var(--f-ui);color:var(--ink)}
+.eyebrow{font:600 13px var(--f-ui);color:var(--muted)}
+.tag,.pill{border-radius:999px;border:0;padding:4px 10px;font:600 12px var(--f-ui);background:var(--raised)}
+.brand{font-weight:800;letter-spacing:-.01em}
+pre,code{font-family:var(--f-mono)}
+.embed pre{border-radius:12px;box-shadow:none}
+.seek,.showbar,.storage,.prog,.grm,.fillbar,.meter{border-radius:999px;box-shadow:none;background:#3a3a3a}
+.seek .fill,.storage i,.showbar i,.prog i{background:var(--amber);border-radius:999px}
+.meter{width:12px}.meter i{border-radius:999px}
+.wave{border-radius:10px}
+.marquee{font-weight:700;font-size:17px;color:var(--ink)}
+.lcd .time{font-weight:800;letter-spacing:-.02em}
+.lcd .specs,.lcd .mode{color:var(--muted)}
+.lcd .mode{border-top:1px solid #2e2e2e}
+.lcd .specs b{color:var(--ink)}
+.pl{border-radius:12px;box-shadow:none;padding:6px;font-family:var(--f-ui);font-size:14px;background:transparent}
+.pl li{border-radius:8px;color:var(--ink)}
+.pl li:hover{background:#2a2a2a}
+.pl li .n,.pl li .d{color:var(--muted)}
+.pl li.now{background:#173a25;color:var(--amber)}
+.sched li{border-radius:12px}
+.sched li.current{box-shadow:none;background:#173a25;border-radius:12px}
+.sched time,.runorder,.clock,.stat b,td.num,th.num,.ctl output,.ctrl output,.vol output,.deck .fader output,.duck,.showmeta,.fillmeta,td .sub,.now{font-family:var(--f-ui)}
+.stat b{font-weight:800}
+.runorder li{border-radius:8px;color:var(--ink)}
+.runorder li+li{border-top:0}
+.runorder li.now{background:#173a25}
+.runorder .at,.runorder .d{color:var(--muted)}
+.golive{border-radius:999px;background:var(--amber);color:#000}
+.golive .dot{background:#000}
+.golive.joining{background:var(--warn);color:#000}
+.golive.on{background:var(--onair);color:#fff}
+.golive.on .dot{background:#fff;box-shadow:0 0 8px #fff}
+.talk[aria-pressed="true"]{background:var(--amber);color:#000}
+.banner{border:0;border-radius:14px}
+.mod{background:var(--raised);border-radius:14px}
+.rail button{border-radius:10px}
+.rail button[aria-current="page"]{box-shadow:none;background:var(--raised);color:var(--ink);border-radius:10px}
+.rail button[aria-current="page"]::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--amber);align-self:center;margin-right:-2px;order:-1}
+.now{border-radius:999px}
+.checks li,.stat{border-radius:12px}
+.week .cell{border-radius:6px}
+.week .blk{border-radius:8px;box-shadow:none!important}
+.week .blk.live{background:#3a1a1f}
+.week .blk.auto{background:#173322;color:var(--amber)}
+.drop{border-radius:16px;border-color:#3a3a3a}
+.toast{border:0;border-radius:999px;box-shadow:0 8px 24px rgba(0,0,0,.5);background:#fff;color:#000}
+.sw{background:#535353;box-shadow:none}
+.sw::after{background:#fff}
+.sw:checked{background:var(--amber)}
+.sw:checked::after{background:#fff}
+.lamp.auto i,.lamp i{border-radius:50%}
+table{font-family:var(--f-ui)}
+tr:hover td{background:#1f1f1f}
+</style>
+
+<div class="console">
+  <section class="win top" aria-label="Show">
+    <div class="brand">WordWave Studio<small>Radio WoordGolf · live desk</small></div>
+    <div class="show">
+      <b>Midday message · Sidney Lottering</b>
+      <div class="showbar" aria-hidden="true"><i id="showFill"></i></div>
+      <div class="showmeta"><span>14:00–14:30</span><span id="showLeft">18:36 left</span><span>No time limits on this account</span></div>
+    </div>
+    <div class="clock lcd" id="clock" aria-label="Station time">14:11:24</div>
+    <button class="btn golive" id="goLive"><span class="dot"></span><span id="goLabel">Go live</span></button>
+  </section>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <div class="row1">
+    <section class="win deck" id="deckA" aria-label="Deck A"></section>
+    <section class="win mixer" aria-label="Mixer">
+      <div class="titlebar"><span class="grip short"></span>Mixer<span class="grip"></span></div>
+      <div class="body">
+        <div class="meters" aria-label="Output level">
+          <div class="meter-col"><div class="meter"><i id="mL"></i></div><span>L</span></div>
+          <div class="meter-col"><div class="meter"><i id="mR"></i></div><span>R</span></div>
+          <div class="meter-col"><div class="meter"><i id="mMic"></i></div><span>MIC</span></div>
+        </div>
+        <div>
+          <div class="xf"><b>A</b><input type="range" id="xf" min="-100" max="100" value="-100" aria-label="Crossfader"><b>B</b></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+            <button class="btn sm" id="fadeBtn">Fade to B · 6 s</button>
+            <button class="btn sm" id="skipBtn">Skip · 2 s fade</button>
+          </div>
+        </div>
+        <div>
+          <button class="btn talk" id="talk" aria-pressed="false">Mic on air</button>
+          <div class="duck" id="duck">Music at full level</div>
+        </div>
+      </div>
+    </section>
+    <section class="win deck" id="deckB" aria-label="Deck B"></section>
+  </div>
+
+  <div class="row2">
+    <section class="win" aria-label="Microphone">
+      <div class="titlebar"><span class="grip short"></span>Microphone<span class="grip"></span></div>
+      <div class="body">
+        <div class="chain-head">
+          <div class="ctrl"><span class="lbl">Input</span><select id="dev"><option>Microphone Array (Realtek Audio)</option><option>Headset Microphone (USB Audio)</option><option>Line In (Behringer UMC22)</option></select></div>
+          <div class="ctrl"><span class="lbl">Preset</span><select id="preset"><option>Preacher</option><option>Music show</option><option>Interview</option></select></div>
+        </div>
+        <div class="chain" id="chain"></div>
+      </div>
+    </section>
+    <section class="win" aria-label="Running order">
+      <div class="titlebar"><span class="grip short"></span>Running order<span class="grip"></span></div>
+      <div class="body">
+        <ol class="runorder lcd" id="ro"></ol>
+        <div class="fill">
+          <div class="fillbar" id="fillbar" aria-hidden="true"></div>
+          <div class="fillmeta"><span id="fillTotal">27:10 planned of 30:00</span><span>AutoDJ fills the last 2:50</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="win status" aria-label="Connection">
+    <span>Sending <b>6-second pieces</b> · last sent <b id="lastSent">0.8 s</b> ago</span>
+    <span>Listeners hear you <b>12 s</b> later</span>
+    <span>Recording <b id="rec">off</b></span>
+    <span>Headphones <b>Speakers / Headphones (Realtek Audio)</b></span>
+    <span class="okd">● Connection good</span>
+  </section>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")};
+function seeded(n,seed){let x=seed,a=[];for(let i=0;i<n;i++){x=(x*9301+49297)%233280;a.push(x/233280)}return a}
+function makeWave(seed){const r=seeded(160,seed);return r.map((v,i)=>{const env=.55+.45*Math.sin(i/160*Math.PI);return Math.min(1,(.35+.65*v)*env)})}
+
+const decks={
+  A:{name:"A",title:"Above All [Studio Version]",artist:"Michael W. Smith",dur:276,pos:134,playing:true,vol:85,cue:false,src:"From AutoDJ · Christian Playlist 3",wave:makeWave(7)},
+  B:{name:"B",title:"Abide with Me",artist:"Matt Redman",dur:320,pos:0,playing:false,vol:85,cue:false,src:"Running order · item 3",wave:makeWave(23)}
+};
+function deckHTML(d){return `
+  <div class="titlebar"><span class="grip short"></span>Deck ${d.name}<span class="grip"></span><span id="st${d.name}">${d.playing?"Playing":"Ready"}</span></div>
+  <div class="body">
+    <div class="lcd info">
+      <span class="t" id="t${d.name}">${d.title}</span>
+      <span class="rem" id="r${d.name}">-${fmt(d.dur-d.pos)}</span>
+      <span class="a" id="a${d.name}">${d.artist}</span>
+      <span class="src" id="s${d.name}">${d.src}</span>
+    </div>
+    <canvas class="wave" id="w${d.name}" height="64" aria-label="Waveform, click to move the play position"></canvas>
+    <div class="ctl">
+      <button class="btn cue" id="c${d.name}" aria-pressed="false" title="Listen in headphones only">Cue</button>
+      <button class="btn" id="p${d.name}" aria-pressed="${d.playing}"><svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg>Play</button>
+      <button class="btn" id="x${d.name}"><svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10"/></svg>Stop</button>
+      <div class="fader"><span class="label">Vol</span><input type="range" min="0" max="100" value="${d.vol}" id="v${d.name}" aria-label="Deck ${d.name} volume"><output id="vo${d.name}">${d.vol}</output></div>
+    </div>
+  </div>`}
+["A","B"].forEach(k=>{
+  const d=decks[k];$("deck"+k).innerHTML=deckHTML(d);
+  $("p"+k).onclick=()=>{d.playing=!d.playing;syncDeck(k)};
+  $("x"+k).onclick=()=>{d.playing=false;d.pos=0;syncDeck(k)};
+  $("c"+k).onclick=()=>{d.cue=!d.cue;$("c"+k).setAttribute("aria-pressed",d.cue)};
+  $("v"+k).oninput=e=>{d.vol=+e.target.value;$("vo"+k).textContent=d.vol};
+  $("w"+k).onclick=e=>{const r=e.target.getBoundingClientRect();d.pos=(e.clientX-r.left)/r.width*d.dur;syncDeck(k)};
+});
+function syncDeck(k){const d=decks[k];$("p"+k).setAttribute("aria-pressed",d.playing);$("st"+k).textContent=d.playing?"Playing":"Ready";$("r"+k).textContent="-"+fmt(d.dur-d.pos);$("t"+k).textContent=d.title;$("a"+k).textContent=d.artist;$("s"+k).textContent=d.src}
+function drawWave(k){
+  const d=decks[k],cv=$("w"+k),ctx=cv.getContext("2d"),w=cv.clientWidth,h=cv.clientHeight,dpr=devicePixelRatio||1;
+  if(cv.width!==Math.round(w*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+  ctx.fillStyle="#1f1f1f";ctx.fillRect(0,0,w,h);
+  const n=d.wave.length,bw=w/n,ph=d.pos/d.dur;
+  for(let i=0;i<n;i++){const a=d.wave[i]*(h/2-4),x=i*bw;ctx.fillStyle=i/n<ph?"#1ed760":"#1f5133";ctx.fillRect(x,h/2-a,Math.max(1,bw-1),a*2)}
+  const fx=(1-6/d.dur)*w;ctx.fillStyle="rgba(124,196,255,.14)";ctx.fillRect(fx,0,w-fx,h);
+  ctx.fillStyle="#ffffff";ctx.fillRect(ph*w-1,0,2,h);
+}
+
+/* mixer */
+let xf=-100,talk=false,fading=null;
+$("xf").oninput=e=>{xf=+e.target.value};
+$("fadeBtn").onclick=()=>autoFade(6);
+$("skipBtn").onclick=()=>autoFade(2);
+function autoFade(sec){
+  const to=xf<=0?100:-100,from=xf,start=performance.now(),target=to>0?"B":"A";
+  decks[target].playing=true;syncDeck(target);
+  $("fadeBtn").textContent=`Fading to ${target}…`;
+  cancelAnimationFrame(fading);
+  const step=t=>{const p=Math.min(1,(t-start)/(sec*1000));xf=from+(to-from)*p;$("xf").value=xf;
+    if(p<1)fading=requestAnimationFrame(step);else{const other=target==="A"?"B":"A";decks[other].playing=false;syncDeck(other);$("fadeBtn").textContent=`Fade to ${other} · 6 s`}};
+  fading=requestAnimationFrame(step);
+}
+$("talk").onclick=()=>{talk=!talk;$("talk").setAttribute("aria-pressed",talk);$("talk").textContent=talk?"Mic live · tap to close":"Mic on air"};
+
+/* mic chain */
+const mods=[
+  {id:"gain",name:"Input",on:true,ctrls:[["Gain",0,24,8," dB"]]},
+  {id:"gate",name:"Gate",on:true,ctrls:[["Threshold",-70,-20,-45," dB"],["Release",50,800,200," ms"]],lamp:true},
+  {id:"comp",name:"Compressor",on:true,ctrls:[["Threshold",-40,0,-18," dB"],["Ratio",1,10,3,":1"]],gr:true},
+  {id:"eq",name:"EQ",on:true,ctrls:[["Low cut",40,200,80," Hz"],["Presence",0,8,2," dB"]]},
+  {id:"lim",name:"Limiter",on:true,ctrls:[["Ceiling",-6,0,-1," dBFS"]]},
+  {id:"duck",name:"Ducking",on:true,ctrls:[["Depth",-24,0,-12," dB"],["Release",200,2000,800," ms"]]}
+];
+const presets={"Preacher":{gate:[-45,200],comp:[-18,3],eq:[80,2],duck:[-12,800]},"Music show":{gate:[-55,300],comp:[-14,2],eq:[60,1],duck:[-8,600]},"Interview":{gate:[-50,150],comp:[-20,4],eq:[100,3],duck:[-15,900]}};
+$("chain").innerHTML=mods.map(m=>`<div class="mod" id="m-${m.id}"><header><h3>${m.name}</h3><input type="checkbox" class="sw" id="sw-${m.id}" ${m.on?"checked":""} aria-label="${m.name} on"></header>
+ ${m.ctrls.map((c,i)=>`<div class="ctrl"><span class="lbl"><label for="${m.id}${i}">${c[0]}</label><output id="o-${m.id}${i}">${c[3]}${c[4]}</output></span><input type="range" id="${m.id}${i}" min="${c[1]}" max="${c[2]}" value="${c[3]}"></div>`).join("")}
+ ${m.lamp?'<div class="lampline" id="gateLamp"><i></i><span>Closed</span></div>':""}${m.gr?'<div class="ctrl"><span class="lbl">Gain reduction<output id="grv">0 dB</output></span><div class="grm"><i id="gr"></i></div></div>':""}</div>`).join("");
+mods.forEach(m=>{
+  $("sw-"+m.id).onchange=e=>{$("m-"+m.id).classList.toggle("off",!e.target.checked)};
+  m.ctrls.forEach((c,i)=>{$(m.id+i).oninput=e=>{$("o-"+m.id+i).textContent=e.target.value+c[4]}});
+});
+$("preset").onchange=e=>{const p=presets[e.target.value];for(const id in p)p[id].forEach((v,i)=>{const el=$(id+i);el.value=v;el.dispatchEvent(new Event("input"))})};
+const val=id=>+$(id).value, on=id=>$("sw-"+id).checked;
+
+/* running order */
+const items=[["jingle","WoordGolf station ID",12],["talk","Welcome and prayer",240],["song","Matt Redman — Abide with Me",320],["talk","Message: Psalm 23",540],["song","Jenn Johnson — A Little Longer",461],["song","Traditional — Aaronic Benediction",57]];
+let roNow=1;
+function renderRO(){
+  let t=0;$("ro").innerHTML=items.map((it,i)=>{const at="14:"+String(Math.floor(t/60)).padStart(2,"0");t+=it[2];
+    const k=it[0]==="song"?"♪":it[0]==="talk"?"MIC":"ID";
+    return `<li class="${i<roNow?"done":i===roNow?"now":""}"><span class="at">${at}</span><span class="k ${it[0]}">${k}</span><span class="nm">${it[1]}</span><span class="d">${fmt(it[2])}</span><span class="ld">${it[0]==="talk"?"":`<button class="btn sm" data-load="A" data-i="${i}">A</button><button class="btn sm" data-load="B" data-i="${i}">B</button>`}</span></li>`}).join("");
+  $("fillbar").innerHTML=items.map(it=>`<span class="${it[0]}" style="flex:${it[2]}"></span>`).join("")+`<span class="rest" style="flex:${1800-t}"></span>`;
+  $("fillTotal").textContent=fmt(t)+" planned of 30:00";
+  document.querySelectorAll("[data-load]").forEach(b=>b.onclick=()=>{const it=items[+b.dataset.i],d=decks[b.dataset.load],[ar,ti]=it[1].split(" — ");
+    d.title=ti||it[1];d.artist=ti?ar:"Station jingle";d.dur=it[2];d.pos=0;d.playing=false;d.src="Running order · item "+(+b.dataset.i+1);d.wave=makeWave(+b.dataset.i*13+5);syncDeck(b.dataset.load)});
+}
+renderRO();
+
+/* go live flow */
+let live="off",liveSec=0;
+const banner=$("banner");
+function setBanner(html,cls){banner.innerHTML=html;banner.className="banner"+(cls?" "+cls:"");banner.hidden=!html}
+$("goLive").onclick=()=>{
+  if(live==="off"){
+    live="joining";$("goLive").className="btn golive joining";$("goLabel").textContent="Joining…";
+    setBanner(`<span>Joining in sync. Deck A picks up “${decks.A.title}” at ${fmt(decks.A.pos)}, exactly where the AutoDJ is. Listeners hear no change.</span>`);
+    setTimeout(()=>{live="on";liveSec=0;$("goLive").className="btn golive on";$("rec").textContent="Midday message 2026-10-19 14:11";
+      setBanner(`<span>You are on air. Fade the song down under your voice whenever you are ready.</span>`);setTimeout(()=>{if(live==="on")setBanner("")},4000)},2200);
+  } else if(live==="on"){
+    setBanner(`<span>End the show? The AutoDJ takes over with a 6 s crossfade into the next song.</span><span class="acts"><button class="btn sm" id="endYes">End show</button><button class="btn sm" id="endNo">Keep going</button></span>`,"end");
+    $("endYes").onclick=()=>{live="off";$("goLive").className="btn golive";$("goLabel").textContent="Go live";$("rec").textContent="saved · 27:40";setBanner("<span>Handed back to the AutoDJ. Your recording is saved and ready to publish as a podcast episode.</span>");setTimeout(()=>setBanner(""),4500)};
+    $("endNo").onclick=()=>setBanner("");
+  }
+};
+
+/* engine tick */
+let last=performance.now(),acc=0,showSec=11*60+24;
+function tick(t){
+  const dt=(t-last)/1000;last=t;acc+=dt;
+  ["A","B"].forEach(k=>{const d=decks[k];if(d.playing){d.pos+=dt;if(d.pos>=d.dur){d.pos=d.dur;d.playing=false;syncDeck(k)}}});
+  if(acc>=.25){acc=0;
+    ["A","B"].forEach(k=>{$("r"+k).textContent="-"+fmt(decks[k].dur-decks[k].pos)});
+    showSec+=.25;const s=Math.floor(showSec);
+    $("clock").textContent="14:"+String(Math.floor(s/60)%60).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
+    $("showLeft").textContent=fmt(1800-s)+" left";$("showFill").style.width=(s/1800*100)+"%";
+    if(live==="on"){liveSec+=.25;$("goLabel").textContent="On air "+fmt(liveSec)}
+    $("lastSent").textContent=(0.3+Math.random()*1.2).toFixed(1)+" s";
+  }
+  const gA=Math.cos((xf+100)/200*Math.PI/2),gB=Math.sin((xf+100)/200*Math.PI/2);
+  const speaking=talk&&Math.random()>.12, micRaw=speaking?.55+Math.random()*.4:.04+Math.random()*.05;
+  const gateOpen=!on("gate")||(micRaw*70-70)>val("gate0");
+  const duckOn=talk&&on("duck")&&gateOpen;
+  const duckGain=duckOn?Math.pow(10,val("duck0")/20):1;
+  let music=0;["A","B"].forEach((k,i)=>{const d=decks[k];if(d.playing)music+=(.55+Math.random()*.3)*(d.vol/100)*(i?gB:gA)});
+  music*=duckGain;
+  const mic=gateOpen?micRaw*(on("gain")?Math.min(1,.6+val("gain0")/60):.6):0;
+  const gr=on("comp")&&gateOpen?Math.max(0,(mic*40-40-val("comp0"))*(1-1/val("comp1"))):0;
+  $("mL").style.height=Math.min(98,(music+mic*.7)*80)+"%";$("mR").style.height=Math.min(98,(music*.96+mic*.7)*80)+"%";$("mMic").style.height=Math.min(98,mic*90)+"%";
+  $("gr").style.width=Math.min(100,gr*6)+"%";$("grv").textContent="-"+gr.toFixed(1)+" dB";
+  const gl=$("gateLamp");gl.classList.toggle("open",gateOpen&&talk);gl.lastChild.textContent=gateOpen&&talk?"Open":"Closed";
+  const du=$("duck");du.classList.toggle("on",duckOn);du.textContent=duckOn?`Music ducked ${val("duck0")} dB while you speak`:talk?"Mic live · waiting for your voice":"Music at full level";
+  drawWave("A");drawWave("B");
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>

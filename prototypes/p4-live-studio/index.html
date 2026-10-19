@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P4 Live studio · Stationwagon</title>
+<link rel="stylesheet" href="../shared/proto.css">
+<script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
+<style>
+  .golive{font-size:16px;padding:14px 22px}
+  .golive.on{background:var(--live);color:#000}
+  .xf{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="faint">Stationwagon prototype P4 · Chrome or Edge, on localhost or HTTPS, with headphones</p>
+    <h1>Live studio</h1>
+    <p class="muted">Go live picks up the AutoDJ song in sync on Deck A, then sends your own mix to the station as 6-second MP3 pieces. Listen on P1 (on another device) to hear what listeners hear.</p>
+  </header>
+
+  <section class="card">
+    <div class="row">
+      <label style="flex:1;min-width:160px">DJ name<input type="text" id="dj" value="Sidney Lottering"></label>
+      <label style="flex:1;min-width:160px">Control key<input type="password" id="key" autocomplete="off"></label>
+      <label>Mic preset<select id="preset"><option>Preacher</option><option>Music show</option><option>Interview</option></select></label>
+      <button id="prep" class="primary">Prepare studio</button>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button id="golive" class="golive" disabled>Go live</button>
+      <span class="big" id="onair">Off air</span>
+    </div>
+    <p class="muted" id="banner" style="margin-top:8px">Prepare the studio to allow the microphone.</p>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Deck A · AutoDJ pickup</h2>
+      <dl class="kv"><dt>Song</dt><dd id="aTitle">–</dd><dt>Position</dt><dd id="aPos">–</dd><dt>Drift vs timeline</dt><dd id="aDrift">–</dd></dl>
+      <div class="row" style="margin-top:10px"><button id="aFade" disabled>Fade out · 6 s</button><button id="aStop" disabled>Stop</button></div>
+    </section>
+    <section class="card">
+      <h2>Deck B · your file</h2>
+      <input type="file" id="bFile" accept="audio/*" disabled>
+      <dl class="kv" style="margin-top:8px"><dt>Song</dt><dd id="bTitle">–</dd><dt>Position</dt><dd id="bPos">–</dd></dl>
+      <div class="row" style="margin-top:10px"><button id="bPlay" disabled>Play</button></div>
+    </section>
+    <section class="card">
+      <h2>Mixer</h2>
+      <div class="xf"><b>A</b><input type="range" id="xf" min="0" max="1" step="0.01" value="0" aria-label="Crossfader"><b>B</b></div>
+      <div class="row" style="margin-top:10px"><button id="xfAuto" disabled>Crossfade · 6 s</button><button id="talk" disabled aria-pressed="false">Mic on air</button><button id="hear" aria-pressed="false">Hear my mic</button></div>
+      <p class="faint" style="margin-top:10px">Stream level</p><div class="meter"><i id="mStream"></i></div>
+      <p class="faint" style="margin-top:6px">Mic <span class="pill" id="gate">closed</span> <span class="pill" id="duck">music full</span></p><div class="meter live"><i id="mMic"></i></div>
+    </section>
+    <section class="card">
+      <h2>Sending</h2>
+      <dl class="kv">
+        <dt>Pieces sent</dt><dd id="sent">0</dd>
+        <dt>Waiting to send</dt><dd id="queue">0</dd>
+        <dt>Last sent</dt><dd id="last">–</dd>
+        <dt>Encoder</dt><dd id="enc">–</dd>
+        <dt>Listeners hear you</dt><dd>about 18–25 s later</dd>
+      </dl>
+    </section>
+  </div>
+
+  <section class="card"><h2>Log</h2><pre class="log" id="log"></pre></section>
+</div>
+
+<script type="module">
+import { ServerClock, fmt, clockText, getKey, setKey, control } from "../shared/js/clock.js";
+import { Deck } from "../shared/js/deck.js";
+import { createMicChain, createDucker, getMic } from "../shared/js/micchain.js";
+import { Mp3FrameSplitter } from "../shared/js/mp3frames.js";
+
+const $ = (id) => document.getElementById(id);
+const log = (m) => { const p = $("log"); p.textContent = `${new Date().toLocaleTimeString()}  ${m}\n` + p.textContent.slice(0, 8000); };
+const clock = new ServerClock(new URL("../api/timeline.php", location.href).href);
+const base = new URL("../", location.href);
+const PIECE_SECONDS = 6, KBPS = 192;
+
+$("key").value = getKey();
+$("key").onchange = (e) => setKey(e.target.value);
+
+let ctx, chain, ducker, deckA, deckB, gA, gB, musicBus, micOnAir, micMonitor, streamBus, tap;
+let live = null, handover = null, talk = false;
+let encoder = null, splitter = null, pieceFrames = [], pieceSamples = 0, seq = 0, armedAt = null;
+const queue = []; let sending = false, sentCount = 0, lastSentAt = null;
+
+const TAP_WORKLET = `
+class SwTap extends AudioWorkletProcessor {
+  constructor(){ super(); this.size = 4096; this.l = new Float32Array(this.size); this.r = new Float32Array(this.size); this.n = 0; this.start = 0; }
+  process(inputs){
+    const inp = inputs[0]; if (!inp || !inp.length) return true;
+    const L = inp[0], R = inp[1] || inp[0];
+    if (this.n === 0) this.start = currentFrame;
+    for (let i = 0; i < L.length; i++) { this.l[this.n] = L[i]; this.r[this.n] = R[i]; this.n++; }
+    if (this.n >= this.size) { this.port.postMessage({ frame: this.start, l: this.l.slice(0, this.n), r: this.r.slice(0, this.n) }); this.n = 0; }
+    return true;
+  }
+}
+registerProcessor("sw-tap", SwTap);`;
+
+async function prepare() {
+  ctx = new AudioContext({ sampleRate: 44100 });
+  await ctx.resume();
+  await clock.sync(4);
+  log(`Clock synced: offset ${(clock.offsetMs / 1000).toFixed(3)} s, round trip ${clock.rttMs.toFixed(0)} ms. Sample rate ${ctx.sampleRate} Hz`);
+  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([TAP_WORKLET], { type: "text/javascript" })));
+
+  // music: deck A and B through the crossfader into the music bus (ducked while the mic is live)
+  musicBus = ctx.createGain();
+  gA = ctx.createGain(); gB = ctx.createGain();
+  gA.connect(musicBus); gB.connect(musicBus);
+  deckA = new Deck(ctx, gA, "A"); deckB = new Deck(ctx, gB, "B");
+  deckA.gain.gain.value = 1; deckB.gain.gain.value = 1;
+  setXf(0);
+
+  // mic chain
+  chain = await createMicChain(ctx, await getMic(), undefined);
+  chain.usePreset($("preset").value);
+  micOnAir = ctx.createGain(); micOnAir.gain.value = 0;
+  micMonitor = ctx.createGain(); micMonitor.gain.value = 0;
+  chain.output.connect(micOnAir);
+  micOnAir.connect(micMonitor).connect(ctx.destination);
+  ducker = createDucker(ctx, musicBus, chain, () => talk);
+
+  // what listeners get: music + mic -> tap (encoder). The DJ hears the music bus directly.
+  streamBus = ctx.createGain();
+  musicBus.connect(streamBus); micOnAir.connect(streamBus);
+  musicBus.connect(ctx.destination);
+  streamBus.analyser = ctx.createAnalyser(); streamBus.connect(streamBus.analyser);
+  tap = new AudioWorkletNode(ctx, "sw-tap", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: "explicit" });
+  const silent = ctx.createGain(); silent.gain.value = 0;
+  streamBus.connect(tap).connect(silent).connect(ctx.destination);
+  tap.port.onmessage = (e) => onPcm(e.data);
+
+  ["golive", "talk", "xfAuto", "bFile"].forEach((id) => ($(id).disabled = false));
+  $("prep").disabled = true;
+  $("banner").textContent = "Studio ready. Wear headphones, then press Go live.";
+  setInterval(ui, 200);
+  setInterval(() => clock.fetchTimeline().catch(() => {}), 3000);
+}
+
+function setXf(v) {
+  $("xf").value = v;
+  const t = ctx.currentTime;
+  gA.gain.setTargetAtTime(Math.cos(v * Math.PI / 2), t, 0.01);
+  gB.gain.setTargetAtTime(Math.sin(v * Math.PI / 2), t, 0.01);
+}
+
+// ---- go live / end show ----
+async function goLive() {
+  if (live) return endShow();
+  $("golive").disabled = true;
+  try {
+    const r = await control("golive", { dj: $("dj").value || "Studio" });
+    live = r.live; handover = r.handover;
+    await clock.fetchTimeline();
+    if (handover && handover.type === "song") {
+      deckA.load(new URL(handover.url, base).href, "handover", handover);
+      await deckA.playFrom(clock.now() - handover.start + 0.05);
+      setXf(0);
+      $("aTitle").textContent = handover.title;
+      $("aFade").disabled = false; $("aStop").disabled = false;
+    }
+    encoder = new lamejs.Mp3Encoder(2, ctx.sampleRate, KBPS);
+    splitter = new Mp3FrameSplitter();
+    pieceFrames = []; pieceSamples = 0; seq = 0; armedAt = live.start;
+    $("golive").textContent = "Joining…";
+    $("banner").textContent = `Joining in sync: Deck A picks up “${handover ? handover.title : "the AutoDJ"}” where the AutoDJ is. You take over at ${clockText(live.start)}.`;
+    log(`Live block ${live.id} starts at ${clockText(live.start)} (in ${(live.start - clock.now()).toFixed(1)} s)`);
+  } catch (e) {
+    log("Go live failed: " + e.message);
+  } finally { $("golive").disabled = false; }
+}
+
+async function endShow() {
+  $("golive").disabled = true;
+  $("banner").textContent = "Ending the show: sending the last audio, then handing back to the AutoDJ…";
+  const id = live.id;
+  armedAt = null;
+  const tail = splitter.push(new Uint8Array(encoder.flush()));
+  addFrames(tail, true);
+  await waitForQueue();
+  try { const r = await control("endlive", { live: id }); log(`Show ended. AutoDJ resumes at ${clockText(r.stream_end)}`); }
+  catch (e) { log("End show failed: " + e.message); }
+  live = null; encoder = null;
+  $("golive").textContent = "Go live"; $("golive").classList.remove("on"); $("golive").disabled = false;
+  $("onair").textContent = "Off air";
+  $("banner").textContent = "Handed back to the AutoDJ.";
+}
+
+// ---- encoding ----
+const toInt16 = (f) => { const o = new Int16Array(f.length); for (let i = 0; i < f.length; i++) { const s = Math.max(-1, Math.min(1, f[i])); o[i] = s < 0 ? s * 0x8000 : s * 0x7fff; } return o; };
+
+function onPcm({ frame, l, r }) {
+  if (!live || !encoder || armedAt === null) return;
+  // map this chunk's AudioContext time to server time
+  const chunkStart = clock.now() + (frame / ctx.sampleRate - ctx.currentTime);
+  const chunkEnd = chunkStart + l.length / ctx.sampleRate;
+  if (chunkEnd <= armedAt) return;                         // still before our slot
+  let from = 0;
+  if (!live.sending) {
+    from = Math.max(0, Math.round((armedAt - chunkStart) * ctx.sampleRate));
+    live.sending = true;
+    $("golive").textContent = "End show"; $("golive").classList.add("on");
+    $("banner").textContent = "You are on air. Fade Deck A down under your voice when you are ready.";
+    log(`On air: first sample at ${clockText(chunkStart + from / ctx.sampleRate)}`);
+  }
+  const mp3 = encoder.encodeBuffer(toInt16(l.subarray(from)), toInt16(r.subarray(from)));
+  addFrames(splitter.push(new Uint8Array(mp3.buffer, mp3.byteOffset, mp3.length)), false);
+}
+
+function addFrames(frames, final) {
+  for (const f of frames) { pieceFrames.push(f.bytes); pieceSamples += f.samples; }
+  if (pieceSamples >= PIECE_SECONDS * ctx.sampleRate || (final && pieceFrames.length)) {
+    const total = pieceFrames.reduce((n, b) => n + b.length, 0);
+    const body = new Uint8Array(total); let o = 0; for (const b of pieceFrames) { body.set(b, o); o += b.length; }
+    queue.push({ live: live.id, seq: seq++, dur: pieceSamples / ctx.sampleRate, body });
+    pieceFrames = []; pieceSamples = 0;
+    pump();
+  }
+}
+
+async function pump() {
+  if (sending) return;
+  sending = true;
+  while (queue.length) {
+    const p = queue[0];
+    try {
+      const url = new URL(`../api/upload.php?live=${encodeURIComponent(p.live)}&seq=${p.seq}&dur=${p.dur.toFixed(4)}`, location.href);
+      const res = await fetch(url, { method: "POST", body: p.body, headers: { "X-Key": getKey(), "Content-Type": "audio/mpeg" } });
+      const json = await res.json().catch(() => ({}));
+      if (res.status === 410) { log("The server ended the show: " + (json.error || "")); queue.length = 0; live = null; armedAt = null; $("golive").textContent = "Go live"; $("golive").classList.remove("on"); $("onair").textContent = "Off air"; $("banner").textContent = "The station went back to the AutoDJ because no audio arrived in time."; break; }
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      queue.shift(); sentCount++; lastSentAt = performance.now();
+    } catch (e) {
+      log(`Piece ${p.seq} not sent (${e.message}). Retrying in 1 s`);
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+  sending = false;
+}
+const waitForQueue = () => new Promise((resolve) => { const t = setInterval(() => { if (!queue.length && !sending) { clearInterval(t); resolve(); } }, 100); });
+
+// ---- controls ----
+$("prep").onclick = () => prepare().catch((e) => log("Could not prepare the studio: " + e.message));
+$("golive").onclick = goLive;
+$("preset").onchange = (e) => chain && chain.usePreset(e.target.value);
+$("xf").oninput = (e) => setXf(+e.target.value);
+$("xfAuto").onclick = () => {
+  const from = +$("xf").value, to = from < 0.5 ? 1 : 0, t0 = performance.now();
+  const step = () => { const p = Math.min(1, (performance.now() - t0) / 6000); setXf(from + (to - from) * p); if (p < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+};
+$("aFade").onclick = () => { deckA.ramp(0, 6); setTimeout(() => deckA.el.pause(), 6200); log("Deck A fading out over 6 s"); };
+$("aStop").onclick = () => { deckA.el.pause(); };
+$("bFile").onchange = (e) => { const f = e.target.files[0]; if (!f) return; deckB.load(URL.createObjectURL(f), "file:" + f.name, { title: f.name }); $("bTitle").textContent = f.name; $("bPlay").disabled = false; };
+$("bPlay").onclick = () => { if (deckB.el.paused) { deckB.el.play(); $("bPlay").textContent = "Pause"; } else { deckB.el.pause(); $("bPlay").textContent = "Play"; } };
+$("talk").onclick = () => {
+  talk = !talk;
+  $("talk").setAttribute("aria-pressed", talk);
+  micOnAir.gain.setTargetAtTime(talk ? 1 : 0, ctx.currentTime, 0.02);
+};
+$("hear").onclick = (e) => {
+  const on = e.target.getAttribute("aria-pressed") !== "true";
+  e.target.setAttribute("aria-pressed", on);
+  if (micMonitor) micMonitor.gain.value = on ? 1 : 0;
+};
+
+function ui() {
+  const now = clock.now();
+  if (live && live.sending) $("onair").textContent = `On air ${fmt(now - live.start)}`;
+  if (deckA.entry && !deckA.el.paused) {
+    $("aPos").textContent = fmt(deckA.el.currentTime);
+    if (handover) $("aDrift").textContent = `${((deckA.el.currentTime - (now - handover.start)) * 1000).toFixed(0)} ms`;
+  }
+  if (deckB.entry) $("bPos").textContent = fmt(deckB.el.currentTime);
+  $("sent").textContent = sentCount; $("queue").textContent = queue.length;
+  $("last").textContent = lastSentAt ? `${((performance.now() - lastSentAt) / 1000).toFixed(1)} s ago` : "–";
+  $("enc").textContent = encoder ? `MP3 ${KBPS} kbps · ${ctx.sampleRate} Hz` : "–";
+  const m = chain.meters();
+  $("mMic").style.width = Math.max(0, Math.min(100, (m.outDb + 60) / 60 * 100)) + "%";
+  $("gate").textContent = talk ? (m.gateOpen ? "open" : "closed") : "off air";
+  $("duck").textContent = ducker.ducked ? `music ${chain.settings.duckDepth} dB` : "music full";
+  const buf = new Float32Array(1024); streamBus.analyser.getFloatTimeDomainData(buf);
+  let pk = 0; for (const v of buf) pk = Math.max(pk, Math.abs(v));
+  $("mStream").style.width = Math.max(0, Math.min(100, ((pk > 0 ? 20 * Math.log10(pk) : -100) + 60) / 60 * 100)) + "%";
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# Live pieces (data/live/*) must be public; the JSON state and locks must not.
+<FilesMatch "\.(json|lock|tmp)$">
+    Require all denied
+</FilesMatch>
+Options -Indexes

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P2 Crossfade player · Stationwagon</title>
+<link rel="stylesheet" href="../shared/proto.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="faint">Stationwagon prototype P2</p>
+    <h1>Two-deck crossfade player</h1>
+    <p class="muted">Follows the same timeline as P1, but mixes in the browser: real equal-power crossfades, a 2 s fade on Skip, and drift correction. Open it in two browsers to check they stay together.</p>
+  </header>
+
+  <section class="card">
+    <div class="row">
+      <button class="primary" id="start">Start listening</button>
+      <button id="stop" disabled>Stop</button>
+      <button id="skip" disabled>Skip song</button>
+      <label style="flex:1;min-width:160px">Volume<input type="range" id="vol" min="0" max="1" step="0.01" value="0.8"></label>
+    </div>
+    <p class="big" id="now" style="margin-top:14px">–</p>
+    <p class="muted" id="nowsub">–</p>
+  </section>
+
+  <div class="grid">
+    <section class="card" id="deckA"><h2>Deck A</h2><dl class="kv"></dl><div class="meter"><i></i></div></section>
+    <section class="card" id="deckB"><h2>Deck B</h2><dl class="kv"></dl><div class="meter"><i></i></div></section>
+    <section class="card">
+      <h2>Sync</h2>
+      <dl class="kv">
+        <dt>Server clock</dt><dd id="srv">–</dd>
+        <dt>Clock offset</dt><dd id="off">–</dd>
+        <dt>Drift (playing deck)</dt><dd id="drift">–</dd>
+        <dt>Corrections</dt><dd id="corr">0</dd>
+        <dt>Next change</dt><dd id="next">–</dd>
+      </dl>
+    </section>
+  </div>
+
+  <section class="card"><h2>Log</h2><pre class="log" id="log"></pre></section>
+</div>
+
+<script type="module">
+import { ServerClock, fmt, clockText, control } from "../shared/js/clock.js";
+import { Deck } from "../shared/js/deck.js";
+
+const clock = new ServerClock(new URL("../api/timeline.php", location.href).href);
+const base = new URL("../", location.href);
+const $ = (id) => document.getElementById(id);
+const log = (m) => { const p = $("log"); p.textContent = `${new Date().toLocaleTimeString()}  ${m}\n` + p.textContent.slice(0, 6000); };
+const key = (e) => `${e.n}:${e.start}`;
+
+let ctx, master, decks = [], timer, poller, corrections = 0, lastDrift = null;
+const started = new Set();   // entry keys whose start has been handled
+
+async function start() {
+  ctx = new AudioContext();
+  master = ctx.createGain();
+  master.gain.value = +$("vol").value;
+  master.connect(ctx.destination);
+  decks = [new Deck(ctx, master, "A"), new Deck(ctx, master, "B")];
+  decks.forEach((d) => (d.analyser = ctx.createAnalyser(), d.gain.connect(d.analyser)));
+  await clock.sync(4);
+  log(`Clock synced: offset ${(clock.offsetMs / 1000).toFixed(3)} s, round trip ${clock.rttMs.toFixed(0)} ms`);
+  timer = setInterval(tick, 100);
+  poller = setInterval(() => clock.fetchTimeline().catch((e) => log(e.message)), 1500);
+  $("start").disabled = true; $("stop").disabled = false; $("skip").disabled = false;
+}
+
+function stop() {
+  clearInterval(timer); clearInterval(poller);
+  decks.forEach((d) => d.unload());
+  started.clear();
+  ctx && ctx.close();
+  $("start").disabled = false; $("stop").disabled = true; $("skip").disabled = true;
+  log("Stopped");
+}
+
+const ctxAt = (serverTime) => ctx.currentTime + (serverTime - clock.now());
+const deckFor = (e) => decks.find((d) => d.key === key(e));
+function freeDeck(except, now) {
+  return decks.find((d) => d !== except && d.busyUntil <= now) || null;
+}
+
+function tick() {
+  const tl = clock.last;
+  if (!tl) return;
+  const now = clock.now();
+  const songs = tl.entries;
+  const i = songs.findIndex((e) => e.start <= now && (now < e.end || (e.type === "live" && e.open)));
+  const cur = songs[i];
+  const next = songs[i + 1];
+
+  if (!cur) { $("now").textContent = "Waiting for the timeline…"; return; }
+  if (cur.type === "live") {
+    $("now").textContent = `LIVE · ${cur.dj}`;
+    $("nowsub").textContent = "P2 plays the AutoDJ only. Listen to live shows on P1.";
+    decks.forEach((d) => { if (d.playing && d.busyUntil <= now) { d.ramp(0, 1); d.busyUntil = now + 1; setTimeout(() => d.unload(), 1100); } });
+    return;
+  }
+
+  // 1. The current song must be on a deck (joining mid-song, or after a missed start)
+  let curDeck = deckFor(cur);
+  if (!curDeck || (!curDeck.playing && !started.has(key(cur)))) {
+    curDeck = curDeck || freeDeck(null, now) || decks[0];
+    if (!started.has(key(cur))) {
+      started.add(key(cur));
+      curDeck.load(new URL(cur.url, base).href, key(cur), cur);
+      const offset = clock.now() - cur.start;
+      curDeck.playFrom(offset + 0.15).then(() => curDeck.ramp(1, 0.4)).catch((e) => log("Play failed: " + e.message));
+      curDeck.busyUntil = cur.end + cur.fade_out;
+      log(`Joined “${cur.title}” at ${fmt(offset)} on deck ${curDeck.name}`);
+    }
+  }
+
+  // 2. Preload the next song on the other deck
+  if (next && next.type === "song" && next.start - now < 20) {
+    let nd = deckFor(next);
+    if (!nd) { nd = freeDeck(curDeck, now); if (nd) { nd.load(new URL(next.url, base).href, key(next), next); log(`Preloaded “${next.title}” on deck ${nd.name}`); } }
+    // 3. Crossfade: start the next song on its boundary, fade the current one out under it
+    if (nd && !started.has(key(next)) && next.start - now < 0.4) {
+      started.add(key(next));
+      const fade = Math.max(0.3, Math.min(cur.fade_out, (cur.full || cur.play) - cur.play + 0.001));
+      const wait = Math.max(0, (next.start - clock.now()) * 1000);
+      setTimeout(() => {
+        const late = Math.max(0, clock.now() - next.start);
+        nd.playFrom(late).catch((e) => log("Play failed: " + e.message));
+        const at = ctx.currentTime;
+        nd.gain.gain.value = 0;
+        nd.ramp(1, fade, at);
+        curDeck.ramp(0, fade, at);
+        curDeck.busyUntil = next.start + fade + 0.2;
+        nd.busyUntil = next.end + next.fade_out;
+        const outgoing = curDeck;
+        setTimeout(() => { if (outgoing.key === key(cur)) outgoing.unload(); }, (fade + 0.3) * 1000);
+        log(`${cur.cut ? "Skip" : "Crossfade"} ${fade.toFixed(1)} s: “${cur.title}” → “${next.title}”${late > 0.05 ? ` (started ${late.toFixed(2)} s late)` : ""}`);
+      }, wait);
+    }
+  }
+
+  // 4. Drift correction on the current deck (not during a fade)
+  const inFade = next && now > next.start - 0.5;
+  if (curDeck && curDeck.playing && curDeck.key === key(cur) && !inFade && now - cur.start > 1) {
+    const drift = curDeck.el.currentTime - (now - cur.start);
+    lastDrift = drift;
+    if (Math.abs(drift) > 0.3 && !curDeck.correcting) {
+      curDeck.correcting = true; corrections++;
+      curDeck.ramp(0, 0.15);
+      setTimeout(() => {
+        curDeck.el.currentTime = clock.now() - cur.start + 0.15;
+        curDeck.ramp(1, 0.3);
+        setTimeout(() => (curDeck.correcting = false), 1500);
+      }, 160);
+      log(`Drift ${drift.toFixed(2)} s on deck ${curDeck.name}: corrected with a short dip`);
+    }
+  }
+
+  // UI
+  $("now").textContent = cur.title;
+  $("nowsub").textContent = `${fmt(now - cur.start)} / ${fmt(cur.play)}${cur.cut ? " · cut by Skip" : ""}`;
+  $("srv").textContent = clockText(now);
+  $("off").textContent = `${(clock.offsetMs / 1000).toFixed(3)} s (round trip ${clock.rttMs.toFixed(0)} ms)`;
+  $("drift").textContent = lastDrift === null ? "–" : `${(lastDrift * 1000).toFixed(0)} ms`;
+  $("corr").textContent = corrections;
+  $("next").textContent = next ? `${next.type === "live" ? "Live show" : next.title} in ${fmt(next.start - now)}` : "–";
+  const buf = new Uint8Array(256);
+  decks.forEach((d) => {
+    const card = $("deck" + d.name);
+    card.querySelector("dl").innerHTML = `<dt>Song</dt><dd>${d.entry ? d.entry.title : "–"}</dd><dt>Position</dt><dd>${d.entry ? fmt(d.el.currentTime) : "–"}</dd><dt>Volume</dt><dd>${(d.gain.gain.value * 100).toFixed(0)}%</dd><dt>State</dt><dd>${d.playing ? "Playing" : d.key ? "Loaded" : "Free"}</dd>`;
+    d.analyser.getByteTimeDomainData(buf);
+    let peak = 0; for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
+    card.querySelector(".meter i").style.width = `${Math.min(100, (peak / 128) * 140)}%`;
+  });
+}
+
+$("start").onclick = () => start().catch((e) => log(e.message));
+$("stop").onclick = stop;
+$("vol").oninput = (e) => master && (master.gain.value = +e.target.value);
+$("skip").onclick = async () => {
+  try { const r = await control("skip"); log(`Skip requested: cut at ${clockText(r.cut_at)}`); await clock.fetchTimeline(); }
+  catch (e) { log("Skip failed: " + e.message); }
+};
+</script>
+</body>
+</html>

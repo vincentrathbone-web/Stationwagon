@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P3 Mic chain · Stationwagon</title>
+<link rel="stylesheet" href="../shared/proto.css">
+<style>
+  .mods{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .mod{background:var(--raised);border-radius:10px;padding:12px;display:grid;gap:10px;align-content:start}
+  .mod header{display:flex;justify-content:space-between;align-items:center}
+  .mod h3{margin:0;font-size:14px}
+  .mod.off{opacity:.5}
+  .val{font-family:var(--mono);color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="faint">Stationwagon prototype P3 · runs in the browser only (localhost or HTTPS)</p>
+    <h1>Mic chain and ducking</h1>
+    <p class="muted">Use headphones. Speak like a preacher, pause between sentences, and play a song to hear the music duck under your voice.</p>
+  </header>
+
+  <section class="card">
+    <div class="row">
+      <button class="primary" id="start">Start microphone</button>
+      <label style="min-width:240px;flex:1">Input<select id="dev"><option value="">Default microphone</option></select></label>
+      <label>Preset<select id="preset"><option>Preacher</option><option>Music show</option><option>Interview</option></select></label>
+      <button id="monitor" aria-pressed="false">Hear myself</button>
+    </div>
+    <div class="grid" style="margin-top:14px">
+      <div><p class="faint">Before the chain <span class="val" id="inDb"></span></p><div class="meter"><i id="mIn"></i></div></div>
+      <div><p class="faint">After the chain <span class="val" id="outDb"></span></p><div class="meter"><i id="mOut"></i></div></div>
+      <div><p class="faint">Compressor gain reduction <span class="val" id="grDb"></span></p><div class="meter live"><i id="mGr"></i></div></div>
+    </div>
+    <p style="margin-top:10px">Gate: <span class="pill" id="gate">closed</span> · Music: <span class="pill" id="duck">full level</span></p>
+  </section>
+
+  <section class="card"><h2>Modules</h2><div class="mods" id="mods"></div></section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Music for the ducking test</h2>
+      <input type="file" id="file" accept="audio/*">
+      <div class="row" style="margin-top:10px"><button id="musicPlay" disabled>Play music</button><span class="muted" id="musicName">Choose an MP3 from your computer</span></div>
+    </section>
+    <section class="card">
+      <h2>Listen back</h2>
+      <p class="muted">Records 20 seconds of the processed voice and music mix.</p>
+      <div class="row" style="margin-top:10px"><button id="rec" disabled>Record 20 s</button><audio id="playback" controls style="flex:1;min-width:200px"></audio></div>
+    </section>
+  </div>
+</div>
+
+<script type="module">
+import { createMicChain, createDucker, listInputs, getMic, PRESETS } from "../shared/js/micchain.js";
+const $ = (id) => document.getElementById(id);
+let ctx, chain, ducker, monitorGain, mixOut, musicGain, musicEl, musicSrc;
+
+const MODULES = [
+  ["input", "Input", [["gain", "Gain", 0, 24, 1, " dB"]]],
+  ["gate", "Gate", [["gateThreshold", "Threshold", -80, -20, 1, " dB"], ["gateRelease", "Release", 0.05, 0.8, 0.01, " s"]]],
+  ["eq", "EQ", [["lowcut", "Low cut", 40, 200, 5, " Hz"], ["presence", "Presence", 0, 8, 0.5, " dB"]]],
+  ["comp", "Compressor", [["compThreshold", "Threshold", -40, 0, 1, " dB"], ["compRatio", "Ratio", 1, 10, 0.5, ":1"], ["makeup", "Make-up", 0, 12, 0.5, " dB"]]],
+  ["limiter", "Limiter", [["ceiling", "Ceiling", -6, 0, 0.5, " dBFS"]]],
+  ["duck", "Ducking", [["duckDepth", "Depth", -24, 0, 1, " dB"], ["duckRelease", "Release", 0.2, 2, 0.1, " s"]]],
+];
+function renderModules() {
+  $("mods").innerHTML = MODULES.map(([id, name, ctrls]) => `<div class="mod" id="mod-${id}"><header><h3>${name}</h3><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="en-${id}" checked> On</label></header>
+    ${ctrls.map(([k, l, min, max, step, unit]) => `<label>${l} <span class="val" id="v-${k}"></span><input type="range" id="c-${k}" min="${min}" max="${max}" step="${step}"></label>`).join("")}</div>`).join("");
+  MODULES.forEach(([id, , ctrls]) => {
+    $("en-" + id).onchange = (e) => { chain && chain.setEnabled(id, e.target.checked); $("mod-" + id).classList.toggle("off", !e.target.checked); };
+    ctrls.forEach(([k, , , , , unit]) => { $("c-" + k).oninput = (e) => { chain && chain.set(k, +e.target.value); $("v-" + k).textContent = e.target.value + unit; }; });
+  });
+}
+function syncControls(s) {
+  MODULES.forEach(([, , ctrls]) => ctrls.forEach(([k, , , , , unit]) => { $("c-" + k).value = s[k]; $("v-" + k).textContent = s[k] + unit; }));
+}
+renderModules();
+syncControls(PRESETS.Preacher);
+
+async function start() {
+  ctx = ctx || new AudioContext();
+  await ctx.resume();
+  if (chain) { chain.stop(); ducker.stop(); }
+  const stream = await getMic($("dev").value || undefined);
+  chain = await createMicChain(ctx, stream, PRESETS[$("preset").value]);
+  syncControls(chain.settings);
+  mixOut = mixOut || ctx.createMediaStreamDestination();
+  monitorGain = monitorGain || ctx.createGain();
+  monitorGain.gain.value = $("monitor").getAttribute("aria-pressed") === "true" ? 1 : 0;
+  chain.output.connect(monitorGain).connect(ctx.destination);
+  chain.output.connect(mixOut);
+  if (!musicGain) { musicGain = ctx.createGain(); musicGain.connect(ctx.destination); musicGain.connect(mixOut); }
+  ducker = createDucker(ctx, musicGain, chain);
+  const inputs = await listInputs();
+  const current = $("dev").value;
+  $("dev").innerHTML = '<option value="">Default microphone</option>' + inputs.map((d) => `<option value="${d.deviceId}">${d.label || "Microphone"}</option>`).join("");
+  $("dev").value = current;
+  $("start").textContent = "Restart microphone";
+  $("rec").disabled = false;
+  if (musicEl) $("musicPlay").disabled = false;
+}
+$("start").onclick = () => start().catch((e) => alertBox(e));
+$("dev").onchange = () => chain && start();
+$("preset").onchange = (e) => { if (chain) { chain.usePreset(e.target.value); syncControls(chain.settings); } else syncControls(PRESETS[e.target.value]); };
+$("monitor").onclick = (e) => {
+  const on = e.target.getAttribute("aria-pressed") !== "true";
+  e.target.setAttribute("aria-pressed", on);
+  if (monitorGain) monitorGain.gain.value = on ? 1 : 0;
+};
+function alertBox(e) { $("gate").textContent = "Microphone blocked: " + e.message; $("gate").className = "pill bad"; }
+
+$("file").onchange = (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  musicEl = musicEl || new Audio();
+  musicEl.src = URL.createObjectURL(f); musicEl.loop = true;
+  $("musicName").textContent = f.name;
+  if (ctx && !musicSrc) { musicSrc = ctx.createMediaElementSource(musicEl); musicSrc.connect(musicGain); }
+  $("musicPlay").disabled = !ctx;
+};
+$("musicPlay").onclick = () => {
+  if (!musicSrc) { musicSrc = ctx.createMediaElementSource(musicEl); musicSrc.connect(musicGain); }
+  if (musicEl.paused) { musicEl.play(); $("musicPlay").textContent = "Pause music"; } else { musicEl.pause(); $("musicPlay").textContent = "Play music"; }
+};
+
+$("rec").onclick = () => {
+  const rec = new MediaRecorder(mixOut.stream);
+  const parts = [];
+  rec.ondataavailable = (e) => parts.push(e.data);
+  rec.onstop = () => { $("playback").src = URL.createObjectURL(new Blob(parts, { type: rec.mimeType })); $("rec").disabled = false; $("rec").textContent = "Record 20 s"; };
+  rec.start(); $("rec").disabled = true;
+  let left = 20; $("rec").textContent = `Recording… ${left}`;
+  const t = setInterval(() => { left--; $("rec").textContent = `Recording… ${left}`; if (left <= 0) { clearInterval(t); rec.stop(); } }, 1000);
+};
+
+const pct = (dbv) => Math.max(0, Math.min(100, (dbv + 60) / 60 * 100));
+(function meters() {
+  if (chain) {
+    const m = chain.meters();
+    $("mIn").style.width = pct(m.inDb) + "%"; $("inDb").textContent = m.inDb.toFixed(0) + " dB";
+    $("mOut").style.width = pct(m.outDb) + "%"; $("outDb").textContent = m.outDb.toFixed(0) + " dB";
+    $("mGr").style.width = Math.min(100, -m.reductionDb * 6) + "%"; $("grDb").textContent = m.reductionDb.toFixed(1) + " dB";
+    $("gate").textContent = m.gateOpen ? "open" : "closed"; $("gate").className = "pill " + (m.gateOpen ? "ok" : "");
+    $("duck").textContent = ducker && ducker.ducked ? `ducked ${chain.settings.duckDepth} dB` : "full level"; $("duck").className = "pill " + (ducker && ducker.ducked ? "warn" : "");
+  }
+  requestAnimationFrame(meters);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# test audio and generated state
+prototypes/media/*
+!prototypes/media/README.md
+prototypes/data/*
+!prototypes/data/.htaccess
+
+# local tooling
+node_modules/
+.env
+*.log
+.DS_Store
+Thumbs.db

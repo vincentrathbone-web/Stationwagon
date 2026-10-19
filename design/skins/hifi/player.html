@@ -1,0 +1,271 @@
+<title>WordWave Player</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=Share+Tech+Mono&display=swap">
+<style>
+/* Layout: a narrow Winamp-style stack (main window + playlist) beside a quieter schedule column; stacks to one column on phones. */
+:root{
+  color-scheme: dark;
+  --ground:#141311; --panel:#1f1d1a; --raised:#2a2723; --edge:#3a3630; --hi:#4b463e; --shade:#0a0908;
+  --ink:#ece6da; --muted:#a49c8d; --faint:#70695e;
+  --lcd:#0d0c09; --amber:#ffb24a; --amber-soft:#c98a3a; --amber-dim:#5c4220;
+  --onair:#ff5442; --ok:#6fd398; --warn:#f2c14e;
+  --f-ui:"Barlow Semi Condensed","Arial Narrow",Arial,sans-serif;
+  --f-body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-lcd:"Share Tech Mono",ui-monospace,Consolas,monospace;
+  --bevel: inset 1px 1px 0 var(--hi), inset -1px -1px 0 var(--shade);
+  --sunken: inset 1px 1px 0 var(--shade), inset -1px -1px 0 var(--hi);
+}
+*{box-sizing:border-box}
+html,body{background:var(--ground)}
+body{color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;
+  padding-block:28px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.shell{max-width:980px;margin:0 auto;display:grid;grid-template-columns:minmax(0,470px) minmax(0,1fr);gap:28px;align-items:start}
+@media (max-width:860px){.shell{grid-template-columns:minmax(0,1fr);max-width:500px}}
+.stack{display:grid;gap:10px;min-width:0}
+
+/* window chrome */
+.win{background:var(--panel);box-shadow:var(--bevel),0 1px 0 #000;border:1px solid #000;border-radius:3px;min-width:0}
+.titlebar{display:flex;align-items:center;gap:10px;padding:5px 8px;font:600 11px/1 var(--f-ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.titlebar .grip{flex:1;height:7px;background:repeating-linear-gradient(to bottom,var(--edge) 0 1px,transparent 1px 3px);opacity:.9}
+.titlebar .grip.short{flex:0 0 18px}
+.win-body{padding:8px 10px 12px}
+
+/* LCD */
+.lcd{background:var(--lcd);box-shadow:var(--sunken);border-radius:2px;padding:10px 12px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;color:var(--amber);font-family:var(--f-lcd)}
+.lcd .clock{grid-row:span 2;display:flex;align-items:flex-start;gap:8px}
+.lcd .state{font-size:13px;line-height:30px;width:12px;text-shadow:0 0 6px rgba(255,178,74,.45)}
+.lcd .time{font-size:38px;line-height:1;letter-spacing:.02em;text-shadow:0 0 8px rgba(255,178,74,.35);font-variant-numeric:tabular-nums}
+.marquee{overflow:hidden;white-space:nowrap;font-size:15px;line-height:22px;mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
+.marquee span{display:inline-block;padding-left:100%;animation:scroll 16s linear infinite}
+@keyframes scroll{to{transform:translateX(-100%)}}
+@media (prefers-reduced-motion:reduce){.marquee span{animation:none;padding-left:0}}
+.lcd .specs{display:flex;gap:10px;font-size:11px;color:var(--amber-soft);flex-wrap:wrap}
+.lcd .specs b{font-weight:400;color:var(--amber)}
+.lcd canvas{grid-column:1 / -1;width:100%;height:46px;display:block;margin-top:4px}
+.lcd .mode{grid-column:1 / -1;display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--amber-soft);border-top:1px dashed var(--amber-dim);padding-top:6px;margin-top:2px}
+.lamp{display:inline-flex;align-items:center;gap:6px}
+.lamp i{width:7px;height:7px;border-radius:50%;background:var(--amber-dim)}
+.lamp.on i{background:var(--onair);box-shadow:0 0 8px var(--onair)}
+.lamp.auto i{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+.lamp.warn i{background:var(--warn);box-shadow:0 0 6px var(--warn)}
+
+/* progress */
+.seek{margin-top:10px;height:9px;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px;position:relative;overflow:hidden}
+.seek .fill{position:absolute;inset:0 auto 0 0;background:linear-gradient(var(--amber-soft),var(--amber-dim));width:0}
+.seek .xf{position:absolute;top:0;bottom:0;right:0;background:repeating-linear-gradient(90deg,rgba(255,178,74,.25) 0 2px,transparent 2px 4px)}
+.seek-meta{display:flex;justify-content:space-between;font:500 11px var(--f-ui);letter-spacing:.06em;color:var(--faint);margin-top:4px;text-transform:uppercase}
+
+/* transport */
+.transport{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.btn{appearance:none;border:1px solid #000;background:var(--raised);color:var(--ink);box-shadow:var(--bevel);border-radius:2px;font:600 12px/1 var(--f-ui);letter-spacing:.08em;text-transform:uppercase;padding:9px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.btn:hover{background:#322e29}
+.btn:active,.btn[aria-pressed="true"]{box-shadow:var(--sunken);background:#24211d}
+.btn:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.btn svg{width:14px;height:14px;fill:currentColor}
+.btn.play{min-width:92px;justify-content:center}
+.btn.play[aria-pressed="true"]{color:var(--amber)}
+.vol{display:flex;align-items:center;gap:8px;margin-left:auto;min-width:150px;flex:1 1 150px;max-width:220px}
+.vol label{font:600 11px var(--f-ui);letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;width:100%;height:18px}
+input[type=range]::-webkit-slider-runnable-track{height:6px;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px}
+input[type=range]::-moz-range-track{height:6px;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:16px;margin-top:-5px;background:var(--raised);border:1px solid #000;box-shadow:var(--bevel);border-radius:2px}
+input[type=range]::-moz-range-thumb{width:12px;height:16px;background:var(--raised);border:1px solid #000;box-shadow:var(--bevel);border-radius:2px}
+.vol output{font:13px var(--f-lcd);color:var(--amber-soft);width:30px;text-align:right;font-variant-numeric:tabular-nums}
+.health{margin-top:10px;font:500 12px var(--f-ui);letter-spacing:.04em;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap}
+.health b{color:var(--ink);font-weight:600}
+
+/* playlist */
+.pl{list-style:none;margin:0;padding:4px 0;background:var(--lcd);box-shadow:var(--sunken);border-radius:2px;font-family:var(--f-lcd);font-size:13px}
+.pl li{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:8px;padding:5px 10px;color:var(--amber-soft);align-items:baseline}
+.pl li .n{color:var(--amber-dim);text-align:right;font-variant-numeric:tabular-nums}
+.pl li .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl li .d{font-variant-numeric:tabular-nums;color:var(--amber-dim)}
+.pl li.past{opacity:.45}
+.pl li.now{background:#2a1e0e;color:var(--amber)}
+.pl li.now .n,.pl li.now .d{color:var(--amber)}
+.pl li.live{color:#ffd2cc;background:#2a1311}
+.pl li.live .n{color:var(--onair)}
+.pl-foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:8px;font:500 12px var(--f-ui);letter-spacing:.05em;color:var(--muted)}
+
+/* side column */
+.side{display:grid;gap:22px;min-width:0;padding-top:4px}
+.eyebrow{font:600 11px var(--f-ui);letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin:0 0 6px}
+h1{font:700 30px/1.1 var(--f-ui);letter-spacing:.01em;margin:0;text-wrap:balance}
+h2{font:600 15px var(--f-ui);letter-spacing:.12em;text-transform:uppercase;margin:0 0 10px;color:var(--muted)}
+.lede{color:var(--muted);margin:8px 0 0;max-width:52ch}
+.sched{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.sched li{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:12px;align-items:center;padding:9px 10px;border-radius:2px;background:var(--panel)}
+.sched time{font:13px var(--f-lcd);color:var(--muted);font-variant-numeric:tabular-nums}
+.sched .what{min-width:0}
+.sched .what b{display:block;font-weight:600;font-family:var(--f-ui);font-size:15px;letter-spacing:.02em}
+.sched .what span{font-size:13px;color:var(--faint)}
+.tag{font:600 10px var(--f-ui);letter-spacing:.12em;text-transform:uppercase;padding:3px 7px;border-radius:2px;border:1px solid var(--edge);color:var(--muted);white-space:nowrap}
+.tag.live{border-color:#6b2a22;color:#ff9a8c;background:#26120f}
+.tag.now{border-color:var(--amber-dim);color:var(--amber);background:#241a0c}
+.sched li.current{box-shadow:inset 3px 0 0 var(--amber);border-radius:0}
+.embed{background:var(--panel);border:1px solid #000;box-shadow:var(--bevel);border-radius:3px;padding:12px}
+.embed pre{margin:0;background:var(--lcd);box-shadow:var(--sunken);padding:10px;border-radius:2px;font:12px/1.5 var(--f-lcd);color:var(--amber-soft);overflow-x:auto;white-space:pre}
+.embed .row{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.embed small{color:var(--faint);font-size:12px}
+.preview{border:1px dashed var(--edge);border-radius:3px;padding:10px 12px}
+.preview p{margin:0 0 8px;font-size:13px;color:var(--faint)}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--raised);border:1px solid #000;box-shadow:var(--bevel);padding:8px 14px;font:600 12px var(--f-ui);letter-spacing:.06em;color:var(--ink);border-radius:2px}
+</style>
+
+<div class="shell">
+  <div class="stack">
+    <section class="win" aria-label="Player">
+      <div class="titlebar"><span class="grip short"></span>Radio WordWave · WoordGolf<span class="grip"></span><span id="titleLamp" class="lamp auto"><i></i>AutoDJ</span></div>
+      <div class="win-body">
+        <div class="lcd">
+          <div class="clock"><span class="state" id="stateGlyph">■</span><span class="time" id="lcdTime">0:00</span></div>
+          <div class="marquee" aria-live="polite"><span id="marquee">Matt Redman — Abide with Me</span></div>
+          <div class="specs"><span><b>192</b> kbps</span><span><b>44</b> kHz</span><span>stereo</span><span id="xfNote"></span></div>
+          <canvas id="spec" height="46" aria-hidden="true"></canvas>
+          <div class="mode"><span id="modeLamp" class="lamp auto"><i></i><span id="modeText">AutoDJ · Christian Playlist 3</span></span><span id="behind">12 s behind live</span></div>
+        </div>
+        <div class="seek" aria-hidden="true"><div class="fill" id="fill"></div><div class="xf" id="xfZone"></div></div>
+        <div class="seek-meta"><span id="elapsed">0:00</span><span>crossfade 6 s</span><span id="remain">-0:00</span></div>
+        <div class="transport">
+          <button class="btn play" id="playBtn" aria-pressed="false"><svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg><span>Listen</span></button>
+          <button class="btn" id="stopBtn"><svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10"/></svg>Stop</button>
+          <div class="vol"><label for="vol">Vol</label><input id="vol" type="range" min="0" max="100" value="72"><output id="volOut" for="vol">72</output></div>
+        </div>
+        <div class="health"><span>Connection <b id="conn">Ready</b></span><span>Dropouts <b id="drops">0</b></span><span>Listening <b id="listeners">38</b></span></div>
+      </div>
+    </section>
+
+    <section class="win" aria-label="Playlist">
+      <div class="titlebar"><span class="grip short"></span>Playlist<span class="grip"></span></div>
+      <div class="win-body">
+        <ol class="pl" id="pl"></ol>
+        <div class="pl-foot"><span id="plSource">Christian Playlist 3 · 664 songs</span><span id="upNext">Up next in 0:00</span></div>
+      </div>
+    </section>
+  </div>
+
+  <aside class="side">
+    <header>
+      <p class="eyebrow">Listener player · design preview</p>
+      <h1>Radio WordWave / Radio WoordGolf</h1>
+      <p class="lede">Christian music around the clock, with live messages from the pulpit. Press Listen and the player joins everyone else at the same moment in the broadcast.</p>
+    </header>
+
+    <section>
+      <h2>Today · Monday 19 October</h2>
+      <ol class="sched">
+        <li><time>06:00–10:00</time><div class="what"><b>Morning worship</b><span>AutoDJ · Christian Music Playlist 1</span></div><span class="tag">AutoDJ</span></li>
+        <li><time>10:00–11:00</time><div class="what"><b>Pastor Rita Rudolph</b><span>Morning message</span></div><span class="tag live">Live</span></li>
+        <li class="current"><time>11:00–14:00</time><div class="what"><b>Midday praise</b><span>AutoDJ · Christian Playlist 3</span></div><span class="tag now">On now</span></li>
+        <li><time>14:00–17:00</time><div class="what"><b>Pastor Rita Rudolph</b><span>Afternoon programme</span></div><span class="tag live">Live</span></li>
+        <li><time>17:00–24:00</time><div class="what"><b>Evening rotation</b><span>AutoDJ · Royalty Free 2</span></div><span class="tag">AutoDJ</span></li>
+      </ol>
+    </section>
+
+    <section class="embed">
+      <h2>Put the player on your website</h2>
+      <pre id="code">&lt;iframe src="https://radio.controll.co.za/embed/wordwave"
+        width="470" height="420" allow="autoplay"&gt;&lt;/iframe&gt;</pre>
+      <div class="row"><small>Example address. The real one appears once the station is installed.</small><button class="btn" id="copyBtn">Copy code</button></div>
+    </section>
+
+    <section class="preview">
+      <p>Design preview: switch what the station is doing to see how the player reacts.</p>
+      <div class="seg" role="group" aria-label="Station state">
+        <button class="btn" data-state="auto" aria-pressed="true">AutoDJ</button>
+        <button class="btn" data-state="live" aria-pressed="false">Live DJ on air</button>
+        <button class="btn" data-state="drop" aria-pressed="false">Listener connection drops</button>
+      </div>
+    </section>
+  </aside>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const songs=[
+  ["Michael W. Smith","Above All",263],["Jenn Johnson","A Little Longer",461],["Matt Redman","Abide with Me",320],
+  ["Matt Redman","A Ti Adoramos (We Praise You)",478],["Traditional","Aaronic Benediction (Hebrew & English)",57],["Michael W. Smith","Above All [Studio Version]",276]
+];
+let cur=2, pos=134, playing=false, state="auto", drops=0, xfLeft=0;
+const $=id=>document.getElementById(id);
+const fmt=s=>{s=Math.max(0,Math.floor(s));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")};
+function renderList(){
+  const pl=$("pl"); pl.innerHTML="";
+  if(state==="live"){
+    const li=document.createElement("li");li.className="live";
+    li.innerHTML='<span class="n">●</span><span class="t">LIVE · Sidney Lottering · Midday message</span><span class="d">'+fmt(pos)+'</span>';
+    pl.appendChild(li);
+  }
+  for(let i=cur-2;i<=cur+3;i++){
+    const k=(i+songs.length)%songs.length,[a,t,d]=songs[k];
+    const li=document.createElement("li");
+    li.className=i<cur?"past":(i===cur&&state!=="live"?"now":"");
+    li.innerHTML='<span class="n">'+(k+101)+'.</span><span class="t">'+a+' — '+t+'</span><span class="d">'+fmt(d)+'</span>';
+    pl.appendChild(li);
+  }
+}
+function setMarquee(){
+  $("marquee").textContent = state==="live" ? "ON AIR · Sidney Lottering · Midday message  ·  live from the studio" :
+    state==="drop" ? "Connection lost · fading out softly · rejoining the broadcast…" :
+    songs[cur][0]+" — "+songs[cur][1];
+}
+function paint(){
+  const d=songs[cur][2];
+  $("lcdTime").textContent=fmt(state==="live"?pos:pos);
+  $("elapsed").textContent=fmt(pos);
+  $("remain").textContent=state==="live"?"live":"-"+fmt(d-pos);
+  $("fill").style.width=state==="live"?"100%":(pos/d*100)+"%";
+  $("xfZone").style.width=state==="live"?"0":(6/d*100)+"%";
+  $("upNext").textContent=state==="live"?"AutoDJ returns when the show ends":"Up next in "+fmt(d-pos);
+  $("stateGlyph").textContent=!playing?"■":state==="drop"?"…":"▶";
+  $("xfNote").textContent=xfLeft>0?"crossfading":"";
+}
+function applyState(s){
+  state=s;
+  document.querySelectorAll("[data-state]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.state===s));
+  const lamp=$("modeLamp"),tl=$("titleLamp");
+  if(s==="live"){lamp.className="lamp on";tl.className="lamp on";tl.lastChild.textContent="On air";$("modeText").textContent="Live · Sidney Lottering";$("plSource").textContent="Live show · AutoDJ paused";pos=48;}
+  else if(s==="drop"){lamp.className="lamp warn";tl.className="lamp warn";tl.lastChild.textContent="Rejoining";$("modeText").textContent="Rejoining · fading back in";drops++;$("drops").textContent=drops;$("conn").textContent="Rejoining";
+    setTimeout(()=>{if(state==="drop"){applyState("auto");toast("Back in sync. It sounded like a short dip, not a break.")}},3500);}
+  else{lamp.className="lamp auto";tl.className="lamp auto";tl.lastChild.textContent="AutoDJ";$("modeText").textContent="AutoDJ · Christian Playlist 3";$("plSource").textContent="Christian Playlist 3 · 664 songs";if(playing)$("conn").textContent="Good";}
+  setMarquee();renderList();paint();
+}
+function toast(t){const el=$("toast");el.textContent=t;el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>el.hidden=true,2600)}
+$("playBtn").onclick=()=>{playing=!playing;$("playBtn").setAttribute("aria-pressed",playing);$("playBtn").querySelector("span").textContent=playing?"Pause":"Listen";$("conn").textContent=playing?"Good":"Paused";paint()};
+$("stopBtn").onclick=()=>{playing=false;$("playBtn").setAttribute("aria-pressed","false");$("playBtn").querySelector("span").textContent="Listen";$("conn").textContent="Stopped";paint()};
+$("vol").oninput=e=>$("volOut").textContent=e.target.value;
+document.querySelectorAll("[data-state]").forEach(b=>b.onclick=()=>applyState(b.dataset.state));
+$("copyBtn").onclick=()=>{const txt=$("code").textContent;
+  try{navigator.clipboard.writeText(txt).then(()=>toast("Copied"),()=>selectCode())}catch(e){selectCode()}};
+function selectCode(){const r=document.createRange();r.selectNodeContents($("code"));const s=getSelection();s.removeAllRanges();s.addRange(r);toast("Selected. Press Ctrl+C to copy.")}
+setInterval(()=>{
+  if(!playing||state==="drop"){paint();return}
+  pos++;
+  if(state!=="live"){const d=songs[cur][2]; if(d-pos<=6&&xfLeft===0)xfLeft=6; if(xfLeft>0)xfLeft--; if(pos>=d){cur=(cur+1)%songs.length;pos=0;setMarquee();renderList();}}
+  if(Math.random()<.2)$("listeners").textContent=36+Math.floor(Math.random()*6);
+  paint();
+},1000);
+
+/* spectrum */
+const cv=$("spec"),ctx=cv.getContext("2d");let bars=new Array(28).fill(0),peaks=new Array(28).fill(0);
+function draw(){
+  const w=cv.clientWidth,h=cv.clientHeight,dpr=devicePixelRatio||1;
+  if(cv.width!==w*dpr){cv.width=w*dpr;cv.height=h*dpr;}
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+  const n=bars.length,bw=(w-(n-1)*2)/n,t=performance.now()/1000;
+  const active=playing&&state!=="drop", level=state==="live"?.75:1;
+  for(let i=0;i<n;i++){
+    const target=active?(.25+.55*Math.abs(Math.sin(t*(1.3+i*.17)+i))*(1-i/n*.55)*level+Math.random()*.15):0;
+    bars[i]+= (target-bars[i])*.25; peaks[i]=Math.max(peaks[i]-.012,bars[i]);
+    const bh=Math.max(1,bars[i]*h), x=i*(bw+2);
+    for(let y=h;y>h-bh;y-=3){ctx.fillStyle=y<h*.3?"#ffd08a":y<h*.6?"#ffb24a":"#c98a3a";ctx.fillRect(x,y-2,bw,2)}
+    ctx.fillStyle="#5c4220";ctx.fillRect(x,h-peaks[i]*h-2,bw,1.5);
+  }
+  requestAnimationFrame(draw);
+}
+renderList();setMarquee();paint();
+if(!matchMedia("(prefers-reduced-motion: reduce)").matches)requestAnimationFrame(draw);
+</script>
