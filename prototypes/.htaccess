@@ -14,4 +14,9 @@
   <FilesMatch "\.mp3$">
     Header set Cache-Control "public, max-age=31536000, immutable"
   </FilesMatch>
+  # The HLS playlist: Cloudflare may keep it for 2 s, browsers always ask again. Set here because
+  # a parent .htaccess on the host forces no-cache on everything, PHP's own header included.
+  <Files "stream.php">
+    Header set Cache-Control "public, max-age=0, s-maxage=2"
+  </Files>
 </IfModule>

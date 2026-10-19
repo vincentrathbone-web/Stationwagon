@@ -150,7 +150,7 @@ a{color:var(--accent)}
         <h2 id="nextTitle"></h2>
         <p id="nextText"></p>
       </section>
-      <section class="box call">
+      <section class="box call" id="callBox">
         <span class="kicker">Needs your call</span>
         <h2 id="callTitle"></h2>
         <p id="callText"></p>
@@ -169,18 +169,21 @@ a{color:var(--accent)}
 <script>
 /* Everything on the map comes from this one object. Update it after each round. */
 const MAP = {
-  updated: "20 Oct · 00:15",
-  commits: 7,
+  updated: "20 Oct · 00:31",
+  commits: 8,
   milestones: [
     { name: "Plan & design", when: "Done · 19 Oct", state: "done" },
-    { name: "Proof of concept", when: "Almost done", state: "now" },
-    { name: "Core & manager", when: "Next · est. Nov", ver: "v0.1", state: "next" },
-    { name: "Player & studio", when: "est. Dec", ver: "v0.4", state: "later" },
+    { name: "Proof of concept", when: "Done · 20 Oct", state: "done" },
+    { name: "Core & manager", when: "Starting · est. Nov", ver: "v0.1", state: "now" },
+    { name: "Player & studio", when: "est. Dec", ver: "v0.4", state: "next" },
     { name: "WordWave pilot", when: "est. Jan", ver: "v0.8", state: "later" },
     { name: "Launch", when: "est. Feb–Mar", ver: "v1.0", state: "later" }
   ],
   left: [
-    { text: "Playlist load for many listeners", state: "progress" }
+    { text: "Database schema", state: "progress" },
+    { text: "Web installer", state: "todo" },
+    { text: "Planner as a service", state: "todo" },
+    { text: "Station manager screens", state: "todo" }
   ],
   parts: [
     { name: "Host check (P0)", ms: "Proof of concept", state: "done", foot: "Green on Laragon and on cPanel" },
@@ -190,33 +193,26 @@ const MAP = {
     { name: "Live studio (P4)", ms: "Proof of concept", state: "done", foot: "Live from a 4G phone to the real server" },
     { name: "Mic chain (P3)", ms: "Proof of concept", state: "done", foot: "Gate, recording and ducking all good" },
     { name: "cPanel test server", ms: "Proof of concept", state: "done", foot: "wordwave.controll.co.za, deploy script" },
-    { name: "Cloudflare caching", ms: "Proof of concept", state: "progress", pct: 70, foot: "Audio cached. Playlist still hits PHP per listener" },
-    { name: "Database & installer", ms: "Core & manager", state: "todo", foot: "MySQL, WordPress-style setup" },
+    { name: "Cloudflare caching", ms: "Proof of concept", state: "done", foot: "100 listeners: 97 % served from cache" },
+    { name: "Database & installer", ms: "Core & manager", state: "todo", foot: "MySQL on cPanel, WordPress-style setup" },
     { name: "Station manager", ms: "Core & manager", state: "designed", foot: "Library, playlists, schedule, DJs" },
     { name: "Listener player & notes", ms: "Player & studio", state: "designed", foot: "Studio notes editor still to design" },
     { name: "Windows studio app", ms: "Launch", state: "todo", foot: "Same studio in WebView2 (Tauri)" }
   ],
   next: {
-    title: "Check playlist load, then close the POC",
-    text: "Each listener asks the server for the playlist about every 6 s. Let Cloudflare cache it for a second or two, or measure what the account handles. Then write the POC summary and start the core build."
+    title: "Start the core build (v0.1)",
+    text: "Set up the real app next to the prototypes: database schema, a web installer like WordPress's, and the timeline planner as a proper service. Then the station manager screens."
   },
-  call: {
-    title: "Which address will the real station use?",
-    text: "Not needed until the WordWave pilot (est. Jan). The test server stays where it is either way.",
-    opts: [
-      { b: "wordwave.controll.co.za", t: "Already set up; the test server lives here" },
-      { b: "wordwave.co.za", t: "You own it and it's on Cloudflare; cleanest for listeners" }
-    ]
-  },
-  feedTitle: "Changed 19–20 Oct",
+  call: null,
+  feedTitle: "Changed 20 Oct",
   feed: [
+    { what: "Database", to: "MySQL chosen", at: "00:33", kind: "info" },
+    { what: "Proof of concept", to: "passed", at: "00:31" },
+    { what: "100 simulated listeners", to: "97 % from cache", at: "00:27", kind: "info" },
+    { what: "Playlist edge cache", to: "on (2 s)", at: "00:24" },
+    { what: "Station address", to: "wordwave.controll.co.za", at: "00:18", kind: "info" },
     { what: "Live show from a 4G phone", to: "passes on cPanel", at: "00:09" },
-    { what: "Crossfade player", to: "passes on cPanel", at: "00:07" },
-    { what: "Cloudflare audio caching", to: "HIT", at: "00:06", kind: "progress" },
-    { what: "HLS on PC and phone", to: "locked at 20 s", at: "00:05" },
-    { what: "Host check on cPanel", to: "all green", at: "00:02" },
-    { what: "wordwave.controll.co.za", to: "live", at: "23:59", kind: "info" },
-    { what: "Mic chain (P3)", to: "done", at: "23:57" }
+    { what: "Host check on cPanel", to: "all green", at: "00:02" }
   ]
 };
 
@@ -254,9 +250,13 @@ $("parts").innerHTML = MAP.parts.map((p) =>
 
 $("nextTitle").textContent = MAP.next.title;
 $("nextText").textContent = MAP.next.text;
-$("callTitle").textContent = MAP.call.title;
-$("callText").textContent = MAP.call.text;
-$("callOpts").innerHTML = MAP.call.opts.map((o) => `<div><b>${esc(o.b)}</b>${esc(o.t)}</div>`).join("");
+if (MAP.call) {
+  $("callTitle").textContent = MAP.call.title;
+  $("callText").textContent = MAP.call.text;
+  $("callOpts").innerHTML = MAP.call.opts.map((o) => `<div><b>${esc(o.b)}</b>${esc(o.t)}</div>`).join("");
+} else {
+  $("callBox").hidden = true; // nothing waiting on the user
+}
 $("feedTitle").textContent = MAP.feedTitle;
 $("feed").innerHTML = MAP.feed.map((f) =>
   `<li class="${f.kind || ""}"><span><b>${esc(f.what)}</b> <span class="arrow">→ ${esc(f.to)}</span></span><time>${esc(f.at)}</time></li>`).join("");

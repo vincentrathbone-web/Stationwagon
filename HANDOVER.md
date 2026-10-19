@@ -4,7 +4,7 @@ Read this first. It records where the work stands, what was decided and why, and
 each round, so that anyone (a person or a new agent session) can pick up where the last one
 stopped.
 
-**Last updated:** 2026-10-20, after round 7 (cPanel test server live; P0–P4 pass there).
+**Last updated:** 2026-10-20, after round 8 (playlist edge cache + load test; **POC passed**).
 
 ## How to keep this file useful
 
@@ -57,7 +57,7 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | `prototypes/api/` | `stream.php` (HLS), `timeline.php` (JSON), `control.php`, `upload.php` |
 | `prototypes/p0…p4-*/` | The five prototype pages |
 | `prototypes/tests/engine_test.php` | Command-line engine test (42 checks) |
-| `prototypes/tools/` | `make-test-mp3s.js` (test tones), `phone.mjs` (drive the phone's Chrome over adb), `deploy-cpanel.sh` (upload to cPanel over SSH) |
+| `prototypes/tools/` | `make-test-mp3s.js` (test tones), `phone.mjs` (drive the phone's Chrome over adb), `deploy-cpanel.sh` (upload to cPanel over SSH), `load-listeners.mjs` (simulated listeners) |
 | `prototypes/config.local.php` | Server-only overrides (its control key). Never committed; denied by `.htaccess` |
 | `prototypes/media/`, `prototypes/data/` | Test MP3s and runtime state; gitignored except their README / `.htaccess` |
 
@@ -80,6 +80,8 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
 - DNS: Cloudflare account `vincent.rathbone@gmail.com` (the user signs in; no API token on this
   PC). Record `wordwave` A → 169.239.217.60, **proxied**, like `demo`. The same Cloudflare account also holds
   `wordwave.co.za`, which the user owns.
+- **Cloudflare Cache Rule** "Stationwagon playlist (2 s)" on the controll.co.za zone: `http.request.full_uri wildcard "https://wordwave.controll.co.za/*/api/stream.php*"` → Eligible for cache, Edge TTL from the origin header. Covers the POC and a future station at the root.
+- The main site's `~/public_html/.htaccess` (WordPress, "Flying Pages Plugin Fix") sets `Cache-Control: no-cache` on everything below it, the subdomain included, and Wordfence WAF is prepended to every PHP request. Don't edit that file; override headers in our own `.htaccess`.
 - Origin certificate is self-signed until AutoSSL replaces it (check started 2026-10-20). Cloudflare
   currently accepts it.
 - **Deploy:** `bash prototypes/tools/deploy-cpanel.sh controll public_html/wordwave.controll.co.za/stationwagon-poc`.
@@ -113,8 +115,8 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
 
 ## Current status (2026-10-20)
 
-Proof of concept: every prototype passes on Laragon and on the cPanel test server. One item is
-left: the playlist load check for many listeners (R7).
+**The proof of concept passed.** All of R1–R7 are answered on the real shared host; the summary is
+under "Result" in `docs/POC-PLAN.md`.
 
 | Prototype | Laragon | cPanel |
 |---|---|---|
@@ -122,19 +124,19 @@ left: the playlist load check for many listeners (R7).
 | P1 HLS AutoDJ | ☑ PC + phone | ☑ PC (fibre) + phone (4G), both locked at ~20.0 s |
 | P2 Crossfade player | ☑ PC + phone | ☑ PC + phone, same-second 6 s crossfades |
 | P3 Mic chain | ☑ user: "All good" | n/a |
-| P4 Live studio | ☑ including the safety net | ☑ phone studio on 4G → PC listener; safety net not repeated |
-| Cloudflare caching | n/a | ◐ audio HIT; playlist still PHP per listener |
-
-Details are in the test log in `docs/POC-PLAN.md`.
+| P4 Live studio | ☑ including the safety net | ☑ phone studio on 4G → PC listener |
+| Cloudflare caching | n/a | ☑ audio HIT; playlist 961/990 HIT with 100 simulated listeners |
 
 ## Next steps
 
-1. R7 playlist load: each listener asks `api/stream.php` (PHP) for the playlist about every 6 s.
-   Either let Cloudflare cache it for 1–2 s (a Cache Rule plus `max-age`), or measure how many
-   listeners the account handles. Then write a short POC summary in `docs/POC-PLAN.md`.
-2. Optional: repeat the safety-net test on cPanel.
-3. Start the build-out (Core & manager, `v0.1`): MySQL schema, installer, planner as a service
-   class, cron plus lazy planning, settings, then the station manager.
+Start **Core & manager (`v0.1`)** per the build-out order in `docs/POC-PLAN.md`:
+
+1. Project layout for the real app (outside `prototypes/`), versioning from `0.1.0`.
+2. MySQL schema (decided 2026-10-20; stations, tracks, playlists, schedule, DJs, timeline entries, live shows) and a
+   WordPress-style web installer that writes `config.local.php`.
+3. Move the timeline planner into a service class backed by MySQL, keeping lazy planning and
+   adding an optional cron.
+4. Station manager screens from `design/` (library upload, playlists, schedule, DJs).
 
 ## Decisions
 
@@ -161,6 +163,10 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-20 | Test server at **wordwave.controll.co.za**, POC in `/stationwagon-poc/`, DNS proxied through Cloudflare | User's choice. Proxied so the Cloudflare caching test (R7) runs on the real setup |
 | 2026-10-20 | Server settings live in `config.local.php` (gitignored, denied by `.htaccess`), made by the deploy script | Keeps the control key out of the repo and off the web |
 | 2026-10-20 | MP3s (songs and live pieces) are sent as `public, max-age=31536000, immutable` | The host's default (`max-age=7200, must-revalidate`) made Cloudflare re-check with the server on every request. File names must change if a file's content changes |
+| 2026-10-20 | The real station will use **wordwave.controll.co.za** (not wordwave.co.za) | User's choice. The test server already lives there; the POC stays in `/stationwagon-poc/`, so the station itself can later sit at the root |
+| 2026-10-20 | Playlist is cached at Cloudflare for 2 s (Cache Rule + `s-maxage=2`; browsers `max-age=0`) | Without it every listener runs PHP every ~6 s. With it PHP runs about once per 2 s per Cloudflare location; 2 s of staleness is harmless at a 20 s delay |
+| 2026-10-20 | **POC closed as passed**; next milestone is Core & manager | All seven risks answered on the real host |
+| 2026-10-20 | The real app uses **MySQL** on the cPanel account (not SQLite) | User's choice; standard on shared hosting and room to grow to more stations |
 
 ## Scope changes
 
@@ -193,13 +199,12 @@ build-out starts: begin at `0.1.0` and record every bump here.
 | 4 | 2026-10-19 | `91bdc0b` | `HANDOVER.md` and `CLAUDE.md` added; P3 partly passed (user heard the mic, ducking works) |
 | 5 | 2026-10-19 | `d7403dd` | Private GitHub repo created; `origin` set and `main` pushed |
 | 6 | 2026-10-19 | `3565f27` | `docs/project-map.html` project map added and published (light theme); milestone plan with estimates |
-| 7 | 2026-10-20 | this round's commit | Test server: subdomain + Cloudflare record, `tools/deploy-cpanel.sh`, `config.local.php` override, `.htaccess` denies it and caches MP3s for a year; P0–P4 pass on cPanel; P3 passed |
+| 7 | 2026-10-20 | `c56b6a1` | Test server: subdomain + Cloudflare record, `tools/deploy-cpanel.sh`, `config.local.php` override, `.htaccess` denies it and caches MP3s for a year; P0–P4 pass on cPanel; P3 passed |
+| 8 | 2026-10-20 | this round's commit | Address decision (wordwave.controll.co.za); playlist edge cache (Cache Rule + `.htaccess` override of the host's no-cache); `tools/load-listeners.mjs`; load test 961/990 HIT; POC result summary; MySQL chosen |
 
 ## Open issues
 
 - **USB headset** not tried with P3 (the user's PC test passed).
-- **Playlist load (R7):** `api/stream.php` runs PHP for every listener about every 6 s. Not
-  measured yet.
 - Cloudflare still holds the old copies of the 4 test MP3s with the old 2-hour header. They expire
   on their own; new files cache correctly.
 - **Safety net** (silence → AutoDJ) was only tested on Laragon.

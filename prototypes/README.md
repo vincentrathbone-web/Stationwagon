@@ -68,6 +68,15 @@ on HTTPS. Open P0 first; every required row must be green.
 The current test server is `https://wordwave.controll.co.za/stationwagon-poc/` (see
 `HANDOVER.md`).
 
+## Load test (simulated listeners)
+
+```bash
+node prototypes/tools/load-listeners.mjs https://wordwave.controll.co.za/stationwagon-poc/api/stream.php 100 60 6
+```
+
+Each simulated listener fetches the playlist every 6 s. The output shows how many requests
+Cloudflare answered from cache (HIT) and how many reached PHP (MISS or EXPIRED).
+
 ## Testing on an Android phone over USB
 
 With USB debugging on and the phone plugged in, the phone can reach Laragon as `localhost`. That

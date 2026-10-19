@@ -39,7 +39,9 @@ foreach ($tl['entries'] as $e) {
 $segments = array_slice($segments, -$config['window_segments']);
 
 header('Content-Type: application/vnd.apple.mpegurl');
-header('Cache-Control: public, max-age=1');
+// Cloudflare may keep the playlist for 2 s (one PHP run per location every 2 s, however many
+// listeners); browsers always ask again
+header('Cache-Control: public, max-age=0, s-maxage=2');
 header('Access-Control-Allow-Origin: *');
 
 if (!$segments) {

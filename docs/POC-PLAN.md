@@ -123,7 +123,37 @@ Fill in as you go (copy this table into an issue or keep it here). ☑ passed ·
 | P2 Crossfade player | ☑ 2026-10-19 | ☑ 2026-10-20 | Laragon: same-second 6.0 s crossfades, drift under 10 ms; fixed variable-length crossfades. cPanel: PC + phone (4G) crossfaded in the same second, 6.0 s, drift −13 ms and 7 ms, round trip ~60 ms. |
 | P3 Mic chain | ☑ 2026-10-20 | n/a | User, PC with headphones: mic, gate, recording and ducking all good ("All good"). Also runs on the phone inside P4. |
 | P4 Live studio | ☑ 2026-10-19 | ☑ 2026-10-20 | Laragon: phone studio → PC listener, end show, safety net (phone offline → timeout → AutoDJ). cPanel: phone studio on 4G uploads every 6 s with an empty queue; PC listener went live with no stall; AutoDJ back right after End show. Safety net not repeated on cPanel (same code path). |
-| Cloudflare caching (P1 behind a proxied subdomain) | n/a | ◐ 2026-10-20 | MP3 byte ranges: HIT after the first request once MP3s are sent as `public, max-age=31536000, immutable`. Still open: the playlist (`api/stream.php`) is PHP for every listener about every 6 s; measure or cache it for 1–2 s. |
+| Cloudflare caching (P1 behind a proxied subdomain) | n/a | ☑ 2026-10-20 | MP3 byte ranges HIT once sent as `public, max-age=31536000, immutable`. Playlist: Cache Rule on `…/api/stream.php*` plus `s-maxage=2`. 100 simulated listeners for 60 s: 990 requests, 961 HIT, 29 reached PHP (about one per 2 s), 0 failed, median 45 ms. |
+
+
+## Result (2026-10-20)
+
+**The proof of concept passes.** Every risk has an answer on the real shared host
+(`wordwave.controll.co.za`, LiteSpeed, PHP 8.1, Cloudflare in front), with a PC on fibre and a
+phone on 4G:
+
+| # | Risk | Answer |
+|---|---|---|
+| R1 | Host blocks something | No. Byte ranges, rewrites, writable `data/`, 512 MB uploads, HTTPS all work |
+| R2 | Byte-range HLS from the original MP3s | Plays gaplessly on desktop and Android Chrome, no stalls |
+| R3 | On-request timeline keeps everyone in sync | Two devices on different networks hold the same delay to within ~10 ms; skips land on both at once |
+| R4 | Crossfades and skips sound smooth | 6.0 s equal-power crossfades and 2 s skip fades, in the same second on both devices |
+| R5 | Browser mic processing | User test on a PC with headphones: mic, gate, recording and ducking all good |
+| R6 | Live encode and upload, handover, fallback | Live from a 4G phone: a piece every 6 s, empty queue, no stall at handover; AutoDJ resumes after End show or when the DJ drops (tested on Laragon) |
+| R7 | Many listeners overload the account | Cloudflare serves the audio, and the playlist reaches PHP about once per 2 s per Cloudflare location, however many listeners |
+
+**What we changed on the way** (details in `HANDOVER.md`): full-length crossfades; no repeat
+after a cut; Skip uses what the presser hears; HLS players hold a fixed 20 s delay; server-only
+`config.local.php`; long-lived caching for MP3s; a 2 s edge cache for the playlist.
+
+**Known limits to carry into the build:**
+
+- Listeners hear everything about 20 s late (HLS), including the DJ. The two-deck player hears
+  the live edge; pick one delay for both during the build.
+- The host's main `public_html/.htaccess` forces `no-cache` on everything below it, and Wordfence
+  WAF runs before every PHP request. The station's own `.htaccess` must keep overriding cache
+  headers, and PHP endpoints should stay light.
+- MP3s are cached for a year, so a changed file needs a new name.
 
 ## What we deliberately left out of the POC
 
