@@ -67,8 +67,11 @@ $repeat = false;
 for ($i = 1; $i < count($entries); $i++) { $repeat = $repeat || $entries[$i]['id'] === $entries[$i - 1]['id']; }
 check('no song plays twice in a row', !$repeat);
 $first = $entries[0];
-check('stream moves on inside the crossfade window', $first['full'] - $first['play'] <= sw_config()['crossfade_seconds'] + 6.1,
-    sprintf('plays %.2f of %.2f s', $first['play'], $first['full']));
+$xf = sw_config()['crossfade_seconds'];
+$tailOk = true;
+foreach ($entries as $e) { $tail = $e['full'] - $e['play']; $tailOk = $tailOk && $tail >= $xf - 1e-6 && $tail <= $xf + 6.1; }
+check('every song leaves a full crossfade, and at most one piece more', $tailOk,
+    sprintf('first plays %.2f of %.2f s', $first['play'], $first['full']));
 
 echo "HLS window\n";
 $a = json_decode(playlist($t0 + 100), true);
@@ -82,7 +85,11 @@ $now = $t0 + 30;
 $before = sw_timeline($now)['entries'];
 $r = sw_timeline_skip($now);
 $cut = $r['result']['cut_at'];
-check('skip returns a cut time 1–7 s ahead', $cut !== null && $cut >= $now + 1 && $cut <= $now + 7.1, sprintf('+%.2f s', $cut - $now));
+$playing = null;
+foreach ($before as $e) { if ($e['start'] <= $now && $now < sw_entry_end($e)) { $playing = $e; } }
+$endsSoon = $playing && sw_entry_end($playing) < $now + 1;
+check($endsSoon ? 'skip during the last second keeps the natural end' : 'skip returns a cut time 1–7 s ahead',
+    $cut !== null && ($endsSoon ? abs($cut - sw_entry_end($playing)) < 1e-6 : $cut >= $now + 1 && $cut <= $now + 7.1), sprintf('+%.2f s', $cut - $now));
 $after = $r['entries'];
 $cutEntry = null;
 foreach ($after as $e) { if (!empty($e['cut'])) { $cutEntry = $e; } }
@@ -91,6 +98,8 @@ $next = null;
 foreach ($after as $e) { if (abs($e['start'] - $cut) < 1e-6) { $next = $e; } }
 check('next song starts exactly at the cut', $next !== null);
 check('numbering still continuous after skip', $next && $next['seq'] === $cutEntry['seq'] + count($cutEntry['pieces']));
+check('the cut song does not come straight back', $next && $next['id'] !== $cutEntry['id'], $next ? $next['file'] : '');
+
 
 echo "Live\n";
 $now = $t0 + 60;
@@ -129,6 +138,23 @@ check('silent live block closes itself', $closed && !$closed['open'] && ($closed
 check('AutoDJ planned again after the timeout', end($tl['entries'])['type'] === 'song');
 $late = sw_timeline_add_piece($live2['start'] + 30, $live2['id'], 1, 6.0, $mp3)['result'];
 check('late piece after timeout is refused', ($late['status'] ?? 0) === 410);
+
+echo "Skip from a lagging listener
+";
+$now = $t0 + 1000;
+// An HLS listener ~18 s behind the live edge presses Skip just after their song ended at the edge
+$tl = sw_timeline($now)['entries'];
+$heardEntry = null; $edgeEntry = null; $edge = null;
+foreach ($tl as $k => $e) {
+    if ($k > 0 && $e['start'] > $now + 20) { $heardEntry = $tl[$k - 1]; $edgeEntry = $e; $edge = $e['start'] + 2; break; }
+}
+$r = sw_timeline_skip($edge, $edge - 18.6 < $heardEntry['start'] ? $heardEntry['start'] + 0.5 : $edge - 18.6);
+check('skip from a lagging listener whose song is ending does nothing', $r['result']['cut_at'] === null && !empty($r['result']['reason']));
+$still = null;
+foreach ($r['entries'] as $e) { if ($e['n'] === $edgeEntry['n']) { $still = $e; } }
+check('  and the song at the live edge is left alone', $still && empty($still['cut']));
+$r = sw_timeline_skip($edge + 10, $edge + 10 - 2);
+check('skip from a listener hearing the current song cuts it', $r['result']['cut_at'] !== null);
 
 // clean up
 $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($tmp, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);

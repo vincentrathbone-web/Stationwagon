@@ -14,7 +14,8 @@ $now = sw_now();
 $action = $_POST['action'] ?? '';
 switch ($action) {
     case 'skip':
-        $tl = sw_timeline_skip($now);
+        $heard = isset($_POST['heard']) && is_numeric($_POST['heard']) ? (float) $_POST['heard'] : null;
+        $tl = sw_timeline_skip($now, $heard);
         sw_json(['ok' => $tl['result']['cut_at'] !== null] + $tl['result'] + ['server_now' => $now]);
         break;
     case 'golive':

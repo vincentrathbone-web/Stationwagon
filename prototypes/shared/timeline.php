@@ -119,13 +119,14 @@ function sw_timeline_append_song(array &$tl, array $library, float $now): void
     $choices = array_values(array_filter($library, fn($t) => !in_array($t['id'], $avoid, true)));
     $track = $choices[random_int(0, count($choices) - 1)];
 
-    // The stream moves on at the first piece boundary inside the last crossfade_seconds.
-    // The two-deck player keeps the song's tail playing under the fade.
+    // The stream moves on at the last piece boundary that still leaves crossfade_seconds of
+    // the song, so the two-deck player always has a full-length fade (it keeps the tail playing
+    // under the next song). HLS listeners jump straight on and miss the last 6–12 s instead.
     $target = max(0.0, $track['duration'] - $config['crossfade_seconds']);
     $pieces = [];
     $play = 0.0;
     foreach ($track['pieces'] as $piece) {
-        if ($play >= $target && $pieces) {
+        if ($pieces && $play + $piece[2] > $target + 1e-6) {
             break;
         }
         $pieces[] = $piece;
@@ -179,14 +180,33 @@ function sw_timeline_cut(array &$tl, float $now, float $fade): ?float
         $e['fade_out'] = $fade;
         $e['cut'] = true;
         array_splice($tl['entries'], $i + 1);
+        // "recent" still lists the songs that were planned after the cut; the next pick must
+        // avoid what actually played, or the cut song can come straight back
+        $songs = array_filter($tl['entries'], fn($x) => $x['type'] === 'song');
+        $tl['recent'] = array_slice(array_column($songs, 'id'), -20);
         return $t;
     }
     return null;
 }
 
-function sw_timeline_skip(float $now): array
+/**
+ * Skip the song. $heard is the stream time the person pressing Skip is hearing (an HLS listener
+ * is about 18 s behind the live edge). If that song already ends before the cut could land, the
+ * skip does nothing rather than cutting the next song, which they haven't heard yet.
+ */
+function sw_timeline_skip(float $now, ?float $heard = null): array
 {
-    return sw_timeline_mutate($now, function (array &$tl) use ($now) {
+    return sw_timeline_mutate($now, function (array &$tl) use ($now, $heard) {
+        if ($heard !== null && $heard < $now) {
+            foreach ($tl['entries'] as $e) {
+                if ($e['start'] <= $heard && $heard < sw_entry_end($e)) {
+                    if (sw_entry_end($e) <= $now + sw_config()['cut_lead_seconds']) {
+                        return ['cut_at' => null, 'reason' => 'That song is already ending; the next one has started at the live edge.'];
+                    }
+                    break;
+                }
+            }
+        }
         return ['cut_at' => sw_timeline_cut($tl, $now, sw_config()['skip_fade_seconds'])];
     });
 }

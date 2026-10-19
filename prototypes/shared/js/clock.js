@@ -42,7 +42,7 @@ export const fmt = (s) => {
 };
 
 export const clockText = (unixSeconds) =>
-  new Date(unixSeconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) +
+  new Date(unixSeconds * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }) +
   "." + String(Math.floor((unixSeconds % 1) * 10));
 
 /** The entry covering server time t (songs and live blocks). */

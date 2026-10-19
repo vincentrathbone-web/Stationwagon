@@ -114,15 +114,15 @@ AutoDJ within about 10 s.
 
 ## Test log
 
-Fill in as you go (copy this table into an issue or keep it here).
+Fill in as you go (copy this table into an issue or keep it here). ☑ passed · ◐ partly tested · ☐ not yet.
 
 | Prototype | Laragon | cPanel | Notes |
 |---|---|---|---|
-| P0 Host check | ☐ | ☐ | |
-| P1 HLS AutoDJ | ☐ | ☐ | |
-| P2 Crossfade player | ☐ | ☐ | |
-| P3 Mic chain | ☐ | n/a | |
-| P4 Live studio | ☐ | ☐ | |
+| P0 Host check | ☑ 2026-10-19 | ☐ | All required checks pass (PHP 8.3.33, Apache 2.4.68, ranges 206, data/ blocked 403, clock offset 0.00 s). ffmpeg not found, no HTTPS: both fine locally. |
+| P1 HLS AutoDJ | ◐ 2026-10-19 | ☐ | One device: plays with no stalls, ~19 s behind live. Skip lands 1–6 s ahead with no stall. Fixed: the song that was cut could play again straight after; Skip from a lagging listener cut the next song instead of the one they were hearing; clock showed "PM.5". Two-device test still to do. |
+| P2 Crossfade player | ◐ 2026-10-19 | ☐ | One device: joins in sync (drift ~130 ms, settles to under 10 ms), crossfade 6.0 s, Skip fade 2.0 s, no corrections needed. Fixed: crossfades were 0–6 s long depending on where the last piece ended; the planner now always leaves a full 6 s. Two-device test still to do. |
+| P3 Mic chain | ◐ 2026-10-19 | n/a | Page and AudioWorklet load. Needs a person with a mic and headphones. |
+| P4 Live studio | ◐ 2026-10-19 | ☐ | Page, lamejs and the mic API load. Needs the live test with P1 on a phone. |
 | Cloudflare caching (P1 behind a proxied subdomain) | n/a | ☐ | |
 
 ## What we deliberately left out of the POC

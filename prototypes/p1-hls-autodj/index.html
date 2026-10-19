@@ -102,11 +102,11 @@ $("play").onclick = start;
 $("stop").onclick = () => { stop(); log("Stopped"); };
 audio.addEventListener("waiting", () => log("Buffering…"));
 
-async function act(action) {
-  try { const r = await control(action); log(`${action}: ${JSON.stringify(r)}`); refresh(); }
+async function act(action, fields = {}) {
+  try { const r = await control(action, fields); log(`${action}: ${JSON.stringify(r)}`); refresh(); }
   catch (e) { log(`${action} failed: ${e.message}`); }
 }
-$("skip").onclick = () => act("skip");
+$("skip").onclick = () => { const heard = playingDate(); act("skip", heard ? { heard: heard.toFixed(3) } : {}); };
 $("rescan").onclick = () => act("rescan");
 $("reset").onclick = () => act("reset");
 

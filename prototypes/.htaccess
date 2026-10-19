@@ -1,0 +1,7 @@
+# The prototypes change often while testing: make browsers check for a new copy of pages,
+# scripts and styles every time instead of running a stale one. MP3s keep normal caching.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|js|css)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
