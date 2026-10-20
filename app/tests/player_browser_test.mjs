@@ -1,6 +1,7 @@
 // End-to-end test of the listener player in a real browser (headless Edge or Chrome) on Laragon:
 // it joins mid-song at the listener delay, crossfades at a song boundary, hands over to a live
-// show (made here, with generated 6 s pieces) and back to the AutoDJ, and the stream-only mode
+// show (made here, with generated 6 s pieces) and back to the AutoDJ, with a presenter note that
+// appears when listeners reach it, and the stream-only mode
 // holds the same delay. Takes about three minutes.
 //   node app/tests/player_browser_test.mjs http://localhost:8080/stationwagon-app
 //   node app/tests/player_browser_test.mjs https://wordwave.controll.co.za/stationwagon-app --listen-only
@@ -68,7 +69,7 @@ async function until(fn, seconds, log = null) {
 const audible = (s) => s.decks.filter((d) => d.playing && d.gain > 0.5);
 const drift = (s, d) => d.pos - (s.heard - s.current.start);
 
-let show = null, feeder = null;
+let show = null, feeder = null, notesShow = null;
 try {
   for (let i = 0; i < 50; i++) { await sleep(200); try { await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; } catch { /* starting */ } }
   const target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === "page");
@@ -129,6 +130,23 @@ try {
       send();
       if (seq < 5) feeder = setTimeout(next, Math.max(0, (show.start + 6.1 + 6 * seq) * 1000 - Date.now()));
     }, Math.max(0, (show.start + 6.1) * 1000 - Date.now()));
+    // a presenter note, posted now: listeners 20 s behind must not see it before they hear this moment
+    notesShow = show.public_id;
+    const postedAt = Date.now();
+    const posted = helper("note", show.public_id, "verse", JSON.stringify({ ref: "Psalm 23:1", text: "The LORD is my shepherd; <b>I shall not want.</b>", passage: "Psalm 23" }));
+    const nid = posted.note && posted.note.id;
+    check("a presenter note is posted", !!nid, JSON.stringify(posted));
+    const notes = () => evaluate("window.SwNotes && SwNotes.state()");
+    const untilNotes = async (fn, seconds) => { const end = Date.now() + seconds * 1000; while (Date.now() < end) { const n = await notes(); if (n && fn(n)) return n; await sleep(100); } return null; };
+    let n = await untilNotes((x) => x.held.includes(nid), 6);
+    check("  listeners don't see it before they hear that moment", !!n && !n.shown.includes(nid) && n.hidden, JSON.stringify(n));
+    n = await untilNotes((x) => x.shown.includes(nid), 30);
+    const after = (Date.now() - postedAt) / 1000;
+    check("  it appears 20 s after it was posted", !!n && after > 18.5 && after < 23, after.toFixed(1) + " s");
+    check("  tagged Live and New", !!n && n.show.label === "Live" && n.fresh.includes(nid), n && `${n.show.label} / fresh ${n.fresh}`);
+    const dom = await evaluate(`(() => { const li = document.querySelector('#lpNotesList li'), q = li.querySelector('blockquote'), t = document.getElementById('lpToast');
+      return { text: q.textContent, tags: q.children.length, read: li.querySelector('a').href, toast: t.hidden ? '' : t.textContent }; })()`);
+    check("  shown as text, with its Bible Gateway link and a toast", dom.text.includes("<b>I shall") && dom.tags === 0 && dom.read.startsWith("https://www.biblegateway.com/passage/?search=Psalm%2023") && dom.toast.startsWith("New note"), JSON.stringify(dom));
     s = await until((x) => x.current && x.current.type === "live", 45);
     check("the player reaches the show 20 s later", !!s, s && `heard ${(s.heard - show.start).toFixed(1)} s after its start`);
     s = await until((x) => x.current && x.current.type === "live" && x.stream && x.stream.gain > 0.9, 6);
@@ -142,6 +160,8 @@ try {
     check("after the show the AutoDJ comes back", !!s, s && s.current.title);
     s = await until((x) => x.stream && !x.stream.active, 5);
     check("  and the stream deck stops", !!s);
+    const kept = await untilNotes((x) => x.show && !x.show.live, 10);
+    check("  the show's notes stay, no longer Live", !!kept && kept.shown.includes(nid) && kept.fresh.length === 0, kept && kept.show.label);
   }
   if (failed) console.log("Player events:\n    " + ((await state()).events || []).join("\n    "));
   await evaluate("SwPlayer.stop()");
@@ -155,6 +175,7 @@ try {
 } finally {
   clearTimeout(feeder);
   if (show && show.public_id) { try { helper("live-end", show.public_id); } catch { /* ended */ } }
+  if (notesShow) { try { helper("notes-clear", notesShow); } catch { /* gone */ } }
   try { ws && ws.close(); } catch { /* closed */ }
   proc.kill();
   await sleep(500);

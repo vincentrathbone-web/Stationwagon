@@ -25,9 +25,9 @@ Options -Indexes
   <Files "stream.php">
     Header set Cache-Control "public, max-age=0, s-maxage=2"
   </Files>
-  <Files "timeline.php">
+  <FilesMatch "^(timeline|notes)\.php$">
     Header set Cache-Control "no-store"
-  </Files>
+  </FilesMatch>
   # Songs and live pieces never change at the same address
   <FilesMatch "\.mp3$">
     Header set Cache-Control "public, max-age=31536000, immutable"

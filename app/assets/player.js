@@ -37,6 +37,7 @@
       this.offsetMs = this.samples.reduce((a, b) => (b.rtt < a.rtt ? b : a)).offset;
       this.last = json;
       this.lastOk = t1;
+      document.dispatchEvent(new CustomEvent("sw:timeline", { detail: json })); // notes.js watches notes_rev
       return json;
     },
   };
@@ -447,5 +448,5 @@
   clock.fetch().then(() => { const tl = clock.last, h = clock.now() - DELAY; const i = tl.entries.findIndex((e) => e.start <= h && (h < e.end || (e.type === "live" && e.open))); show(tl.entries[i] || null, tl.entries[i + 1] || null, h, tl.entries); }).catch(() => {});
   setInterval(() => { if (!player.on && clock.last) { const tl = clock.last, h = clock.now() - DELAY; const i = tl.entries.findIndex((e) => e.start <= h && (h < e.end || (e.type === "live" && e.open))); show(tl.entries[i] || null, tl.entries[i + 1] || null, h, tl.entries); } }, 1000);
   setInterval(() => { if (!player.on) clock.fetch().catch(() => {}); }, 10000);
-  window.SwPlayer = { start: () => player.start(), stop: () => player.stop(), state: () => player.state() };
+  window.SwPlayer = { start: () => player.start(), stop: () => player.stop(), state: () => player.state(), serverNow: () => (clock.last ? clock.now() : null) };
 })();

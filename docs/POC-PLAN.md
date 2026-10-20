@@ -130,6 +130,7 @@ The app (after the POC; every round's suite results are in `HANDOVER.md`):
 | Part | Laragon | cPanel | Phone | Notes |
 |---|---|---|---|---|
 | Listener player (v0.4) | ☑ 2026-10-20 | ☑ 2026-10-20 | ☑ 2026-10-20 | Headless Edge: joins within 0.05 s, crossfades, live held at 20.00 s, stream-only 20.05 s, a frozen sound engine is nudged and rebuilt (20 checks; 13 listen-only on cPanel). Android phone (Xiaomi, Chrome 155, live server): joins within 0.11 s, crossfades; screen locked 2 min: 4 songs on time, engine clock 99.1 % of real time (10 checks). Found and fixed: the phone ran a week-old cached `player.js` (assets now tagged by content); Listen hung behind the lock screen; the engine clock freezes about every 60 s while locked (watchdog, about 0.5 s of sound lost each time). Safari and iPhones not tried. |
+| Presenter notes (v0.4) | ☑ 2026-10-20 | ☑ 2026-10-20 | n/a | Rules test 44 on Laragon (MySQL) and cPanel (MariaDB). Headless Edge on Laragon: a note posted at a show's start is held back, appears 20.5 s later tagged Live and New with a toast, shown as text with its Bible Gateway link, and stays after the show (6 checks). Screenshots at 1280 and 390 px match the mock-up. Posting comes with the studio. |
 
 
 ## Result (2026-10-20)

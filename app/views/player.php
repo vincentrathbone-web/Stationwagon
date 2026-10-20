@@ -38,6 +38,11 @@ $hm = fn(string $t): string => substr($t, 0, 5);
       <h1><?= h($name) ?></h1>
       <p class="lede">Press Listen to join everyone else at the same moment in the broadcast. The player stays <?= (int) $delay ?> seconds behind live, so every listener hears the same thing.</p>
     </header>
+    <section class="lp-notes" id="lpNotes" aria-labelledby="lpNotesTitle" hidden>
+      <div class="lp-notes-head"><h2 id="lpNotesTitle">From the presenter</h2><span class="tag" id="lpNotesTag"></span></div>
+      <p class="lp-notes-by" id="lpNotesBy"></p>
+      <ol class="lp-notes-list" id="lpNotesList" aria-live="polite"></ol>
+    </section>
     <section>
       <h2>Today · <?= h($day) ?></h2>
       <?php if (!$today): ?>
@@ -57,4 +62,6 @@ $hm = fn(string $t): string => substr($t, 0, 5);
     <noscript><p class="muted">The player needs JavaScript. Any HLS player can play the stream at <code><?= h(App::url('api/stream.php')) ?></code>.</p></noscript>
   </aside>
 </div>
+<div class="lp-toast" id="lpToast" role="status" hidden></div>
 <script src="<?= h(App::asset('assets/player.js')) ?>" defer></script>
+<script src="<?= h(App::asset('assets/notes.js')) ?>" defer></script>

@@ -151,6 +151,12 @@ try {
     $j = json_decode($r['body'], true);
     check('player feed gives the server clock and settings', $r['status'] === 200 && is_float($j['server_now'] ?? null) && abs($j['server_now'] - microtime(true)) < 30 && ($j['settings']['crossfade_seconds'] ?? 0) == 6, (string) $r['status']);
     check('player feed is never cached', str_contains(implode(',', $r['headers']['cache-control'] ?? []), 'no-store'));
+    $r2 = $s->go('api/notes.php');
+    $nj = json_decode($r2['body'], true);
+    check('presenter notes feed answers, with the same marker as the timeline', $r2['status'] === 200 && is_array($nj['items'] ?? null) && array_key_exists('show', $nj ?? []) && preg_match('/^\d+\.\d+\.\d+\.\d{8}$/', (string) ($j['notes_rev'] ?? '')) === 1 && ($nj['rev'] ?? '') === $j['notes_rev'], ($j['notes_rev'] ?? '-') . ' / ' . ($nj['rev'] ?? '-'));
+    check('  and is never cached', str_contains(implode(',', $r2['headers']['cache-control'] ?? []), 'no-store'));
+    $page = $s->go('')['body'];
+    check('the station page has the notes panel (hidden until there are notes)', str_contains($page, 'id="lpNotes"') && preg_match('~assets/notes\.js\?v=[0-9a-f]{10}"~', $page) === 1);
     foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/'] as $private) {
         $code = (new Browser($base))->go($private)['status'];
         check("$private is not served", in_array($code, [403, 404], true), (string) $code);

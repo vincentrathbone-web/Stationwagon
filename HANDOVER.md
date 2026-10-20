@@ -4,7 +4,7 @@ Read this first. It records where the work stands, what was decided and why, and
 each round, so that anyone (a person or a new agent session) can pick up where the last one
 stopped.
 
-**Last updated:** 2026-10-20, after round 19 (docs brought up to date; round 18 put the player on a real phone).
+**Last updated:** 2026-10-20, after round 20 (presenter notes for listeners).
 
 ## How to keep this file useful
 
@@ -61,10 +61,10 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | `prototypes/config.local.php` | Server-only overrides (its control key). Never committed; denied by `.htaccess` |
 | `prototypes/media/`, `prototypes/data/` | Test MP3s and runtime state; gitignored except their README / `.htaccess` |
 | `app/` | **The real app** (Core & manager `v0.1` done; Player & studio `v0.4` under way). Front controller `index.php` → `src/App.php`; version in `app/VERSION` |
-| `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `App` (routes; `url()`, and `asset()` for links tagged by content), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`), `Installer`, `InstallPage`, `View`, `Session` (cookie settings, form keys), `Auth` (sign-in, roles, lock-out), `AuthPage` (sign-in / sign-out / account pages), `Request` (visitor address through Cloudflare), `Mp3` (frame scanner + ID3 tags), `Library` (add songs, stored by content hash), `Planner` (the timeline on MySQL: plan, skip, go live, pieces, schedule), `Stream` (HLS playlist), `Playlists`, `Schedule` (weekly blocks, time and day helpers, the week grid), `Staff` (people and who may change whom), `StationSettings` (the Sound & safety values and their limits), `ManagePage` (the station manager screens and their form actions) |
-| `app/api/` | `stream.php` (listener HLS playlist; real file so `.htaccess` gives it the 2 s Cloudflare header) and `timeline.php` (JSON for the two-deck player and studio) |
-| `app/views/`, `app/assets/` | PHP page templates (wrapped in `layout.php`; the station page is `player.php`; the manager screens are in `views/manage/`, framed by `frame.php`), the green-skin styles `app.css`, `upload.js` (uploads songs one by one with progress), song prep: `prep.js` (decode in the browser), `prep-worker.js`, `prep-core.js` (loudness, trim, level, fades, encode; shared with the Node test), and `vendor/lame.min.js` (lamejs 1.2.1, LGPL-3.0, byte-identical to the npm package; licence beside it); the listener player `player.js` with `vendor/hls.min.js` (hls.js 1.5.13, Apache-2.0, byte-identical to npm) |
-| `app/tests/` | `install_test.php` (31 checks), `auth_test.php` (sign-in logic, 39), `planner_test.php` (library + planner, 71), `manage_test.php` (library edits, song prep on the server side, playlists, schedule and today's list, Sound & safety, staff rules, 70), `prep_test.mjs` (song prep maths against EBU Tech 3341, and a real lamejs MP3, 24; Node), `upload_browser_test.mjs` (song prep end to end in headless Edge, 12; Node, Laragon only), `player_browser_test.mjs` (the listener player in headless Edge: join, crossfade, a frozen sound engine, a live show, stream only; 20, or 13 with `--listen-only` for a public server), `player_phone_test.mjs` (the player on the Android phone over USB, screen locked for 2 minutes; 10) with `browser_helper.php` (accounts, tracks, a test live show), `web_test.php` (pages, manager screens and stream over HTTP, 92; `--public`: 37), `lib.php` (shared helpers: throwaway database and install) |
+| `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `App` (routes; `url()`, and `asset()` for links tagged by content), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`), `Installer`, `InstallPage`, `View`, `Session` (cookie settings, form keys), `Auth` (sign-in, roles, lock-out), `AuthPage` (sign-in / sign-out / account pages), `Request` (visitor address through Cloudflare), `Mp3` (frame scanner + ID3 tags), `Library` (add songs, stored by content hash), `Planner` (the timeline on MySQL: plan, skip, go live, pieces, schedule), `Stream` (HLS playlist), `Playlists`, `Schedule` (weekly blocks, time and day helpers, the week grid), `Staff` (people and who may change whom), `StationSettings` (the Sound & safety values and their limits), `Notes` (presenter notes: rules, post/remove, the listeners' view), `ManagePage` (the station manager screens and their form actions) |
+| `app/api/` | `stream.php` (listener HLS playlist; real file so `.htaccess` gives it the 2 s Cloudflare header), `timeline.php` (JSON for the two-deck player and studio, with `notes_rev`) and `notes.php` (presenter notes for listeners, read only) |
+| `app/views/`, `app/assets/` | PHP page templates (wrapped in `layout.php`; the station page is `player.php`; the manager screens are in `views/manage/`, framed by `frame.php`), the green-skin styles `app.css`, `upload.js` (uploads songs one by one with progress), song prep: `prep.js` (decode in the browser), `prep-worker.js`, `prep-core.js` (loudness, trim, level, fades, encode; shared with the Node test), and `vendor/lame.min.js` (lamejs 1.2.1, LGPL-3.0, byte-identical to the npm package; licence beside it); the listener player `player.js` with `vendor/hls.min.js`, the presenter notes panel `notes.js` (hls.js 1.5.13, Apache-2.0, byte-identical to npm) |
+| `app/tests/` | `install_test.php` (31 checks), `auth_test.php` (sign-in logic, 39), `planner_test.php` (library + planner, 71), `manage_test.php` (library edits, song prep on the server side, playlists, schedule and today's list, Sound & safety, staff rules, 70), `notes_test.php` (presenter notes: each kind, posting while on air, the listeners' view, the change marker; 44), `prep_test.mjs` (song prep maths against EBU Tech 3341, and a real lamejs MP3, 24; Node), `upload_browser_test.mjs` (song prep end to end in headless Edge, 12; Node, Laragon only), `player_browser_test.mjs` (the listener player in headless Edge: join, crossfade, a frozen sound engine, a live show with a presenter note, stream only; 26, or 13 with `--listen-only` for a public server), `player_phone_test.mjs` (the player on the Android phone over USB, screen locked for 2 minutes; 10) with `browser_helper.php` (accounts, tracks, a test live show), `web_test.php` (pages, manager screens and stream over HTTP, 95; `--public`: 40), `lib.php` (shared helpers: throwaway database and install) |
 | `app/cli/` | `install.php` (install over SSH: the form's fields as JSON on stdin), `set-password.php <email>` (new password on stdin; for when nobody can sign in), `import.php <mp3s>` (add songs), `plan.php` (cron: plan ahead) |
 | `app/storage/` | Songs (`media/<sha1>.mp3`), live pieces (`live/<show id>/00000.mp3`), `cache/`, `sessions/`; gitignored; only `.mp3` is served |
 | `app/config.local.php`, `app/install.key` | Written by the installer / the deploy script. Gitignored and denied by `.htaccess` |
@@ -111,7 +111,7 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
   (copy in `tools/deploy/controll.install-key.local.txt`) that the web installer asks for and then deletes.
   **Tests on the server** use the empty database `controllco_swtest` (same user), never the station's:
   `SW_TEST_DB_HOST=localhost SW_TEST_DB_USER=controllco_swapp SW_TEST_DB_PASS=… SW_TEST_DB_NAME=controllco_swtest php tests/auth_test.php`
-  (and `install_test.php`, `planner_test.php`, `manage_test.php`). Web test: `php tests/web_test.php https://wordwave.controll.co.za/stationwagon-app --public`
+  (and `install_test.php`, `planner_test.php`, `manage_test.php`, `notes_test.php`). Web test: `php tests/web_test.php https://wordwave.controll.co.za/stationwagon-app --public`
   (from the server or this PC). The signed-in web checks run only on Laragon: no test accounts are
   made on the public server.
 - **Deploy (POC):** `bash prototypes/tools/deploy-cpanel.sh controll public_html/wordwave.controll.co.za/stationwagon-poc`.
@@ -138,10 +138,11 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
   php app/tests/auth_test.php                                      # sign-in logic, 39 checks
   php app/tests/planner_test.php                                   # library and planner, 71 checks
   php app/tests/manage_test.php                                    # manager rules, 70 checks
-  php app/tests/web_test.php http://localhost:8080/stationwagon-app # pages, manager screens, stream: 92 checks
+  php app/tests/notes_test.php                                     # presenter notes, 44 checks
+  php app/tests/web_test.php http://localhost:8080/stationwagon-app # pages, manager screens, stream: 95 checks
   node app/tests/prep_test.mjs                                     # song prep maths, 24 checks
   node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app # prep in a real browser, 12
-  node app/tests/player_browser_test.mjs http://localhost:8080/stationwagon-app # the player, 20 (~3 min)
+  node app/tests/player_browser_test.mjs http://localhost:8080/stationwagon-app # the player, 26 (~3 min)
   node app/tests/player_browser_test.mjs https://wordwave.controll.co.za/stationwagon-app --listen-only # 13
   node app/tests/player_phone_test.mjs https://wordwave.controll.co.za/stationwagon-app # on the phone, 10 (~3.5 min)
   ```
@@ -225,6 +226,13 @@ and with the screen locked for 2 minutes the songs keep changing on time (4 song
 over 0.3 s). That phone freezes the sound engine's clock about every 60 s while locked; the player's
 watchdog notices within 0.3 s and nudges it, so each freeze costs about half a second of sound.
 
+**Presenter notes for listeners work** (2026-10-20): "From the presenter" beside the player shows the
+live show's verses, references, video links and notes (or the last show's, up to a week old), each
+appearing when listeners, 20 s behind, reach the moment it was posted, with "New" and a toast during a
+show. Presenters can't post yet: posting comes with the live studio (the user's choice), which calls
+`Notes::post` / `remove`. Verse text is pasted by the presenter; each verse keeps its version (KJV by
+default) and links to Bible Gateway.
+
 ## Next steps
 
 **Core & manager (`v0.1`) is done**; now **Player & studio (`v0.4`)**. The order it was built in:
@@ -237,9 +245,10 @@ watchdog notices within 0.3 s and nudges it, so each freeze costs about half a s
    ~~Sound & safety screen~~, ~~song prep on upload~~ (done 2026-10-20; prep re-encodes with lamejs
    instead of the ffmpeg.wasm the build-out order in `docs/POC-PLAN.md` named, see Decisions).
    **v0.1 closed as `0.1.0`** (2026-10-20).
-6. **Now: Player & studio (`v0.4`)**: ~~the listener player~~ (done 2026-10-20). Next: presenter notes
-   for listeners, the live studio on the app (endpoints for `Planner::goLive` / `addPiece` / `endLive`,
-   which the planner already does), the studio's notes editor (needs a design), and the v0.4 Sound &
+6. **Now: Player & studio (`v0.4`)**: ~~the listener player~~, ~~presenter notes for listeners~~ (done
+   2026-10-20). Next: the live studio on the app (endpoints for `Planner::goLive` / `addPiece` / `endLive`
+   and `Notes::post` / `remove`, which the server already does), the studio's notes editor (needs a
+   design; the user chose to post notes only from the studio), and the v0.4 Sound &
    safety settings (fade shape, ducking, silence detection, rejoin window, sound quality, delay).
 
 ## Decisions
@@ -315,6 +324,11 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-20 | hls.js 1.5.13 is served from the app (`assets/vendor/`), loaded only when the stream is needed | Same reason as lamejs; most listeners never need it during AutoDJ |
 | 2026-10-20 | Scripts and styles are linked with a **hash of their content** (`App::asset`, `?v=` + 10 hex), not the version | The host tells browsers to keep JS for a week, so the phone ran an old player for a whole round while `0.4.0-dev` never changed. The prep worker's tag also covers `prep-core.js`, which it loads with the same tag |
 | 2026-10-20 | **Sound engine watchdog**: when the Web Audio clock stands still for 0.3 s while "running", suspend and resume it; after two nudges that don't help, build the player again | The Xiaomi phone freezes it about every 60 s with the screen locked and fires no event; before the fix that was up to 25 s of silence. The engine also asks for `latencyHint: "playback"` (bigger buffers; didn't stop the freezes). A plain `<audio>` is no way round it: Chrome paused one as soon as the screen locked |
+| 2026-10-20 | Presenter notes are **posted only from the live studio** (built with it); this round builds the listener side and the server rules | User's choice ("Wait for the studio"), over a stopgap notes page in the manager |
+| 2026-10-20 | **Verse text is pasted by the presenter**; the app ships no Bible text. Each verse stores its version (default **KJV**, any short code such as AFR53) and links to Bible Gateway | User's choice for the text; no preference on the version, so per note with KJV as the default (matches the design) |
+| 2026-10-20 | Notes belong to a live show. Listeners see the open show's notes, else the last show's from the past week; a new show never shows the previous show's notes under it. A show holds 50 notes | Matches the design ("This morning" between shows) without stale notes under a different presenter |
+| 2026-10-20 | A note appears to listeners when they reach the moment it was posted (posted time ≤ server clock − 20 s) | Everyone hears the show 20 s late; a note shouldn't run ahead of what the presenter is saying |
+| 2026-10-20 | The timeline sends `notes_rev` (one small query); the player fetches `api/notes.php` only when it changes | No extra polling per listener; links are built on the server, the panel is built as text (no HTML from notes) |
 | 2026-10-20 | Milestone estimates **moved a month earlier**: v0.1 late Oct, v0.4 Nov, pilot Dec, launch Jan–Feb | User's choice; Core & manager had only 2 items left on 20 Oct |
 
 ## Scope changes
@@ -367,7 +381,8 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
 | 16 | 2026-10-20 | `065aa2b` | Song prep on upload: `prep-core.js`, `prep-worker.js`, `prep.js`, lamejs in `assets/vendor/`; `upload.js` prepares each song and sends the original's hash and loudness; `Library::import` keeps them (duplicates by the original's hash); "Levelled" label; tests `prep_test.mjs` (24), `upload_browser_test.mjs` (12), `manage_test.php` 67; **fixed**: `upload.js` posted to a wrong address (`form.action` is the form's hidden "action" field), so drag-and-drop uploads had failed with 404 since round 13; deployed; checked on the live site; **v0.1 closed as `0.1.0`** (`app/VERSION`) |
 | 17 | 2026-10-20 | `5f4e27a` | The listener player: the station page (`views/player.php`) with `assets/player.js` (server clock, two song decks, a stream deck with hls.js at the delay, stream-only mode, media session, event log for tests), hls.js 1.5.13 in `assets/vendor/`, player styles, today's schedule (`Schedule::today`); tests `player_browser_test.mjs` (17 / 10 listen-only), live-show commands in `browser_helper.php`, `manage_test.php` 70, `web_test.php` 91 / 36; version `0.4.0-dev`; the old `home.php` and `_onair.php` views removed; deployed; all tests pass on Laragon and the server |
 | 18 | 2026-10-20 | `7c1803a` | The player on the Android phone: `App::asset()` tags scripts and styles by content (the phone had kept an old `player.js`); `player.js` gets the sound engine watchdog, logs engine state, page hidden/shown and deck waits, uses `latencyHint: "playback"`, and no longer hangs on Listen behind a lock screen (resume waits 2 s at most); `player_browser_test.mjs` 20 checks (a frozen-engine part; live pieces made beforehand and sent on a fixed beat, which explains the earlier "song deck under a live show": the show had timed out); new `player_phone_test.mjs` (10, passes on the phone); `web_test.php` checks the content tags; deployed; all tests pass on Laragon, the server and the phone |
-| 19 | 2026-10-20 | this round's commit | Docs brought up to date: `README.md` (status, the app, `tools/`, how it works now), the handover's file list (`App`, the app's milestone), the build-out progress in `docs/POC-PLAN.md`, the project map. No code changes |
+| 19 | 2026-10-20 | `6ec17ca` | Docs brought up to date: `README.md` (status, the app, `tools/`, how it works now), the handover's file list (`App`, the app's milestone), the build-out progress in `docs/POC-PLAN.md`, the project map. No code changes |
+| 20 | 2026-10-20 | this round's commit | Presenter notes for listeners: `Notes` (rules per kind, post / remove for the studio, the listeners' view, `rev()`), `api/notes.php`, `notes_rev` in `api/timeline.php`, `Planner::db()`, the "From the presenter" panel (`views/player.php`, `assets/notes.js`, styles; notes appear at the listener delay), `.htaccess` no-store for `notes.php`; tests `notes_test.php` (44), `player_browser_test.mjs` 26 (notes part), `web_test.php` 95 / 40, note commands in `browser_helper.php`; the long silent sample song removed from Laragon's library (it broke crossfade checks); deployed; all tests pass on Laragon and the server |
 
 ## Open issues
 
@@ -413,7 +428,8 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
   test retries the page load.
 - Not tried: Safari and iPhones. Safari's own HLS can't be faded through Web Audio, so live hand-overs
   there use element volume steps (a hard switch on iPhones, whose volume is fixed).
-- The design's player extras aren't built yet: listener count, presenter notes, the embed code.
+- The design's player extras not built yet: listener count, the embed code.
+- Presenter notes can't be posted until the studio is built (no notes editor yet).
 - Check that old session files in `storage/sessions` get cleaned up on cPanel (PHP's session clean-up is
   often switched off there); 18 files on 2026-10-20, so not urgent.
 

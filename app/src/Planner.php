@@ -65,6 +65,11 @@ final class Planner
         return $this->settings[$name];
     }
 
+    public function db(): Db
+    {
+        return $this->db;
+    }
+
     public function station(): array
     {
         return $this->station;

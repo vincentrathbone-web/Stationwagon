@@ -7,9 +7,11 @@
 //   php browser_helper.php live-start <title> -> {"public_id", "start"}
 //   php browser_helper.php live-piece <public id> <seq> <mp3 file> [<seconds> | auto]
 //   php browser_helper.php live-end <public id>
+//   php browser_helper.php note <public id> <kind> <fields as JSON>  -> {"note"} or {"error"}
+//   php browser_helper.php notes-clear <public id>                     (the test show's notes)
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
-use Stationwagon\{Db, Library, Planner};
+use Stationwagon\{Db, Library, Notes, Planner};
 
 $db = Db::fromConfig();
 $planner = Planner::forFirstStation();
@@ -53,7 +55,15 @@ if ($cmd === 'manager') {
     echo json_encode($r);
 } elseif ($cmd === 'live-end') {
     echo json_encode($planner->endLive(microtime(true), $argv[2] ?? '')['result']);
+} elseif ($cmd === 'note') {
+    echo json_encode((new Notes($db, $station))->post($argv[2] ?? '', null, $argv[3] ?? '', json_decode($argv[4] ?? '{}', true) ?: []));
+} elseif ($cmd === 'notes-clear') {
+    $notes = new Notes($db, $station);
+    foreach ($notes->forShow($argv[2] ?? '') as $n) {
+        $notes->remove($argv[2], $n['id']);
+    }
+    echo json_encode(['cleared' => true]);
 } else {
-    fwrite(STDERR, "Usage: php browser_helper.php manager | track <title> | cleanup <user id> [<title> ...] | live-start <title> | live-piece <id> <seq> <file> <s> | live-end <id>" . PHP_EOL);
+    fwrite(STDERR, "Usage: php browser_helper.php manager | track <title> | cleanup <user id> [<title> ...] | live-start <title> | live-piece <id> <seq> <file> <s> | live-end <id> | note <id> <kind> <json> | notes-clear <id>" . PHP_EOL);
     exit(1);
 }

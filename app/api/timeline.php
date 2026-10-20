@@ -3,7 +3,7 @@
 // Song urls are relative to the app root.
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
-use Stationwagon\{Config, Planner};
+use Stationwagon\{Config, Notes, Planner};
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -27,6 +27,8 @@ try {
             'listener_delay_seconds' => $planner->setting('listener_delay_seconds'),
         ],
         'entries' => $entries,
+        // changes when the presenter notes do; the player then fetches api/notes.php
+        'notes_rev' => (new Notes($planner->db(), $planner->station()))->rev($now),
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
 } catch (Throwable $ex) {
     error_log('Stationwagon timeline: ' . $ex);
