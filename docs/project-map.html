@@ -5,8 +5,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: masthead, a radio-dial milestone track with a red needle at "you are here", then the
-   parts grid beside a narrow column for the next step, the one decision and today's changes. */
+/* The final app, area by area: a summary band (every feature as one tick on a dial-like strip,
+   and the road to v1.0), then one card per area listing what is still to build before what is
+   built, beside a narrow column for the next step, the one decision and recent changes. */
 :root{
   color-scheme: light;
   --ground:#f4f6f3; --panel:#ffffff; --line:#dbe2da; --tick:#c7d0c6;
@@ -22,8 +23,9 @@
 html,body{background:var(--ground)}
 body{color:var(--ink);font:15px/1.5 var(--f-ui);padding-block:28px 56px;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-.wrap{max-width:1140px;margin:0 auto;display:grid;gap:22px}
+.wrap{max-width:1180px;margin:0 auto;display:grid;gap:20px}
 a{color:var(--accent)}
+code{font:500 13px var(--f-mono)}
 
 /* masthead */
 .mast{display:flex;align-items:baseline;gap:8px 18px;flex-wrap:wrap}
@@ -34,125 +36,121 @@ a{color:var(--accent)}
 .mast .waiting{color:var(--onair);font-weight:600}
 .mast .waiting::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--onair);margin-right:6px;vertical-align:1px}
 
-/* milestone dial */
-.dial{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px 20px 18px}
-.track{--n:6;--cur:1;position:relative;display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr));padding-top:30px}
-.track::before,.track .fill{content:"";position:absolute;top:calc(30px + 17px);height:4px;border-radius:4px;
-  left:calc(100% / (var(--n) * 2));}
-.track::before{right:calc(100% / (var(--n) * 2));background:var(--line)}
-.track .fill{width:calc((100% - 100% / var(--n)) * var(--cur) / (var(--n) - 1));background:var(--accent)}
-.ticks{position:absolute;top:calc(30px + 26px);height:9px;left:calc(100% / (var(--n) * 2));right:calc(100% / (var(--n) * 2));
-  background:repeating-linear-gradient(90deg,var(--tick) 0 1px,transparent 1px 12px),
-             repeating-linear-gradient(90deg,var(--faint) 0 1px,transparent 1px 60px);
-  background-size:auto 5px,auto 9px;background-repeat:repeat-x;opacity:.8}
-.ms{position:relative;display:grid;align-content:start;justify-items:center;text-align:center;gap:6px;min-width:0;padding:0 4px}
-.node{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--panel);border:2px solid var(--line);position:relative;z-index:1}
-.ms.done .node{background:var(--accent);border-color:var(--accent);color:#fff}
-.ms.done .node svg{width:16px;height:16px}
-.ms.now .node{border:3px solid var(--ink);box-shadow:0 0 0 5px var(--accent-soft)}
-.ms.now .node::after{content:"";width:12px;height:12px;border-radius:50%;background:var(--ink)}
-.ms.next .node::after{content:"";width:9px;height:9px;border-radius:50%;background:var(--faint)}
-.ms .name{font:700 15px/1.25 var(--f-ui);margin-top:14px;text-wrap:balance}
-.ms .when{font-size:13px;color:var(--faint)}
-.ms.done .when{color:var(--accent);font-weight:600}
-.ms.now .when{color:var(--ink);font-weight:600}
-.ms .ver{font:500 12px var(--f-mono);color:var(--faint)}
-.needle{position:absolute;top:-30px;left:50%;transform:translateX(-50%);display:grid;justify-items:center;z-index:2;pointer-events:none}
-.needle span{background:var(--onair);color:#fff;font:700 12px/1 var(--f-ui);padding:5px 10px;border-radius:999px;white-space:nowrap}
-.needle i{width:2px;height:58px;background:var(--onair);margin-top:-1px}
-.left{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;justify-content:center;margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)}
-.left .count{font:800 24px/1 var(--f-ui)}
-.left .lbl{font:600 12px var(--f-ui);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:5px 11px;font:600 13px var(--f-ui);border:1px solid var(--line);background:var(--panel)}
-.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--faint)}
-.chip.progress{background:var(--warn-soft);border-color:transparent;color:var(--warn)}
-.chip.progress::before{background:var(--warn)}
-.chip.waiting{background:var(--onair-soft);border-color:transparent;color:var(--onair)}
-.chip.waiting::before{background:var(--onair)}
-.chip.done{color:var(--faint);border-color:transparent;background:var(--ground);text-decoration:line-through;text-decoration-color:var(--tick)}
-.chip.done::before{background:var(--accent)}
-
-@media (max-width:760px){
-  .track{grid-template-columns:minmax(0,1fr);padding-top:0;gap:18px}
-  .track::before{top:19px;left:17px;right:auto;width:4px;height:auto;bottom:19px}
-  .track .fill,.ticks,.needle i{display:none}
-  .ms{grid-template-columns:38px minmax(0,1fr);justify-items:start;text-align:left;column-gap:14px;row-gap:0;padding:0}
-  .ms .node{grid-row:span 3}
-  .ms .name{margin-top:0}
-  .needle{position:static;transform:none;grid-column:2;order:-1;margin-bottom:4px}
-}
+/* summary band */
+.band{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;display:grid;gap:18px}
+.total{display:flex;align-items:baseline;gap:6px 14px;flex-wrap:wrap}
+.total .big{font:800 40px/1 var(--f-ui);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.total .of{font:700 18px var(--f-ui);color:var(--muted)}
+.total .lbl{color:var(--muted)}
+.total .found{margin-left:auto;font-size:13px;color:var(--muted);display:inline-flex;gap:6px;align-items:center}
+.total .found::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent)}
+/* every feature is one tick, like a dial scale */
+.scale{display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr));gap:3px;height:22px}
+.scale i{border-radius:3px;background:var(--panel);border:1px dashed var(--tick)}
+.scale i.done{background:var(--accent);border:0}
+.scale i.progress{background:var(--warn);border:0}
+.scale i.waiting{background:var(--onair);border:0}
+.scale i.next{background:var(--panel);border:1.5px solid var(--faint)}
+.road{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.stop{border-radius:14px;padding:12px 14px;background:var(--ground);display:grid;gap:4px;align-content:start;min-width:0}
+.stop .ver{font:500 12px var(--f-mono);color:var(--faint)}
+.stop .name{font:700 15px/1.25 var(--f-ui)}
+.stop .when{font-size:13px;color:var(--muted)}
+.stop .cnt{font:600 13px var(--f-ui);color:var(--muted);font-variant-numeric:tabular-nums}
+.stop .mini{height:5px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:4px}
+.stop .mini b{display:block;height:100%;background:var(--accent)}
+.stop.now{background:var(--panel);border:2px solid var(--ink);box-shadow:0 0 0 4px var(--accent-soft)}
+.stop.now .when{color:var(--ink);font-weight:600}
+.stop.now .when::before{content:"Now · ";color:var(--onair);font-weight:700}
+@media (max-width:760px){.road{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+.legend{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px;background:var(--panel);border:1px dashed var(--tick)}
+.legend .done::before{background:var(--accent);border:0}
+.legend .progress::before{background:var(--warn);border:0}
+.legend .waiting::before{background:var(--onair);border:0}
+.legend .next::before{border:1.5px solid var(--faint)}
 
 /* main grid */
-.main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start}
-@media (max-width:980px){.main{grid-template-columns:minmax(0,1fr)}}
+.main{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px;align-items:start}
+@media (max-width:1000px){.main{grid-template-columns:minmax(0,1fr)}}
+.areas{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+@media (max-width:400px){.areas{grid-template-columns:minmax(0,1fr)}}
 .box{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px}
-.boxhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:12px}
-.kicker{font:700 12px var(--f-ui);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
-.boxhead .done{font-size:13px;color:var(--muted)} .boxhead .done b{color:var(--accent)}
-.parts{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
-.part{border-radius:14px;padding:13px 14px;display:grid;gap:8px;align-content:start;min-height:128px;background:var(--ground);border:1px solid transparent}
-.part h3{margin:0;font:700 15px/1.25 var(--f-ui)}
-.part .ms-of{font:500 12px var(--f-mono);color:var(--faint)}
-.part .foot{font-size:13px;color:var(--muted);margin-top:auto}
-.pill{justify-self:start;border-radius:999px;padding:2px 9px;font:700 12px/1.6 var(--f-ui)}
-.part.done .pill{background:var(--accent-soft);color:var(--accent)}
-.part.progress{background:var(--panel);border-color:var(--warn)}
-.part.progress .pill{background:var(--warn-soft);color:var(--warn)}
-.bar{height:6px;border-radius:6px;background:var(--line);overflow:hidden}
-.bar i{display:block;height:100%;background:var(--warn);border-radius:6px}
-.part.waiting{background:repeating-linear-gradient(135deg,var(--onair-soft) 0 10px,var(--panel) 10px 20px);border-color:var(--onair)}
-.part.waiting .pill{background:var(--onair);color:#fff}
-.part.waiting .foot{color:var(--ink)} .part.waiting .foot b{color:var(--onair)}
-.part.designed{background:var(--panel);border:1px solid var(--line)}
-.part.designed .pill{background:var(--cue-soft);color:var(--cue)}
-.part.todo{background:var(--panel);border:1px dashed var(--tick)}
-.part.todo .pill{background:var(--ground);color:var(--muted)}
-.part.todo h3{color:var(--muted)}
+.area{display:grid;gap:10px;align-content:start}
+.ahead{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:baseline}
+.ahead h2{margin:0;font:800 18px/1.2 var(--f-ui);text-wrap:balance}
+.ahead .cnt{font:600 13px var(--f-ui);color:var(--muted);font-variant-numeric:tabular-nums}
+.ahead p{grid-column:1/-1;margin:0;font-size:13px;color:var(--muted)}
+.abar{display:flex;gap:2px;height:6px}
+.abar i{flex:1;border-radius:2px;background:var(--line)}
+.abar i.done{background:var(--accent)} .abar i.progress{background:var(--warn)} .abar i.waiting{background:var(--onair)}
+.feats{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.feats li{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:8px;align-items:baseline;padding:5px 6px;border-radius:8px;font-size:14px}
+.feats li .dot{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--faint);transform:translateY(1px)}
+.feats li .tag{font:500 12px var(--f-mono);color:var(--faint);white-space:nowrap}
+.feats li .what{min-width:0}
+.feats li small{display:block;color:var(--muted);font-size:12.5px;line-height:1.4}
+.feats li.progress{background:var(--warn-soft)}
+.feats li.progress .dot{background:var(--warn);border-color:var(--warn)}
+.feats li.progress .tag{color:var(--warn)}
+.feats li.waiting{background:var(--onair-soft)}
+.feats li.waiting .dot{background:var(--onair);border-color:var(--onair)}
+.feats li.waiting .tag{color:var(--onair)}
+.feats li.later .dot{border-style:dashed;border-color:var(--tick)}
+.feats li.later .what{color:var(--muted)}
+.feats li.done .dot{border:0;width:14px;height:14px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;transform:translateY(2px)}
+.feats li.done .dot svg{width:10px;height:10px}
+.feats li.done .what{color:var(--muted)}
+details.built summary{cursor:pointer;font:600 13px var(--f-ui);color:var(--accent);list-style:none;padding:4px 6px;border-radius:8px}
+details.built summary::-webkit-details-marker{display:none}
+details.built summary::before{content:"▸";display:inline-block;margin-right:6px;transition:transform .15s}
+details.built[open] summary::before{transform:rotate(90deg)}
+details.built summary:hover{background:var(--ground)}
 
 .side{display:grid;gap:14px}
 .side h2{margin:4px 0 6px;font:800 19px/1.25 var(--f-ui);text-wrap:balance}
 .side p{margin:0;color:var(--muted);font-size:14px}
+.kicker{font:700 12px var(--f-ui);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.order{margin:10px 0 0;padding-left:20px;display:grid;gap:4px;font-size:14px;color:var(--muted)}
+.order li::marker{font:500 12px var(--f-mono);color:var(--faint)}
+.order li.now{color:var(--ink);font-weight:600}
 .call{border-color:var(--onair);background:linear-gradient(var(--onair-soft),var(--panel) 70%)}
 .call .kicker{color:var(--onair)}
 .call .opts{display:grid;gap:6px;margin-top:10px}
 .call .opts div{font-size:14px;padding:8px 10px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
 .call .opts b{display:block;font-weight:700}
-.feed{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+.feed{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:9px}
 .feed li{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:10px;align-items:baseline;font-size:14px}
 .feed li::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent);transform:translateY(-1px)}
-.feed li.progress::before{background:var(--warn)}
 .feed li.info::before{background:var(--cue)}
 .feed b{font-weight:700}
 .feed .arrow{color:var(--muted)}
 .feed time{font:500 12px var(--f-mono);color:var(--faint);font-variant-numeric:tabular-nums}
 .note{font-size:13px;color:var(--faint);text-align:center}
-@media (prefers-reduced-motion:no-preference){.needle span{animation:pulse 2.4s ease-in-out infinite}}
-@keyframes pulse{50%{box-shadow:0 0 0 6px var(--onair-soft)}}
 </style>
 
 <div class="wrap">
   <header class="mast">
     <span class="brand">stationwagon</span>
-    <span class="sub">Project map</span>
+    <span class="sub">Project map · the final app</span>
     <span class="meta" id="meta"></span>
   </header>
 
-  <section class="dial" aria-label="Milestones">
-    <div class="track" id="track"><span class="fill"></span><span class="ticks"></span></div>
-    <div class="left" id="left"></div>
+  <section class="band" aria-label="Progress to the final app">
+    <div class="total" id="total"></div>
+    <div class="scale" id="scale" role="img"></div>
+    <div class="legend"><span class="done">Built</span><span class="progress">Building now</span><span class="waiting">Waiting on you</span><span class="next">Next, in this version</span><span>Later</span></div>
+    <div class="road" id="road"></div>
   </section>
 
   <div class="main">
-    <section class="box" aria-labelledby="partsTitle">
-      <div class="boxhead"><span class="kicker" id="partsTitle">Parts</span><span class="done" id="partsDone"></span></div>
-      <div class="parts" id="parts"></div>
-    </section>
-
+    <div class="areas" id="areas"></div>
     <aside class="side">
       <section class="box">
         <span class="kicker">Next step</span>
         <h2 id="nextTitle"></h2>
         <p id="nextText"></p>
+        <ol class="order" id="order"></ol>
       </section>
       <section class="box call" id="callBox">
         <span class="kicker">Needs your call</span>
@@ -161,7 +159,7 @@ a{color:var(--accent)}
         <div class="opts" id="callOpts"></div>
       </section>
       <section class="box">
-        <div class="boxhead"><span class="kicker" id="feedTitle"></span></div>
+        <span class="kicker" id="feedTitle"></span>
         <ul class="feed" id="feed"></ul>
       </section>
     </aside>
@@ -171,109 +169,142 @@ a{color:var(--accent)}
 </div>
 
 <script>
-/* Everything on the map comes from this one object. Update it after each round. */
+/* Everything on the map comes from this one object. Update it after each round.
+   Feature states: done, progress (building now), waiting (on the user), next (in the current
+   version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "20 Oct · 17:02",
-  commits: 21,
-  milestones: [
-    { name: "Plan & design", when: "Done · 19 Oct", state: "done" },
-    { name: "Proof of concept", when: "Done · 20 Oct", state: "done" },
-    { name: "Core & manager", when: "Done · 20 Oct", ver: "v0.1", state: "done" },
-    { name: "Player & studio", when: "Under way · est. Nov", ver: "v0.4", state: "now" },
-    { name: "WordWave pilot", when: "est. Dec", ver: "v0.8", state: "next" },
-    { name: "Launch", when: "est. Jan–Feb", ver: "v1.0", state: "later" }
+  updated: "20 Oct · 23:39",
+  commits: 23,
+  version: "0.4.0-dev",
+  foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
+  road: [
+    { v: "v0.4", name: "Player & studio", when: "est. Nov", state: "now" },
+    { v: "v0.6", name: "Windows studio app", when: "est. Nov" },
+    { v: "v0.8", name: "WordWave pilot", when: "est. Dec" },
+    { v: "v1.0", name: "Launch", when: "est. Jan–Feb" }
   ],
-  left: [
-    { text: "Listener player (two decks)", state: "done" },
-    { text: "Presenter notes for listeners", state: "done" },
-    { text: "Live studio on the app", state: "done" },
-    { text: "Studio notes editor", state: "done" },
-    { text: "Output waveform (player & studio)", state: "done" },
-    { text: "Player & studio settings", state: "todo" }
-  ],
-  parts: [
-    { name: "Host check (P0)", ms: "Proof of concept", state: "done", foot: "Green on Laragon and on cPanel" },
-    { name: "Timeline engine", ms: "Proof of concept", state: "done", foot: "42 command-line checks pass" },
-    { name: "HLS AutoDJ (P1)", ms: "Proof of concept", state: "done", foot: "Fibre PC and 4G phone locked at 20 s" },
-    { name: "Crossfade player (P2)", ms: "Proof of concept", state: "done", foot: "Same-second 6 s fades over the internet" },
-    { name: "Live studio (P4)", ms: "Proof of concept", state: "done", foot: "Live from a 4G phone to the real server" },
-    { name: "Mic chain (P3)", ms: "Proof of concept", state: "done", foot: "Gate, recording and ducking all good" },
-    { name: "cPanel test server", ms: "Proof of concept", state: "done", foot: "wordwave.controll.co.za, deploy script" },
-    { name: "Cloudflare caching", ms: "Proof of concept", state: "done", foot: "100 listeners: 97 % served from cache" },
-    { name: "Database & installer", ms: "Core & manager", state: "done", foot: "13 tables (schema 2, upgrades itself); installed on the test server" },
-    { name: "Sign-in & roles", ms: "Core & manager", state: "done", foot: "Admin, manager, DJ; 98 checks pass" },
-    { name: "Planner on MySQL", ms: "Core & manager", state: "done", foot: "71 checks; streaming on the test server" },
-    { name: "Station manager", ms: "Core & manager", state: "done", foot: "Library, playlists, schedule, DJs, Skip; 62 rule checks + screen tests" },
-    { name: "Sound & safety settings", ms: "Core & manager", state: "done", foot: "Fades, live timeout, repeats; the rest comes with v0.4" },
-    { name: "Song prep on upload", ms: "Core & manager", state: "done", foot: "−16 LUFS, silence trimmed, lamejs in the browser; 36 checks" },
-    { name: "Listener player", ms: "Player & studio", state: "done", foot: "Crossfades, live at 20 s; plays on with an Android phone locked; 30 browser + phone checks" },
-    { name: "Presenter notes", ms: "Player & studio", state: "done", foot: "Beside the player, in step with the 20 s delay; posting comes with the studio" },
-    { name: "Live studio on the app", ms: "Player & studio", state: "done", foot: "Decks, mixer, mic chain, running order, notes drawer; 104 checks and a minute live on the server" },
-    { name: "Output waveform", ms: "Player & studio", state: "done", foot: "Wet mix, one colour per source, 20 s read ahead; 60 px in the player, resizable in the studio" },
-    { name: "Windows studio app", ms: "Launch", state: "todo", foot: "Same studio in WebView2 (Tauri)" }
+  areas: [
+    { name: "Listener player", blurb: "The station page: two decks, live shows 20 s behind, notes from the presenter.", features: [
+      { text: "Two-deck player with real crossfades", v: "v0.4", state: "done" },
+      { text: "Live shows from the stream, in step at 20 s", v: "v0.4", state: "done" },
+      { text: "Plays on with an Android phone locked", v: "v0.4", state: "done" },
+      { text: "Notes from the presenter beside the player", v: "v0.4", state: "done" },
+      { text: "Output strip (what goes out, per source)", v: "v0.4", state: "done" },
+      { text: "Recent, now and next; today's schedule", v: "v0.4", state: "done" },
+      { text: "Stream-only mode", v: "v0.4", state: "done" },
+      { text: "Now-playing API", note: "JSON for websites and apps, at the listener delay", v: "v0.4", state: "done" },
+      { text: "Embeddable player with Copy code", note: "dark or light; plays at the same 20 s delay", v: "v0.4", state: "done" },
+      { text: "Listeners now, on the health line", note: "anonymous ping once a minute", v: "v0.4", state: "next" },
+      { text: "Spectrum in the display", v: "v0.4", state: "next" },
+      { text: "Podcast page of past shows", v: "v0.4", state: "next" },
+      { text: "Hi-fi skin, chosen per station", v: "v0.4", state: "next" }
+    ]},
+    { name: "Live studio", blurb: "Go live from a browser: decks, mixer, mic chain, running order, notes.", features: [
+      { text: "Go live in step with the AutoDJ", v: "v0.4", state: "done" },
+      { text: "Two decks, mixer and crossfader", v: "v0.4", state: "done" },
+      { text: "Mic chain with presets and ducking", v: "v0.4", state: "done" },
+      { text: "Running order for the show", v: "v0.4", state: "done" },
+      { text: "Notes drawer for listeners", v: "v0.4", state: "done" },
+      { text: "Output strip above the decks, resizable", v: "v0.4", state: "done" },
+      { text: "Rejoin your show after a reload or a drop", note: "carries on as a new show with its notes", v: "v0.4", state: "done" },
+      { text: "Dead-air warning after 10 s of silence", v: "v0.4", state: "done" },
+      { text: "Record the show for the podcast", note: "uploaded after End show", v: "v0.4", state: "next" },
+      { text: "Headphone (cue) output picker", v: "v0.4", state: "next" },
+      { text: "Edit a posted note", v: "v0.4", state: "next" },
+      { text: "Talk items mark themselves \"now\"", v: "v0.4", state: "next" }
+    ]},
+    { name: "Station manager", blurb: "Library, playlists, schedule, DJs, sound and safety, for the station's staff.", features: [
+      { text: "Installer, sign-in and roles", v: "v0.1", state: "done" },
+      { text: "Music library with song prep on upload", v: "v0.1", state: "done" },
+      { text: "Playlists, schedule and DJs", v: "v0.1", state: "done" },
+      { text: "Skip, and the overview", v: "v0.1", state: "done" },
+      { text: "Sound & safety: crossfade, fades, live timeout, repeats", v: "v0.1", state: "done" },
+      { text: "Sound & safety: fade shape, music under the voice, silence, rejoin, quality, delay", note: "tested on Laragon; not on the test server yet", v: "v0.4", state: "done" },
+      { text: "Listener stats", note: "listening now, by hour and day", v: "v0.4", state: "next" },
+      { text: "Podcast episodes: edit, hide, feed", v: "v0.4", state: "next" },
+      { text: "Mastering in song prep (true-peak limiter, reference match)", note: "after you compare oXygen and master_me", v: "v0.8", state: "later" }
+    ]},
+    { name: "Streaming & hosting", blurb: "Runs on shared cPanel hosting with Cloudflare in front: PHP and Apache only.", features: [
+      { text: "Timeline planned on request, with a cron", v: "v0.1", state: "done" },
+      { text: "HLS stream as byte ranges of the MP3s", v: "v0.1", state: "done" },
+      { text: "Cloudflare caching (97 % from cache at 100 listeners)", v: "v0.1", state: "done" },
+      { text: "Database that upgrades itself", v: "v0.4", state: "done" },
+      { text: "Test server with a deploy script", v: "v0.1", state: "done" },
+      { text: "Podcast RSS feed (Apple, Spotify)", v: "v0.4", state: "next" },
+      { text: "Relay to an outside Icecast for classic radio apps", note: "optional, off by default", v: "v1.0", state: "later" }
+    ]},
+    { name: "Windows studio app", blurb: "The same studio in a desktop window, for DJs who use BUTT or Mixxx.", features: [
+      { text: "Studio in WebView2 (Tauri)", v: "v0.6", state: "later" },
+      { text: "Local Icecast bridge for BUTT and Mixxx", v: "v0.6", state: "later" },
+      { text: "Signed installer with auto-update", v: "v0.6", state: "later" }
+    ]},
+    { name: "Pilot & launch", blurb: "WordWave runs beside AzuraCast first, then switches over.", features: [
+      { text: "Copy WordWave's library from AzuraCast", note: "needs your friend's OK first", v: "v0.8", state: "later" },
+      { text: "Run beside AzuraCast for a week", v: "v0.8", state: "later" },
+      { text: "Guides for station managers and DJs", v: "v1.0", state: "later" },
+      { text: "Release package and upgrade path", v: "v1.0", state: "later" },
+      { text: "Switch WordWave over", v: "v1.0", state: "later" }
+    ]}
   ],
   next: {
-    title: "Real music, then the settings",
-    text: "The output strip is in the player and the studio: what goes out (the wet mix) scrolls past a centred now, one colour per source, with faint level lines, and the next seconds are mixed ahead from the real audio. Next: test with the user's own album on Laragon (a page of short clips, then a live listening session). After that, the player and studio settings."
+    title: "Deploy round 25 to the test server",
+    text: "Sound & safety, the now-playing API and the embed are built, pass every test on Laragon and are committed. Next they go to the test server (database version 3) and get tested there. After that, the rest of v0.4 in this order:",
+    order: ["Deploy and test round 25", "Listener count and stats", "Podcasts: record, upload, page, feed", "Small studio items", "Spectrum", "Hi-fi skin"]
   },
   call: null,
   feedTitle: "Changed 20 Oct",
   feed: [
+    { what: "Now-playing API", to: "built, tested on Laragon", at: "23:39" },
+    { what: "Embeddable player with Copy code", to: "built, tested on Laragon", at: "23:39" },
+    { what: "Round 25", to: "committed", at: "23:39", kind: "info" },
+    { what: "Skip just after Go live", to: "no longer drops the show (bug fixed)", at: "23:39" },
+    { what: "Rejoin your show", to: "continues as a new show (safer for listeners)", at: "22:05" },
+    { what: "Sound & safety (v0.4)", to: "built, all Laragon tests pass", at: "22:05" },
+    { what: "Project map", to: "now shows the final app, area by area", at: "21:30", kind: "info" },
+    { what: "Build order for the rest", to: "v0.4, then Windows app, then pilot", at: "21:30", kind: "info" },
+    { what: "Album song changes", to: "21 mixed, no clipping, no dead air", at: "21:05" },
+    { what: "Mastering plugins (oXygen, master_me)", to: "installed in Audition to compare", at: "21:05", kind: "info" },
     { what: "Output strip in the player and studio", to: "built, all tests pass", at: "18:31" },
-    { what: "Song downloads for the look-ahead", to: "once per file (browser cache)", at: "18:31", kind: "info" },
-    { what: "Output waveform", to: "working prototype", at: "17:02" },
-    { what: "Test browsers left playing sound", to: "fixed (closed properly)", at: "17:02", kind: "info" },
-    { what: "Album for testing", to: "22 tracks measured", at: "17:02", kind: "info" },
-    { what: "Studio live on the test server", to: "1 minute, no errors, listener 20.0 s behind", at: "16:08" },
     { what: "Live studio in the app", to: "built, 104 checks", at: "15:55" },
-    { what: "Database", to: "version 2 (running orders)", at: "15:55", kind: "info" },
-    { what: "Crossfade stalling in a hidden page", to: "fixed (the sound engine runs fades)", at: "15:55", kind: "info" },
     { what: "Presenter notes for listeners", to: "built, 50 checks", at: "04:43" },
-    { what: "Docs (README, handover, plan)", to: "up to date", at: "04:19", kind: "info" },
-    { what: "Player on the Android phone", to: "10 checks pass, locked too", at: "04:15" },
-    { what: "Sound stopping on a locked phone", to: "fixed (watchdog)", at: "04:15", kind: "info" },
-    { what: "Phone kept an old player", to: "fixed (content tags)", at: "04:15", kind: "info" },
-    { what: "Player on the live server", to: "all checks pass", at: "03:17" },
-    { what: "Listener player", to: "built, 17 checks", at: "03:17" },
-    { what: "Core & manager", to: "closed as 0.1.0", at: "02:36" }
+    { what: "Listener player", to: "built, plays on a locked phone", at: "04:15" }
   ]
 };
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const LABEL = { done: "Done", progress: "In progress", waiting: "Waiting on you", designed: "Designed", todo: "Not started" };
-const CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3L13 4.8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const all = MAP.areas.flatMap((a) => a.features), built = all.filter((f) => f.state === "done").length;
+const waiting = all.filter((f) => f.state === "waiting").length + (MAP.call ? 1 : 0);
 
-const waiting = MAP.parts.filter((p) => p.state === "waiting").length;
-$("meta").innerHTML = `<span>Updated <b>${esc(MAP.updated)}</b></span><span><b>${MAP.commits}</b> commits</span>` +
+$("meta").innerHTML = `<span>Updated <b>${esc(MAP.updated)}</b></span><span><b>${MAP.commits}</b> commits</span><span>Version <b>${esc(MAP.version)}</b></span>` +
   (waiting ? `<span class="waiting">${waiting} waiting on you</span>` : "");
+$("total").innerHTML = `<span class="big">${built}</span><span class="of">of ${all.length}</span><span class="lbl">features of the final app built</span><span class="found">${esc(MAP.foundation)}</span>`;
+const scale = $("scale");
+scale.style.setProperty("--n", all.length);
+scale.setAttribute("aria-label", `${built} of ${all.length} features built`);
+scale.innerHTML = MAP.areas.flatMap((a) => a.features.map((f) => `<i class="${f.state}" title="${esc(a.name + ": " + f.text)}"></i>`)).join("");
 
-const track = $("track"), cur = MAP.milestones.findIndex((m) => m.state === "now");
-track.style.setProperty("--n", MAP.milestones.length);
-track.style.setProperty("--cur", Math.max(0, cur));
-MAP.milestones.forEach((m) => {
-  const el = document.createElement("div");
-  el.className = "ms " + m.state;
-  el.innerHTML = (m.state === "now" ? '<span class="needle"><span>You are here</span><i></i></span>' : "") +
-    `<span class="node">${m.state === "done" ? CHECK : ""}</span>` +
-    `<span class="name">${esc(m.name)}</span><span class="when">${esc(m.when)}</span>` +
-    (m.ver ? `<span class="ver">${esc(m.ver)}</span>` : "");
-  track.appendChild(el);
-});
-const open = MAP.left.filter((l) => l.state !== "done");
-$("left").innerHTML = `<span class="count">${open.length}</span><span class="lbl">left for ${esc(MAP.milestones[cur].name)}</span>` +
-  [...open, ...MAP.left.filter((l) => l.state === "done")].map((l) => `<span class="chip ${l.state}">${esc(l.text)}</span>`).join("");
+$("road").innerHTML = MAP.road.map((r) => {
+  const fs = all.filter((f) => f.v === r.v), d = fs.filter((f) => f.state === "done").length;
+  return `<div class="stop ${r.state || ""}"><span class="ver">${esc(r.v)}</span><span class="name">${esc(r.name)}</span><span class="when">${esc(r.when)}</span>` +
+    `<span class="cnt">${d} of ${fs.length} built</span><span class="mini"><b style="width:${fs.length ? (100 * d / fs.length) : 0}%"></b></span></div>`;
+}).join("");
 
-const done = MAP.parts.filter((p) => p.state === "done").length;
-$("partsDone").innerHTML = `<b>${done}</b> of ${MAP.parts.length} done`;
-$("parts").innerHTML = MAP.parts.map((p) =>
-  `<article class="part ${p.state}"><span class="ms-of">${esc(p.ms)}</span><h3>${esc(p.name)}</h3>` +
-  `<span class="pill">${LABEL[p.state]}${p.pct ? " · " + p.pct + " %" : ""}</span>` +
-  (p.pct ? `<div class="bar" role="progressbar" aria-valuenow="${p.pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${p.pct}%"></i></div>` : "") +
-  `<span class="foot">${p.foot}</span></article>`).join("");
+const row = (f) => `<li class="${f.state}"><span class="dot">${f.state === "done" ? CHECK : ""}</span><span class="what">${esc(f.text)}${f.note ? `<small>${esc(f.note)}</small>` : ""}</span><span class="tag">${f.state === "progress" ? "now · " : f.state === "waiting" ? "you · " : ""}${esc(f.v)}</span></li>`;
+const rank = { progress: 0, waiting: 1, next: 2, later: 3 };
+$("areas").innerHTML = MAP.areas.map((a) => {
+  const open = a.features.filter((f) => f.state !== "done").sort((x, y) => rank[x.state] - rank[y.state]), done = a.features.filter((f) => f.state === "done");
+  return `<section class="box area"><div class="ahead"><h2>${esc(a.name)}</h2><span class="cnt">${done.length} of ${a.features.length}</span><p>${esc(a.blurb)}</p></div>` +
+    `<div class="abar">${a.features.map((f) => `<i class="${f.state}"></i>`).join("")}</div>` +
+    (open.length ? `<ul class="feats">${open.map(row).join("")}</ul>` : "") +
+    (done.length ? `<details class="built"${open.length ? "" : " open"}><summary>Built (${done.length})</summary><ul class="feats">${done.map(row).join("")}</ul></details>` : "") +
+    `</section>`;
+}).join("");
 
 $("nextTitle").textContent = MAP.next.title;
 $("nextText").textContent = MAP.next.text;
+$("order").innerHTML = (MAP.next.order || []).map((o, i) => `<li class="${i === 0 ? "now" : ""}">${esc(o)}</li>`).join("");
 if (MAP.call) {
   $("callTitle").textContent = MAP.call.title;
   $("callText").textContent = MAP.call.text;

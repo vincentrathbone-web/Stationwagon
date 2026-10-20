@@ -25,6 +25,10 @@ Options -Indexes
   <Files "stream.php">
     Header set Cache-Control "public, max-age=0, s-maxage=2"
   </Files>
+  # Now playing (embeds and other sites poll it): ready for a 2 s Cloudflare cache like the playlist
+  <Files "nowplaying.php">
+    Header set Cache-Control "public, max-age=0, s-maxage=2"
+  </Files>
   <FilesMatch "^(timeline|notes)\.php$">
     Header set Cache-Control "no-store"
   </FilesMatch>

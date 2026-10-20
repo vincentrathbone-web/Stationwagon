@@ -14,18 +14,23 @@ try {
     $db = Db::connect($cfg['db']);
     $station = $db->run('SELECT * FROM ' . $db->table('stations'))->fetch();
 
-    echo "Database version 2\n";
+    echo "Database version 3\n";
     $tables = array_column($db->run('SHOW TABLES')->fetchAll(PDO::FETCH_NUM), 0);
-    check('a new install has the running order table', in_array('sw_running_orders', $tables, true) && Schema::installed($db) === 2);
+    $cols = fn(string $t) => array_column($db->run('SHOW COLUMNS FROM ' . $db->table($t))->fetchAll(), 'Field');
+    check('a new install has the running order table and the version 3 columns', in_array('sw_running_orders', $tables, true) && Schema::installed($db) === 3
+        && in_array('outro', $cols('tracks'), true) && in_array('continues_show_id', $cols('live_shows'), true));
     $db->pdo->exec('DROP TABLE ' . $db->table('running_orders'));
+    $db->pdo->exec('ALTER TABLE ' . $db->table('tracks') . ' DROP COLUMN outro');
+    $db->pdo->exec('ALTER TABLE ' . $db->table('live_shows') . ' DROP COLUMN continues_show_id');
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '1' WHERE name = 'schema_version'");
     $done = Schema::upgrade($db);
     $tables = array_column($db->run('SHOW TABLES')->fetchAll(PDO::FETCH_NUM), 0);
-    check('a version 1 database is brought up to version 2', $done === [2] && in_array('sw_running_orders', $tables, true) && Schema::installed($db) === 2, json_encode($done));
+    check('a version 1 database is brought up to version 3, step by step', $done === [2, 3] && in_array('sw_running_orders', $tables, true) && Schema::installed($db) === 3
+        && in_array('outro', $cols('tracks'), true) && in_array('continues_show_id', $cols('live_shows'), true), json_encode($done));
     check('  and upgrading again changes nothing', Schema::upgrade($db) === []);
     @mkdir("$root/storage/cache", 0775, true);
     Schema::ensure($db, $root);
-    check('the quick check remembers the version in a small file', trim((string) @file_get_contents("$root/storage/cache/schema-version")) === '2');
+    check('the quick check remembers the version in a small file', trim((string) @file_get_contents("$root/storage/cache/schema-version")) === '3');
 
     // people: the installer's admin, a manager and three DJs
     $user = function (string $name, string $role) use ($db, $station): array {
@@ -110,6 +115,21 @@ try {
     check('the DJ removes a note', ($studio->removeNote($sidney, $pid, $n['note']['id'])['removed'] ?? 0) === $n['note']['id'] && $studio->notes($pid) === []);
     check('  once', ($studio->removeNote($sidney, $pid, $n['note']['id'])['status'] ?? 0) === 404);
 
+    echo "Rejoining\n";
+    $rj = $studio->slot($sidney, $start + 14)['rejoin'];
+    check('a DJ whose studio reloaded may rejoin their open show', $rj && $rj['open'] && $rj['public_id'] === $pid, json_encode($rj));
+    check('  another DJ may not', $studio->slot($anna, $start + 14)['rejoin'] === null && ($studio->rejoin($anna, $start + 14)['status'] ?? 0) === 409);
+    $kept = $studio->postNote($sidney, $pid, 'note', ['text' => 'Still here'], $start + 14.2);
+    $back = $studio->rejoin($sidney, $start + 14.5);
+    $old = $pid;
+    $pid = $back['live']['public_id'] ?? '';
+    check('rejoining carries on as a new show that continues it', ($back['continued'] ?? '') === $old && $pid !== $old && $back['live']['title'] === 'Morning message', json_encode($back));
+    check('  with fresh timing: it starts ahead, at a piece boundary', $back['live']['start'] > $start + 14.5 && ($back['handover']['type'] ?? '') === 'song', json_encode($back['handover'] ?? null));
+    check('  the first show is closed as rejoined', $db->run('SELECT closed_reason FROM ' . $db->table('live_shows') . ' WHERE public_id = ?', [$old])->fetchColumn() === 'rejoined');
+    check('  the notes come along', array_column($studio->notes($pid), 'id') === [$kept['note']['id']]);
+    $start = $back['live']['start'];
+    check('  and its pieces start from 0', ($studio->addPiece($sidney, $pid, 0, 6.0, $piece, $start + 6)['expected'] ?? 0) === 1);
+
     echo "Ending\n";
     check('another DJ can’t end the show', ($studio->endLive($anna, $pid, $start + 15)['status'] ?? 0) === 403);
     $end = $studio->endLive($sidney, $pid, $start + 15);
@@ -119,8 +139,34 @@ try {
     $p->timeline($t2);
     $quiet = $studio->goLive($mgr, $t2);
     check('a manager goes live outside any block', isset($quiet['live']) && $quiet['live']['title'] === 'Live with Mary Manager', json_encode($quiet['error'] ?? ''));
+    $qpid = $quiet['live']['public_id'];
+    $qnote = $studio->postNote($mgr, $qpid, 'note', ['text' => 'Back after this'], $quiet['live']['start'] + 1);
     check('a show that sends nothing is closed by the safety net', $studio->openShow($quiet['live']['start'] + 30) === null
         && $db->run('SELECT closed_reason FROM ' . $db->table('live_shows') . ' WHERE public_id = ?', [$quiet['live']['public_id']])->fetchColumn() === 'timeout');
+
+    echo "Rejoin window\n";
+    $qs = $quiet['live']['start'] + 30;
+    $ls = $db->table('live_shows');
+    $qlast = (float) $db->run("SELECT last_piece_at FROM $ls WHERE public_id = ?", [$qpid])->fetchColumn();
+    $rj = $studio->slot($mgr, $qs)['rejoin'];
+    check('a show the safety net ended may be carried on for 10 minutes', $rj && !$rj['open'] && $rj['public_id'] === $qpid && abs($rj['until'] - ($qlast + 600)) < 1e-6, json_encode($rj));
+    $off = json_decode((string) $station['settings'], true);
+    $studioOff = new Studio(new Planner($db, ['settings' => json_encode(['rejoin_minutes' => 0] + (is_array($off) ? $off : []))] + $station, $root));
+    check('  not when the window is 0', $studioOff->slot($mgr, $qs)['rejoin'] === null && ($studioOff->rejoin($mgr, $qs)['status'] ?? 0) === 409);
+    $c = $studio->rejoin($mgr, $qs);
+    $cpid = $c['live']['public_id'] ?? '';
+    check('rejoining goes live again as a show that continues it', ($c['continued'] ?? '') === $qpid && $cpid !== $qpid && $c['live']['title'] === 'Live with Mary Manager' && ($c['handover']['type'] ?? '') === 'song', json_encode($c));
+    check('  linked to the first show', (int) $db->run("SELECT continues_show_id FROM $ls WHERE public_id = ?", [$cpid])->fetchColumn()
+        === (int) $db->run("SELECT id FROM $ls WHERE public_id = ?", [$qpid])->fetchColumn());
+    check('  taking its notes along', array_column($studio->notes($cpid), 'id') === [$qnote['note']['id']] && $studio->notes($qpid) === []);
+    $again = $studio->rejoin($mgr, $qs + 1);
+    check('  rejoining again carries on the new show, not the old one', ($again['continued'] ?? '') === $cpid && ($again['live']['public_id'] ?? $cpid) !== $cpid);
+    $cpid = $again['live']['public_id'] ?? '';
+    $cs = $again['live']['start'] + 30;
+    check('the second show also times out', $studio->openShow($cs) === null);
+    $clast = (float) $db->run("SELECT last_piece_at FROM $ls WHERE public_id = ?", [$cpid])->fetchColumn();
+    check('  and may be carried on in its window', ($studio->slot($mgr, $cs)['rejoin']['public_id'] ?? '') === $cpid);
+    check('  but not after it', $studio->slot($mgr, $clast + 601)['rejoin'] === null && ($studio->rejoin($mgr, $clast + 601)['status'] ?? 0) === 409);
 
     echo "Running order\n";
     check('a DJ may plan their own block', $studio->mayEditOrder($sidney, "block:$morning") && !$studio->mayEditOrder($sidney, "block:$evening"));

@@ -58,6 +58,7 @@ final class StudioPage
                 !$post && $action === 'state' => $this->state($studio, $planner, $me, $now),
                 !$post && $action === 'songs' => ['songs' => $studio->songs((string) ($_GET['q'] ?? ''))],
                 $post && $action === 'golive' => $studio->goLive($me, $now),
+                $post && $action === 'rejoin' => $studio->rejoin($me, $now),
                 $post && $action === 'piece' => $studio->addPiece($me, (string) ($_GET['live'] ?? ''), (int) ($_GET['seq'] ?? -1), (float) ($_GET['dur'] ?? 0), (string) file_get_contents('php://input'), $now),
                 $post && $action === 'end' => $studio->endLive($me, (string) ($in['live'] ?? ''), $now),
                 $post && $action === 'note' => $studio->postNote($me, (string) ($in['live'] ?? ''), (string) ($in['kind'] ?? ''), is_array($in['fields'] ?? null) ? $in['fields'] : [], $now),
@@ -96,6 +97,7 @@ final class StudioPage
             'settings' => [
                 'segment_seconds' => $s('segment_seconds'), 'crossfade_seconds' => $s('crossfade_seconds'), 'skip_fade_seconds' => $s('skip_fade_seconds'),
                 'live_fade_seconds' => $s('live_fade_seconds'), 'live_timeout_seconds' => $s('live_timeout_seconds'), 'listener_delay_seconds' => $s('listener_delay_seconds'),
+                'fade_shape' => $s('fade_shape'), 'duck_db' => $s('duck_db'), 'live_kbps' => $s('live_kbps'), 'silence_db' => $s('silence_db'), 'rejoin_minutes' => $s('rejoin_minutes'),
             ],
             'station' => ['name' => $planner->station()['name'], 'timezone' => $planner->station()['timezone']],
         ];

@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Stationwagon;
 
 /**
- * The database tables, version 2. Plain MySQL 8 / MariaDB 10.5+ DDL: InnoDB, utf8mb4, no JSON
+ * The database tables, version 3. Plain MySQL 8 / MariaDB 10.5+ DDL: InnoDB, utf8mb4, no JSON
  * column type (JSON lives in MEDIUMTEXT so both servers behave the same), no generated columns.
  *
  * Times: DATETIME columns are UTC wall-clock times (created_at and the like). Stream times
@@ -15,10 +15,12 @@ namespace Stationwagon;
  * step by step (migrations()). The installed version is in settings.schema_version.
  *   v1  the first twelve tables
  *   v2  running_orders (the studio's show plans)
+ *   v3  tracks.outro (the last minute's loudness, for silence detection) and
+ *       live_shows.continues_show_id (a show a DJ rejoined after a drop)
  */
 final class Schema
 {
-    public const VERSION = 2;
+    public const VERSION = 3;
 
     /** Table names without prefix, in creation order (foreign keys need their parents first). */
     public const TABLES = [
@@ -92,6 +94,7 @@ final class Schema
                 `bytes` INT UNSIGNED NOT NULL,
                 `pieces` MEDIUMTEXT NOT NULL,
                 `loudness_lufs` DECIMAL(5,2) NULL,
+                `outro` MEDIUMTEXT NULL COMMENT 'JSON: loudness (LUFS) of each second of the last minute, from song prep',
                 `status` ENUM('processing','ready','error') NOT NULL DEFAULT 'ready',
                 `created_at` DATETIME NOT NULL,
                 PRIMARY KEY (`id`),
@@ -155,6 +158,7 @@ final class Schema
                 `open` TINYINT(1) NOT NULL DEFAULT 1,
                 `last_piece_at` DECIMAL(15,3) NOT NULL,
                 `closed_reason` VARCHAR(64) NULL,
+                `continues_show_id` INT UNSIGNED NULL COMMENT 'the show this one carries on after a drop',
                 `created_at` DATETIME NOT NULL,
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `{$p}live_public` (`public_id`),
@@ -242,6 +246,10 @@ final class Schema
         $opts = 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
         return [
             2 => [self::runningOrders($p, $opts)],
+            3 => [
+                "ALTER TABLE `{$p}tracks` ADD COLUMN `outro` MEDIUMTEXT NULL COMMENT 'JSON: loudness (LUFS) of each second of the last minute, from song prep' AFTER `loudness_lufs`",
+                "ALTER TABLE `{$p}live_shows` ADD COLUMN `continues_show_id` INT UNSIGNED NULL COMMENT 'the show this one carries on after a drop' AFTER `closed_reason`",
+            ],
         ];
     }
 

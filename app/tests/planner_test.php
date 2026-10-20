@@ -126,6 +126,12 @@ try {
     check('the song before hands over with the full crossfade', $r['result']['handover']['fade_out'] == $xf && $r['result']['handover']['cut']);
     $again = $p->goLive($now + 1, 'Second DJ')['result'];
     check('a second go-live is refused while on air', isset($again['error']));
+    // Skip in the seconds between Go live and the show's start used to cut the song on air and
+    // drop the waiting show from the timeline, leaving it open with nowhere to play (round 25)
+    $sk = $p->skip($now + 0.5);
+    $kept = array_values(array_filter($sk['entries'], fn($e) => $e['type'] === 'live' && $e['public_id'] === $live['public_id']));
+    check('Skip before the show starts leaves the show in the timeline', $sk['result']['cut_at'] === null && count($kept) === 1 && $kept[0]['open'] && $near($kept[0]['start'], $live['start']),
+        json_encode($sk['result']));
     $mp3 = file_get_contents("$root/in/Alpha.mp3", false, null, 0, 417 * 230);
     $p0 = $p->addPiece($live['start'] + 7, $live['public_id'], 0, 6.0, $mp3)['result'];
     check('piece 0 accepted', !empty($p0['ok']) && empty($p0['duplicate']));

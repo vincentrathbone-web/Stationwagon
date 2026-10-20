@@ -97,6 +97,7 @@ final class ManagePage
             'confirm' => (int) ($_GET['confirm'] ?? 0),
             'edit' => (int) ($_GET['edit'] ?? 0),
             'maxUpload' => self::maxUploadBytes(),
+            'prepKbps' => (int) $this->planner->setting('prep_kbps'),
         ]);
     }
 
@@ -134,8 +135,9 @@ final class ManagePage
                 // From prep.js: the original's hash (duplicates) and the levelled loudness
                 $source = ((array) ($_POST['source_sha1'] ?? []))[$i] ?? null;
                 $lufs = ((array) ($_POST['prep_lufs'] ?? []))[$i] ?? null;
+                $outro = json_decode((string) (((array) ($_POST['prep_outro'] ?? []))[$i] ?? ''), true);
                 $r = $library->import($tmp, null, null, $name, is_string($source) ? strtolower($source) : null,
-                    is_numeric($lufs) ? (float) $lufs : null);
+                    is_numeric($lufs) ? (float) $lufs : null, is_array($outro) ? $outro : null);
                 $added = $added || !$r['duplicate'];
                 $out[] = ['name' => $name, 'ok' => true, 'duplicate' => $r['duplicate'], 'title' => $r['title'], 'id' => $r['id']];
             } catch (RuntimeException $ex) {
@@ -335,6 +337,7 @@ final class ManagePage
             'errors' => $form['errors'],
             'minLiveTimeout' => $settings->minLiveTimeout(),
             'segment' => (float) $this->planner->setting('segment_seconds'),
+            'delay' => (int) $this->planner->setting('listener_delay_seconds'),
         ]);
     }
 

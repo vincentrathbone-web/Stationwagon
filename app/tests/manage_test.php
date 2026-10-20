@@ -108,15 +108,22 @@ try {
     echo "Sound & safety\n";
     $fresh = fn() => $db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$station['id']])->fetch();
     $set = new StationSettings($db, $fresh());
-    check('the defaults are the values the POC proved', $set->values() === ['crossfade_seconds' => 6, 'skip_fade_seconds' => 2.0, 'live_fade_seconds' => 6.0, 'live_timeout_seconds' => 8, 'recent_tracks' => 5], json_encode($set->values()));
+    $defaults = ['crossfade_seconds' => 6, 'fade_shape' => 'equal_power', 'skip_fade_seconds' => 2.0, 'live_fade_seconds' => 6.0, 'duck_db' => -12,
+        'live_timeout_seconds' => 8, 'rejoin_minutes' => 10, 'silence_db' => -40, 'recent_tracks' => 5, 'live_kbps' => 192, 'prep_kbps' => 192];
+    check('the defaults are the values the POC proved', $set->values() === $defaults, json_encode($set->values()));
     check('with 6 s pieces a DJ gets at least 8 s', $set->minLiveTimeout() === 8);
-    $good = ['crossfade_seconds' => '4', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '3', 'live_timeout_seconds' => '12', 'recent_tracks' => '1'];
-    [, $errs] = $set->save(['crossfade_seconds' => '13', 'skip_fade_seconds' => '0.3', 'live_fade_seconds' => 'soon', 'live_timeout_seconds' => '5'] );
+    $good = ['crossfade_seconds' => '4', 'fade_shape' => 'linear', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '3', 'duck_db' => '-18',
+        'live_timeout_seconds' => '12', 'rejoin_minutes' => '0', 'silence_db' => '0', 'recent_tracks' => '1', 'live_kbps' => '128', 'prep_kbps' => '256'];
+    [, $errs] = $set->save(['crossfade_seconds' => '13', 'fade_shape' => 'wobbly', 'skip_fade_seconds' => '0.3', 'live_fade_seconds' => 'soon', 'duck_db' => '3',
+        'live_timeout_seconds' => '5', 'rejoin_minutes' => '31', 'silence_db' => '-45', 'live_kbps' => '320', 'prep_kbps' => '']);
     check('bad values are refused, field by field', array_keys($errs) === array_keys($good), implode(',', array_keys($errs)));
-    check('  and say what is allowed', str_contains($errs['skip_fade_seconds'], '0 to 6 s in steps of 0.5') && str_contains($errs['live_timeout_seconds'], '8 to 30'), $errs['skip_fade_seconds']);
-    check('  and nothing is stored', (new StationSettings($db, $fresh()))->values()['crossfade_seconds'] === 6);
+    check('  and say what is allowed', str_contains($errs['skip_fade_seconds'], '0 to 6 s in steps of 0.5') && str_contains($errs['live_timeout_seconds'], '8 to 30')
+        && str_contains($errs['duck_db'], '-24 to 0 dB') && $errs['silence_db'] === 'Move on when a song goes quiet: choose one of the options.', $errs['duck_db']);
+    check('  and nothing is stored', (new StationSettings($db, $fresh()))->values() === $defaults);
     [$updated, $errs] = $set->save($good);
-    check('good values are saved', !$errs && (new StationSettings($db, $fresh()))->values() === ['crossfade_seconds' => 4, 'skip_fade_seconds' => 1.5, 'live_fade_seconds' => 3.0, 'live_timeout_seconds' => 12, 'recent_tracks' => 1], json_encode($errs));
+    check('good values are saved, choices as their own type', !$errs && (new StationSettings($db, $fresh()))->values() === ['crossfade_seconds' => 4, 'fade_shape' => 'linear', 'skip_fade_seconds' => 1.5,
+        'live_fade_seconds' => 3.0, 'duck_db' => -18, 'live_timeout_seconds' => 12, 'rejoin_minutes' => 0, 'silence_db' => 0, 'recent_tracks' => 1, 'live_kbps' => 128, 'prep_kbps' => 256], json_encode($errs));
+    check('the quality choices show megabytes an hour', StationSettings::mbPerHour(192) === 86 && StationSettings::mbPerHour(128) === 58);
     $kept = Planner::settings($fresh());
     check('other settings are kept', $kept['skin'] === 'green' && (float) $kept['segment_seconds'] === 6.0);
     $p2 = new Planner($db, $updated, $root);
@@ -131,6 +138,37 @@ try {
     check('  and the show times out after the new 12 s', !$p2->needsPlan($live, $show['last_piece_at'] + 11) && $p2->needsPlan($live, $show['last_piece_at'] + 13));
     $p2->endLive($later + 20, $show['public_id']);
     check('numbers show without needless decimals', StationSettings::show(6.0) === '6' && StationSettings::show(1.5) === '1.5');
+
+    echo "Silence detection\n";
+    $tail = array_merge(array_fill(0, 40, -14.0), array_fill(0, 20, -99.0));   // 20 silent seconds at the end
+    check('song prep’s last minute is kept, rounded and in range', Library::outro([-14.04, -120, 3, 7]) === '[-14,-99,0,0]');
+    check('  anything else is dropped', Library::outro(null) === null && Library::outro([]) === null && Library::outro(['loud']) === null && Library::outro(array_fill(0, 121, -20)) === null);
+    $song = ['duration' => 200.0, 'outro' => Library::outro($tail)];
+    check('a song with 20 silent seconds goes quiet 20 s from its end', Planner::quietFrom($song, -40) === 180.0);
+    check('  not when silence detection is off', Planner::quietFrom($song, 0) === null);
+    $fade = array_merge(array_fill(0, 50, -14.0), [-30, -33, -36, -38, -42, -45, -48, -52, -60, -99]);
+    check('a fade-out counts from where it drops below the level', Planner::quietFrom(['duration' => 200.0, 'outro' => json_encode($fade)], -40) === 194.0
+        && Planner::quietFrom(['duration' => 200.0, 'outro' => json_encode($fade)], -30) === 191.0);
+    check('a quiet part of 2 s or less is left alone', Planner::quietFrom(['duration' => 200.0, 'outro' => json_encode(array_merge(array_fill(0, 58, -14.0), [-99, -99]))], -40) === null);
+    check('a song is never cut shorter than 30 s', Planner::quietFrom(['duration' => 40.0, 'outro' => json_encode(array_merge(array_fill(0, 5, -14.0), array_fill(0, 35, -99.0)))], -40) === null);
+    check('no outro, no change', Planner::quietFrom(['duration' => 200.0, 'outro' => null], -40) === null);
+    $tracksT = $db->table('tracks');
+    $db->run("UPDATE $tracksT SET outro = ? WHERE station_id = ?", [Library::outro($tail), $station['id']]);
+    $durations = array_column($db->run("SELECT id, duration_s FROM $tracksT WHERE station_id = ? AND status = 'ready'", [$station['id']])->fetchAll(), 'duration_s', 'id');
+    [$quietOn] = $set->save(['silence_db' => '-40'] + $good);
+    $p3 = new Planner($db, $quietOn, $root);
+    $at3 = $now + 3600;
+    $p3->replan($at3);
+    $songs = array_values(array_filter($p3->timeline($at3), fn($e) => $e['start'] > $at3 + 2 && $e['type'] === 'song'));
+    $early = array_filter($songs, fn($e) => $e['play'] <= $durations[$e['track_id']] - 20 + 1e-6 && $e['play'] > $durations[$e['track_id']] - 26);
+    check('the planner moves on at the last piece before the silence', $songs && count($early) === count($songs),
+        count($early) . ' of ' . count($songs));
+    [$quietOff] = $set->save(['silence_db' => '0'] + $good);
+    $p4 = new Planner($db, $quietOff, $root);
+    $p4->replan($at3);
+    $songs = array_values(array_filter($p4->timeline($at3), fn($e) => $e['start'] > $at3 + 2 && $e['type'] === 'song'));
+    check('  and plays to the end again when it is off', $songs && !array_filter($songs, fn($e) => $e['play'] < $durations[$e['track_id']] - 4 - 6 - 1e-6));
+    $db->run("UPDATE $tracksT SET outro = NULL WHERE station_id = ?", [$station['id']]);
 
     echo "Staff\n";
     $staff = new Staff($db, $station);

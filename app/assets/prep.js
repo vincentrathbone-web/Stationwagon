@@ -5,7 +5,7 @@
 (() => {
   const here = document.currentScript.src.replace(/[^/?#]*([?#].*)?$/, "");
   const workerUrl = document.currentScript.dataset.worker || here + "prep-worker.js"; // tagged by content
-  const RATE = 44100, KBPS = 192;
+  const RATE = 44100, KBPS = Number(document.currentScript.dataset.kbps) || 192; // Sound & safety: quality of prepared songs
   const MAX_BYTES = 60 * 1024 * 1024; // about an hour at 128 kbps; longer would need too much memory
 
   const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");

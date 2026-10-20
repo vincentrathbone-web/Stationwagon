@@ -27,3 +27,6 @@ Thumbs.db
 
 # local dev notes with test credentials
 *.local.txt
+
+# local saved copies of the published mock-ups (the sources are in design/)
+prototypes/*.html

@@ -30,6 +30,7 @@ const port = 9300 + Math.floor(Math.random() * 500);
 const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run",
   "--autoplay-policy=no-user-gesture-required", "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "about:blank"], { stdio: "ignore" });
 let ws, id = 0;
+const dialogs = [];
 const pending = new Map();
 const call = (method, params = {}) => new Promise((ok) => { const i = ++id; pending.set(i, ok); ws.send(JSON.stringify({ id: i, method, params })); });
 /** Run in the page as if the DJ had clicked (sound and the mic need a user gesture). */
@@ -62,7 +63,12 @@ try {
   const target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === "page");
   ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((ok, bad) => { ws.onopen = ok; ws.onerror = bad; });
-  ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); } };
+  ws.onmessage = (m) => {
+    const d = JSON.parse(m.data);
+    if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); }
+    // "Leave site?" while on air: leave, as a DJ reloading the page would
+    if (d.method === "Page.javascriptDialogOpening") { dialogs.push(d.params.type); call("Page.handleJavaScriptDialog", { accept: true }); }
+  };
   await call("Page.enable");
 
   console.log("A DJ without a show");
@@ -206,6 +212,29 @@ try {
   await sleep(1200);
   check("  an empty note says why and isn't posted", !(await evaluate("document.getElementById('noteErr').hidden")) && (await state()).notes.length === 1, await text("#noteErr"));
   await click("#stDrawerClose");
+
+  console.log("Rejoining after a reload");
+  await go(`${base}/studio`);
+  let bannerOk = false;
+  for (let i = 0; i < 30 && !bannerOk; i++) { await sleep(200); bannerOk = (await text("#stBannerText")).includes("Switch on the studio to rejoin it"); }
+  check("reloading during a show asks first", dialogs.includes("beforeunload"), dialogs.join(", "));
+  check("  after the reload the studio says the show is still on and how to rejoin", bannerOk, await text("#stBannerText"));
+  await clickText("#stBannerActs button", "Switch on the studio");
+  let rejoinBtn = false;
+  for (let i = 0; i < 50 && !rejoinBtn; i++) { await sleep(200); rejoinBtn = await clickText("#stBannerActs button", "Rejoin your show"); }
+  check("  once on, Rejoin your show carries it on", rejoinBtn);
+  s = await until((x) => x.live && x.live.sending, 15);
+  const oldId = liveId;
+  liveId = s ? s.live.public_id : liveId;
+  check("  as a new show at a fresh boundary, Deck A on the AutoDJ song", !!s && liveId !== oldId && Math.abs(s.live.firstAt - s.live.start) < 0.05 && s.decks.A.playing,
+    s ? `first sample ${((s.live.firstAt - s.live.start) * 1000).toFixed(1)} ms from the start` : await text("#stBannerText"));
+  const oldInfo = helper("live-info", oldId);
+  check("  the first show is closed as rejoined, its notes moved over", oldInfo.closed_reason === "rejoined" && oldInfo.notes === 0 && helper("live-info", liveId).notes === 1,
+    `${oldInfo.closed_reason}, notes ${oldInfo.notes} → ${helper("live-info", liveId).notes}`);
+  s = await until((x) => x.sent >= 2, 20);
+  info = helper("live-info", liveId);
+  check("  and its pieces go out in order, with no errors", !!s && s.errors === 0 && info.pieces.length >= 2 && info.pieces.every((p, i) => p.seq === i),
+    s ? `${s.sent} sent, ${s.errors} errors` : JSON.stringify((await state()).events.slice(-4)));
 
   console.log("Ending the show");
   await click("#stGo");

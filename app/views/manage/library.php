@@ -1,5 +1,5 @@
 <?php use function Stationwagon\{h, duration, megabytes}; use Stationwagon\App;
-/** @var array $tracks @var string $q @var int $total @var int $bytes @var int $confirm @var int $edit @var int $maxUpload @var string $csrf */
+/** @var array $tracks @var string $q @var int $total @var int $bytes @var int $confirm @var int $edit @var int $maxUpload @var int $prepKbps @var string $csrf */
 ?>
 <div class="vhead">
   <div>
@@ -67,5 +67,5 @@
   </table>
 </div>
 <script src="<?= h(App::asset('assets/prep-core.js')) ?>" defer></script>
-<script src="<?= h(App::asset('assets/prep.js')) ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js'])) ?>" defer></script>
+<script src="<?= h(App::asset('assets/prep.js')) ?>" data-kbps="<?= (int) $prepKbps ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js'])) ?>" defer></script>
 <script src="<?= h(App::asset('assets/upload.js')) ?>" defer></script>

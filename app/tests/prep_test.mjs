@@ -66,6 +66,11 @@ check("a very quiet recording gets at most +12 dB", r.info.capped && near(r.info
 check("a silent file is left alone", core.prepare(tone([[null, 5]], R), R).skip !== undefined);
 r = core.prepare(tone([[-20, 4]], R, { mono: true }), R);
 check("mono comes out as stereo", r.channels.length === 2 && near(core.loudness(r.channels, R), -16, 0.15));
+const tail = core.outro(tone([[-23, 10], [null, 5]], 48000), 48000);
+check("the last minute is measured second by second, silence as -99", tail.length === 15 && tail.slice(0, 10).every((v) => near(v, -23, 0.2)) && tail.slice(10).every((v) => v === -99), JSON.stringify(tail));
+check("  a long song gives 60 values", core.outro(tone([[-23, 70]], 44100), 44100).length === core.P.OUTRO_S);
+r = core.prepare(tone([[-26, 8]], R), R);
+check("  and song prep keeps them, levelled like the song", r.info.outro.length === 8 && r.info.outro.every((v) => near(v, -16, 0.3)), JSON.stringify(r.info.outro));
 
 console.log("Tags and MP3");
 const enc = new TextEncoder();

@@ -47,6 +47,7 @@ final class App
                 'manage/djs' => (new ManagePage())->djs(),
                 'manage/sound' => (new ManagePage())->sound(),
                 'studio' => (new StudioPage())->page(),
+                'embed' => self::embed(),
                 default => self::notFound(),
             };
         } catch (Throwable $ex) {
@@ -140,6 +141,20 @@ final class App
             error_log('Stationwagon player page: ' . $ex);
         }
         View::render('player', $vars + ['wide' => true]);
+    }
+
+    /**
+     * The small player other websites put in an iframe: its own page, no site header, no session.
+     * Any site may frame it; `?look=light` suits a light website.
+     */
+    private static function embed(): void
+    {
+        $station = self::station();
+        $light = ($_GET['look'] ?? '') === 'light';
+        header_remove('X-Frame-Options');
+        header('Content-Security-Policy: frame-ancestors *');
+        header('Content-Type: text/html; charset=utf-8');
+        require SW_ROOT . '/views/embed.php';
     }
 
     /** What's on air now and next, plus the library size; null if the planner can't answer. */

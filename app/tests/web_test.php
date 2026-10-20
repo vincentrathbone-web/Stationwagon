@@ -177,6 +177,40 @@ try {
     check('  and is never cached', str_contains(implode(',', $r2['headers']['cache-control'] ?? []), 'no-store'));
     $page = $s->go('')['body'];
     check('the station page has the notes panel (hidden until there are notes)', str_contains($page, 'id="lpNotes"') && preg_match('~assets/notes\.js\?v=[0-9a-f]{10}"~', $page) === 1);
+    echo "Now playing and the embed\n";
+    $r = $s->go('api/nowplaying.php');
+    $np = json_decode($r['body'], true);
+    $tl = json_decode($s->go('api/timeline.php')['body'], true);
+    check('now-playing answers as JSON', $r['status'] === 200 && is_array($np) && str_contains(implode(',', $r['headers']['content-type'] ?? []), 'json'), (string) $r['status']);
+    check('  any website may read it (CORS)', ($r['headers']['access-control-allow-origin'][0] ?? '') === '*');
+    $ncc = implode(',', $r['headers']['cache-control'] ?? []);
+    check('  browsers always ask again; Cloudflare may keep it 2 s', str_contains($ncc, 'max-age=0') && str_contains($ncc, 's-maxage=2'), $ncc);
+    check('  it is told at the listener delay', ($np['delay'] ?? 0) === 20 && abs(($np['server_now'] ?? 0) - ($np['heard_at'] ?? 0) - 20) < 0.2 && abs(($np['server_now'] ?? 0) - microtime(true)) < 30);
+    check('  with the station, now, next and recent', isset($np['station']['name']) && array_key_exists('on_air', $np) && is_array($np['next'] ?? null) && is_array($np['recent'] ?? null));
+    $heardEntry = null;
+    foreach ($tl['entries'] ?? [] as $e) {
+        if ($e['start'] <= $np['heard_at'] && ($np['heard_at'] < $e['end'] || ($e['type'] === 'live' && !empty($e['open'])))) {
+            $heardEntry = $e;
+            break;
+        }
+    }
+    check('  on air is what the timeline plays at the listener delay', $heardEntry !== null && ($np['on_air']['title'] ?? null) === $heardEntry['title'] && abs($np['on_air']['started'] - $heardEntry['start']) < 0.2,
+        ($np['on_air']['title'] ?? '-') . ' / ' . ($heardEntry['title'] ?? '-'));
+    $songsAfter = array_values(array_filter($tl['entries'] ?? [], fn($e) => $e['type'] === 'song' && $heardEntry && $e['start'] > $heardEntry['start']));
+    check('  next is the coming songs, in order', $np['next'] && $songsAfter && $np['next'][0]['title'] === $songsAfter[0]['title'] && abs($np['next'][0]['starts'] - $songsAfter[0]['start']) < 0.2 && count($np['next']) <= 3);
+    $starts = array_column($np['recent'], 'started');
+    $sorted = $starts;
+    rsort($sorted);
+    check('  recent songs are newest first and already over', count($starts) <= 5 && $starts === $sorted && !array_filter($starts, fn($t) => $t >= $np['on_air']['started']), implode(' ', $starts));
+    check('  no file addresses in it', !str_contains($r['body'], '.mp3') && !str_contains($r['body'], 'storage/'));
+    $e = new Browser($base);
+    $r = $e->go('embed');
+    check('the embed page opens', $r['status'] === 200 && str_contains($r['body'], 'id="embed"') && preg_match('~assets/embed\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1, (string) $r['status']);
+    check('  without the site header, and no cookie', !str_contains($r['body'], 'class="brand"') && $e->setCookies === []);
+    check('  any website may frame it', !isset($r['headers']['x-frame-options']) && str_contains(implode(',', $r['headers']['content-security-policy'] ?? []), 'frame-ancestors *'),
+        implode(',', $r['headers']['x-frame-options'] ?? []) . ' | ' . implode(',', $r['headers']['content-security-policy'] ?? []));
+    check('  ?look=light gives the light look', str_contains($e->go('embed?look=light')['body'], '<html lang="en" class="light">') && !str_contains($r['body'], 'class="light"'));
+    check('the station page offers the embed code with Copy', str_contains($page, 'id="lpEmbed"') && str_contains($page, 'id="lpEmbedCopy"') && str_contains($page, 'data-path="' . $basePath . '/embed"'));
     foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/'] as $private) {
         $code = (new Browser($base))->go($private)['status'];
         check("$private is not served", in_array($code, [403, 404], true), (string) $code);
@@ -353,15 +387,19 @@ try {
         // Sound & safety (the station's own values are put back in the cleanup)
         $origSettings = $db->run('SELECT settings FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetchColumn();
         $r = $m->go('manage/sound');
-        check('Sound & safety opens with five sliders', $r['status'] === 200 && substr_count($r['body'], 'type="range"') === 5, (string) $r['status']);
-        $values = ['csrf' => $csrf, 'crossfade_seconds' => '5', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '4', 'live_timeout_seconds' => '10', 'recent_tracks' => '3'];
+        check('Sound & safety opens with seven sliders and four choices', $r['status'] === 200 && substr_count($r['body'], 'type="range"') === 7 && substr_count($r['body'], '<select') === 4, (string) $r['status']);
+        check('with the fade shape preview, the MB an hour and the listener delay', str_contains($r['body'], 'id="fadeCurve"') && str_contains($r['body'], 'fades.js') && str_contains($r['body'], '192 kbps · 86 MB an hour') && preg_match('/About \d+ s/', $r['body']) === 1);
+        $values = ['csrf' => $csrf, 'crossfade_seconds' => '5', 'fade_shape' => 's_curve', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '4', 'duck_db' => '-10',
+            'live_timeout_seconds' => '10', 'rejoin_minutes' => '5', 'silence_db' => '-50', 'recent_tracks' => '3', 'live_kbps' => '160', 'prep_kbps' => '256'];
+        $r = $m->go('manage/sound', ['fade_shape' => 'wobbly'] + $values);
+        check('a fade shape not on the list is refused', $flashed($after($m, $r), 'Fade shape: choose one of the options.'));
         $r = $m->go('manage/sound', ['crossfade_seconds' => '99'] + $values);
         $p = $after($m, $r);
         check('a crossfade of 99 s is refused', $flashed($p, 'Not saved: Crossfade between songs: choose 0 to 12 s.') && str_contains($p['body'], 'value="99"'));
         $r = $m->go('manage/sound', $values);
         check('good values are saved', $flashed($after($m, $r), 'Saved. New settings apply from the next song.'));
         $feed = json_decode((new Browser($base))->go('api/timeline.php')['body'], true);
-        check('the player gets the new fades', ($feed['settings']['crossfade_seconds'] ?? null) == 5 && ($feed['settings']['live_fade_seconds'] ?? null) == 4, json_encode($feed['settings'] ?? null));
+        check('the player gets the new fades', ($feed['settings']['crossfade_seconds'] ?? null) == 5 && ($feed['settings']['live_fade_seconds'] ?? null) == 4 && ($feed['settings']['fade_shape'] ?? null) === 's_curve', json_encode($feed['settings'] ?? null));
         $soon = array_values(array_filter($feed['entries'] ?? [], fn($e) => $e['type'] === 'song' && $e['start'] > $feed['server_now'] + 10));
         check('and the songs planned next crossfade over 5 s', $soon && array_unique(array_column($soon, 'fade_out')) == [5.0], json_encode(array_values(array_unique(array_column($soon, 'fade_out')))));
 

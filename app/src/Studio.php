@@ -79,12 +79,73 @@ final class Studio
             $out['may'] = false;
             $who = $open['dj_name'] ?: 'Another presenter';
             $out['reason'] = match (true) {
-                (int) $open['dj_user_id'] === (int) $user['id'] => 'Your show is still on air from before. End it, then go live again.',
+                (int) $open['dj_user_id'] === (int) $user['id'] => $this->rejoinMinutes() > 0
+                    ? 'Your show is still on air from before. Rejoin it to carry on, or end it.'
+                    : 'Your show is still on air from before. End it, then go live again.',
                 $this->canControl($user, $open) => sprintf('%s is on air now (%s). As a manager you can end that show here.', $who, $open['title']),
                 default => sprintf('%s is on air now (%s). Wait until that show ends.', $who, $open['title']),
             };
         }
+        $out['rejoin'] = $this->rejoinable($user, $open, $out['may'], $now);
         return $out;
+    }
+
+    private function rejoinMinutes(): int
+    {
+        return (int) $this->planner->setting('rejoin_minutes');
+    }
+
+    /**
+     * The DJ's own show they may carry on (Sound & safety: DJ rejoin window): one still open (the
+     * studio was reloaded) or one the safety net ended less than the window ago, while they may go
+     * live. @return ?array{public_id:string, title:string, open:bool, until:?float}
+     */
+    private function rejoinable(array $user, ?array $open, bool $may, float $now): ?array
+    {
+        $window = $this->rejoinMinutes() * 60;
+        if ($window <= 0) {
+            return null;
+        }
+        if ($open) {
+            return (int) $open['dj_user_id'] === (int) $user['id']
+                ? ['public_id' => $open['public_id'], 'title' => $open['title'], 'open' => true, 'until' => null] : null;
+        }
+        if (!$may) {
+            return null;
+        }
+        $ls = $this->db->table('live_shows');
+        $last = $this->db->run("SELECT * FROM $ls WHERE station_id = ? AND dj_user_id = ? ORDER BY id DESC LIMIT 1",
+            [$this->station['id'], $user['id']])->fetch();
+        if (!$last || (int) $last['open'] === 1 || $last['closed_reason'] !== 'timeout' || (float) $last['last_piece_at'] + $window < $now) {
+            return null;
+        }
+        return ['public_id' => $last['public_id'], 'title' => $last['title'], 'open' => false, 'until' => (float) $last['last_piece_at'] + $window];
+    }
+
+    /**
+     * Carry on the DJ's own show, open (the studio was reloaded) or ended by the safety net: it goes
+     * live again as a new show that continues it, taking over its notes. An open one is closed first
+     * and the AutoDJ fills the moments between. (Sending the open show's next pieces instead would
+     * put the new audio at the stream time where the old pieces stopped, in the past: after a gap
+     * of more than about 12 s every later piece would reach listeners too late.)
+     */
+    public function rejoin(array $user, float $now): array
+    {
+        $slot = $this->slot($user, $now);
+        $r = $slot['rejoin'];
+        if ($r === null) {
+            return ['error' => 'There’s no show of yours to rejoin.', 'status' => 409];
+        }
+        $prev = $this->show($r['public_id']);
+        if ($r['open']) {
+            $this->planner->endLive($now, $prev['public_id'], 'rejoined');
+        }
+        $res = $this->planner->goLive($now, $prev['title'], (int) $user['id'], (int) $prev['id'])['result'];
+        if (isset($res['error'])) {
+            return ['error' => $res['error'], 'status' => 409];
+        }
+        $this->db->run('UPDATE ' . $this->db->table('presenter_notes') . ' SET live_show_id = ? WHERE live_show_id = ?', [$res['live']['live_show_id'], $prev['id']]);
+        return ['live' => $res['live'], 'handover' => $this->forStudio($res['handover']), 'continued' => $prev['public_id'], 'slot' => $slot];
     }
 
     /** Start the show: checks the rules, then the planner hands over at the next piece boundary. */

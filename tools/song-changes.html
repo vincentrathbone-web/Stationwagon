@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Song changes</title>
+<!-- Written by tools/song-changes.mjs next to data.js and clips/. -->
+<style>
+  :root {
+    --bg: #f5f6f3; --card: #ffffff; --ink: #1d2320; --soft: #5d6762; --line: #dfe3dd;
+    --green: #1f8f4e; --amber: #b86e00; --amber-bg: #fff3dc; --red: #c23434; --red-bg: #fde8e8; --ok-bg: #e5f4ea; --info: #3d6a99; --info-bg: #e6eef7;
+    --strip: #1f1f1f; --src-a: #4da3ff; --src-b: #ff5fa8; --src-out: #ffffff; --warn: #f0a020;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 28px max(16px, env(safe-area-inset-right, 0px)) 60px max(16px, env(safe-area-inset-left, 0px)); display: grid; gap: 22px; }
+  h1 { margin: 0; font-size: 28px; letter-spacing: -0.01em; text-wrap: balance; }
+  h2 { margin: 0; font-size: 18px; }
+  .sub { margin: 4px 0 0; color: var(--soft); max-width: 70ch; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: grid; gap: 12px; }
+  .first { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .first a { color: inherit; text-decoration: none; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .first a:hover .t { text-decoration: underline; }
+  .t { font-weight: 600; }
+  .why { color: var(--soft); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; color: var(--soft); font-size: 13px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; }
+  .cards { display: grid; gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: grid; gap: 10px; scroll-margin-top: 12px; }
+  .card:target { outline: 2px solid var(--green); }
+  .head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .n { font: 600 13px var(--mono); color: var(--soft); }
+  .songs { font-weight: 600; min-width: 0; }
+  .songs .arrow { color: var(--soft); font-weight: 400; margin: 0 6px; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--ok-bg); color: var(--green); white-space: nowrap; }
+  .badge.amber { background: var(--amber-bg); color: var(--amber); }
+  .badge.red { background: var(--red-bg); color: var(--red); }
+  .badge.info { background: var(--info-bg); color: var(--info); }
+  canvas { display: block; width: 100%; border-radius: 6px; background: var(--strip); cursor: pointer; }
+  .chart { height: 96px; }
+  .context { height: 26px; }
+  audio { width: 100%; height: 36px; }
+  .nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; margin: 0; }
+  .nums div { min-width: 0; }
+  .nums dt { font-size: 12px; color: var(--soft); text-transform: uppercase; letter-spacing: 0.04em; }
+  .nums dd { margin: 0; font: 500 14px var(--mono); }
+  .prep { font-size: 13px; color: var(--soft); margin: 0; }
+  .note { font-size: 13px; color: var(--soft); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Song changes</h1>
+    <p class="sub" id="sub"></p>
+  </header>
+  <section class="panel">
+    <h2>Listen to these first</h2>
+    <ol class="first" id="first"></ol>
+  </section>
+  <div class="legend">
+    <span><i style="background:var(--src-a)"></i>Deck A</span>
+    <span><i style="background:var(--src-b)"></i>Deck B</span>
+    <span><i style="background:var(--strip);border:1px solid #888"></i>White line: what goes out</span>
+    <span>Level lines at −1 (amber), −6, −12 and −20 dB. The small strip shows a minute around the change; the brighter part is the clip.</span>
+  </div>
+  <div class="cards" id="cards"></div>
+  <p class="note" id="note"></p>
+</div>
+<script src="data.js"></script>
+<script>
+(() => {
+  const D = window.SONG_CHANGES, $ = (id) => document.getElementById(id);
+  const css = getComputedStyle(document.documentElement), tok = (n) => css.getPropertyValue(n).trim();
+  const COL = [tok("--src-a"), tok("--src-b")], OUT = tok("--src-out"), WARN = tok("--warn");
+  const W = 30, CLIP = 7.5, STEP = 0.01, LEVELS = [-1, -6, -12, -20];
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const len = (r) => (r ? r[1] - r[0] : 0), s1 = (v) => v.toFixed(1);
+  const lu = (v) => (v === null ? "silent" : s1(v) + " LUFS");
+
+  $("sub").textContent = `${D.folder}: ${D.songs.length} songs, ${D.changes.length} changes, in the folder's order. Each song is prepared as the upload page prepares it (levelled to −16 LUFS, silence trimmed), cut into ${D.piece} s pieces, and each change is planned and mixed as the station does it (${D.crossfade} s crossfade). Each clip is 15 s around the change.`;
+  $("note").textContent = `Made ${new Date(D.made).toLocaleString()} by tools/song-changes.mjs.`;
+
+  // What to listen for, worst first
+  // A quiet end or start (10 LU under the −16 target) is usually how the music is written: noted,
+  // not a fault. Faults: clipping, silence, a long quiet stretch, quiet running into quiet, and a
+  // loudness jump between two normal parts (levelling that didn't match).
+  const QUIET = -26;
+  const flags = (c) => {
+    const f = [], qEnd = c.before !== null && c.before < QUIET, qStart = c.after !== null && c.after < QUIET;
+    const step = c.before !== null && c.after !== null ? c.after - c.before : null;
+    if (c.over > 0) f.push(["red", "Clips", `the mix goes over 0 dB (peak ${s1(c.peak_db)} dB)`, 4]);
+    if (len(c.silence) >= 1.5) f.push(["red", "Dead air", `${s1(len(c.silence))} s of silence`, 3 + len(c.silence) / 10]);
+    if (len(c.quiet) >= 5) f.push(["amber", "Long quiet", `${s1(len(c.quiet))} s very quiet (20 LU under the target)`, 2 + len(c.quiet) / 20]);
+    if (qEnd && qStart) f.push(["amber", "Quiet into quiet", `a quiet ending (${s1(c.before)} LUFS) runs into a quiet start (${s1(c.after)} LUFS)`, 1.8]);
+    else if (qEnd) f.push(["info", "Quiet ending", `the outgoing song is already quiet (${s1(c.before)} LUFS)`, 0]);
+    else if (qStart) f.push(["info", "Quiet start", `the next song starts quietly (${s1(c.after)} LUFS)`, 0]);
+    if (!qEnd && !qStart && step !== null && Math.abs(step) >= 5) f.push(["amber", "Loudness step", `${step > 0 ? "+" : ""}${s1(step)} LU from one song to the next`, 1 + Math.abs(step) / 20]);
+    return f;
+  };
+  const flagged = D.changes.map((c) => ({ c, f: flags(c) }));
+  const ranked = flagged.filter((x) => x.f.some((f) => f[0] !== "info")).sort((x, y) => Math.max(...y.f.map((f) => f[3])) - Math.max(...x.f.map((f) => f[3])));
+  const noted = flagged.filter((x) => x.f.length && x.f.every((f) => f[0] === "info"));
+  const name = (c) => `${D.songs[c.from].title} → ${D.songs[c.to].title}`;
+  $("first").innerHTML = (ranked.length
+    ? ranked.map(({ c, f }) => `<li><a href="#c${c.from}"><span class="t">${esc(name(c))}</span><span class="why">${esc(f.filter((x) => x[0] !== "info").map((x) => x[2]).join("; "))}</span></a></li>`).join("")
+    : "<li>Nothing stands out: every change is smooth by these measures.</li>")
+    + (noted.length ? `<li class="why">${noted.length} more ${noted.length === 1 ? "change has" : "changes have"} a quiet start or ending, as the music is written; marked below.</li>` : "");
+
+  // One chart: stacked mirrored sources, the output line, faint level lines
+  function chart(cv, c, t0, t1, opts) {
+    const r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1, w = r.width, h = r.height;
+    cv.width = Math.round(w * d); cv.height = Math.round(h * d);
+    const g = cv.getContext("2d"); g.setTransform(d, 0, 0, d, 0, 0);
+    const mid = h / 2, half = h / 2 - 1, n = Math.round(w * d), cw = 1 / d;
+    const col = (t) => Math.floor((t + W) / STEP), slots = [c.slot, 1 - c.slot];
+    const line = [];
+    for (let x = 0; x < n; x++) {
+      const ta = t0 + (x / n) * (t1 - t0), tb = t0 + ((x + 1) / n) * (t1 - t0), ia = col(ta), ib = Math.max(ia, col(tb) - 1);
+      let a = 0, b = 0, o = 0;
+      for (let i = ia; i <= ib; i++) { a = Math.max(a, (c.cols.a[i] || 0) / 1000); b = Math.max(b, (c.cols.b[i] || 0) / 1000); o = Math.max(o, (c.cols.out[i] || 0) / 1000); }
+      const dim = opts.window && (ta < -CLIP || ta > CLIP);
+      const tot = a + b;
+      if (tot > 1e-6) {
+        const H = Math.min(1, tot) * half; let acc = 0;
+        g.globalAlpha = dim ? 0.35 : 0.92;
+        for (const [v, s] of [[a, slots[0]], [b, slots[1]]]) {
+          if (v <= 0) continue;
+          const part = (v / tot) * H; g.fillStyle = COL[s];
+          g.fillRect(x * cw, mid - acc - part, cw, part); g.fillRect(x * cw, mid + acc, cw, part); acc += part;
+        }
+      }
+      line.push([x * cw, o, dim]);
+    }
+    g.globalAlpha = 0.9; g.strokeStyle = OUT; g.lineWidth = 1;
+    for (const sgn of [-1, 1]) { g.beginPath(); let pen = false; for (const [x, o] of line) { if (o <= 1e-6) { pen = false; continue; } const y = mid - sgn * Math.min(1, o) * half; if (pen) g.lineTo(x, y); else { g.moveTo(x, y); pen = true; } } g.stroke(); }
+    if (opts.grid) {
+      g.font = "500 10px " + tok("--mono"); g.textBaseline = "middle"; let prev = -1e9;
+      for (const L of LEVELS) {
+        const off = Math.pow(10, L / 20) * half, ceil = L === -1;
+        g.globalAlpha = ceil ? 0.35 : 1; g.strokeStyle = ceil ? WARN : "rgba(255,255,255,.1)"; g.setLineDash(ceil ? [4, 3] : []);
+        for (const sgn of [-1, 1]) { const y = Math.round(mid - sgn * off) + 0.5; g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+        const y = Math.max(6, mid - off);
+        if (y - prev >= 13) { const lab = "−" + Math.abs(L); g.setLineDash([]); g.globalAlpha = 1; g.fillStyle = "rgba(18,18,18,.55)"; g.fillRect(1, y - 6, g.measureText(lab).width + 6, 12); g.globalAlpha = 0.5; g.fillStyle = ceil ? WARN : "#fff"; g.fillText(lab, 4, y + 0.5); prev = y; }
+      }
+      g.setLineDash([]);
+    }
+    // the change (amber tick) and the end of the fade
+    g.globalAlpha = 0.8; g.fillStyle = WARN;
+    for (const t of [0, c.fade]) { const x = ((t - t0) / (t1 - t0)) * w; g.fillRect(Math.round(x), 0, 1, 6); g.fillRect(Math.round(x), h - 6, 1, 6); }
+    g.globalAlpha = 1;
+    return { w, t0, t1 };
+  }
+
+  const cards = $("cards");
+  for (const c of D.changes) {
+    const a = D.songs[c.from], b = D.songs[c.to], f = flags(c), step = c.before !== null && c.after !== null ? c.after - c.before : null;
+    const el = document.createElement("article");
+    el.className = "card"; el.id = "c" + c.from;
+    el.innerHTML = `
+      <div class="head"><span class="n">${a.n} → ${b.n}</span>
+        <span class="songs">${esc(a.title)}<span class="arrow">→</span>${esc(b.title)}</span>
+        <span class="badges">${f.some((x) => x[0] !== "info") ? "" : '<span class="badge">Smooth</span>'}${f.map((x) => `<span class="badge ${x[0]}">${x[1]}</span>`).join("")}</span></div>
+      <audio controls preload="none" src="${esc(c.clip)}"></audio>
+      <canvas class="chart" role="img" aria-label="The output around this change"></canvas>
+      <canvas class="context" role="img" aria-label="A minute around this change"></canvas>
+      <dl class="nums">
+        <div><dt>Crossfade</dt><dd>${s1(c.fade)} s, at ${s1(c.play)} s</dd></div>
+        <div><dt>Loudness before → after</dt><dd>${lu(c.before)} → ${lu(c.after)}${step !== null ? ` (${step > 0 ? "+" : ""}${s1(step)})` : ""}</dd></div>
+        <div><dt>During the fade</dt><dd>${lu(c.overlap)}</dd></div>
+        <div><dt>Peak of the mix</dt><dd>${s1(c.peak_db)} dB${c.over ? `, ${c.over} samples over` : ""}</dd></div>
+        <div><dt>Very quiet</dt><dd>${c.quiet ? `${s1(len(c.quiet))} s (${s1(c.quiet[0])} to ${s1(c.quiet[1])} s)` : "none"}</dd></div>
+        <div><dt>Silence</dt><dd>${c.silence ? `${s1(len(c.silence))} s (${s1(c.silence[0])} to ${s1(c.silence[1])} s)` : "none"}</dd></div>
+      </dl>
+      <p class="prep">Prep: ${esc(a.title)} ${s1(a.prep.lufs_before)} → ${s1(a.prep.lufs)} LUFS, ${s1(a.prep.trimmed_end_s)} s trimmed at the end${a.prep.capped ? " (held back by its peaks)" : ""}; ${esc(b.title)} ${s1(b.prep.lufs_before)} → ${s1(b.prep.lufs)} LUFS, ${s1(b.prep.trimmed_start_s)} s trimmed at the start${b.prep.capped ? " (held back by its peaks)" : ""}. Times are seconds from the change.</p>`;
+    cards.appendChild(el);
+    const audio = el.querySelector("audio"), cv = el.querySelector(".chart"), cx = el.querySelector(".context");
+    const draw = () => {
+      const g1 = chart(cv, c, -CLIP, CLIP, { grid: true }), g2 = chart(cx, c, -W, W, { window: true });
+      if (!audio.paused || audio.currentTime > 0) {
+        const t = audio.currentTime - CLIP;
+        for (const [cvs, gg] of [[cv, g1], [cx, g2]]) {
+          const g = cvs.getContext("2d"), x = ((t - gg.t0) / (gg.t1 - gg.t0)) * gg.w;
+          g.fillStyle = "#fff"; g.fillRect(Math.round(x) - 1, 0, 2, cvs.getBoundingClientRect().height);
+        }
+      }
+    };
+    el._draw = draw;
+    const seek = (e, t0, t1) => { const r = e.currentTarget.getBoundingClientRect(), t = t0 + ((e.clientX - r.left) / r.width) * (t1 - t0); audio.currentTime = Math.max(0, Math.min(2 * CLIP, t + CLIP)); if (audio.paused) audio.play().catch(() => {}); };
+    cv.addEventListener("click", (e) => seek(e, -CLIP, CLIP));
+    cx.addEventListener("click", (e) => seek(e, -W, W));
+    let raf = 0;
+    const loop = () => { draw(); raf = audio.paused ? 0 : requestAnimationFrame(loop); };
+    audio.addEventListener("play", () => { document.querySelectorAll("audio").forEach((o) => o !== audio && o.pause()); if (!raf) loop(); });
+    audio.addEventListener("seeked", draw); audio.addEventListener("pause", draw);
+  }
+  const all = () => document.querySelectorAll(".card").forEach((el) => el._draw());
+  all();
+  let rt = 0; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(all, 120); });
+})();
+</script>
+</body>
+</html>

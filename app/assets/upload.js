@@ -32,6 +32,7 @@
     data.append("files[]", p.file, name);
     if (p.sourceSha1) data.append("source_sha1[]", p.sourceSha1);
     if (p.prepared) data.append("prep_lufs[]", String(p.info.lufs));
+    if (p.prepared && p.info.outro) data.append("prep_outro[]", JSON.stringify(p.info.outro)); // for silence detection
     const xhr = new XMLHttpRequest();
     xhr.open("POST", form.getAttribute("action")); // not form.action: the form has a field named "action"
     xhr.setRequestHeader("Accept", "application/json");

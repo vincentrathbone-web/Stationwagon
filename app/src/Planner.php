@@ -253,14 +253,18 @@ final class Planner
                     }
                 }
             }
+            $last = $entries ? end($entries) : null;
+            if ($last && $last['type'] === 'live' && $last['open']) {
+                return ['cut_at' => null, 'reason' => 'A live show is on air or about to start.'];
+            }
             return ['cut_at' => $this->cut($entries, $now, (float) $this->settings['skip_fade_seconds'])];
         });
     }
 
     /** Start a live block at the next piece boundary; the studio sends audio from that time. */
-    public function goLive(float $now, string $title, ?int $djUserId = null): array
+    public function goLive(float $now, string $title, ?int $djUserId = null, ?int $continuesShowId = null): array
     {
-        return $this->change($now, function (array $entries) use ($now, $title, $djUserId) {
+        return $this->change($now, function (array $entries) use ($now, $title, $djUserId, $continuesShowId) {
             $last = $entries ? end($entries) : null;
             if ($last && $last['type'] === 'live' && $last['open']) {
                 return ['error' => 'A live show is already on air.', 'live' => $last];
@@ -277,6 +281,7 @@ final class Planner
                 'title' => mb_substr(trim($title) ?: 'Live', 0, 190), 'start_at' => $cutAt, 'open' => 1,
                 // the first piece can only arrive one piece length after the start
                 'last_piece_at' => $cutAt + $this->settings['segment_seconds'] + 2,
+                'continues_show_id' => $continuesShowId,
                 'created_at' => gmdate('Y-m-d H:i:s'),
             ]);
             $this->insertEntry(['n' => $prev['n'] + 1, 'type' => 'live', 'live_show_id' => $showId, 'start_at' => $cutAt,
@@ -328,12 +333,12 @@ final class Planner
         });
     }
 
-    public function endLive(float $now, string $publicId): array
+    public function endLive(float $now, string $publicId, string $reason = 'ended by DJ'): array
     {
-        return $this->change($now, function (array $entries) use ($publicId) {
+        return $this->change($now, function (array $entries) use ($publicId, $reason) {
             foreach ($entries as $e) {
                 if ($e['type'] === 'live' && $e['public_id'] === $publicId && $e['open']) {
-                    $this->closeLive($e, 'ended by DJ');
+                    $this->closeLive($e, $reason);
                     return ['ended' => true, 'stream_end' => $e['end']];
                 }
             }
@@ -465,6 +470,12 @@ final class Planner
         // the two-deck player always has a full-length fade (it keeps the tail playing under the
         // next song). HLS listeners jump straight on and miss the last 6–12 s instead.
         $target = max(0.0, $track['duration'] - $this->settings['crossfade_seconds']);
+        // Silence detection: move on where the song goes quiet for good, so a long fade-out or a
+        // silent tail doesn't become dead air; the quiet part still plays out under the next song
+        $quiet = self::quietFrom($track, (float) $this->settings['silence_db']);
+        if ($quiet !== null) {
+            $target = min($target, $quiet);
+        }
         $count = 0;
         $play = 0.0;
         foreach ($allPieces as $p) {
@@ -484,6 +495,29 @@ final class Planner
                 'end' => $start + $row['play_s'], 'seq' => $row['seq'], 'piece_count' => $count];
     }
 
+    /**
+     * Where a track goes quiet for good: the end of the last second of its outro (song prep's
+     * last-minute loudness) at or above $db LUFS, in seconds from the start. Null when silence
+     * detection is off ($db 0), the track has no outro, or the quiet part is too short to matter.
+     */
+    public static function quietFrom(array $track, float $db): ?float
+    {
+        $outro = $db < 0 && !empty($track['outro']) ? json_decode((string) $track['outro'], true) : null;
+        if (!is_array($outro) || !$outro) {
+            return null;
+        }
+        $n = count($outro);
+        $last = -1;
+        foreach ($outro as $i => $v) {
+            if ((float) $v >= $db) {
+                $last = $i;
+            }
+        }
+        $at = $track['duration'] - $n + $last + 1;
+        // only for a real quiet tail (over 2 s), and never cutting a song shorter than 30 s
+        return $track['duration'] - $at > 2.0 && $at >= 30.0 ? round($at, 3) : null;
+    }
+
     private function insertEntry(array $row): void
     {
         $this->db->insert('timeline', $row + ['station_id' => $this->station['id']]);
@@ -496,6 +530,10 @@ final class Planner
     private function cut(array $entries, float $now, float $fade): ?float
     {
         $lead = $this->settings['cut_lead_seconds'];
+        $last = $entries ? end($entries) : null;
+        if ($last && $last['type'] === 'live' && $last['open']) {
+            return null; // a live show is on air or about to start: cutting would drop it from the timeline
+        }
         foreach ($entries as $e) {
             if ($e['end'] <= $now) {
                 continue;
@@ -543,10 +581,10 @@ final class Planner
     private function tracks(): array
     {
         if ($this->tracks === null) {
-            $rows = $this->db->run('SELECT id, duration_s FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND status = 'ready'", [$this->station['id']])->fetchAll();
+            $rows = $this->db->run('SELECT id, duration_s, outro FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND status = 'ready'", [$this->station['id']])->fetchAll();
             $this->tracks = [];
             foreach ($rows as $r) {
-                $this->tracks[(int) $r['id']] = ['id' => (int) $r['id'], 'duration' => (float) $r['duration_s']];
+                $this->tracks[(int) $r['id']] = ['id' => (int) $r['id'], 'duration' => (float) $r['duration_s'], 'outro' => $r['outro']];
             }
         }
         return $this->tracks;

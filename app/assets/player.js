@@ -45,10 +45,9 @@
   };
 
   // ---- Song deck: an <audio> through a gain node, so fades follow exact curves --------------
-  const curve = (from, to, n = 64) => Float32Array.from({ length: n }, (_, i) => {
-    const x = i / (n - 1);
-    return to > from ? from + (to - from) * Math.sin(x * Math.PI / 2) : to + (from - to) * Math.cos(x * Math.PI / 2);
-  });
+  // the station's fade shape (Sound & safety), from the timeline's settings
+  const shape = () => (clock.last && clock.last.settings && clock.last.settings.fade_shape) || "equal_power";
+  const curve = (from, to) => SwFade.curve(shape(), from, to);
   class Deck {
     constructor(ctx, out, name) {
       this.ctx = ctx; this.name = name;
@@ -429,8 +428,8 @@
       const e = list[i], prev = list[i - 1], next = list[i + 1];
       if (t < e.start) return 0;
       let g = 1;
-      if (prev && prev.end > e.start - 0.05) { const x = (t - e.start) / fadeOf(prev); if (x < 1) g = Math.sin(x * Math.PI / 2); }
-      if (next) { if (t >= next.start) { const x = (t - next.start) / fadeOf(e); g *= x >= 1 ? 0 : Math.cos(x * Math.PI / 2); } }
+      if (prev && prev.end > e.start - 0.05) { const x = (t - e.start) / fadeOf(prev); if (x < 1) g = SwFade.in(shape(), x); }
+      if (next) { if (t >= next.start) { const x = (t - next.start) / fadeOf(e); g *= x >= 1 ? 0 : SwFade.out(shape(), x); } }
       else if (!(e.type === "live" && e.open) && t > e.end) g = 0;
       return g;
     },

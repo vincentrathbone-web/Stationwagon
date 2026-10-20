@@ -12,6 +12,7 @@
     MARGIN_S: 0.05,        // left before the first and after the last sound
     FADE_S: 0.02,          // fade in and out so the cut edges don't click
     KBPS: 192,
+    OUTRO_S: 60,           // seconds at the end measured for silence detection
   };
 
   // ---- K-weighting filters at any sample rate (as in libebur128) --------------------------
@@ -60,6 +61,19 @@
     return lufs(kept.reduce((a, b) => a + b, 0) / kept.length);
   }
 
+  /**
+   * The loudness (LUFS, 1 s blocks) of each second of the last `seconds`, oldest first, for the
+   * planner's silence detection: −99 for a silent second. The last value ends at the last sample.
+   */
+  function outro(channels, rate, seconds = P.OUTRO_S) {
+    const n = channels[0].length, sec = Math.round(rate), count = Math.min(seconds, Math.floor(n / sec)), out = [];
+    for (let i = count; i > 0; i--) {
+      const v = loudness(channels.map((x) => x.subarray(n - i * sec, n - (i - 1) * sec)), rate);
+      out.push(v === null ? -99 : Math.round(v * 10) / 10);
+    }
+    return out;
+  }
+
   function peakDb(channels, from = 0, to = channels[0].length) {
     let m = 0;
     for (const x of channels) for (let i = from; i < to; i++) { const v = Math.abs(x[i]); if (v > m) m = v; }
@@ -103,6 +117,7 @@
         lufs_before: round(before, 2), lufs: round(before + gainDb, 2), gain_db: round(gainDb, 2),
         peak_db: round(peak + gainDb, 2), trimmed_start_s: round(a / rate, 3), trimmed_end_s: round((channels[0].length - b) / rate, 3),
         seconds: round(len / rate, 3), capped: gainDb < P.TARGET_LUFS - before - 0.01,
+        outro: outro(out, rate),
       },
     };
   }
@@ -140,7 +155,7 @@
 
   function round(v, d) { const f = Math.pow(10, d); return Math.round(v * f) / f; }
 
-  const api = { P, kFilters, loudness, peakDb, soundSpan, prepare, encode, tags };
+  const api = { P, kFilters, loudness, outro, peakDb, soundSpan, prepare, encode, tags };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.SwPrepCore = api;
 })(typeof self !== "undefined" ? self : this);

@@ -2,7 +2,8 @@
 // it joins mid-song at the listener delay, crossfades at a song boundary, hands over to a live
 // show (made here, with generated 6 s pieces) and back to the AutoDJ, with a presenter note that
 // appears when listeners reach it, and the stream-only mode
-// holds the same delay. Takes about three minutes.
+// holds the same delay; the embed (framed by another page) shows what's on and plays at that
+// delay too. Takes about four minutes.
 //   node app/tests/player_browser_test.mjs http://localhost:8080/stationwagon-app
 //   node app/tests/player_browser_test.mjs https://wordwave.controll.co.za/stationwagon-app --listen-only
 // Needs SW_PHP (php.exe) unless php is on PATH. The live part goes live on the station (through the
@@ -49,10 +50,13 @@ const exe = ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:
 const profile = mkdtempSync(join(tmpdir(), "sw-player-profile-"));
 const port = 9300 + Math.floor(Math.random() * 500);
 const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run",
-  "--autoplay-policy=no-user-gesture-required", "about:blank"], { stdio: "ignore" });
+  "--autoplay-policy=no-user-gesture-required",
+  // the embed part frames this server from a made-up church website, which Edge would otherwise
+  // block from reaching a localhost address (a real website framing a public server is fine)
+  "--disable-features=LocalNetworkAccessChecks", "about:blank"], { stdio: "ignore" });
 let ws, id = 0;
 const pending = new Map();
-const call = (method, params = {}) => new Promise((ok) => { const i = ++id; pending.set(i, ok); ws.send(JSON.stringify({ id: i, method, params })); });
+const call = (method, params = {}, sessionId = undefined) => new Promise((ok) => { const i = ++id; pending.set(i, ok); ws.send(JSON.stringify({ id: i, method, params, sessionId })); });
 const evaluate = async (expression) => {
   const r = await call("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
   if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || "page error");
@@ -86,7 +90,7 @@ function media({ method, params: p }) {
   }
 }
 
-let show = null, feeder = null, notesShow = null;
+let show = null, feeder = null, notesShow = null, onPaused = () => {};
 try {
   for (let i = 0; i < 50; i++) { await sleep(200); try { await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; } catch { /* starting */ } }
   const target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === "page");
@@ -95,6 +99,7 @@ try {
   ws.onmessage = (m) => {
     const d = JSON.parse(m.data);
     if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); }
+    else if (d.method === "Fetch.requestPaused") onPaused(d.params);
     else if (d.method) media(d);
   };
   await call("Page.enable");
@@ -141,7 +146,8 @@ try {
   // over the network once at most (the browser's cache serves the rest), never twice.
   const fl = [...files.values()].filter((f) => f.size), sent = fl.reduce((a, f) => a + f.sent, 0), size = fl.reduce((a, f) => a + f.size, 0);
   check("  those reads don't download the songs a second time", reads.n > 0 && fl.length > 0 && sent <= size * 1.05 + 4096 * fl.length,
-    `${reads.n} reads of ${reads.body} bytes; ${fl.length} song files of ${size} bytes, ${sent} over the network`);
+    `${reads.n} reads of ${reads.body} bytes; ${fl.length} song files of ${size} bytes, ${sent} over the network: ` +
+    fl.map((f) => `${f.sent}/${f.size}`).join(", "));
   const px = await evaluate(`(() => { const c = document.getElementById('lpWave'), g = c.getContext('2d'), d = g.getImageData(0, 0, c.width, c.height).data; let a = 0, b = 0;
     for (let i = 0; i < d.length; i += 4) { if (d[i + 2] > 150 && d[i] < 140 && d[i + 1] > 100) a++; if (d[i] > 150 && d[i + 2] > 100 && d[i + 1] < 140) b++; } return { a, b, w: c.width, h: c.height }; })()`);
   check("  the strip draws the songs in their colours", px.w > 0 && px.a + px.b > 100, `${px.w}×${px.h}, ${px.a} blue and ${px.b} pink pixels`);
@@ -222,6 +228,45 @@ try {
   s = await until((x) => x.stream && x.stream.active && x.stream.lag !== null && Math.abs(x.stream.lag - 20) < 0.6, 30);
   check("?mode=stream plays the stream at the same 20 s delay", !!s && s.mode === "stream", s && String(s.stream.lag.toFixed(2)));
   await evaluate("SwPlayer.stop()");
+
+  console.log("Embed");
+  /** Poll a page expression every 200 ms until it is truthy (returns it) or the time runs out (null). */
+  const waitFor = async (expr, seconds) => {
+    for (const end = Date.now() + seconds * 1000; Date.now() < end; await sleep(200)) { const v = await evaluate(expr).catch(() => null); if (v) return v; }
+    return null;
+  };
+  // framed by a church website (a made-up address; the browser is handed its page here)
+  const host = "https://church.example/";
+  onPaused = (p) => call("Fetch.fulfillRequest", { requestId: p.requestId, responseCode: 200, responseHeaders: [{ name: "Content-Type", value: "text/html" }],
+    body: Buffer.from(`<!doctype html><title>Church</title><iframe src="${base}/embed" width="470" height="124" allow="autoplay"></iframe>`).toString("base64") });
+  await call("Fetch.enable", { patterns: [{ urlPattern: host + "*" }] });
+  await call("Page.navigate", { url: host });
+  let framed = null;
+  for (let i = 0; i < 50 && !framed; i++) {
+    await sleep(200);
+    // a frame from another site runs as a target of its own
+    const t = (await call("Target.getTargets")).result.targetInfos.find((x) => x.type === "iframe" && x.url.startsWith(base));
+    if (!t) continue;
+    const { sessionId } = (await call("Target.attachToTarget", { targetId: t.targetId, flatten: true })).result;
+    for (let j = 0; j < 25 && !framed; j++) {
+      framed = (await call("Runtime.evaluate", { expression: "!!document.getElementById('embed') && location.href", returnByValue: true }, sessionId)).result?.result?.value || null;
+      if (!framed) await sleep(200);
+    }
+    if (!framed) framed = (await call("Runtime.evaluate", { expression: "'no player: ' + location.href", returnByValue: true }, sessionId)).result?.result?.value;
+  }
+  await call("Fetch.disable");
+  check("a church website can frame the embed", typeof framed === "string" && !framed.startsWith("no player"), framed || "no frame");
+  await go(`${base}/embed`);
+  const np = await waitFor("window.swEmbed && swEmbed.np", 10);
+  const shown = await evaluate("document.getElementById('emTitle').textContent");
+  check("the embed shows what's on air, from the now-playing data", !!(np && np.on_air) && shown.startsWith(np.on_air.title), shown);
+  await evaluate("document.getElementById('emPlay').click()");
+  const lag = await waitFor("swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);
+  check("Listen plays the stream at the same 20 s delay (silent until then)", !!lag, lag ? lag.toFixed(2) + " s" : String(await evaluate("swEmbed.lag + ' s, page ' + document.visibilityState")));
+  const meta = await waitFor("/^\\d+:\\d\\d \\/ \\d+:\\d\\d$|^Live for /.test(document.getElementById('emState').textContent) && document.getElementById('emState').textContent", 3);
+  check("  with the time in the song", !!meta, meta || await evaluate("document.getElementById('emState').textContent"));
+  await evaluate("document.getElementById('emPlay').click()");
+  check("  and stops again", !(await evaluate("swEmbed.playing")) && (await evaluate("document.getElementById('emPlay').getAttribute('aria-pressed')")) === "false");
 } finally {
   clearTimeout(feeder);
   if (show && show.public_id) { try { helper("live-end", show.public_id); } catch { /* ended */ } }

@@ -29,7 +29,7 @@ if ($cmd === 'manager') {
     $db->insert('station_users', ['station_id' => $station['id'], 'user_id' => $id]);
     echo json_encode(['id' => $id, 'email' => $email, 'password' => $password]);
 } elseif ($cmd === 'track') {
-    $row = $db->run('SELECT id, file, sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs FROM ' . $db->table('tracks') .
+    $row = $db->run('SELECT id, file, sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs, outro FROM ' . $db->table('tracks') .
         " WHERE station_id = ? AND title = ? AND status = 'ready' ORDER BY id DESC LIMIT 1", [$station['id'], $argv[2] ?? ''])->fetch();
     echo json_encode($row ?: null);
 } elseif ($cmd === 'cleanup') {

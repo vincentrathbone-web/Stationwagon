@@ -14,7 +14,9 @@
   const $ = (id) => document.getElementById(id);
   const BASE = new URL(root.dataset.base, location.href).href;
   const CSRF = root.dataset.csrf, DELAY = Number(root.dataset.delay) || 20, TZ = root.dataset.tz || "UTC";
-  const KBPS = 192, RATE = 44100;
+  const RATE = 44100, DEAD_AIR_S = 10;
+  const kbps = () => (S && S.settings.live_kbps) || 192; // Sound & safety: sound quality of live shows
+  const shape = () => (S && S.settings.fade_shape) || "equal_power"; // Sound & safety: fade shape
   const Ctx = window.AudioContext || window.webkitAudioContext;
 
   const fmt = (s) => { s = Math.max(0, Math.round(s || 0)); return s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
@@ -261,8 +263,8 @@ registerProcessor("sw-tap", SwTap);`;
     xfValue = v; $("xf").value = v;
     if (!ctx) return;
     const p = (v + 100) / 200, t = ctx.currentTime;
-    decks.A.xf.gain.setTargetAtTime(Math.cos(p * Math.PI / 2), t, 0.01);
-    decks.B.xf.gain.setTargetAtTime(Math.sin(p * Math.PI / 2), t, 0.01);
+    decks.A.xf.gain.setTargetAtTime(SwFade.out(shape(), p), t, 0.01);
+    decks.B.xf.gain.setTargetAtTime(SwFade.in(shape(), p), t, 0.01);
     setTimeout(planAhead, 60); // once the crossfader has settled
   }
   /**
@@ -275,7 +277,7 @@ registerProcessor("sw-tap", SwTap);`;
     if (target.buf && !target.playing) target.play();
     stopFade();
     const from = xfValue, to = toB ? 100 : -100, t = ctx.currentTime, n = 64, a = new Float32Array(n), b = new Float32Array(n);
-    for (let i = 0; i < n; i++) { const p = (from + (to - from) * i / (n - 1) + 100) / 200; a[i] = Math.cos(p * Math.PI / 2); b[i] = Math.sin(p * Math.PI / 2); }
+    for (let i = 0; i < n; i++) { const p = (from + (to - from) * i / (n - 1) + 100) / 200; a[i] = SwFade.out(shape(), p); b[i] = SwFade.in(shape(), p); }
     decks.A.xf.gain.setValueCurveAtTime(a, t, sec);
     decks.B.xf.gain.setValueCurveAtTime(b, t, sec);
     fadePlan = { t, sec, a, b }; mark(t, target.name); mark(t + sec, target.name); planAhead();
@@ -420,9 +422,10 @@ registerProcessor("sw-tap", SwTap);`;
     const saved = savedMic();
     if (chain) {
       chain.usePreset($("preset").value);
+      if (S) chain.set("duckDepth", S.settings.duck_db); // the station's "music under the voice"
       Object.entries(saved.custom || {}).forEach(([k, v]) => chain.set(k, v));
     }
-    const s = chain ? chain.settings : { ...SwMic.PRESETS[$("preset").value], ...(saved.custom || {}) };
+    const s = chain ? chain.settings : { ...SwMic.PRESETS[$("preset").value], ...(S ? { duckDepth: S.settings.duck_db } : {}), ...(saved.custom || {}) };
     MODS.forEach(([id, , key, ctrls]) => {
       const off = (saved.off || []).includes(id);
       $("sw-" + id).checked = !off; $("m-" + id).classList.toggle("off", off);
@@ -432,15 +435,20 @@ registerProcessor("sw-tap", SwTap);`;
   }
 
   // ---- Go live, sending, end show -----------------------------------------------------------
-  async function goLive() {
+  /** Go live, or (how = "rejoin") carry on the DJ's own show after a reload or a drop. */
+  async function goLive(how = "golive") {
     if (!on || live) return;
-    $("stGo").disabled = true; $("stGo").classList.add("joining"); $("stGoLabel").textContent = "Joining…";
-    const r = await api("golive", { body: {} });
+    $("stGo").disabled = true; $("stGo").classList.add("joining"); $("stGoLabel").textContent = how === "rejoin" ? "Rejoining…" : "Joining…";
+    const r = await api(how, { body: {} });
     if (r.error) { banner(r.error, "end"); controls(); await refresh(); return; }
     live = { public_id: r.live.public_id, start: r.live.start, title: r.live.title, sending: false };
-    encoder = new lamejs.Mp3Encoder(2, ctx.sampleRate, KBPS);
+    encoder = new lamejs.Mp3Encoder(2, ctx.sampleRate, kbps());
     splitter = new FrameSplitter(); pieceFrames = []; pieceSamples = 0; seq = 0; armedAt = live.start;
     sentCount = 0; sendErrors = 0; lastSentAt = null; lastError = null;
+    if (r.continued) {
+      log(`continuing ${r.continued} as ${live.public_id}`);
+      banner(`You’re back: “${live.title}” carries on at ${at(live.start, hms)}, with its notes. The AutoDJ filled the gap.`);
+    }
     log(`live ${live.public_id} starts at ${at(live.start, hms)} (in ${(live.start - clock.now()).toFixed(1)} s)`);
     controls();
     const h = r.handover;
@@ -540,7 +548,9 @@ registerProcessor("sw-tap", SwTap);`;
   function serverEnded(reason) {
     log("server ended the show: " + reason);
     finish();
-    banner(`The station went back to the AutoDJ because no audio reached it for ${S ? S.settings.live_timeout_seconds : 8} seconds. Check your connection, then go live again.`, "end");
+    const mins = S ? S.settings.rejoin_minutes : 0;
+    banner(`The station went back to the AutoDJ because no audio reached it for ${S ? S.settings.live_timeout_seconds : 8} seconds. Check your connection, then ` +
+      (mins > 0 ? `rejoin your show within ${mins} minutes to carry it on.` : "go live again."), "end");
     refresh();
   }
   function finish() {
@@ -740,7 +750,9 @@ registerProcessor("sw-tap", SwTap);`;
     let r;
     try { r = await api("state"); } catch (_) { return; }
     if (r.error) return;
+    const first = !S || S.settings.duck_db !== r.settings.duck_db;
     S = r;
+    if (first) applyMicUi(); // presets start from the station's ducking depth
     const slot = S.slot, b = slot.block;
     $("stShow").textContent = slot.title + (b ? " · " + (b.dj || S.me.name) : ""); // outside a block the title already names them
     $("stSlot").textContent = b ? (b.end - b.start >= 86400 ? "All day" : `${at(b.start)}–${at(b.end)}`) : (live ? "No set end" : "");
@@ -758,8 +770,11 @@ registerProcessor("sw-tap", SwTap);`;
       if (ids !== notes.map((n) => n.id).join()) { notes = show.notes || []; renderNotes(); }
     } else if (notes.length && !live) { notes = []; renderNotes(); }
     if (!live && !powering) {
-      if (show && show.mine) banner(show.own ? `Your show “${show.title}” is still on air from before.` : `${show.dj || "Another presenter"} is on air with “${show.title}”. As a manager you can end it.`,
-        "end", [["End that show", () => endShow(show.public_id), "danger"]], "slot");
+      const rj = slot.rejoin;
+      if (show && show.mine) banner(show.own ? `Your show “${show.title}” is still on air from before.` + (rj && rj.open && !on ? " Switch on the studio to rejoin it." : "") : `${show.dj || "Another presenter"} is on air with “${show.title}”. As a manager you can end it.`,
+        "end", [...(show.own && rj && rj.open && on ? [["Rejoin your show", () => goLive("rejoin")]] : []), ["End that show", () => endShow(show.public_id), "danger"]], "slot");
+      else if (rj && !rj.open) banner(`Your show “${rj.title}” stopped when no audio reached the station. You can carry it on, with its notes, until ${at(rj.until)}.` + (on ? "" : " Switch on the studio first."),
+        "end", on ? [["Rejoin your show", () => goLive("rejoin")]] : [], "slot");
       else if (!slot.may) banner(slot.reason + (on ? "" : " You can still switch on the studio to get ready."), "end", [], "slot");
       else if (bannerOwner === "slot") banner("");
     }
@@ -791,7 +806,14 @@ registerProcessor("sw-tap", SwTap);`;
     if (!on) return;
     const level = (an) => { const buf = new Float32Array(an.fftSize); an.getFloatTimeDomainData(buf); let p = 0; for (const v of buf) p = Math.max(p, Math.abs(v)); return p > 0 ? 20 * Math.log10(p) : -100; };
     const pct = (db) => Math.max(0, Math.min(98, (db + 60) / 60 * 100)) + "%";
-    $("mL").style.height = pct(level(anL)); $("mR").style.height = pct(level(anR));
+    const dbL = level(anL), dbR = level(anR);
+    $("mL").style.height = pct(dbL); $("mR").style.height = pct(dbR);
+    // Silence detection on air: warn when nothing goes out for DEAD_AIR_S seconds
+    const quietDb = S && S.settings.silence_db < 0 ? S.settings.silence_db : -50;
+    ui.quietSince = live && live.sending && Math.max(dbL, dbR) < quietDb ? (ui.quietSince ?? now) : null;
+    const dead = ui.quietSince != null && now - ui.quietSince >= DEAD_AIR_S;
+    if (dead && bannerOwner !== "deadair") banner(`Dead air: nothing has gone out for ${DEAD_AIR_S} seconds. Start a deck or open the mic.`, "end", [], "deadair");
+    else if (!dead && bannerOwner === "deadair") banner("");
     const m = chain ? chain.meters() : { outDb: -100, gateOpen: false, reductionDb: 0 };
     $("mMic").style.height = pct(m.outDb);
     const gr = Math.abs(m.reductionDb || 0);

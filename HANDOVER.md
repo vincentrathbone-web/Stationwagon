@@ -4,7 +4,7 @@ Read this first. It records where the work stands, what was decided and why, and
 each round, so that anyone (a person or a new agent session) can pick up where the last one
 stopped.
 
-**Last updated:** 2026-10-20, after round 23 (the output strip in the player and the studio).
+**Last updated:** 2026-10-20, end of round 25 (Sound & safety v0.4, the now-playing API and the embed: built and tested on Laragon, committed, not deployed yet).
 
 ## How to keep this file useful
 
@@ -61,16 +61,17 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | `prototypes/config.local.php` | Server-only overrides (its control key). Never committed; denied by `.htaccess` |
 | `prototypes/media/`, `prototypes/data/` | Test MP3s and runtime state; gitignored except their README / `.htaccess` |
 | `app/` | **The real app** (Core & manager `v0.1` done; Player & studio `v0.4` under way). Front controller `index.php` → `src/App.php`; version in `app/VERSION` |
-| `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `App` (routes; `url()`, and `asset()` for links tagged by content), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`, step-by-step upgrades), `Installer`, `InstallPage`, `View`, `Session` (cookie settings, form keys), `Auth` (sign-in, roles, lock-out), `AuthPage` (sign-in / sign-out / account pages), `Request` (visitor address through Cloudflare), `Mp3` (frame scanner + ID3 tags), `Library` (add songs, stored by content hash), `Planner` (the timeline on MySQL: plan, skip, go live, pieces, schedule), `Stream` (HLS playlist), `Playlists`, `Schedule` (weekly blocks, time and day helpers, the week grid), `Staff` (people and who may change whom), `StationSettings` (the Sound & safety values and their limits), `Notes` (presenter notes: rules, post/remove, the listeners' view), `ManagePage` (the station manager screens and their form actions), `Studio` (the live studio's rules: who may go live when, show ownership, notes, running order), `StudioPage` (`/studio` and its JSON feed `/studio/api/*`) |
-| `app/api/` | `stream.php` (listener HLS playlist; real file so `.htaccess` gives it the 2 s Cloudflare header), `timeline.php` (JSON for the two-deck player and studio, with `notes_rev`) and `notes.php` (presenter notes for listeners, read only) |
-| `app/views/`, `app/assets/` | PHP page templates (wrapped in `layout.php`; the station page is `player.php`; the manager screens are in `views/manage/`, framed by `frame.php`), the green-skin styles `app.css`, `upload.js` (uploads songs one by one with progress), song prep: `prep.js` (decode in the browser), `prep-worker.js`, `prep-core.js` (loudness, trim, level, fades, encode; shared with the Node test), and `vendor/lame.min.js` (lamejs 1.2.1, LGPL-3.0, byte-identical to the npm package; licence beside it); the listener player `player.js` with `vendor/hls.min.js`, the presenter notes panel `notes.js` (hls.js 1.5.13, Apache-2.0, byte-identical to npm); the live studio `studio.js` (view `studio.php`) with the mic chain `studio-mic.js` (from the POC) |
-| `app/tests/` | `install_test.php` (31 checks), `auth_test.php` (sign-in logic, 39), `planner_test.php` (library + planner, 71), `manage_test.php` (library edits, song prep on the server side, playlists, schedule and today's list, Sound & safety, staff rules, 70), `notes_test.php` (presenter notes: each kind, posting while on air, the listeners' view, the change marker; 44), `studio_test.php` (the schema upgrade, when a DJ may go live, who may send pieces, post notes and end a show, the running order; 61), `prep_test.mjs` (song prep maths against EBU Tech 3341, and a real lamejs MP3, 24; Node), `upload_browser_test.mjs` (song prep end to end in headless Edge, 12; Node, Laragon only), `player_browser_test.mjs` (the listener player in headless Edge: join, crossfade, a frozen sound engine, the output strip, a live show with a presenter note, stream only; 33, or 18 with `--listen-only` for a public server), `player_phone_test.mjs` (the player on the Android phone over USB, screen locked for 2 minutes; 10), `studio_browser_test.mjs` (the studio in headless Edge with a fake mic: go-live rules, running order, going live in sync, pieces, crossfade, the notes drawer, the output strip, End show; 54, Laragon only) with `browser_helper.php` (accounts, tracks, a test live show, a test DJ with a block), `web_test.php` (pages, manager screens, the studio and its feed, stream over HTTP, the look-ahead's pieces, 116; `--public`: 46), `lib.php` (shared helpers: throwaway database and install) |
+| `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `App` (routes; `url()`, and `asset()` for links tagged by content), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`, step-by-step upgrades), `Installer`, `InstallPage`, `View`, `Session` (cookie settings, form keys), `Auth` (sign-in, roles, lock-out), `AuthPage` (sign-in / sign-out / account pages), `Request` (visitor address through Cloudflare), `Mp3` (frame scanner + ID3 tags), `Library` (add songs, stored by content hash), `Planner` (the timeline on MySQL: plan, skip, go live, pieces, schedule), `Stream` (HLS playlist), `Playlists`, `Schedule` (weekly blocks, time and day helpers, the week grid), `Staff` (people and who may change whom), `StationSettings` (the Sound & safety values and their limits: sliders and choices, MB an hour), `NowPlaying` (what listeners hear now, next and before, at the listener delay), `Notes` (presenter notes: rules, post/remove, the listeners' view), `ManagePage` (the station manager screens and their form actions), `Studio` (the live studio's rules: who may go live when, show ownership, notes, running order), `StudioPage` (`/studio` and its JSON feed `/studio/api/*`) |
+| `app/api/` | `stream.php` (listener HLS playlist; real file so `.htaccess` gives it the 2 s Cloudflare header), `timeline.php` (JSON for the two-deck player and studio, with `notes_rev` and `fade_shape`), `notes.php` (presenter notes for listeners, read only) and `nowplaying.php` (public now / next / recent JSON for other websites, apps and the embed; any site may read it) |
+| `app/views/`, `app/assets/` | PHP page templates (wrapped in `layout.php`; the station page is `player.php`; the manager screens are in `views/manage/`, framed by `frame.php`), the green-skin styles `app.css`, `upload.js` (uploads songs one by one with progress), song prep: `prep.js` (decode in the browser), `prep-worker.js`, `prep-core.js` (loudness, trim, level, fades, encode; shared with the Node test), and `vendor/lame.min.js` (lamejs 1.2.1, LGPL-3.0, byte-identical to the npm package; licence beside it); the listener player `player.js` with `vendor/hls.min.js`, the presenter notes panel `notes.js` (hls.js 1.5.13, Apache-2.0, byte-identical to npm); the live studio `studio.js` (view `studio.php`) with the mic chain `studio-mic.js` (from the POC); `fades.js` (the station's fade shapes, shared by the player, the studio and the Sound & safety preview); `embed.js` with `views/embed.php` (the small player other websites frame at `/embed`, `?look=light` for light sites; it plays the stream at the listener delay) |
+| `app/tests/` | `install_test.php` (31 checks), `auth_test.php` (sign-in logic, 39), `planner_test.php` (library + planner, 72), `manage_test.php` (library edits, song prep on the server side, playlists, schedule and today's list, Sound & safety with the choices, silence detection, staff rules, 81), `notes_test.php` (presenter notes: each kind, posting while on air, the listeners' view, the change marker; 44), `studio_test.php` (the schema upgrade, when a DJ may go live, who may send pieces, post notes and end a show, the running order; 61), `prep_test.mjs` (song prep maths against EBU Tech 3341, the last minute's loudness, and a real lamejs MP3, 27; Node), `upload_browser_test.mjs` (song prep end to end in headless Edge, 13; Node, Laragon only), `player_browser_test.mjs` (the listener player in headless Edge: join, crossfade, a frozen sound engine, the output strip, a live show with a presenter note, stream only, the embed framed by another site; 38, or 23 with `--listen-only` for a public server), `player_phone_test.mjs` (the player on the Android phone over USB, screen locked for 2 minutes; 10), `studio_browser_test.mjs` (the studio in headless Edge with a fake mic: go-live rules, running order, going live in sync, pieces, crossfade, the notes drawer, the output strip, rejoining after a reload, End show; 60, Laragon only) with `browser_helper.php` (accounts, tracks, a test live show, a test DJ with a block), `web_test.php` (pages, manager screens with the new Sound & safety, the studio and its feed, stream over HTTP, the look-ahead's pieces, now playing and the embed, 132; `--public`: 60), `lib.php` (shared helpers: throwaway database and install) |
 | `app/cli/` | `install.php` (install over SSH: the form's fields as JSON on stdin), `set-password.php <email>` (new password on stdin; for when nobody can sign in), `import.php <mp3s>` (add songs), `plan.php` (cron: plan ahead), `upgrade.php` (bring the database up to the code's schema; the deploy runs it) |
 | `app/storage/` | Songs (`media/<sha1>.mp3`), live pieces (`live/<show id>/00000.mp3`), `cache/`, `sessions/`; gitignored; only `.mp3` is served |
 | `app/config.local.php`, `app/install.key` | Written by the installer / the deploy script. Gitignored and denied by `.htaccess` |
 | `tools/deploy-app.sh` | Upload `app/` to cPanel over SSH (keeps the server's settings and storage) |
 | `tools/deploy/` | Gitignored secrets for the test server: setup key, database password, admin sign-in; `shots/` holds screenshots |
 | `tools/shot.mjs` | Full-page screenshots with headless Edge, signed in if asked, at any width; flags pages wider than the screen. `node tools/shot.mjs <out> <base> <width> [--signin <email> <password file>] <paths…>` |
+| `tools/song-changes.mjs` (+ `song-changes.html`) | Hear the station's song changes for a folder of songs before they go on air: prepares each song as on upload (`prep.js` in headless Edge), cuts pieces with `Mp3::scan`, plans each change by the planner's rule and mixes it as the player does, then writes a page of 15 s clips with charts and measurements (silence, quiet stretches, loudness step, the mix's peak). `SW_PHP=… node tools/song-changes.mjs <folder> <out dir> [--crossfade 6] [--piece 6]`. The out dir holds copies of the music |
 
 ### Published design mock-ups (claude.ai artifacts, private)
 
@@ -139,17 +140,17 @@ drawer", "DJ studio as built") describes how the app does them.
   ```
   php app/tests/install_test.php                                   # installer, 31 checks
   php app/tests/auth_test.php                                      # sign-in logic, 39 checks
-  php app/tests/planner_test.php                                   # library and planner, 71 checks
-  php app/tests/manage_test.php                                    # manager rules, 70 checks
+  php app/tests/planner_test.php                                   # library and planner, 72 checks
+  php app/tests/manage_test.php                                    # manager rules, 81 checks
   php app/tests/notes_test.php                                     # presenter notes, 44 checks
-  php app/tests/studio_test.php                                    # studio rules, 61 checks
-  php app/tests/web_test.php http://localhost:8080/stationwagon-app # pages, manager, studio, stream: 116 checks
-  node app/tests/prep_test.mjs                                     # song prep maths, 24 checks
-  node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app # prep in a real browser, 12
-  node app/tests/player_browser_test.mjs http://localhost:8080/stationwagon-app # the player, 33 (~3.5 min)
-  node app/tests/player_browser_test.mjs https://wordwave.controll.co.za/stationwagon-app --listen-only # 18
+  php app/tests/studio_test.php                                    # studio rules, 74 checks
+  php app/tests/web_test.php http://localhost:8080/stationwagon-app # pages, manager, studio, stream, now playing, embed: 132 checks
+  node app/tests/prep_test.mjs                                     # song prep maths, 27 checks
+  node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app # prep in a real browser, 13
+  node app/tests/player_browser_test.mjs http://localhost:8080/stationwagon-app # the player and the embed, 38 (~4 min)
+  node app/tests/player_browser_test.mjs https://wordwave.controll.co.za/stationwagon-app --listen-only # 23
   node app/tests/player_phone_test.mjs https://wordwave.controll.co.za/stationwagon-app # on the phone, 10 (~3.5 min)
-  node app/tests/studio_browser_test.mjs http://localhost:8080/stationwagon-app # the studio, 54 (~2 min)
+  node app/tests/studio_browser_test.mjs http://localhost:8080/stationwagon-app # the studio, 60 (~2.5 min)
   ```
   The Node tests need `SW_PHP` set to the PHP path above, and run from a short folder (e.g. `D:\`).
   The test server has no Node, so these run on this PC; the player test's `--listen-only` form checks
@@ -277,6 +278,27 @@ just before it, `Cain` with 5 s of silence after a 19 s quiet tail; `02 Overdriv
 `13 Hail the Black` open with 11–13 s of quiet; loudness runs from −6.7 to −22.4 LUFS (`08 Project So
 Iii`), so levelling matters. Stays on Laragon (not on the public test server).
 
+**Sound & safety v0.4 is built** (round 25, Laragon only so far). The screen has four cards and a
+fade-shape curve; new settings: fade shape (equal power, linear, S-curve: the player, its look-ahead
+and the studio all fade with `fades.js`), music under the voice (−24 to 0 dB, the studio's mic presets
+start from it), DJ rejoin window (0–30 min, default 10), move on when a song goes quiet (off, −50,
+−40 or −30 dB, default −40), and the quality of live shows and prepared songs (96–256 kbps with MB an
+hour, default 192). The listener delay is shown, not editable. Song prep now stores each song's last
+minute of loudness (`tracks.outro`, schema 3) and the planner starts the next song where the music
+stays below the level to the end (`Planner::quietFrom`; only for a quiet tail over 2 s, never cutting
+a song below 30 s). The studio offers **Rejoin your show** after a reload or when the safety net ended
+the show less than the window ago: it goes live again as a continuation show (`live_shows.continues_show_id`)
+that takes over the notes, and the AutoDJ fills the gap; it also warns of **dead air** after 10 s of
+silence on air. All tests pass on Laragon: engine, install, auth, planner, manage 81, notes, studio 74,
+web 118, prep 27, upload 13, player 33, studio browser 60 (with a reload and Rejoin your show mid-show). Found while
+building: resuming the *same* open show after a reload would have put the new audio at the stream time
+where the old pieces stopped, so after a gap over about 12 s every later piece reaches listeners late;
+rejoining always starts a continuation show instead (see Decisions).
+
+**Now playing and the embed work** (round 25, Laragon). `api/nowplaying.php` tells other websites and apps what listeners hear (at the 20 s delay): now, the next 3 songs, the last 5. `/embed` is a small player any website can frame (dark, or light with `?look=light`); it shows what's on and plays the stream held 20 s behind, like the station's player (20.1 s in the test). The station page has "Put the player on your website" with the iframe code, a light-look switch and Copy. Found while testing: Edge says it can play HLS itself but can't, so the embed uses hls.js first (as the player does); and a muted audio element is paused in a background tab, so the embed waits for the delay at volume 0 instead. Also found (an older bug): **Skip pressed between Go live and the show's start** cut the song on air and dropped the waiting show from the timeline, leaving it open with nowhere to play; Skip now does nothing then ("A live show is on air or about to start").
+
+**Song changes heard with the album** (round 24): `tools/song-changes.mjs` prepared all 22 songs as on upload and mixed the 21 changes as the player does; the clips page is at http://localhost:8080/song-changes/ (Laragon only, outside the repo). No clipping (highest peak −1.3 dB) and no dead air. Worth hearing: `19 → 20` (5.1 s very quiet), `20 → Cain` (quiet into quiet) and three levelling steps of 5.7–8.5 LU. Two songs couldn't reach −16 LUFS because of their peaks (−17.8 and −16.5): a true-peak limiter in song prep would fix that (see the decision on mastering plugins). Next: the user listens, then a live session.
+
 ## Next steps
 
 **Core & manager (`v0.1`) is done**; now **Player & studio (`v0.4`)**. The order it was built in:
@@ -290,12 +312,18 @@ Iii`), so levelling matters. Stays on Laragon (not on the public test server).
    instead of the ffmpeg.wasm the build-out order in `docs/POC-PLAN.md` named, see Decisions).
    **v0.1 closed as `0.1.0`** (2026-10-20).
 6. **Now: Player & studio (`v0.4`)**: ~~the listener player~~, ~~presenter notes for listeners~~,
-   ~~the live studio with its notes drawer~~ (done 2026-10-20, live-tested on the test server). Next: the
-   v0.4 Sound & safety settings (fade
-   shape, ducking, silence detection, rejoin window, sound quality, delay), the last item of `v0.4` on
-   the project map. Before that, at the user's request: ~~the output waveform in the player and the
-   studio~~ (done, round 23), then tests with the user's own album on Laragon (a page of short clips,
-   then a live listening session).
+   ~~the live studio with its notes drawer~~ (done 2026-10-20, live-tested on the test server),
+   ~~the output strip~~ (round 23), ~~song changes heard with the album~~ (round 24).
+   **Round 25:** ~~Sound & safety v0.4~~, ~~now-playing API and embed~~ (built; all Laragon tests pass; committed). Still to do: **deploy** (`bash tools/deploy-app.sh controll public_html/wordwave.controll.co.za/stationwagon-app`,
+   which upgrades the server to schema 3) and run the server tests (including `player_browser_test.mjs --listen-only`, which now frames the embed).
+7. **The rest of v0.4, in the order the user chose (2026-10-20):** ~~now-playing API and embed~~ (round 25)
+   → listener count and stats (anonymous ping) → podcasts (record, upload, page, feed) → small studio items
+   (headphone output picker, edit a posted note, talk items mark "now") → spectrum → hi-fi skin.
+8. **Then the Windows studio app (`v0.6`)**: Tauri, a local Icecast bridge for BUTT/Mixxx, a signed
+   installer with auto-update. **Then the WordWave pilot (`v0.8`)**, then **launch (`v1.0`)** with the
+   optional relay to an outside Icecast.
+9. Later: `player_phone_test.mjs` on the phone (not run since round 23); mastering in song prep once the
+   user has compared oXygen and master_me.
 
 ## Decisions
 
@@ -387,6 +415,23 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-20 | A running order belongs to the live block (`block:<id>`), or to the person outside blocks (`user:<id>`); 60 items at most: songs, station IDs (both from the library) and talk items with a length. Songs taken out of the library drop out of it | Plans are made for a show slot, which repeats weekly |
 | 2026-10-20 | Studio fades (Fade to B, Skip) are **run by the sound engine** as gain curves; a timer only moves the slider | A fade driven by screen frames stalled in the test when the page wasn't being drawn; a DJ switching tabs mid-fade would have hit the same |
 | 2026-10-20 | The DJ's mic preset, slider values and switches are remembered in their browser | Each studio PC has its own mic; nothing to share between people |
+| 2026-10-20 | The **output strip shows the wet mix**: what goes out after fades, ducking, the compressor and the limiter, measured in the sound engine (an AudioWorklet, 10 ms columns); the part to the right of "now" is mixed ahead from the real audio, not from peaks stored at upload | The user: peaks at upload are the dry mix; the strip must show ducking and processing too, and "that is what an audio buffer should be for" |
+| 2026-10-20 | The **player reads the coming 20 s itself**: song pieces as byte ranges of the files the decks play (the browser's cache serves them, so nothing downloads twice), live pieces copied as hls.js loads them; mixed ahead through the same fade curves the decks use | The user: "Load 20s ahead, process / read that 20s' graph and append to the display" |
+| 2026-10-20 | The studio's strip sits **above the decks, full width, 50 px high**, with a show/hide toggle on the left and a drag handle to change its height (30–240 px, remembered) | The user's choice |
+| 2026-10-20 | The studio's **ducking works per deck** (each deck has its own duck gain after the crossfader), so the strip can show each deck as it goes out | Needed to draw each source after its ducking |
+| 2026-10-20 | **Mastering plugins compared first**: oXygen (BSD-3, JUCE, has a true-peak maximizer and Reference Match) and master_me (GPL-3, Faust, built for live streams and internet radio) are installed in Adobe Audition on this PC so the user can compare them before we take anything into song prep or the studio. Porting oXygen code is allowed with credit; master_me's code would make Stationwagon GPL, so only its ideas | The user wants to hear their strengths first. oXygen 1.2.1 has no Windows release: built here from source (`D:\Build\oXygen-1.2.1`, static C++ runtime, because Audition ships a 2015 `msvcp140.dll` that crashes the default build) |
+| 2026-10-20 | **Milestones reordered**: finish `v0.4` (in this order: Sound & safety, now-playing API and embed, listener count and stats, podcasts, small studio items, spectrum, hi-fi skin), then the **Windows studio app as `v0.6`** (Tauri, a local Icecast bridge for BUTT/Mixxx, a signed installer with auto-update), then the WordWave pilot `v0.8`, then launch `v1.0` | User's choice ("Finish v0.4, then Windows, then pilot"); the project map was refactored around the final app the same day |
+| 2026-10-20 | **Podcasts are a feed on the station**: the studio records the show and uploads it after End show; the station gets its own podcast page and RSS feed, and a manager screen to edit or hide episodes | User's choice |
+| 2026-10-20 | **Listener count by anonymous ping**: each open player pings once a minute, with no cookies and no IP address kept; "listening now" in the player and the manager, plus daily and hourly charts | User's choice; nothing personal to store or protect |
+| 2026-10-20 | **Relay to an outside Icecast** (for classic radio apps) comes later, as an option, off by default (`v1.0`) | User's choice |
+| 2026-10-20 | Sound & safety settings are **sliders or choices** (`StationSettings::FIELDS`); choices are checked against their list. Fade shape and ducking apply at once; silence detection only to songs prepared from now on (older songs have no `outro`); the prepared-song quality only to new uploads; the live quality from the next show | Each setting acts where its data exists; nothing is re-encoded behind the manager's back |
+| 2026-10-20 | **Silence detection** moves on at the last piece boundary at or before the point where the song stays below the level to its end (and never later than full length − crossfade); the quiet tail still plays out under the next song | Keeps the HLS pieces and the two-deck player in step; a long fade-out isn't cut dead |
+| 2026-10-20 | **Rejoining always starts a continuation show** (`continues_show_id`, notes moved over, the old show closed as `rejoined` or `timeout`), never sends more pieces to the old one; the AutoDJ fills the gap | Sending to the open show would place new audio at the stream time where it stopped; after a gap over ~12 s listeners would stall for the rest of the show |
+| 2026-10-20 | The **listener delay is shown, not editable** (it comes from the 6 s pieces) | Songs on air are already cut into pieces of that length; changing it needs a rescan of the library (an open issue) |
+| 2026-10-20 | **Now playing** (`api/nowplaying.php`) is told at the listener delay (what the station's player is hearing), with now, the next 3 songs and the last 5; titles and times only, no file addresses; any site may read it (CORS `*`); `public, max-age=0, s-maxage=2`, ready for a Cloudflare cache rule like the playlist's | Other websites and apps should show what their listeners hear, not what the server plans 20 s ahead |
+| 2026-10-20 | **The embed** is its own page at `/embed` (no site header, no session) that any site may frame (`frame-ancestors *`, no `X-Frame-Options`); `?look=light` gives a light version for light websites. It plays the HLS stream (no two-deck mix) and holds the same 20 s delay as the station's player, silent until it does; the code to copy is an iframe 124 px high, up to 520 px wide | One station per install for now, so no station in the address (the mock-up's `/embed/wordwave`). Holding the delay keeps the title shown in step with what's heard |
+| 2026-10-20 | **Skip does nothing while a live show is on air or waiting to start** (the few seconds after Go live) | Cutting then dropped the waiting show from the timeline; the handover's own fade already moves the music on |
+| 2026-10-20 | Saved copies of the published mock-ups in `prototypes/*.html` are **gitignored** | The user's choice; the sources are in `design/` |
 
 ## Scope changes
 
@@ -399,16 +444,16 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-20 | The studio's **notes editor is designed and built** as a drawer from the side (user's choice); `design/DESIGN.md` describes it and the studio as built. The mock-ups in `design/skins/` don't show it |
 | 2026-10-20 | Not in this round: **recording a show to a podcast** (in the mock-up's status strip and end-show banner). It isn't on the project map for v0.4; it comes later |
 | 2026-10-20 | The studio is the **green skin only** for now (as the presenter notes are) |
-| 2026-10-20 | The **output strip shows the wet mix**: what goes out after fades, ducking, the compressor and the limiter, measured in the sound engine (an AudioWorklet, 10 ms columns); the part to the right of "now" is mixed ahead from the real audio, not from peaks stored at upload | The user: peaks at upload are the dry mix; the strip must show ducking and processing too, and "that is what an audio buffer should be for" |
-| 2026-10-20 | The **player reads the coming 20 s itself**: song pieces as byte ranges of the files the decks play (the browser's cache serves them, so nothing downloads twice), live pieces copied as hls.js loads them; mixed ahead through the same fade curves the decks use | The user: "Load 20s ahead, process / read that 20s' graph and append to the display" |
-| 2026-10-20 | The studio's strip sits **above the decks, full width, 50 px high**, with a show/hide toggle on the left and a drag handle to change its height (30–240 px, remembered) | The user's choice |
-| 2026-10-20 | The studio's **ducking works per deck** (each deck has its own duck gain after the crossfader), so the strip can show each deck as it goes out | Needed to draw each source after its ducking |
+| 2026-10-20 | **Added to `v0.4`**: listener count and stats, and podcasts (recording, upload, page, RSS feed, episode editing); recording was left out of round 21 and is now in |
+| 2026-10-20 | **New milestone `v0.6`: the Windows studio app**, before the pilot (it was part of launch) |
+| 2026-10-20 | Added for `v1.0`: an optional relay to an outside Icecast server, off by default |
 
 ## Milestone plan (estimates)
 
 Plan & design (done 19 Oct) → Proof of concept (done 20 Oct) → Core & manager `v0.1` (done 20 Oct,
-`0.1.0`) → **Player & studio `v0.4`** (now, est. Nov) → WordWave pilot `v0.8`, running beside
-AzuraCast before the switch (est. Dec) → Launch `v1.0` with the Windows app (est. Jan–Feb).
+`0.1.0`) → **Player & studio `v0.4`** (now, est. Nov) → Windows studio app `v0.6` → WordWave pilot
+`v0.8`, running beside AzuraCast before the switch (est. Dec) → Launch `v1.0` (est. Jan–Feb).
+The Windows app moved before the pilot on 2026-10-20 (see Decisions).
 Dates after 20 Oct are estimates; moved a month earlier on 2026-10-20 (see Decisions).
 
 ## Versions
@@ -421,7 +466,7 @@ The POC is unversioned (its commits are the record). The app's version is in `ap
 | 2026-10-20 | `0.1.0` | v0.1 closed: installer, sign-in, planner on MySQL, the manager screens, Sound & safety, song prep. The Player & studio work becomes `0.4.0-dev` with its first code change |
 | 2026-10-20 | `0.4.0-dev` | Player & studio started (the listener player) |
 
-Schema version: **2** (`Schema::VERSION`; stored in the `settings` table). Version 1 was the first
+Schema version: **3** (`Schema::VERSION`; stored in the `settings` table). Version 3 (round 25) adds `tracks.outro` and `live_shows.continues_show_id`; Laragon is on 3, **the test server is still on 2** until the next deploy. Version 1 was the first
 twelve tables; version 2 (2026-10-20) adds `running_orders`. The test server was upgraded 1 → 2 by the
 deploy on 2026-10-20.
 
@@ -451,7 +496,9 @@ deploy on 2026-10-20.
 | 20 | 2026-10-20 | `0171ccb` | Presenter notes for listeners: `Notes` (rules per kind, post / remove for the studio, the listeners' view, `rev()`), `api/notes.php`, `notes_rev` in `api/timeline.php`, `Planner::db()`, the "From the presenter" panel (`views/player.php`, `assets/notes.js`, styles; notes appear at the listener delay), `.htaccess` no-store for `notes.php`; tests `notes_test.php` (44), `player_browser_test.mjs` 26 (notes part), `web_test.php` 95 / 40, note commands in `browser_helper.php`; the long silent sample song removed from Laragon's library (it broke crossfade checks); deployed; all tests pass on Laragon and the server |
 | 21 | 2026-10-20 | `053f8c1` | The live studio: `Studio` (who may go live when, show ownership, notes, running order, library search), `StudioPage` (`/studio` and `/studio/api/*`), `views/studio.php`, `assets/studio.js` (clock, decks with waveforms, mixer, encoder and piece upload, running order, notes drawer), `assets/studio-mic.js` (the POC's mic chain), studio styles; schema version 2 (`running_orders`) with `Schema::upgrade`/`ensure` and `cli/upgrade.php` (run by the deploy script); "Studio" in the header and "Open the studio" on the overview; tests `studio_test.php` (61), `studio_browser_test.mjs` (43, fake mic), `web_test.php` 113 / 43, studio commands in `browser_helper.php`; **found and fixed**: the crossfade was driven by screen frames and stalled when the page wasn't drawn (the sound engine runs fades now), and Go live showed "Joining…" only after Deck A had loaded; deployed (server upgraded to schema 2); all tests pass on Laragon (the studio test 3 runs in a row) and the server; then, with the user's OK, one minute live on the test server as the admin: 10 pieces, no errors, a listener tab 20.0 s behind with no dropouts |
 | 22 | 2026-10-20 | with round 23 | The **output waveform** prototype (an artifact, not in the app yet): the wet mix scrolling right to left past a centred "now", one colour per source (song A blue, song B pink, voice yellow, final output a white line), measured left of now and the plan to the right, with crossfade, ducking and voice compressor controls and events marked; songs loaded into it are prepared with the app's own `prep-core.js` (trimmed, levelled to −16 LUFS, as on upload; a switch turns it off), and an "Actual size in the player" copy of the player window shows the strip at 470 px wide and 60 px high, one column per screen pixel, with its own time span (10 s by default; the user asked for twice the first 30 px and a bit more detail), and level lines at −1 (dashed amber: song prep's peak ceiling and where the limiter starts), −6, −12 and −20 dB (−40 on the decibel scale) in both views, labelled in dB on either scale (the user: the levels show the best peak and how far to raise the volume); the lines are faint on purpose (white at 10 %, the −1 dB line amber at 35 %: "barely visible, but visible"); **found and fixed**: the browser tests and `tools/shot.mjs` left headless Edge running after each run (still playing sound), because `msedge.exe` hands over to the real browser and exits, so `proc.kill()` missed it; they now close Edge over its debug port and then end anything still using the test profile (`upload_browser_test.mjs` and `studio_browser_test.mjs` pass on Laragon and leave nothing running); the user's test album measured (see Current status) |
-| 23 | 2026-10-20 | this round's commit | The **output strip in the app** (design final, see `design/DESIGN.md` "Output strip"): shared `assets/outwave.js` (10 ms columns, the mix-ahead renderer, the canvas strip with faint level lines and event marks) and `assets/outwave-meter.js` (the AudioWorklet meter); **player**: a 60 px strip under the display (10 s span), a mix bus before the volume so the listener's volume doesn't change it, the look-ahead reading song pieces (new `pieces` on song entries near now in `api/timeline.php`) and live pieces (an hls.js loader that keeps a copy); **studio**: a strip above the decks (toggle, drag handle, 20 s span), per-deck ducking, a fade plan so the mix ahead follows Fade to A/B, coloured source dots on the decks and the mic; source colours as tokens in `app.css`; the prototype copied to `design/output-waveform.html`; tests: `player_browser_test.mjs` 33 / 18 listen-only (the strip measures in the sound engine, reads 20 s ahead, what it mixed ahead matches what went out within 1 dB, songs aren't downloaded twice, colours drawn; live pieces), `studio_browser_test.mjs` 54 (the same through a crossfade, toggle, height), `web_test.php` 116 / 46 (pieces near now, a piece as a byte range); **found and fixed**: the studio section's id clashed with the headphones label (`stOut`), and the studio's plan went stale after a click until the next tick, and the player test's cache check counted the look-ahead's first read of the next song as a second download (it now counts each file's bytes from the browser's network log: each file came once); deployed; all tests pass on Laragon and the server; `player_phone_test.mjs` not run this round (the phone wasn't connected) |
+| 23 | 2026-10-20 | `5383b4c` | The **output strip in the app** (design final, see `design/DESIGN.md` "Output strip"): shared `assets/outwave.js` (10 ms columns, the mix-ahead renderer, the canvas strip with faint level lines and event marks) and `assets/outwave-meter.js` (the AudioWorklet meter); **player**: a 60 px strip under the display (10 s span), a mix bus before the volume so the listener's volume doesn't change it, the look-ahead reading song pieces (new `pieces` on song entries near now in `api/timeline.php`) and live pieces (an hls.js loader that keeps a copy); **studio**: a strip above the decks (toggle, drag handle, 20 s span), per-deck ducking, a fade plan so the mix ahead follows Fade to A/B, coloured source dots on the decks and the mic; source colours as tokens in `app.css`; the prototype copied to `design/output-waveform.html`; tests: `player_browser_test.mjs` 33 / 18 listen-only (the strip measures in the sound engine, reads 20 s ahead, what it mixed ahead matches what went out within 1 dB, songs aren't downloaded twice, colours drawn; live pieces), `studio_browser_test.mjs` 54 (the same through a crossfade, toggle, height), `web_test.php` 116 / 46 (pieces near now, a piece as a byte range); **found and fixed**: the studio section's id clashed with the headphones label (`stOut`), and the studio's plan went stale after a click until the next tick, and the player test's cache check counted the look-ahead's first read of the next song as a second download (it now counts each file's bytes from the browser's network log: each file came once); deployed; all tests pass on Laragon and the server; `player_phone_test.mjs` not run this round (the phone wasn't connected) |
+| 24 | 2026-10-20 | with round 25 | **Song changes with real music**: `tools/song-changes.mjs` and `tools/song-changes.html` (prepare a folder of songs as on upload, cut pieces with `Mp3::scan`, plan each change by the planner's rule, mix it as the player does, write a page of 15 s clips with charts and measurements; quiet starts and endings are noted, not flagged); run on the user's album (results in Current status and the POC test log; clips on Laragon only); the tool closes its browser when stopped early. Mastering plugins oXygen and master_me installed in Adobe Audition for comparison (see Decisions). No app changes, so no app tests this round |
+| 25 | 2026-10-20 | this round's commit | **Sound & safety v0.4**: `StationSettings` rewritten (sliders and choices: fade shape, music under the voice, rejoin window, silence level, live and prepared-song quality; `mbPerHour`), new defaults in `Installer`, `views/manage/sound.php` rewritten (selects, a fade-curve preview, MB an hour, the listener delay shown) with styles; `assets/fades.js` used by the player (and its look-ahead) and the studio; `fade_shape` in `api/timeline.php`; song prep measures the last minute (`outro`, `prep-core.js`), `upload.js` sends it, `Library::outro` checks it, `Planner::quietFrom` moves on before a quiet tail; prep encodes at the station's quality (`data-kbps`); the studio's encoder uses the live quality, its mic presets the station's ducking, a dead-air warning after 10 s, and **Rejoin your show** (`Studio::rejoinable`/`rejoin`, `/studio/api/rejoin`, `Planner::endLive` takes a reason); schema 3 (`tracks.outro`, `live_shows.continues_show_id`). Tests: `manage_test.php` 81, `studio_test.php` 74, `web_test.php` 118 / 46, `prep_test.mjs` 27, `upload_browser_test.mjs` 13, `studio_browser_test.mjs` 60 (reload mid-show, "Leave site?" asked and accepted, Rejoin your show: a continuation show at a fresh boundary, notes moved, pieces in order); all tests pass on Laragon. **Found and fixed**: rejoining the same open show would have made listeners stall after a gap over ~12 s (now a continuation show). Also the project map was refactored around the final app (v28), and decision rows from rounds 23–24 that had landed under Scope changes moved to Decisions. **Now playing and the embed**: `NowPlaying` and `api/nowplaying.php` (at the listener delay, CORS, 2 s edge-cache header), the `/embed` route in `App` (no header, `frame-ancestors *`, `?look=light`), `views/embed.php` and `assets/embed.js` (hls.js first, holds the 20 s delay, silent at volume 0 until then), embed styles and a light look in `app.css`, "Put the player on your website" on the station page (iframe code, light-look switch, Copy); tests: `web_test.php` 132 / 60 (now playing against the timeline, the embed page, framing, light look, the card), `player_browser_test.mjs` 38 (an embed part: a made-up church website frames it, it shows what's on, plays 20.1 s behind, stops; the test's Edge runs without its local-network check so a web page may frame localhost); **found and fixed**: Edge claims native HLS but can't play it, and pauses muted media in a background tab; and (older, from round 12) Skip in the seconds between Go live and the show's start dropped the show from the timeline (`Planner::cut` and `skip` now leave a waiting show alone; `planner_test.php` 72); screenshots of the embed (470 and 340 px, dark and light) and the station page (1280 and 390 px). The saved mock-up copies in `prototypes/*.html` are gitignored. All tests pass on Laragon. Not deployed |
 
 ## Open issues
 
@@ -472,8 +519,10 @@ deploy on 2026-10-20.
   settings are kept in `%APPDATA%\buttrc`.
 - The test-server admin (`vincent@controll.co.za`) has a generated password, kept in
   `tools/deploy/controll.admin.local.txt`. It can be changed on `/account` after signing in.
-- Sound & safety still lacks the design's fade shape, ducking, silence detection, rejoin window,
-  sound quality and listener delay (they need the v0.4 player and studio; piece length needs a rescan).
+- Sound & safety: the **piece length** (and so the listener delay) can't be changed from the screen;
+  it needs a rescan of every song's pieces. Silence detection works only for songs prepared from round
+  25 on (older songs have no `outro`; a "prepare again" button would fix that). Changing the
+  prepared-song quality doesn't re-encode songs already in the library.
 - The library has no "show song titles" switch or play weights from the design yet.
 - Songs added before round 16 or with `cli/import.php` are **not levelled** (the 4 test tones), and there's
   no "level again" button for existing songs yet.
@@ -492,8 +541,9 @@ deploy on 2026-10-20.
   Not tried on a phone, or with a real show of real music.
 - The studio encodes MP3 on the page's main thread (as the POC did); a very busy PC could delay pieces.
   A worker would be safer.
-- Reloading the studio during a show can't resume it: the page offers "End that show" (and the safety
-  net ends it after 8 s without pieces). Then go live again.
+- Reloading the studio during a show now offers **Rejoin your show** (round 25): a continuation show
+  with the notes; listeners hear the AutoDJ for the seconds in between. The decks and the mic start
+  empty again after a reload. Not tried on the test server yet.
 - Not built yet in the studio: recording to a podcast, an output (headphones) device picker (the strip
   shows the default output), editing a posted note (remove and post again), and talk items marking
   themselves "now" (only songs do, when they start on a deck).
@@ -511,11 +561,19 @@ deploy on 2026-10-20.
   about every 60 s while the screen is locked; the watchdog brings it back in about 0.5 s. A listener
   may hear that. Not tried on other Android phones yet. Starting to listen *behind* the lock screen
   isn't possible (Chrome blocks it; the player says "Tap Listen again").
+- **Test order on Laragon:** don't run `web_test.php` at the same time as a browser test (it skips, replans and
+  uploads), and give it a few minutes before `player_browser_test.mjs`: the web test's silent `[test]` song can
+  still be on air, and then the output-strip checks fail (nothing to draw, odd download counts).
 - The phone's Wi-Fi drops now and then (and `phone.mjs offline` can leave a tab offline); the phone
   test retries the page load.
 - Not tried: Safari and iPhones. Safari's own HLS can't be faded through Web Audio, so live hand-overs
   there use element volume steps (a hard switch on iPhones, whose volume is fixed).
-- The design's player extras not built yet: listener count, the embed code.
+- The design's player extras not built yet: listener count (next).
+- **Now playing** is not cached at Cloudflare yet: the Cache Rule covers only `api/stream.php`. Every embed asks once
+  every 15 s, so 100 embed listeners run PHP about 7 times a second. Widening the rule to `nowplaying.php` (its 2 s
+  header is already sent) needs the user to change it in Cloudflare.
+- The **embed** was tested in headless Edge only (framed by another page, and on its own); not on a phone, in Safari,
+  or on a real church website. Its iframe asks for `allow="autoplay"`, but Listen still needs a tap.
 - Check that old session files in `storage/sessions` get cleaned up on cPanel (PHP's session clean-up is
   often switched off there); 18 files on 2026-10-20, so not urgent.
 

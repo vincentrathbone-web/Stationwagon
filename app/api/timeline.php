@@ -42,6 +42,7 @@ try {
         'station' => ['name' => $planner->station()['name'], 'timezone' => $planner->station()['timezone']],
         'settings' => [
             'crossfade_seconds' => $planner->setting('crossfade_seconds'),
+            'fade_shape' => $planner->setting('fade_shape'),
             'skip_fade_seconds' => $planner->setting('skip_fade_seconds'),
             'live_fade_seconds' => $planner->setting('live_fade_seconds'),
             'segment_seconds' => $planner->setting('segment_seconds'),

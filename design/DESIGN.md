@@ -203,6 +203,16 @@ A scrolling picture of **what goes out** (the wet mix, never the inputs), settle
 - **Sound & safety:** crossfade length and fade shape with a live curve preview, skip fade, live
   cut-in fade, music under the voice, back-to-AutoDJ timeout, silence detection, rejoin window,
   sound quality (with MB per hour), piece length (with resulting delay).
+  **As built (round 25):** four cards. *Transitions*: crossfade (0–12 s), fade shape (equal power,
+  linear or S-curve, with a small curve drawn by `assets/fades.js`, the same code the player and the
+  studio fade with), skip fade, live cut-in fade. *Live shows*: music under the voice (−24 to 0 dB, the
+  starting depth of every studio mic preset), back to AutoDJ (at least one piece length + 2 s), DJ
+  rejoin window (0–30 min; the studio offers "Rejoin your show"). *Songs*: move on when a song goes
+  quiet (off, −50, −40 or −30 dB; song prep stores each song's last minute, second by second, and the
+  planner starts the next song where the music stays below the level to the end), songs not to
+  repeat. *Sound quality*: live shows and prepared songs (96–256 kbps, each with its MB an hour), and
+  the listener delay shown but not editable ("About 20 s", from the 6 s pieces), since songs on air
+  are already cut into pieces of that length.
 
 ## Copy rules
 

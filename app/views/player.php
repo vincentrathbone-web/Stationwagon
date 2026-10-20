@@ -60,10 +60,41 @@ $hm = fn(string $t): string => substr($t, 0, 5);
         </ol>
       <?php endif ?>
     </section>
+    <section class="lp-embed" id="lpEmbed" data-path="<?= h(App::url('embed')) ?>" data-name="<?= h($name) ?>" hidden>
+      <h2>Put the player on your website</h2>
+      <p class="muted">Paste this where the player should appear, for example in a church website's page editor.</p>
+      <pre id="lpEmbedCode"></pre>
+      <div class="row">
+        <label class="check"><input type="checkbox" id="lpEmbedLight"> Light look, for a light website</label>
+        <button class="btn" id="lpEmbedCopy" type="button">Copy code</button>
+      </div>
+      <p class="muted" style="margin:10px 0 0"><small>What's on now, for other websites and apps: <a href="<?= h(App::url('api/nowplaying.php')) ?>">now-playing data (JSON)</a>.</small></p>
+    </section>
     <noscript><p class="muted">The player needs JavaScript. Any HLS player can play the stream at <code><?= h(App::url('api/stream.php')) ?></code>.</p></noscript>
   </aside>
 </div>
 <div class="lp-toast" id="lpToast" role="status" hidden></div>
+<script src="<?= h(App::asset('assets/fades.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/outwave.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/player.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/notes.js')) ?>" defer></script>
+<script>
+(() => {
+  // The embed code with this site's full address, and Copy
+  const box = document.getElementById('lpEmbed'), code = document.getElementById('lpEmbedCode');
+  const light = document.getElementById('lpEmbedLight'), copy = document.getElementById('lpEmbedCopy');
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const write = () => {
+    const src = new URL(box.dataset.path, location.href).href + (light.checked ? '?look=light' : '');
+    code.textContent = `<iframe src="${esc(src)}" title="${esc(box.dataset.name)} player" width="100%" height="124" style="max-width:520px;border:0" allow="autoplay"></iframe>`;
+  };
+  light.addEventListener('change', write);
+  copy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(code.textContent); copy.textContent = 'Copied'; }
+    catch (_) { const r = document.createRange(); r.selectNodeContents(code); getSelection().removeAllRanges(); getSelection().addRange(r); copy.textContent = 'Selected: press Ctrl+C'; }
+    setTimeout(() => { copy.textContent = 'Copy code'; }, 2500);
+  });
+  write();
+  box.hidden = false;
+})();
+</script>

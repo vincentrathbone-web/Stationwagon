@@ -162,5 +162,6 @@ $deck = fn(string $k): string => '
 </aside>
 <script src="<?= h(App::asset('assets/vendor/lame.min.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/studio-mic.js')) ?>" defer></script>
+<script src="<?= h(App::asset('assets/fades.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/outwave.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/studio.js')) ?>" defer></script>

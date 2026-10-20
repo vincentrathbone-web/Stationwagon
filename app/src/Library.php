@@ -28,7 +28,7 @@ final class Library
      * @return array{id:int,duplicate:bool,title:string}
      */
     public function import(string $path, ?string $title = null, ?string $artist = null, ?string $name = null,
-                           ?string $sourceSha1 = null, ?float $lufs = null): array
+                           ?string $sourceSha1 = null, ?float $lufs = null, ?array $outro = null): array
     {
         $name = basename($name ?? $path);
         if (!is_file($path)) {
@@ -71,10 +71,23 @@ final class Library
             'bytes' => filesize($path),
             'pieces' => json_encode($scan['pieces']),
             'loudness_lufs' => $lufs !== null && is_finite($lufs) ? round(max(-70.0, min(0.0, $lufs)), 2) : null,
+            'outro' => self::outro($outro),
             'status' => 'ready',
             'created_at' => gmdate('Y-m-d H:i:s'),
         ]);
         return ['id' => $id, 'duplicate' => false, 'title' => $title];
+    }
+
+    /**
+     * Song prep's last-minute loudness (one LUFS value a second, oldest first) as stored JSON, or
+     * null when it's missing or doesn't look like one (then silence detection leaves the song be).
+     */
+    public static function outro(?array $values): ?string
+    {
+        if (!$values || count($values) > 120 || array_filter($values, fn($v) => !is_int($v) && !is_float($v))) {
+            return null;
+        }
+        return json_encode(array_map(fn($v) => round(max(-99.0, min(0.0, (float) $v)), 1), array_values($values)));
     }
 
     /** Ready tracks, without their piece lists; $search matches title or artist. */
