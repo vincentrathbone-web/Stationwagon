@@ -1,0 +1,160 @@
+<?php
+// Command-line test of the live studio's rules: the schema upgrade that adds running orders, when
+// a DJ may go live (only in their own live block, from 5 minutes before; managers any time), who
+// may send pieces, post notes and end a show, and the running order.
+//   php app/tests/studio_test.php      (same SW_TEST_DB_* settings as install_test.php)
+declare(strict_types=1);
+require __DIR__ . '/lib.php';
+use Stationwagon\{Db, Library, Planner, Schedule, Schema, Studio};
+
+$t = test_database('studio');
+$root = temp_root('studio');
+try {
+    $cfg = test_install($t, $root);
+    $db = Db::connect($cfg['db']);
+    $station = $db->run('SELECT * FROM ' . $db->table('stations'))->fetch();
+
+    echo "Database version 2\n";
+    $tables = array_column($db->run('SHOW TABLES')->fetchAll(PDO::FETCH_NUM), 0);
+    check('a new install has the running order table', in_array('sw_running_orders', $tables, true) && Schema::installed($db) === 2);
+    $db->pdo->exec('DROP TABLE ' . $db->table('running_orders'));
+    $db->run('UPDATE ' . $db->table('settings') . " SET value = '1' WHERE name = 'schema_version'");
+    $done = Schema::upgrade($db);
+    $tables = array_column($db->run('SHOW TABLES')->fetchAll(PDO::FETCH_NUM), 0);
+    check('a version 1 database is brought up to version 2', $done === [2] && in_array('sw_running_orders', $tables, true) && Schema::installed($db) === 2, json_encode($done));
+    check('  and upgrading again changes nothing', Schema::upgrade($db) === []);
+    @mkdir("$root/storage/cache", 0775, true);
+    Schema::ensure($db, $root);
+    check('the quick check remembers the version in a small file', trim((string) @file_get_contents("$root/storage/cache/schema-version")) === '2');
+
+    // people: the installer's admin, a manager and three DJs
+    $user = function (string $name, string $role) use ($db, $station): array {
+        $id = $db->insert('users', ['email' => strtolower(str_replace(' ', '.', $name)) . '@example.test', 'name' => $name, 'password_hash' => 'x', 'role' => $role, 'created_at' => gmdate('Y-m-d H:i:s')]);
+        $db->insert('station_users', ['station_id' => $station['id'], 'user_id' => $id]);
+        return ['id' => $id, 'name' => $name, 'role' => $role];
+    };
+    $mgr = $user('Mary Manager', 'manager');
+    $sidney = $user('Sidney Lottering', 'dj');
+    $anna = $user('Anna Botha', 'dj');
+    $pieter = $user('Pieter Nel', 'dj');
+
+    $lib = new Library($db, $station, $root);
+    mkdir("$root/in");
+    $tracks = [];
+    foreach (['Amazing Grace' => 150, 'Be Thou My Vision' => 170, 'Station ID' => 12] as $name => $secs) {
+        make_mp3("$root/in/tmp", $secs, [], $secs);
+        $tracks[$name] = (int) $lib->import("$root/in/tmp", null, null, "$name.mp3")['id'];
+    }
+    $sched = new Schedule($db, $station);
+    // 1800000000 = Friday 15 January 2027, 10:00 in Johannesburg
+    [$morning] = $sched->add(['kind' => 'live', 'title' => 'Morning message', 'dj_user_id' => $sidney['id'], 'days' => [16], 'start' => '09:30', 'end' => '10:30']);
+    [$evening] = $sched->add(['kind' => 'live', 'title' => 'Evening praise', 'dj_user_id' => $anna['id'], 'days' => [1, 2, 4, 8, 16, 32, 64], 'start' => '19:00', 'end' => '20:00']);
+    [$night] = $sched->add(['kind' => 'live', 'title' => 'Night watch', 'dj_user_id' => $anna['id'], 'days' => [8], 'start' => '23:00', 'end' => '01:00']);
+    [$open] = $sched->add(['kind' => 'live', 'title' => 'Open mic', 'dj_user_id' => '', 'days' => [32], 'start' => '08:00', 'end' => '09:00']);
+    check('the test blocks are in the schedule', $morning && $evening && $night && $open);
+
+    $p = new Planner($db, $station, $root);
+    $studio = new Studio($p);
+    $now = 1800000000.0;
+
+    echo "When a DJ may go live\n";
+    $s = $studio->slot($sidney, $now);
+    check('a DJ may go live in their own block', $s['may'] && $s['title'] === 'Morning message' && $s['scope'] === "block:$morning", json_encode($s));
+    check('  which runs 09:30–10:30 on the station’s clock', $s['block']['start'] === $now - 1800 && $s['block']['end'] === $now + 1800 && $s['block']['dj'] === 'Sidney Lottering');
+    $s = $studio->slot($anna, $now);
+    check('another DJ may not', !$s['may']);
+    check('  and is told when their own show is', str_contains((string) $s['reason'], 'Evening praise') && str_contains((string) $s['reason'], 'today at 19:00') && str_contains((string) $s['reason'], 'from 18:55'), (string) $s['reason']);
+    $at1856 = $now + 8 * 3600 + 56 * 60;
+    check('a DJ may go live from 5 minutes before their block', $studio->slot($anna, $at1856)['may'] && !$studio->slot($anna, $at1856 - 120)['may']);
+    check('  until it ends', $studio->slot($anna, $now + 9.5 * 3600)['may'] && !$studio->slot($anna, $now + 10 * 3600 + 1)['may']);
+    $s = $studio->slot($anna, $now - 9.5 * 3600); // Friday 00:30
+    check('a block past midnight belongs to the day it starts', $s['may'] && $s['title'] === 'Night watch' && $s['block']['start'] === $now - 11 * 3600, json_encode($s['block']));
+    $sat0830 = $now + 86400 - 5400;
+    check('a block with no DJ named is open to every DJ', $studio->slot($pieter, $sat0830)['may'] && $studio->slot($pieter, $sat0830)['title'] === 'Open mic');
+    check('  and counts as their next show', str_contains((string) $studio->slot($pieter, $now)['reason'], 'Open mic, starts tomorrow at 08:00'), (string) $studio->slot($pieter, $now)['reason']);
+    $s = $studio->slot($mgr, $now + 5 * 3600);
+    check('a manager may go live any time', $s['may'] && $s['title'] === 'Live with Mary Manager' && $s['scope'] === 'user:' . $mgr['id'] && $s['block'] === null, json_encode($s));
+    $s = $studio->slot($mgr, $now);
+    check('  inside a DJ’s block the show takes that block’s name', $s['may'] && $s['title'] === 'Morning message');
+
+    echo "On air\n";
+    $p->timeline($now);
+    check('a DJ outside their block can’t go live', ($studio->goLive($anna, $now)['status'] ?? 0) === 409);
+    $went = $studio->goLive($sidney, $now);
+    check('a DJ goes live in their block', isset($went['live']['public_id']) && $went['live']['title'] === 'Morning message', json_encode($went['error'] ?? ''));
+    check('  handing over from the AutoDJ song, with its address', ($went['handover']['type'] ?? '') === 'song' && str_starts_with((string) $went['handover']['url'], 'storage/media/'));
+    $pid = $went['live']['public_id'];
+    $start = $went['live']['start'];
+    check('  under their own name', (int) $db->run('SELECT dj_user_id FROM ' . $db->table('live_shows') . ' WHERE public_id = ?', [$pid])->fetchColumn() === $sidney['id']);
+    check('nobody else can go live meanwhile', !$studio->slot($mgr, $now + 1)['may'] && str_contains((string) $studio->slot($mgr, $now + 1)['reason'], 'Sidney Lottering is on air now'), (string) $studio->slot($mgr, $now + 1)['reason']);
+    check('  and the DJ is told their show is still on', str_contains((string) $studio->slot($sidney, $now + 1)['reason'], 'still on air'));
+    make_mp3("$root/piece.mp3", 6.0, [], 1);
+    $piece = (string) file_get_contents("$root/piece.mp3");
+    check('another DJ can’t send pieces to the show', ($studio->addPiece($anna, $pid, 0, 6.0, $piece, $start + 6)['status'] ?? 0) === 403);
+    check('pieces must be MP3 audio', ($studio->addPiece($sidney, $pid, 0, 6.0, 'hello world', $start + 6)['status'] ?? 0) === 400);
+    check('  of a sensible length', ($studio->addPiece($sidney, $pid, 0, 0.0, $piece, $start + 6)['status'] ?? 0) === 400 && ($studio->addPiece($sidney, $pid, 0, 60.0, $piece, $start + 6)['status'] ?? 0) === 400);
+    $r = $studio->addPiece($sidney, $pid, 0, 6.0, $piece, $start + 6);
+    check('the DJ sends the first piece', ($r['ok'] ?? false) && $r['expected'] === 1, json_encode($r));
+    check('  a gap is refused (409)', ($studio->addPiece($sidney, $pid, 2, 6.0, $piece, $start + 7)['status'] ?? 0) === 409);
+    check('  a piece sent twice is taken once', ($studio->addPiece($sidney, $pid, 0, 6.0, $piece, $start + 7)['duplicate'] ?? false) === true);
+    check('a manager may send pieces to any show', ($studio->addPiece($mgr, $pid, 1, 6.0, $piece, $start + 12)['ok'] ?? false) === true);
+    check('  the show is still open', $studio->openShow($start + 13)['public_id'] === $pid);
+
+    echo "Notes from the studio\n";
+    $n = $studio->postNote($sidney, $pid, 'verse', ['ref' => 'Psalm 23:1', 'text' => 'The LORD is my shepherd; I shall not want.'], $start + 14);
+    check('the DJ posts a note to their show', ($n['status'] ?? 0) === 200 && isset($n['note']['id']), json_encode($n));
+    check('  a bad note says why (422)', ($studio->postNote($sidney, $pid, 'video', ['text' => 'x', 'url' => 'ftp://x'], $start + 14)['status'] ?? 0) === 422);
+    check('another DJ can’t post to it', ($studio->postNote($anna, $pid, 'note', ['text' => 'Hi'], $start + 14)['status'] ?? 0) === 403);
+    check('  or remove its notes', ($studio->removeNote($anna, $pid, $n['note']['id'])['status'] ?? 0) === 403);
+    check('the studio lists the show’s notes', array_column($studio->notes($pid), 'id') === [$n['note']['id']]);
+    check('the DJ removes a note', ($studio->removeNote($sidney, $pid, $n['note']['id'])['removed'] ?? 0) === $n['note']['id'] && $studio->notes($pid) === []);
+    check('  once', ($studio->removeNote($sidney, $pid, $n['note']['id'])['status'] ?? 0) === 404);
+
+    echo "Ending\n";
+    check('another DJ can’t end the show', ($studio->endLive($anna, $pid, $start + 15)['status'] ?? 0) === 403);
+    $end = $studio->endLive($sidney, $pid, $start + 15);
+    check('the DJ ends it', ($end['ended'] ?? false) === true, json_encode($end));
+    check('  and the AutoDJ is free again', $studio->openShow($start + 16) === null && $studio->slot($mgr, $start + 16)['may']);
+    $t2 = $now + 5 * 3600;
+    $p->timeline($t2);
+    $quiet = $studio->goLive($mgr, $t2);
+    check('a manager goes live outside any block', isset($quiet['live']) && $quiet['live']['title'] === 'Live with Mary Manager', json_encode($quiet['error'] ?? ''));
+    check('a show that sends nothing is closed by the safety net', $studio->openShow($quiet['live']['start'] + 30) === null
+        && $db->run('SELECT closed_reason FROM ' . $db->table('live_shows') . ' WHERE public_id = ?', [$quiet['live']['public_id']])->fetchColumn() === 'timeout');
+
+    echo "Running order\n";
+    check('a DJ may plan their own block', $studio->mayEditOrder($sidney, "block:$morning") && !$studio->mayEditOrder($sidney, "block:$evening"));
+    check('  and their own list outside blocks, not someone else’s', $studio->mayEditOrder($sidney, 'user:' . $sidney['id']) && !$studio->mayEditOrder($sidney, 'user:' . $anna['id']));
+    check('  and an open block', $studio->mayEditOrder($pieter, "block:$open"));
+    check('a manager may plan any show', $studio->mayEditOrder($mgr, "block:$evening") && $studio->mayEditOrder($mgr, 'user:' . $anna['id']) && !$studio->mayEditOrder($mgr, 'other'));
+    $items = [['kind' => 'id', 'track_id' => $tracks['Station ID']], ['kind' => 'talk', 'title' => '  Welcome   and prayer ', 'seconds' => 240],
+              ['kind' => 'song', 'track_id' => $tracks['Amazing Grace']], ['kind' => 'talk', 'title' => 'Message: Psalm 23', 'seconds' => 540]];
+    $r = $studio->saveOrder($sidney, "block:$morning", $items);
+    check('a running order is saved', ($r['status'] ?? 0) === 200 && count($r['items']) === 4, json_encode($r));
+    check('  songs come back with title, length and address', $r['items'][2]['title'] === 'Amazing Grace' && abs($r['items'][2]['seconds'] - 150) < 1 && str_starts_with($r['items'][2]['url'], 'storage/media/'), json_encode($r['items'][2]));
+    check('  talk keeps its tidied name and length', $r['items'][1] === ['kind' => 'talk', 'title' => 'Welcome and prayer', 'seconds' => 240]);
+    check('  it is there next time', array_column($studio->order("block:$morning"), 'kind') === ['id', 'talk', 'song', 'talk']);
+    check('saving again replaces it', count($studio->saveOrder($sidney, "block:$morning", [$items[2]])['items']) === 1 && count($studio->order("block:$morning")) === 1);
+    check('another DJ can’t change it', ($studio->saveOrder($anna, "block:$morning", [])['status'] ?? 0) === 403);
+    check('unknown kinds are refused', ($studio->saveOrder($sidney, "block:$morning", [['kind' => 'advert']])['status'] ?? 0) === 422);
+    check('talk needs a name and 1 s to 2 h', ($studio->saveOrder($sidney, "block:$morning", [['kind' => 'talk', 'title' => '', 'seconds' => 60]])['status'] ?? 0) === 422
+        && ($studio->saveOrder($sidney, "block:$morning", [['kind' => 'talk', 'title' => 'x', 'seconds' => 7201]])['status'] ?? 0) === 422);
+    check('songs must be in the library', ($studio->saveOrder($sidney, "block:$morning", [['kind' => 'song', 'track_id' => 99999]])['status'] ?? 0) === 422);
+    check('a running order holds ' . Studio::ORDER_MAX . ' items at most', ($studio->saveOrder($sidney, "block:$morning", array_fill(0, Studio::ORDER_MAX + 1, $items[1]))['status'] ?? 0) === 422);
+    check('  and must be a list', ($studio->saveOrder($sidney, "block:$morning", ['a' => $items[1]])['status'] ?? 0) === 400);
+    $studio->saveOrder($sidney, "block:$morning", $items);
+    $db->run('UPDATE ' . $db->table('tracks') . " SET status = 'error' WHERE id = ?", [$tracks['Amazing Grace']]);
+    check('a song taken out of the library drops out of the list', array_column($studio->order("block:$morning"), 'kind') === ['id', 'talk', 'talk']);
+
+    $sched->delete($open);
+    check('a DJ with no block at all is told to ask a manager', !$studio->slot($pieter, $now)['may'] && str_contains((string) $studio->slot($pieter, $now)['reason'], 'Ask a manager'));
+
+    echo "Library search\n";
+    $found = $studio->songs('vision');
+    check('the studio finds songs by title', count($found) === 1 && $found[0]['title'] === 'Be Thou My Vision' && $found[0]['track_id'] === $tracks['Be Thou My Vision'], json_encode($found));
+    check('  only ready songs', $studio->songs('Amazing') === []);
+} finally {
+    drop_test_database($t);
+    remove_tree($root);
+}
+finish();

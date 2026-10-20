@@ -101,8 +101,8 @@ All digits that line up in columns use `font-variant-numeric: tabular-nums`.
   passage, Copy verse), references (pill links to each passage), video (title + "Open video ↗")
   and a plain note. During a live show the panel says "Live" and new notes arrive with a "New"
   tag and a toast; between shows it keeps the last live show's notes ("This morning").
-  Links are real `<a href>` links that open in a new tab. The studio needs a matching notes
-  editor (not designed yet).
+  Links are real `<a href>` links that open in a new tab. The studio posts them from its
+  **notes drawer** (below, under DJ studio).
 - **States to support:** AutoDJ, Live, Rejoining (soft fade out, then fade back in).
 
 ### DJ studio
@@ -123,6 +123,39 @@ All digits that line up in columns use `font-variant-numeric: tabular-nums`.
   to A/B; a fill bar of the 30-minute slot and "AutoDJ fills the last 2:50".
 - **Status strip:** piece size and last upload, listener delay, recording, headphone device,
   connection.
+- **Notes drawer** (chosen by the user on 2026-10-20; built in the app, not in the mock-ups): a
+  **Notes** button with a count sits in the top bar beside Go live. It opens a drawer from the right
+  side, over the right of the desk (420 px; full width on a phone); Close or Esc shuts it.
+  Inside: "Notes for listeners", a hint ("Go live to post notes…" until on air), four kind tabs
+  (Verse, References, Video, Note), one small form per kind (Verse: reference, version with KJV
+  filled in and a list of common codes, the pasted text; References: an optional intro, one
+  reference per line, version; Video: title and address; Note: text), **Post note** with "Listeners
+  see it 20 s after you post, when they hear this moment", and the show's posted notes, newest
+  first, each with its time, kind, a short summary, "Listeners see it at 14:05:32" (amber) turning
+  into "Showing to listeners" (green), and Remove, which asks "Remove this note?" in the row first.
+  An error ("Write the note first.") shows above Post note.
+
+### DJ studio as built (round 21)
+
+The app's `/studio` follows the green mock-up, with these additions and differences:
+
+- **Switching on:** the banner first offers **Switch on the studio** (sound and the microphone need
+  a click, and the browser asks for the mic); "Wear headphones, so your speakers don't feed back into
+  the mic." Until then the decks, mixer and Go live are greyed out.
+- **Go live** is grey and off with the reason in the banner when the person may not go live ("Your
+  next show, Evening praise, starts today at 19:00. You can go live from 18:55." or "You have no live
+  show in the schedule. Ask a manager to add one for you."). Pressed, it turns amber "Joining…" at
+  once, then red "On air 0:12"; pressed on air it asks "End the show?" in the banner.
+- **Top bar:** the show is the live block's title and DJ, the bar fills across the block, and the
+  meta line shows the block's times (or "All day") and the time left; outside a block a manager's
+  show is "Live with <name>".
+- **Decks** show "Empty", "Loading…", "Ready" or "Playing"; Deck A says it picks up the AutoDJ song
+  when you go live. A deck that is on air can't be reloaded until you fade across or press Stop.
+- **Running order** can be edited by its DJ (or a manager): a library search with A / B / + Song /
+  + ID on each result, "Add talk" with a name and minutes, ↑ ↓ ✕ on each row, "Saving…" / "Saved"
+  in the title bar. The fill bar is the block's length; "AutoDJ fills the last …" or "Over by …".
+- **Status strip** shows "Waiting to send" and the connection as "Not sending", "Joining",
+  "Connection good", "Connection slow" or "Connection trouble: …". Recording is not built yet.
 
 ### Station manager
 

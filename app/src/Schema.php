@@ -4,23 +4,26 @@ declare(strict_types=1);
 namespace Stationwagon;
 
 /**
- * The database tables, version 1. Plain MySQL 8 / MariaDB 10.5+ DDL: InnoDB, utf8mb4, no JSON
+ * The database tables, version 2. Plain MySQL 8 / MariaDB 10.5+ DDL: InnoDB, utf8mb4, no JSON
  * column type (JSON lives in MEDIUMTEXT so both servers behave the same), no generated columns.
  *
  * Times: DATETIME columns are UTC wall-clock times (created_at and the like). Stream times
  * (when a song or live block plays) are unix seconds with milliseconds, DECIMAL(15,3), because
  * the timeline needs sub-second precision and does arithmetic on them.
  *
- * Later versions add migrations here; the installed version is in settings.schema_version.
+ * create() always makes the newest tables; an older install is brought up to date by upgrade(),
+ * step by step (migrations()). The installed version is in settings.schema_version.
+ *   v1  the first twelve tables
+ *   v2  running_orders (the studio's show plans)
  */
 final class Schema
 {
-    public const VERSION = 1;
+    public const VERSION = 2;
 
     /** Table names without prefix, in creation order (foreign keys need their parents first). */
     public const TABLES = [
         'settings', 'stations', 'users', 'station_users', 'tracks', 'playlists', 'playlist_tracks',
-        'schedule', 'live_shows', 'live_pieces', 'timeline', 'presenter_notes',
+        'schedule', 'live_shows', 'live_pieces', 'timeline', 'presenter_notes', 'running_orders',
     ];
 
     /** @return array<string,string> table name => CREATE TABLE statement */
@@ -211,6 +214,93 @@ final class Schema
                 {$fk('notes_show', 'live_show_id', 'live_shows', 'SET NULL')},
                 {$fk('notes_user', 'user_id', 'users', 'SET NULL')}
             ) $opts",
+
+            'running_orders' => self::runningOrders($p, $opts),
         ];
+    }
+
+    /** The studio's show plans: one per live block (scope "block:<id>") or per person ("user:<id>"). items = JSON list */
+    private static function runningOrders(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}running_orders` (
+                `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `station_id` INT UNSIGNED NOT NULL,
+                `scope` VARCHAR(40) NOT NULL,
+                `items` MEDIUMTEXT NOT NULL,
+                `updated_at` DATETIME NOT NULL,
+                `updated_by` INT UNSIGNED NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `{$p}order_scope` (`station_id`, `scope`),
+                CONSTRAINT `{$p}fk_order_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `{$p}fk_order_user` FOREIGN KEY (`updated_by`) REFERENCES `{$p}users` (`id`) ON DELETE SET NULL
+            ) $opts";
+    }
+
+    /** @return array<int, list<string>> version => the statements that bring the version before it up to it */
+    public static function migrations(string $p): array
+    {
+        $opts = 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+        return [
+            2 => [self::runningOrders($p, $opts)],
+        ];
+    }
+
+    /** The version recorded in the database (0 if it can't be read). */
+    public static function installed(Db $db): int
+    {
+        try {
+            return (int) $db->run('SELECT value FROM ' . $db->table('settings') . " WHERE name = 'schema_version'")->fetchColumn();
+        } catch (\PDOException) {
+            return 0;
+        }
+    }
+
+    /**
+     * Bring an installed database up to VERSION, one step at a time, under a named lock so two
+     * requests never run the same step. Each step only adds (CREATE TABLE IF NOT EXISTS and the
+     * like), so a step cut short can simply run again. @return list<int> the versions applied
+     */
+    public static function upgrade(Db $db): array
+    {
+        $lock = 'sw.schema.' . substr(sha1((string) $db->pdo->query('SELECT DATABASE()')->fetchColumn() . '|' . $db->prefix), 0, 24);
+        if ((int) $db->run('SELECT GET_LOCK(?, 10)', [$lock])->fetchColumn() !== 1) {
+            throw new \RuntimeException('Another request is upgrading the database. Try again.');
+        }
+        try {
+            $from = self::installed($db);
+            $done = [];
+            foreach (self::migrations($db->prefix) as $version => $statements) {
+                if ($version <= $from || $version > self::VERSION) {
+                    continue;
+                }
+                foreach ($statements as $sql) {
+                    $db->pdo->exec($sql);
+                }
+                $db->run('UPDATE ' . $db->table('settings') . " SET value = ?, updated_at = ? WHERE name = 'schema_version'", [(string) $version, gmdate('Y-m-d H:i:s')]);
+                $done[] = $version;
+            }
+            return $done;
+        } finally {
+            $db->run('SELECT RELEASE_LOCK(?)', [$lock]);
+        }
+    }
+
+    /**
+     * Upgrade if needed, checked cheaply: storage/cache/schema-version remembers the last version
+     * seen, so most requests only read a small file.
+     */
+    public static function ensure(Db $db, string $root): void
+    {
+        $mark = $root . '/storage/cache/schema-version';
+        if ((int) @file_get_contents($mark) === self::VERSION) {
+            return;
+        }
+        if (self::installed($db) < self::VERSION) {
+            self::upgrade($db);
+        }
+        if (!is_dir(dirname($mark))) {
+            @mkdir(dirname($mark), 0775, true);
+        }
+        @file_put_contents($mark, (string) self::VERSION);
     }
 }

@@ -131,6 +131,7 @@ The app (after the POC; every round's suite results are in `HANDOVER.md`):
 |---|---|---|---|---|
 | Listener player (v0.4) | ☑ 2026-10-20 | ☑ 2026-10-20 | ☑ 2026-10-20 | Headless Edge: joins within 0.05 s, crossfades, live held at 20.00 s, stream-only 20.05 s, a frozen sound engine is nudged and rebuilt (20 checks; 13 listen-only on cPanel). Android phone (Xiaomi, Chrome 155, live server): joins within 0.11 s, crossfades; screen locked 2 min: 4 songs on time, engine clock 99.1 % of real time (10 checks). Found and fixed: the phone ran a week-old cached `player.js` (assets now tagged by content); Listen hung behind the lock screen; the engine clock freezes about every 60 s while locked (watchdog, about 0.5 s of sound lost each time). Safari and iPhones not tried. |
 | Presenter notes (v0.4) | ☑ 2026-10-20 | ☑ 2026-10-20 | n/a | Rules test 44 on Laragon (MySQL) and cPanel (MariaDB). Headless Edge on Laragon: a note posted at a show's start is held back, appears 20.5 s later tagged Live and New with a toast, shown as text with its Bible Gateway link, and stays after the show (6 checks). Screenshots at 1280 and 390 px match the mock-up. Posting comes with the studio. |
+| Live studio (v0.4) | ☑ 2026-10-20 | ☑ 2026-10-20 | not tried | Rules test 61 on Laragon (MySQL) and cPanel (MariaDB), including the schema 1 → 2 upgrade. Headless Edge with the fake microphone on Laragon (43 checks): a DJ without a block can't go live; one in their block switches on, plans a running order (kept after a reload), goes live; Deck A picks up the AutoDJ song 3 ms from the timeline; the first sample lands on the handover time; pieces of 6.03–6.06 s go out with an empty queue, scan as whole MP3s, hold the music and appear in the listener playlist; Fade to B crossfades; a verse is posted, removed and a note posted from the drawer; End show (confirmed in the page) hands back to the AutoDJ. On cPanel (with the user's OK) the admin went live for one minute with test tones: Deck A 2 ms from the timeline, 10 pieces with no errors, a listener tab heard it through Cloudflare 20.0 s behind with no dropouts, End show back to the AutoDJ. The safety net also ended an earlier attempt by itself when the test script crashed. Screenshots at 1280 and 390 px match the mock-up. |
 
 
 ## Result (2026-10-20)
@@ -177,8 +178,9 @@ after a cut; Skip uses what the presser hears; HLS players hold a fixed 20 s del
 
 Progress (2026-10-20): steps 1 and 2 are done (Core & manager, `v0.1`, closed as `0.1.0`). Step 3
 is under way: the two-deck listener player with its HLS fallback is built and tested on desktop and an
-Android phone; the embed and a now-playing API are still to come. Step 4 starts next with the live
-studio in the app. `HANDOVER.md` has the details.
+Android phone; the embed and a now-playing API are still to come. Step 4 is under way: the live
+studio works in the app (decks, mixer, presets, running order, notes for listeners); recording to a
+podcast is still to come. `HANDOVER.md` has the details.
 
 1. **Core:** MySQL schema, installer (WordPress-style), timeline planner as a service class, cron
    plus lazy planning, settings.

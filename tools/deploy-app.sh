@@ -42,6 +42,7 @@ ssh "$host" "set -e
   if [ -f '$dir/config.local.php' ] && grep -q installed_at '$dir/config.local.php'; then
     rm -f ~/stationwagon-app.install.key
     echo 'Already installed: settings and storage kept'
+    /opt/cpanel/ea-php81/root/usr/bin/php '$dir/cli/upgrade.php' 2>/dev/null || php '$dir/cli/upgrade.php'
   else
     mv ~/stationwagon-app.install.key '$dir/install.key'
     chmod 600 '$dir/install.key'

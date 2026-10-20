@@ -10,8 +10,10 @@ The first station it's designed around is Radio WordWave / Radio WoordGolf.
 (`v0.1`) is done**: installer, sign-in and roles, the planner on MySQL, and the station manager
 (library with song prep on upload, playlists, schedule, DJs, Sound & safety). **Player & studio
 (`v0.4`) is under way**: the listener player works in desktop browsers and on an Android phone,
-screen locked too. Next: presenter notes, then the live studio in the app. The test station runs at
-https://wordwave.controll.co.za/stationwagon-app/.
+screen locked too; presenter notes appear beside it; and the live studio works in the app (two decks,
+mixer, mic chain, running order, notes for listeners), tested live on the test server. Next: the v0.4
+player and studio settings. The test station runs at https://wordwave.controll.co.za/stationwagon-app/
+(the studio is at `/studio`, for signed-in staff).
 
 ## In this repo
 
@@ -37,6 +39,12 @@ https://wordwave.controll.co.za/stationwagon-app/.
   from the stream.
 - Songs are **levelled in the browser** on upload (−16 LUFS, silence trimmed, short fades).
 - Live shows come from a **browser studio** that mixes mic and music, encodes MP3 and uploads a
-  piece every 6 seconds (proved in the prototypes; coming to the app in `v0.4`).
+  piece every 6 seconds. A DJ goes live in their own schedule slot; Deck A picks up the AutoDJ song
+  exactly where it is, so listeners hear no jump. If the pieces stop for 8 seconds, the AutoDJ takes
+  over again by itself.
+- Presenters post **notes for listeners** (Bible verses, references, video links, short notes)
+  from the studio; listeners see each one when they reach that moment of the show.
+- The database **upgrades itself**: a new version's tables are added on deploy or on the first page
+  view, so a station never needs a manual migration.
 
 To run it, see "Dev environment" and "Test server" in [`HANDOVER.md`](HANDOVER.md).

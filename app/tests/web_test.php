@@ -33,7 +33,8 @@ final class Browser
     }
 
     /** @return array{status:int,headers:array<string,list<string>>,body:string} */
-    public function go(string $path, ?array $post = null, array $extra = []): array
+    /** $post: form fields, or a string sent as the raw body (JSON or a live piece). */
+    public function go(string $path, array|string|null $post = null, array $extra = []): array
     {
         $ch = curl_init($this->base . '/' . ltrim($path, '/'));
         $headers = [];
@@ -56,8 +57,8 @@ final class Browser
         if ($post !== null) {
             curl_setopt($ch, CURLOPT_POST, true);
             // A file to upload makes it a multipart form, like a browser's
-            $multipart = (bool) array_filter($post, fn($v) => $v instanceof CURLFile);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $multipart ? $post : http_build_query($post));
+            $multipart = is_array($post) && array_filter($post, fn($v) => $v instanceof CURLFile);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, is_string($post) || $multipart ? $post : http_build_query($post));
         }
         $body = (string) curl_exec($ch);
         $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
@@ -108,6 +109,12 @@ try {
     check('manager page sends you to sign in', $r['status'] === 303 && str_ends_with($location($r), '/signin?next=manage'), $location($r));
     $r = $b->go('account');
     check('account page sends you to sign in, then back', $r['status'] === 303 && str_ends_with($location($r), '/signin?next=account'), $location($r));
+    $r = $b->go('studio');
+    check('the studio sends you to sign in', $r['status'] === 303 && str_ends_with($location($r), '/signin?next=studio'), $location($r));
+    $r = $b->go('studio/api/state');
+    check('  and its feed answers 401, as JSON', $r['status'] === 401 && isset(json_decode($r['body'], true)['error']), (string) $r['status']);
+    $r = $b->go('studio/api/piece?live=x&seq=0&dur=6', "\xFF\xFB\x90\x00", ['Content-Type: audio/mpeg']);
+    check('  nobody signed out can send audio', $r['status'] === 401, (string) $r['status']);
     $r = $b->go('signin');
     $csrf = Browser::csrf($r);
     check('sign-in page opens with a form key', $r['status'] === 200 && strlen($csrf) === 64);
@@ -184,6 +191,32 @@ try {
         check('or Sound & safety', $a->go('manage/sound')['status'] === 403);
         check('a DJ has no Skip button', !str_contains($r['body'], 'Skip this song'));
         check('a DJ can’t skip by sending the form', $a->go('manage/skip', ['csrf' => Browser::csrf($r)])['status'] === 403);
+        check('the header and overview link to the studio', str_contains($r['body'], 'href="' . $basePath . '/studio">Studio</a>') && str_contains($r['body'], 'Open the studio'));
+        $st = $a->go('studio');
+        preg_match('/data-csrf="([0-9a-f]{64})"/', $st['body'], $sk);
+        check('the studio opens for a DJ', $st['status'] === 200 && str_contains($st['body'], 'id="studio"') && isset($sk[1]), (string) $st['status']);
+        check('  with its scripts tagged by content', preg_match('~assets/studio\.js\?v=[0-9a-f]{10}"~', $st['body']) && preg_match('~assets/studio-mic\.js\?v=[0-9a-f]{10}"~', $st['body']) && preg_match('~assets/vendor/lame\.min\.js\?v=[0-9a-f]{10}"~', $st['body']));
+        check('  and the notes drawer', str_contains($st['body'], 'id="stDrawer"') && str_contains($st['body'], 'data-kind="verse"'));
+        foreach (['assets/studio.js', 'assets/studio-mic.js'] as $asset) {
+            $as = $a->go($asset);
+            check("$asset is served", $as['status'] === 200 && strlen($as['body']) > 1000, (string) $as['status']);
+        }
+        $json = ['Content-Type: application/json', 'X-CSRF: ' . ($sk[1] ?? '')];
+        $q = $a->go('studio/api/state');
+        $sj = json_decode($q['body'], true);
+        check('the studio feed knows the DJ and their (missing) show', $q['status'] === 200 && ($sj['me']['name'] ?? '') === 'Web Test DJ' && ($sj['slot']['may'] ?? true) === false && str_contains((string) ($sj['slot']['reason'] ?? ''), 'Ask a manager'), (string) ($sj['slot']['reason'] ?? $q['status']));
+        check('  and is never kept by shared caches', !preg_match('/public|max-age=[1-9]/', implode(',', $q['headers']['cache-control'] ?? [])), implode(',', $q['headers']['cache-control'] ?? []));
+        check('studio actions need the page’s key', $a->go('studio/api/golive', '{}', ['Content-Type: application/json'])['status'] === 400);
+        $q = $a->go('studio/api/golive', '{}', $json);
+        check('a DJ outside their block can’t go live', $q['status'] === 409 && str_contains((string) (json_decode($q['body'], true)['error'] ?? ''), 'Ask a manager'), $q['status'] . ' ' . $q['body']);
+        $q = $a->go('studio/api/piece?live=live-nope&seq=0&dur=6', "\xFF\xFB\x90\x00" . str_repeat("\0", 413), ['Content-Type: audio/mpeg', 'X-CSRF: ' . ($sk[1] ?? '')]);
+        check('  nor send audio to a show that isn’t theirs', $q['status'] === 403, (string) $q['status']);
+        $q = $a->go('studio/api/songs?q=a');
+        check('the studio searches the library', $q['status'] === 200 && is_array(json_decode($q['body'], true)['songs'] ?? null));
+        $q = $a->go('studio/api/order', json_encode(['scope' => 'user:' . $created, 'items' => [['kind' => 'talk', 'title' => 'Welcome', 'seconds' => 120]]]), $json);
+        check('a DJ saves their own running order', $q['status'] === 200 && (json_decode($q['body'], true)['items'][0]['title'] ?? '') === 'Welcome', $q['status'] . ' ' . $q['body']);
+        check('  but not someone else’s', $a->go('studio/api/order', json_encode(['scope' => 'user:1', 'items' => []]), $json)['status'] === 403);
+        check('unknown studio actions answer 404', $a->go('studio/api/explode')['status'] === 404);
         check('header shows the name and sign out', str_contains($r['body'], 'Web Test DJ</a>') && str_contains($r['body'], 'Sign out'));
         $headerCsrf = Browser::csrf($r);
         $r = $a->go('signin');
@@ -328,6 +361,7 @@ try {
     if ($db !== null) {
         foreach (array_merge($created !== null ? [$created] : [], $users ?? []) as $id) {
             $db->run('DELETE FROM ' . $db->table('users') . ' WHERE id = ?', [$id]);
+            $db->run('DELETE FROM ' . $db->table('running_orders') . ' WHERE scope = ?', ["user:$id"]);
         }
         $db->run('DELETE FROM ' . $db->table('playlists') . " WHERE name LIKE 'Web test list %'");
         if (isset($origSettings) && $origSettings !== false) {

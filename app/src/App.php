@@ -22,6 +22,13 @@ final class App
         }
 
         try {
+            if ($route !== 'install' && Config::isInstalled()) {
+                Schema::ensure(Db::fromConfig(), SW_ROOT); // brings an older database up to date
+            }
+            if (preg_match('#^studio/api/([a-z-]+)$#', $route, $m) === 1) {
+                (new StudioPage())->api($m[1]);
+                return;
+            }
             if (preg_match('#^manage/playlists/(\d+)$#', $route, $m) === 1) {
                 (new ManagePage())->playlist((int) $m[1]);
                 return;
@@ -39,6 +46,7 @@ final class App
                 'manage/schedule' => (new ManagePage())->schedule(),
                 'manage/djs' => (new ManagePage())->djs(),
                 'manage/sound' => (new ManagePage())->sound(),
+                'studio' => (new StudioPage())->page(),
                 default => self::notFound(),
             };
         } catch (Throwable $ex) {

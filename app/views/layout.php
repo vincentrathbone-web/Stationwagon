@@ -14,6 +14,7 @@
   <a class="brand" href="<?= h(App::url('')) ?>">stationwagon</a><span class="ver"><?= h(Config::version()) ?></span>
   <nav class="who">
     <?php if (!empty($me)): ?>
+      <a href="<?= h(App::url('studio')) ?>">Studio</a>
       <a href="<?= h(App::url('manage')) ?>">Manage</a>
       <a href="<?= h(App::url('account')) ?>" title="Your account"><?= h($me['name']) ?></a>
       <form method="post" action="<?= h(App::url('signout')) ?>"><input type="hidden" name="csrf" value="<?= h($csrf) ?>"><button class="link" type="submit">Sign out</button></form>

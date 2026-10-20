@@ -6,11 +6,12 @@ $hello = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good ev
 $cur = $onAir['current'];
 $next = $onAir['next'];
 ?>
-<div class="vhead">
+<div class="vhead vhead-row">
   <div>
     <h1><?= h($hello) ?>, <?= h(explode(' ', $me['name'])[0]) ?></h1>
     <p><?= h(\Stationwagon\Staff::ROLE_NAMES[$me['role']]) ?> · station clock <?= h(clock($now, $tz, 'H:i')) ?> (<?= h($tz) ?>)</p>
   </div>
+  <a class="btn primary" href="<?= h(App::url('studio')) ?>">Open the studio</a>
 </div>
 
 <div class="cols">
