@@ -174,6 +174,11 @@ after a cut; Skip uses what the presser hears; HLS players hold a fixed 20 s del
 
 ## After the POC: build-out order
 
+Progress (2026-10-20): steps 1 and 2 are done (Core & manager, `v0.1`, closed as `0.1.0`). Step 3
+is under way: the two-deck listener player with its HLS fallback is built and tested on desktop and an
+Android phone; the embed and a now-playing API are still to come. Step 4 starts next with the live
+studio in the app. `HANDOVER.md` has the details.
+
 1. **Core:** MySQL schema, installer (WordPress-style), timeline planner as a service class, cron
    plus lazy planning, settings.
 2. **Station manager:** library with in-browser prep and upload, playlists, schedule, DJs, sound
