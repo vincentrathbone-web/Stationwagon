@@ -38,6 +38,7 @@ final class App
                 'manage/playlists' => (new ManagePage())->playlists(),
                 'manage/schedule' => (new ManagePage())->schedule(),
                 'manage/djs' => (new ManagePage())->djs(),
+                'manage/sound' => (new ManagePage())->sound(),
                 default => self::notFound(),
             };
         } catch (Throwable $ex) {

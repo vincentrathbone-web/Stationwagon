@@ -260,7 +260,7 @@ final class Planner
             if ($last && $last['type'] === 'live' && $last['open']) {
                 return ['error' => 'A live show is already on air.', 'live' => $last];
             }
-            $cutAt = $this->cut($entries, $now, (float) $this->settings['crossfade_seconds']);
+            $cutAt = $this->cut($entries, $now, (float) $this->settings['live_fade_seconds']);
             if ($cutAt === null) {
                 return ['error' => 'Nothing is playing to hand over from. Add songs to the library first.'];
             }

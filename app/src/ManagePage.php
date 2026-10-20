@@ -7,8 +7,9 @@ use RuntimeException;
 
 /**
  * The station manager screens: overview (with Skip), music library (upload, edit, delete),
- * playlists, the weekly schedule and DJs. Thin: rules live in Library, Playlists, Schedule and
- * Staff. Every change that affects what plays re-plans the part of the timeline not yet on air.
+ * playlists, the weekly schedule, DJs and Sound & safety. Thin: rules live in Library, Playlists,
+ * Schedule, Staff and StationSettings. Every change that affects what plays re-plans the part of
+ * the timeline not yet on air.
  */
 final class ManagePage
 {
@@ -301,6 +302,35 @@ final class ManagePage
             'grantable' => Staff::grantable($me),
             'form' => $form,
             'open' => (int) ($_GET['person'] ?? 0),
+        ]);
+    }
+
+    // ---- Sound & safety ------------------------------------------------------------------
+
+    public function sound(): void
+    {
+        $settings = new StationSettings($this->db, $this->station);
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+            $this->postAs('manager', 'manage/sound');
+            [$station, $errors] = $settings->save($_POST);
+            if ($errors) {
+                $_SESSION['sound_form'] = ['in' => array_diff_key($_POST, ['csrf' => 1]), 'errors' => $errors];
+                Session::flash('bad', 'Not saved: ' . implode(' ', $errors));
+                App::redirect('manage/sound');
+            }
+            // Plan what isn't on air yet again, with the new values
+            (new Planner($this->db, $station, SW_ROOT))->replan(microtime(true));
+            Session::flash('ok', 'Saved. New settings apply from the next song.');
+            App::redirect('manage/sound');
+        }
+        $me = App::requireRole('manager');
+        $form = $_SESSION['sound_form'] ?? ['in' => [], 'errors' => []];
+        unset($_SESSION['sound_form']);
+        $this->render('sound', 'Sound & safety', $me, [
+            'values' => array_replace($settings->values(), array_intersect_key($form['in'], StationSettings::FIELDS)),
+            'errors' => $form['errors'],
+            'minLiveTimeout' => $settings->minLiveTimeout(),
+            'segment' => (float) $this->planner->setting('segment_seconds'),
         ]);
     }
 

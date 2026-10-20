@@ -1,10 +1,11 @@
 <?php
 // Command-line test of the station manager's rules: library edit/search/delete, playlists,
-// the weekly schedule and who may do what to whom (Staff). Throwaway database and install.
+// the weekly schedule, Sound & safety settings and who may do what to whom (Staff). Throwaway
+// database and install.
 //   php app/tests/manage_test.php      (same SW_TEST_DB_* settings as install_test.php)
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
-use Stationwagon\{Auth, Db, Library, Planner, Playlists, Schedule, Staff};
+use Stationwagon\{Auth, Db, Library, Planner, Playlists, Schedule, Staff, StationSettings};
 
 $t = test_database('manage');
 $root = temp_root('manage');
@@ -81,6 +82,33 @@ try {
     check('the planner follows the new block', $p->blockAt((float) (new DateTimeImmutable('2027-01-04 07:00', new DateTimeZone($station['timezone'])))->getTimestamp())['id'] == $blk);
     check('a block can be removed', $sched->delete((int) $live) === null && $sched->delete((int) $live) !== null);
     check('deleting a playlist removes its blocks', $lists->delete($pl) === null && $sched->all() === []);
+
+    echo "Sound & safety\n";
+    $fresh = fn() => $db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$station['id']])->fetch();
+    $set = new StationSettings($db, $fresh());
+    check('the defaults are the values the POC proved', $set->values() === ['crossfade_seconds' => 6, 'skip_fade_seconds' => 2.0, 'live_fade_seconds' => 6.0, 'live_timeout_seconds' => 8, 'recent_tracks' => 5], json_encode($set->values()));
+    check('with 6 s pieces a DJ gets at least 8 s', $set->minLiveTimeout() === 8);
+    $good = ['crossfade_seconds' => '4', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '3', 'live_timeout_seconds' => '12', 'recent_tracks' => '1'];
+    [, $errs] = $set->save(['crossfade_seconds' => '13', 'skip_fade_seconds' => '0.3', 'live_fade_seconds' => 'soon', 'live_timeout_seconds' => '5'] );
+    check('bad values are refused, field by field', array_keys($errs) === array_keys($good), implode(',', array_keys($errs)));
+    check('  and say what is allowed', str_contains($errs['skip_fade_seconds'], '0 to 6 s in steps of 0.5') && str_contains($errs['live_timeout_seconds'], '8 to 30'), $errs['skip_fade_seconds']);
+    check('  and nothing is stored', (new StationSettings($db, $fresh()))->values()['crossfade_seconds'] === 6);
+    [$updated, $errs] = $set->save($good);
+    check('good values are saved', !$errs && (new StationSettings($db, $fresh()))->values() === ['crossfade_seconds' => 4, 'skip_fade_seconds' => 1.5, 'live_fade_seconds' => 3.0, 'live_timeout_seconds' => 12, 'recent_tracks' => 1], json_encode($errs));
+    $kept = Planner::settings($fresh());
+    check('other settings are kept', $kept['skin'] === 'green' && (float) $kept['segment_seconds'] === 6.0);
+    $p2 = new Planner($db, $updated, $root);
+    $later = $now + 600;
+    $p2->replan($later);
+    $planned = array_values(array_filter($p2->timeline($later), fn($e) => $e['start'] > $later + 2 && $e['type'] === 'song'));
+    check('songs planned after saving use the new crossfade', $planned && array_unique(array_column($planned, 'fade_out')) == [4.0], json_encode(array_values(array_unique(array_column($planned, 'fade_out')))));
+    $live = $p2->goLive($later, 'Settings test')['entries'];
+    $handover = array_values(array_filter($live, fn($e) => $e['cut']));
+    check('going live fades the song out over the live cut-in fade', $handover && end($handover)['fade_out'] == 3.0, json_encode(array_column($handover, 'fade_out')));
+    $show = end($live);
+    check('  and the show times out after the new 12 s', !$p2->needsPlan($live, $show['last_piece_at'] + 11) && $p2->needsPlan($live, $show['last_piece_at'] + 13));
+    $p2->endLive($later + 20, $show['public_id']);
+    check('numbers show without needless decimals', StationSettings::show(6.0) === '6' && StationSettings::show(1.5) === '1.5');
 
     echo "Staff\n";
     $staff = new Staff($db, $station);

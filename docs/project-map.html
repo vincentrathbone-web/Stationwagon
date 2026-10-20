@@ -173,8 +173,8 @@ a{color:var(--accent)}
 <script>
 /* Everything on the map comes from this one object. Update it after each round. */
 const MAP = {
-  updated: "20 Oct · 02:15",
-  commits: 14,
+  updated: "20 Oct · 02:20",
+  commits: 15,
   milestones: [
     { name: "Plan & design", when: "Done · 19 Oct", state: "done" },
     { name: "Proof of concept", when: "Done · 20 Oct", state: "done" },
@@ -191,7 +191,7 @@ const MAP = {
     { text: "Planner on MySQL", state: "done" },
     { text: "Station manager screens", state: "done" },
     { text: "Skip from the manager", state: "done" },
-    { text: "Sound & safety settings", state: "todo" },
+    { text: "Sound & safety settings", state: "done" },
     { text: "Song prep on upload", state: "todo" }
   ],
   parts: [
@@ -206,28 +206,28 @@ const MAP = {
     { name: "Database & installer", ms: "Core & manager", state: "done", foot: "12 tables; installed on the test server" },
     { name: "Sign-in & roles", ms: "Core & manager", state: "done", foot: "Admin, manager, DJ; 98 checks pass" },
     { name: "Planner on MySQL", ms: "Core & manager", state: "done", foot: "71 checks; streaming on the test server" },
-    { name: "Station manager", ms: "Core & manager", state: "done", foot: "Library, playlists, schedule, DJs, Skip; 51 rule checks + screen tests" },
-    { name: "Sound & safety settings", ms: "Core & manager", state: "designed", foot: "Crossfade, live timeout and other station settings" },
+    { name: "Station manager", ms: "Core & manager", state: "done", foot: "Library, playlists, schedule, DJs, Skip; 62 rule checks + screen tests" },
+    { name: "Sound & safety settings", ms: "Core & manager", state: "done", foot: "Fades, live timeout, repeats; the rest comes with v0.4" },
     { name: "Song prep on upload", ms: "Core & manager", state: "todo", foot: "Even loudness and fades, done in the browser (ffmpeg.wasm)" },
     { name: "Listener player & notes", ms: "Player & studio", state: "designed", foot: "Two-deck crossfades, presenter notes" },
     { name: "Live studio on the app", ms: "Player & studio", state: "designed", foot: "Planner side tested; notes editor still to design" },
     { name: "Windows studio app", ms: "Launch", state: "todo", foot: "Same studio in WebView2 (Tauri)" }
   ],
   next: {
-    title: "Finish v0.1, then Player & studio",
-    text: "Two things close v0.1: the Sound & safety screen (crossfade, live timeout) and song prep on upload (even loudness and fades). Then v0.4: the listener player with crossfades and notes, and the live studio on the real app."
+    title: "Song prep on upload, then Player & studio",
+    text: "One thing closes v0.1: song prep on upload, which evens out loudness and adds fades in the browser before a song is stored. Then v0.4: the listener player with crossfades and notes, and the live studio on the real app."
   },
   call: null,
   feedTitle: "Changed 20 Oct",
   feed: [
+    { what: "Sound & safety on the server", to: "all tests pass", at: "02:20" },
+    { what: "Sound & safety screen", to: "built", at: "02:20" },
     { what: "Milestone estimates", to: "moved a month earlier", at: "02:15", kind: "info" },
     { what: "Manager tests on the server", to: "all pass", at: "02:00" },
     { what: "Station manager screens", to: "built", at: "01:55" },
     { what: "Library upload and Skip", to: "working", at: "01:50" },
     { what: "Browser player on the server", to: "plays, no errors", at: "01:36" },
-    { what: "Cloudflare browser cache", to: "fixed", at: "01:34", kind: "info" },
-    { what: "Planner on MySQL", to: "71 checks pass", at: "01:20" },
-    { what: "Sign-in tests on the server", to: "all pass", at: "01:05" }
+    { what: "Cloudflare browser cache", to: "fixed", at: "01:34", kind: "info" }
   ]
 };
 

@@ -4,8 +4,7 @@ Read this first. It records where the work stands, what was decided and why, and
 each round, so that anyone (a person or a new agent session) can pick up where the last one
 stopped.
 
-**Last updated:** 2026-10-20, after round 13 (station manager screens: library upload, playlists,
-schedule, DJs, Skip).
+**Last updated:** 2026-10-20, after round 15 (the Sound & safety screen).
 
 ## How to keep this file useful
 
@@ -62,10 +61,10 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | `prototypes/config.local.php` | Server-only overrides (its control key). Never committed; denied by `.htaccess` |
 | `prototypes/media/`, `prototypes/data/` | Test MP3s and runtime state; gitignored except their README / `.htaccess` |
 | `app/` | **The real app** (Core & manager, `v0.1`). Front controller `index.php` → `src/App.php`; version in `app/VERSION` |
-| `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`), `Installer`, `InstallPage`, `View`, `Session` (cookie settings, form keys), `Auth` (sign-in, roles, lock-out), `AuthPage` (sign-in / sign-out / account pages), `Request` (visitor address through Cloudflare), `Mp3` (frame scanner + ID3 tags), `Library` (add songs, stored by content hash), `Planner` (the timeline on MySQL: plan, skip, go live, pieces, schedule), `Stream` (HLS playlist), `Playlists`, `Schedule` (weekly blocks, time and day helpers, the week grid), `Staff` (people and who may change whom), `ManagePage` (the station manager screens and their form actions) |
+| `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`), `Installer`, `InstallPage`, `View`, `Session` (cookie settings, form keys), `Auth` (sign-in, roles, lock-out), `AuthPage` (sign-in / sign-out / account pages), `Request` (visitor address through Cloudflare), `Mp3` (frame scanner + ID3 tags), `Library` (add songs, stored by content hash), `Planner` (the timeline on MySQL: plan, skip, go live, pieces, schedule), `Stream` (HLS playlist), `Playlists`, `Schedule` (weekly blocks, time and day helpers, the week grid), `Staff` (people and who may change whom), `StationSettings` (the Sound & safety values and their limits), `ManagePage` (the station manager screens and their form actions) |
 | `app/api/` | `stream.php` (listener HLS playlist; real file so `.htaccess` gives it the 2 s Cloudflare header) and `timeline.php` (JSON for the two-deck player and studio) |
 | `app/views/`, `app/assets/` | PHP page templates (wrapped in `layout.php`; the manager screens are in `views/manage/`, framed by `frame.php`), the green-skin styles `app.css`, and `upload.js` (uploads songs one by one with progress) |
-| `app/tests/` | `install_test.php` (31 checks), `auth_test.php` (sign-in logic, 39), `planner_test.php` (library + planner, 71), `manage_test.php` (library edits, playlists, schedule, staff rules, 51), `web_test.php` (pages, manager screens and stream over HTTP, 81; `--public`: 32), `lib.php` (shared helpers: throwaway database and install) |
+| `app/tests/` | `install_test.php` (31 checks), `auth_test.php` (sign-in logic, 39), `planner_test.php` (library + planner, 71), `manage_test.php` (library edits, playlists, schedule, Sound & safety, staff rules, 62), `web_test.php` (pages, manager screens and stream over HTTP, 87; `--public`: 32), `lib.php` (shared helpers: throwaway database and install) |
 | `app/cli/` | `install.php` (install over SSH: the form's fields as JSON on stdin), `set-password.php <email>` (new password on stdin; for when nobody can sign in), `import.php <mp3s>` (add songs), `plan.php` (cron: plan ahead) |
 | `app/storage/` | Songs (`media/<sha1>.mp3`), live pieces (`live/<show id>/00000.mp3`), `cache/`, `sessions/`; gitignored; only `.mp3` is served |
 | `app/config.local.php`, `app/install.key` | Written by the installer / the deploy script. Gitignored and denied by `.htaccess` |
@@ -138,11 +137,11 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
   php app/tests/install_test.php                                   # installer, 31 checks
   php app/tests/auth_test.php                                      # sign-in logic, 39 checks
   php app/tests/planner_test.php                                   # library and planner, 71 checks
-  php app/tests/manage_test.php                                    # manager rules, 51 checks
-  php app/tests/web_test.php http://localhost:8080/stationwagon-app # pages, manager screens, stream: 81 checks
+  php app/tests/manage_test.php                                    # manager rules, 62 checks
+  php app/tests/web_test.php http://localhost:8080/stationwagon-app # pages, manager screens, stream: 87 checks
   ```
   The web test signs in a throwaway manager, uploads, edits and deletes its own songs, playlists,
-  blocks and DJs, and removes them afterwards. A test song that is on air at the end is hidden
+  blocks and DJs, changes Sound & safety, and puts everything back afterwards. A test song that is on air at the end is hidden
   (`[test] …`, status `error`) and deleted by the next run.
   Laragon's PHP allows **8 MB** per upload (`post_max_size`); the test server allows 512 MB.
   Laragon's `mysql` client is MariaDB's and fails on MySQL 8 logins; use the MySQL 8.4.3 client in
@@ -196,6 +195,10 @@ blocks) and DJs (add people, change role, set a new password, remove). Checked b
 1280 and 390 px wide. All tests pass on Laragon; on the server the rule tests and the public web
 test pass (the signed-in screens are tested on Laragon only).
 
+**Sound & safety works** (2026-10-20): crossfade, skip fade, live cut-in fade, back-to-AutoDJ timeout
+and songs not to repeat. Saving re-plans what isn't on air yet. Tested on Laragon and the server; the
+screen was also opened (view only) as the admin on the server.
+
 ## Next steps
 
 Continue **Core & manager (`v0.1`)** per the build-out order in `docs/POC-PLAN.md`:
@@ -205,8 +208,7 @@ Continue **Core & manager (`v0.1`)** per the build-out order in `docs/POC-PLAN.m
 3. ~~Sign-in, roles and the manager shell~~ (done 2026-10-20).
 4. ~~Planner on MySQL, with a cron~~ (done 2026-10-20).
 5. ~~Station manager screens: library upload, playlists, schedule, DJs, Skip~~ (done 2026-10-20).
-   Still to do for v0.1: the "Sound & safety" settings screen from the design, and **song prep on
-   upload** (levelling and fades in the browser with ffmpeg.wasm, per the build-out order in
+   ~~Sound & safety screen~~ (done 2026-10-20). Still to do for v0.1: **song prep on upload** (levelling and fades in the browser with ffmpeg.wasm, per the build-out order in
    `docs/POC-PLAN.md`).
 6. Then **Player & studio (`v0.4`)**: the listener player on `api/timeline.php` / `api/stream.php`,
    and studio endpoints for `Planner::goLive` / `addPiece` / `endLive` (the planner already does these).
@@ -269,6 +271,9 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-20 | **Skip** in the manager is for managers and admins; DJs will skip from the studio | Matches the design; listeners never skip (decided 2026-10-19) |
 | 2026-10-20 | Deleting a playlist also deletes its schedule blocks | A block with no playlist can't play anything |
 | 2026-10-20 | The week grid shows 06:00–24:00; the part of an overnight block after midnight is drawn on the next day | Night hours rarely change; the blocks table lists every block in full |
+| 2026-10-20 | Sound & safety shows **only settings that work today** (crossfade, skip fade, live cut-in fade, back-to-AutoDJ timeout, songs not to repeat). The design's fade shape, ducking, silence detection, rejoin window, sound quality and listener delay are listed on the screen as coming in v0.4 | A control that does nothing yet would mislead the manager; piece length also needs every song re-cut |
+| 2026-10-20 | Go-live has its **own fade** (`live_fade_seconds`, default 6 s, as before when it used the crossfade) | The design has a separate live cut-in fade |
+| 2026-10-20 | The back-to-AutoDJ timeout is at least one live piece + 2 s (8 s with 6 s pieces), at most 30 s | A shorter timeout would end every show before its first piece arrives |
 | 2026-10-20 | Milestone estimates **moved a month earlier**: v0.1 late Oct, v0.4 Nov, pilot Dec, launch Jan–Feb | User's choice; Core & manager had only 2 items left on 20 Oct |
 
 ## Scope changes
@@ -314,7 +319,8 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
 | 11 | 2026-10-20 | `1738762` | Sign-in: `Session`, `Auth`, `AuthPage`, `Request`; pages `/signin`, `/signout`, `/manage`, `/account`; header shows who's signed in; `cli/set-password.php`; tests `auth_test.php` (39) and `web_test.php` (37 / 22 public) with shared `tests/lib.php`; test database `controllco_swtest` on the server; all tests pass on both |
 | 12 | 2026-10-20 | `baf49aa` | Planner on MySQL: `Mp3`, `Library`, `Planner`, `Stream`; `api/stream.php`, `api/timeline.php`; `cli/import.php`, `cli/plan.php` + cron on the server; "On air" card; `planner_test.php` (71, makes its own silent MP3s) and stream checks in `web_test.php`; fixed: quiet-spell restart; Cloudflare Browser TTL fixed (the POC had the same latent bug); test tones on air on the server |
 | 13 | 2026-10-20 | `2737f87` | Station manager screens: `Playlists`, `Schedule`, `Staff`, `ManagePage`; `Library` edit / search / delete; views in `views/manage/` (overview, library, playlists, playlist, schedule, DJs), `upload.js`, manager styles; flash messages (`Session::flash`); `manage_test.php` (51) and a manager section in `web_test.php` (81 / 32 public); `tools/shot.mjs` (headless screenshots); fixes from screenshots (hidden elements, column and form alignment); deployed; all tests pass on Laragon and the server |
-| 14 | 2026-10-20 | this round's commit | Project map fixes: the dial counted done items as "left" (said 8, really 2) and done chips looked open; added the missing v0.1 items (Sound & safety, song prep on upload) and the live studio part; charset and viewport lines added; milestone estimates moved a month earlier |
+| 14 | 2026-10-20 | `d2070c3` | Project map fixes: the dial counted done items as "left" (said 8, really 2) and done chips looked open; added the missing v0.1 items (Sound & safety, song prep on upload) and the live studio part; charset and viewport lines added; milestone estimates moved a month earlier |
+| 15 | 2026-10-20 | this round's commit | Sound & safety screen: `StationSettings`, `ManagePage::sound`, `views/manage/sound.php`, styles; new `live_fade_seconds` setting used by go-live and sent by `api/timeline.php`; tests: `manage_test.php` 62, `web_test.php` 87 / 32 public; deployed; all tests pass on Laragon and the server |
 
 ## Open issues
 
@@ -337,8 +343,8 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
   settings are kept in `%APPDATA%\buttrc`.
 - The test-server admin (`vincent@controll.co.za`) has a generated password, kept in
   `tools/deploy/controll.admin.local.txt`. It can be changed on `/account` after signing in.
-- No **"Sound & safety"** screen yet (station settings like crossfade and live timeout); the
-  values are the defaults from install.
+- Sound & safety still lacks the design's fade shape, ducking, silence detection, rejoin window,
+  sound quality and listener delay (they need the v0.4 player and studio; piece length needs a rescan).
 - The library has no "show song titles" switch or play weights from the design yet.
 - Uploads are stored as they are: no levelling or fades yet (song prep on upload, still to do for v0.1).
 - The test station's 4 songs are test tones; real music can now be uploaded from Music library.

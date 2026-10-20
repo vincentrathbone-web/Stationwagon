@@ -22,6 +22,7 @@ try {
         'settings' => [
             'crossfade_seconds' => $planner->setting('crossfade_seconds'),
             'skip_fade_seconds' => $planner->setting('skip_fade_seconds'),
+            'live_fade_seconds' => $planner->setting('live_fade_seconds'),
             'segment_seconds' => $planner->setting('segment_seconds'),
             'listener_delay_seconds' => $planner->setting('listener_delay_seconds'),
         ],

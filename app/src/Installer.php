@@ -244,6 +244,7 @@ final class Installer
             'segment_seconds' => 6.0, 'crossfade_seconds' => 6.0, 'skip_fade_seconds' => 2.0,
             'plan_ahead_seconds' => 10800, 'recent_tracks' => 5, 'cut_lead_seconds' => 1.0,
             'live_timeout_seconds' => 8, 'listener_delay_seconds' => 20, 'skin' => 'green',
+            'live_fade_seconds' => 6.0, // the go-live fade; until 2026-10-20 it was the crossfade
         ];
     }
 

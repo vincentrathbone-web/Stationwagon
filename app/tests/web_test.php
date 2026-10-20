@@ -164,6 +164,7 @@ try {
         check('manager page greets the DJ', $r['status'] === 200 && preg_match('/Good (morning|afternoon|evening), Web</', $r['body']) === 1, (string) $r['status']);
         check('a DJ sees the overview but not the library', str_contains($r['body'], '>Overview</a>') && !str_contains($r['body'], '>Music library</a>'));
         check('a DJ can’t open the library', $a->go('manage/library')['status'] === 403);
+        check('or Sound & safety', $a->go('manage/sound')['status'] === 403);
         check('a DJ has no Skip button', !str_contains($r['body'], 'Skip this song'));
         check('a DJ can’t skip by sending the form', $a->go('manage/skip', ['csrf' => Browser::csrf($r)])['status'] === 403);
         check('header shows the name and sign out', str_contains($r['body'], 'Web Test DJ</a>') && str_contains($r['body'], 'Sign out'));
@@ -206,7 +207,7 @@ try {
         $m = new Browser($base);
         $m->go('signin', ['csrf' => Browser::csrf($m->go('signin')), 'email' => $mEmail, 'password' => $mPass]);
         $r = $m->go('manage');
-        check('a manager sees every section', $r['status'] === 200 && str_contains($r['body'], '>Music library</a>') && str_contains($r['body'], '>Playlists</a>') && str_contains($r['body'], '>Schedule</a>') && str_contains($r['body'], '>DJs</a>'));
+        check('a manager sees every section', $r['status'] === 200 && str_contains($r['body'], '>Music library</a>') && str_contains($r['body'], '>Playlists</a>') && str_contains($r['body'], '>Schedule</a>') && str_contains($r['body'], '>DJs</a>') && str_contains($r['body'], '>Sound &amp; safety</a>'));
         $csrf = Browser::csrf($r);
         check('a manager has a Skip button', str_contains($r['body'], 'Skip this song'));
         $r = $m->go('manage/skip', ['csrf' => $csrf]);
@@ -286,6 +287,21 @@ try {
         $r = $m->go('manage/djs', ['csrf' => $csrf, 'action' => 'role', 'id' => $mgrId, 'role' => 'dj']);
         check('nobody changes their own role', $flashed($after($m, $r), 'You can’t change'));
 
+        // Sound & safety (the station's own values are put back in the cleanup)
+        $origSettings = $db->run('SELECT settings FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetchColumn();
+        $r = $m->go('manage/sound');
+        check('Sound & safety opens with five sliders', $r['status'] === 200 && substr_count($r['body'], 'type="range"') === 5, (string) $r['status']);
+        $values = ['csrf' => $csrf, 'crossfade_seconds' => '5', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '4', 'live_timeout_seconds' => '10', 'recent_tracks' => '3'];
+        $r = $m->go('manage/sound', ['crossfade_seconds' => '99'] + $values);
+        $p = $after($m, $r);
+        check('a crossfade of 99 s is refused', $flashed($p, 'Not saved: Crossfade between songs: choose 0 to 12 s.') && str_contains($p['body'], 'value="99"'));
+        $r = $m->go('manage/sound', $values);
+        check('good values are saved', $flashed($after($m, $r), 'Saved. New settings apply from the next song.'));
+        $feed = json_decode((new Browser($base))->go('api/timeline.php')['body'], true);
+        check('the player gets the new fades', ($feed['settings']['crossfade_seconds'] ?? null) == 5 && ($feed['settings']['live_fade_seconds'] ?? null) == 4, json_encode($feed['settings'] ?? null));
+        $soon = array_values(array_filter($feed['entries'] ?? [], fn($e) => $e['type'] === 'song' && $e['start'] > $feed['server_now'] + 10));
+        check('and the songs planned next crossfade over 5 s', $soon && array_unique(array_column($soon, 'fade_out')) == [5.0], json_encode(array_values(array_unique(array_column($soon, 'fade_out')))));
+
         // Removing the song
         $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'delete', 'id' => $trackId]);
         $p = $after($m, $r);
@@ -297,7 +313,10 @@ try {
             $db->run('DELETE FROM ' . $db->table('users') . ' WHERE id = ?', [$id]);
         }
         $db->run('DELETE FROM ' . $db->table('playlists') . " WHERE name LIKE 'Web test list %'");
-        $planner = \Stationwagon\Planner::forFirstStation();
+        if (isset($origSettings) && $origSettings !== false) {
+            $db->run('UPDATE ' . $db->table('stations') . ' SET settings = ? WHERE id = ?', [$origSettings, $stationId]);
+        }
+        $planner = \Stationwagon\Planner::forFirstStation(); // with the station's own settings again
         $lib = new \Stationwagon\Library($db, $planner->station(), SW_ROOT);
         $kept = 0;
         // Test songs hidden by an earlier run (they were on air then) go now, if they can
