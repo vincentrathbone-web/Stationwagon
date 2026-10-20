@@ -95,6 +95,11 @@ try {
     check('station page links to sign in', str_contains($r['body'], 'href="' . $basePath . '/signin"'));
     check('station page is the listener player', str_contains($r['body'], 'id="player"') && str_contains($r['body'], 'data-delay="20"') && str_contains($r['body'], 'assets/player.js'));
     check('with today’s schedule', str_contains($r['body'], '<h2>Today · '));
+    // scripts and styles are tagged by content, so a phone never keeps an old copy (the host says a week)
+    preg_match('~assets/player\.js\?v=([0-9a-f]{10})"~', $r['body'], $pm);
+    preg_match('~assets/app\.css\?v=([0-9a-f]{10})"~', $r['body'], $cm);
+    $tag = fn (string $path) => substr(sha1(sha1($b->go($path)['body'])), 0, 10);
+    check('the player and style links carry their content tags', ($pm[1] ?? '') === $tag('assets/player.js') && ($cm[1] ?? '') === $tag('assets/app.css'), ($pm[1] ?? '-') . ' ' . ($cm[1] ?? '-'));
     foreach (['assets/player.js', 'assets/vendor/hls.min.js'] as $asset) {
         $a = $b->go($asset);
         check("$asset is served", $a['status'] === 200 && strlen($a['body']) > 1000, (string) $a['status']);
@@ -231,7 +236,7 @@ try {
             return (json_decode($r['body'], true)['results'] ?? [[]])[0] + ['status' => $r['status']];
         };
         $r = $m->go('manage/library');
-        check('the library opens with a drop zone', $r['status'] === 200 && str_contains($r['body'], 'id="drop"') && str_contains($r['body'], 'upload.js'));
+        check('the library opens with a drop zone', $r['status'] === 200 && str_contains($r['body'], 'id="drop"') && str_contains($r['body'], 'upload.js?v=') && preg_match('~data-worker="[^"]*prep-worker\.js\?v=[0-9a-f]{10}"~', $r['body']));
         $u = $upload("$tmpDir/song.mp3", 'my song.mp3');
         $tracks[] = $trackId = (int) ($u['id'] ?? 0);
         check('an MP3 uploads, with its tag title', ($u['ok'] ?? false) && !$u['duplicate'] && $u['title'] === $title, json_encode($u));

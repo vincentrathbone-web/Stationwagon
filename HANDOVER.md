@@ -4,7 +4,7 @@ Read this first. It records where the work stands, what was decided and why, and
 each round, so that anyone (a person or a new agent session) can pick up where the last one
 stopped.
 
-**Last updated:** 2026-10-20, after round 17 (the listener player; first round of Player & studio `v0.4`).
+**Last updated:** 2026-10-20, after round 18 (the player on a real phone: a lock-screen fix and content-tagged assets).
 
 ## How to keep this file useful
 
@@ -64,7 +64,7 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`), `Installer`, `InstallPage`, `View`, `Session` (cookie settings, form keys), `Auth` (sign-in, roles, lock-out), `AuthPage` (sign-in / sign-out / account pages), `Request` (visitor address through Cloudflare), `Mp3` (frame scanner + ID3 tags), `Library` (add songs, stored by content hash), `Planner` (the timeline on MySQL: plan, skip, go live, pieces, schedule), `Stream` (HLS playlist), `Playlists`, `Schedule` (weekly blocks, time and day helpers, the week grid), `Staff` (people and who may change whom), `StationSettings` (the Sound & safety values and their limits), `ManagePage` (the station manager screens and their form actions) |
 | `app/api/` | `stream.php` (listener HLS playlist; real file so `.htaccess` gives it the 2 s Cloudflare header) and `timeline.php` (JSON for the two-deck player and studio) |
 | `app/views/`, `app/assets/` | PHP page templates (wrapped in `layout.php`; the station page is `player.php`; the manager screens are in `views/manage/`, framed by `frame.php`), the green-skin styles `app.css`, `upload.js` (uploads songs one by one with progress), song prep: `prep.js` (decode in the browser), `prep-worker.js`, `prep-core.js` (loudness, trim, level, fades, encode; shared with the Node test), and `vendor/lame.min.js` (lamejs 1.2.1, LGPL-3.0, byte-identical to the npm package; licence beside it); the listener player `player.js` with `vendor/hls.min.js` (hls.js 1.5.13, Apache-2.0, byte-identical to npm) |
-| `app/tests/` | `install_test.php` (31 checks), `auth_test.php` (sign-in logic, 39), `planner_test.php` (library + planner, 71), `manage_test.php` (library edits, song prep on the server side, playlists, schedule and today's list, Sound & safety, staff rules, 70), `prep_test.mjs` (song prep maths against EBU Tech 3341, and a real lamejs MP3, 24; Node), `upload_browser_test.mjs` (song prep end to end in headless Edge, 12; Node, Laragon only), `player_browser_test.mjs` (the listener player in headless Edge: join, crossfade, a live show, stream only; 17, or 10 with `--listen-only` for a public server) with `browser_helper.php` (accounts, tracks, a test live show), `web_test.php` (pages, manager screens and stream over HTTP, 91; `--public`: 36), `lib.php` (shared helpers: throwaway database and install) |
+| `app/tests/` | `install_test.php` (31 checks), `auth_test.php` (sign-in logic, 39), `planner_test.php` (library + planner, 71), `manage_test.php` (library edits, song prep on the server side, playlists, schedule and today's list, Sound & safety, staff rules, 70), `prep_test.mjs` (song prep maths against EBU Tech 3341, and a real lamejs MP3, 24; Node), `upload_browser_test.mjs` (song prep end to end in headless Edge, 12; Node, Laragon only), `player_browser_test.mjs` (the listener player in headless Edge: join, crossfade, a frozen sound engine, a live show, stream only; 20, or 13 with `--listen-only` for a public server), `player_phone_test.mjs` (the player on the Android phone over USB, screen locked for 2 minutes; 10) with `browser_helper.php` (accounts, tracks, a test live show), `web_test.php` (pages, manager screens and stream over HTTP, 92; `--public`: 37), `lib.php` (shared helpers: throwaway database and install) |
 | `app/cli/` | `install.php` (install over SSH: the form's fields as JSON on stdin), `set-password.php <email>` (new password on stdin; for when nobody can sign in), `import.php <mp3s>` (add songs), `plan.php` (cron: plan ahead) |
 | `app/storage/` | Songs (`media/<sha1>.mp3`), live pieces (`live/<show id>/00000.mp3`), `cache/`, `sessions/`; gitignored; only `.mp3` is served |
 | `app/config.local.php`, `app/install.key` | Written by the installer / the deploy script. Gitignored and denied by `.htaccess` |
@@ -138,15 +138,18 @@ The repo copies in `design/skins/` are the source: edit those and republish to t
   php app/tests/auth_test.php                                      # sign-in logic, 39 checks
   php app/tests/planner_test.php                                   # library and planner, 71 checks
   php app/tests/manage_test.php                                    # manager rules, 70 checks
-  php app/tests/web_test.php http://localhost:8080/stationwagon-app # pages, manager screens, stream: 91 checks
+  php app/tests/web_test.php http://localhost:8080/stationwagon-app # pages, manager screens, stream: 92 checks
   node app/tests/prep_test.mjs                                     # song prep maths, 24 checks
   node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app # prep in a real browser, 12
-  node app/tests/player_browser_test.mjs http://localhost:8080/stationwagon-app # the player, 17 (~3 min)
-  node app/tests/player_browser_test.mjs https://wordwave.controll.co.za/stationwagon-app --listen-only # 10
+  node app/tests/player_browser_test.mjs http://localhost:8080/stationwagon-app # the player, 20 (~3 min)
+  node app/tests/player_browser_test.mjs https://wordwave.controll.co.za/stationwagon-app --listen-only # 13
+  node app/tests/player_phone_test.mjs https://wordwave.controll.co.za/stationwagon-app # on the phone, 10 (~3.5 min)
   ```
   The Node tests need `SW_PHP` set to the PHP path above, and run from a short folder (e.g. `D:\`).
   The test server has no Node, so these run on this PC; the player test's `--listen-only` form checks
-  the public server from here (it changes nothing there).
+  the public server from here (it changes nothing there). The phone test needs the phone unlocked
+  with the port forward below; it locks the screen itself for 2 minutes, then wakes it (the lock
+  screen shows; unlocking is the user's job).
   The web test signs in a throwaway manager, uploads, edits and deletes its own songs, playlists,
   blocks and DJs, changes Sound & safety, and puts everything back afterwards. A test song that is on air at the end is hidden
   (`[test] …`, status `error`) and deleted by the next run.
@@ -217,7 +220,10 @@ Every listener hears the timeline 20 s behind the server clock; songs crossfade 
 shows come from the HLS stream on a third deck at the same delay, and `?mode=stream` (or a browser
 without Web Audio) plays the stream alone. In headless Edge: joins within 0.05 s, crossfades, live
 held at 20.00 s, stream-only at 20.07 s, on Laragon and (listen-only) on the live server through
-Cloudflare. **Not yet tried on a real phone**: the Android phone was locked (see Open issues).
+Cloudflare. **On the Android phone** (Chrome 155, live server, round 18): joins within 0.11 s, crossfades,
+and with the screen locked for 2 minutes the songs keep changing on time (4 songs, 0 of 40 looks off by
+over 0.3 s). That phone freezes the sound engine's clock about every 60 s while locked; the player's
+watchdog notices within 0.3 s and nudges it, so each freeze costs about half a second of sound.
 
 ## Next steps
 
@@ -307,6 +313,8 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-20 | The player: two song decks (crossfades, as P2) plus a **stream deck** (hls.js on `api/stream.php`, held at the delay as P1) for live shows, faded against the song decks; browsers without Web Audio, or `?mode=stream`, get the stream deck alone | Live audio exists only as pieces in the stream; the stream already holds the right moment |
 | 2026-10-20 | Player safety nets: no song deck plays past its own end (plus its fade), and 3 s into a live show song decks fade out even if the stream isn't ready | One unexplained test run left a song playing under a live show; this holds whatever the cause |
 | 2026-10-20 | hls.js 1.5.13 is served from the app (`assets/vendor/`), loaded only when the stream is needed | Same reason as lamejs; most listeners never need it during AutoDJ |
+| 2026-10-20 | Scripts and styles are linked with a **hash of their content** (`App::asset`, `?v=` + 10 hex), not the version | The host tells browsers to keep JS for a week, so the phone ran an old player for a whole round while `0.4.0-dev` never changed. The prep worker's tag also covers `prep-core.js`, which it loads with the same tag |
+| 2026-10-20 | **Sound engine watchdog**: when the Web Audio clock stands still for 0.3 s while "running", suspend and resume it; after two nudges that don't help, build the player again | The Xiaomi phone freezes it about every 60 s with the screen locked and fires no event; before the fix that was up to 25 s of silence. The engine also asks for `latencyHint: "playback"` (bigger buffers; didn't stop the freezes). A plain `<audio>` is no way round it: Chrome paused one as soon as the screen locked |
 | 2026-10-20 | Milestone estimates **moved a month earlier**: v0.1 late Oct, v0.4 Nov, pilot Dec, launch Jan–Feb | User's choice; Core & manager had only 2 items left on 20 Oct |
 
 ## Scope changes
@@ -357,7 +365,8 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
 | 14 | 2026-10-20 | `d2070c3` | Project map fixes: the dial counted done items as "left" (said 8, really 2) and done chips looked open; added the missing v0.1 items (Sound & safety, song prep on upload) and the live studio part; charset and viewport lines added; milestone estimates moved a month earlier |
 | 15 | 2026-10-20 | `75034f1` | Sound & safety screen: `StationSettings`, `ManagePage::sound`, `views/manage/sound.php`, styles; new `live_fade_seconds` setting used by go-live and sent by `api/timeline.php`; tests: `manage_test.php` 62, `web_test.php` 87 / 32 public; deployed; all tests pass on Laragon and the server |
 | 16 | 2026-10-20 | `065aa2b` | Song prep on upload: `prep-core.js`, `prep-worker.js`, `prep.js`, lamejs in `assets/vendor/`; `upload.js` prepares each song and sends the original's hash and loudness; `Library::import` keeps them (duplicates by the original's hash); "Levelled" label; tests `prep_test.mjs` (24), `upload_browser_test.mjs` (12), `manage_test.php` 67; **fixed**: `upload.js` posted to a wrong address (`form.action` is the form's hidden "action" field), so drag-and-drop uploads had failed with 404 since round 13; deployed; checked on the live site; **v0.1 closed as `0.1.0`** (`app/VERSION`) |
-| 17 | 2026-10-20 | this round's commit | The listener player: the station page (`views/player.php`) with `assets/player.js` (server clock, two song decks, a stream deck with hls.js at the delay, stream-only mode, media session, event log for tests), hls.js 1.5.13 in `assets/vendor/`, player styles, today's schedule (`Schedule::today`); tests `player_browser_test.mjs` (17 / 10 listen-only), live-show commands in `browser_helper.php`, `manage_test.php` 70, `web_test.php` 91 / 36; version `0.4.0-dev`; the old `home.php` and `_onair.php` views removed; deployed; all tests pass on Laragon and the server |
+| 17 | 2026-10-20 | `5f4e27a` | The listener player: the station page (`views/player.php`) with `assets/player.js` (server clock, two song decks, a stream deck with hls.js at the delay, stream-only mode, media session, event log for tests), hls.js 1.5.13 in `assets/vendor/`, player styles, today's schedule (`Schedule::today`); tests `player_browser_test.mjs` (17 / 10 listen-only), live-show commands in `browser_helper.php`, `manage_test.php` 70, `web_test.php` 91 / 36; version `0.4.0-dev`; the old `home.php` and `_onair.php` views removed; deployed; all tests pass on Laragon and the server |
+| 18 | 2026-10-20 | this round's commit | The player on the Android phone: `App::asset()` tags scripts and styles by content (the phone had kept an old `player.js`); `player.js` gets the sound engine watchdog, logs engine state, page hidden/shown and deck waits, uses `latencyHint: "playback"`, and no longer hangs on Listen behind a lock screen (resume waits 2 s at most); `player_browser_test.mjs` 20 checks (a frozen-engine part; live pieces made beforehand and sent on a fixed beat, which explains the earlier "song deck under a live show": the show had timed out); new `player_phone_test.mjs` (10, passes on the phone); `web_test.php` checks the content tags; deployed; all tests pass on Laragon, the server and the phone |
 
 ## Open issues
 
@@ -395,13 +404,14 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
 - The **signed-in** web checks run only on Laragon. On the server they're covered by `auth_test.php`
   and the public web checks.
 - `design/skins/make_green_skin.py` still expects the original `wordwave-*.html` file names.
-- **The player hasn't been tried on a real phone yet.** The Android phone (USB) was locked on 2026-10-20,
-  and Chrome can't start sound behind the lock screen. Unlock it and run the silent check (volume 0):
-  join, a crossfade, then lock the screen to see whether playback carries on (Web Audio may stop).
+- **Locked Android phone: a short gap about every minute.** The Xiaomi freezes the Web Audio clock
+  about every 60 s while the screen is locked; the watchdog brings it back in about 0.5 s. A listener
+  may hear that. Not tried on other Android phones yet. Starting to listen *behind* the lock screen
+  isn't possible (Chrome blocks it; the player says "Tap Listen again").
+- The phone's Wi-Fi drops now and then (and `phone.mjs offline` can leave a tab offline); the phone
+  test retries the page load.
 - Not tried: Safari and iPhones. Safari's own HLS can't be faded through Web Audio, so live hand-overs
   there use element volume steps (a hard switch on iPhones, whose volume is fixed).
-- One player test run (2026-10-20) left a song deck playing under a live show and couldn't be
-  reproduced; safety nets were added. Watch the player's event log (`SwPlayer.state().events`).
 - The design's player extras aren't built yet: listener count, presenter notes, the embed code.
 - Check that old session files in `storage/sessions` get cleaned up on cPanel (PHP's session clean-up is
   often switched off there); 18 files on 2026-10-20, so not urgent.

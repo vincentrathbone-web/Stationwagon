@@ -4,6 +4,7 @@
 //   SwPrep.prepare(file, onStage) -> { file, prepared, info?, note?, sourceSha1? }
 (() => {
   const here = document.currentScript.src.replace(/[^/?#]*([?#].*)?$/, "");
+  const workerUrl = document.currentScript.dataset.worker || here + "prep-worker.js"; // tagged by content
   const RATE = 44100, KBPS = 192;
   const MAX_BYTES = 60 * 1024 * 1024; // about an hour at 128 kbps; longer would need too much memory
 
@@ -11,7 +12,7 @@
   const asIs = (file, sourceSha1, note) => ({ file, prepared: false, sourceSha1, note });
 
   const work = (channels, onStage) => new Promise((resolve, reject) => {
-    const w = new Worker(here + "prep-worker.js");
+    const w = new Worker(workerUrl);
     const end = (fn, v) => { w.terminate(); fn(v); };
     w.onmessage = (e) => {
       const m = e.data;

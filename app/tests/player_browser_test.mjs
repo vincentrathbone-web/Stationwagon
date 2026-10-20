@@ -99,14 +99,36 @@ try {
   check("  then only the new song plays", !!s, s && s.current.title);
   check("  on time", s && Math.abs(drift(s, audible(s)[0])) < 0.3, s && drift(s, audible(s)[0]).toFixed(3) + " s");
 
+  console.log("Frozen sound engine (as a Xiaomi phone does some seconds after locking)");
+  await evaluate(`(() => {
+    const real = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, "currentTime"), held = new WeakMap();
+    window.__unfreeze = () => Object.defineProperty(BaseAudioContext.prototype, "currentTime", real);
+    Object.defineProperty(BaseAudioContext.prototype, "currentTime", { configurable: true, get() {
+      if (!held.has(this)) held.set(this, real.get.call(this));
+      return held.get(this);
+    } });
+  })()`);
+  s = await until((x) => x.events.some((e) => e.endsWith("nudge 1")), 4);
+  check("a stuck engine clock is noticed and nudged", !!s);
+  s = await until((x) => x.events.some((e) => e.includes("starting again")), 6);
+  check("  and when nudging doesn't help, the player starts again", !!s, s ? "" : (await state()).events.slice(-3).join(" | "));
+  await evaluate("window.__unfreeze()");
+  s = await until((x) => x.current && x.current.type === "song" && x.status === "Playing" && audible(x).some((d) => d.key === x.current.key), 10);
+  check("  and plays on time again", s && Math.abs(drift(s, audible(s).find((d) => d.key === s.current.key))) < 0.3, s && drift(s, audible(s).find((d) => d.key === s.current.key)).toFixed(3) + " s");
+
   console.log(listenOnly ? "Live show: skipped (--listen-only)" : "Live show");
+  // made beforehand and sent on a fixed beat, like the studio: piece n arrives 6 s × (n + 1) after
+  // the start (the server ends a show after 8 s without a piece)
+  const pieces = listenOnly ? [] : [0, 1, 2, 3, 4].map(piece);
   if (!listenOnly) show = helper("live-start", "Browser test show");
   if (!listenOnly) check("a test show goes live", !!show.public_id, JSON.stringify(show));
   if (show && show.public_id) {
     let seq = 0;
-    const send = () => { if (seq < 5) helper("live-piece", show.public_id, String(seq), piece(seq++), "auto"); };
-    // the first piece arrives one piece after the show starts, like the studio's
-    feeder = setTimeout(function next() { send(); if (seq < 5) feeder = setTimeout(next, 6000); }, Math.max(0, (show.start + 6.1) * 1000 - Date.now()));
+    const send = () => { if (seq < 5) { helper("live-piece", show.public_id, String(seq), pieces[seq], "auto"); seq++; } };
+    feeder = setTimeout(function next() {
+      send();
+      if (seq < 5) feeder = setTimeout(next, Math.max(0, (show.start + 6.1 + 6 * seq) * 1000 - Date.now()));
+    }, Math.max(0, (show.start + 6.1) * 1000 - Date.now()));
     s = await until((x) => x.current && x.current.type === "live", 45);
     check("the player reaches the show 20 s later", !!s, s && `heard ${(s.heard - show.start).toFixed(1)} s after its start`);
     s = await until((x) => x.current && x.current.type === "live" && x.stream && x.stream.gain > 0.9, 6);

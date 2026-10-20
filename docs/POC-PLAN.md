@@ -125,6 +125,12 @@ Fill in as you go (copy this table into an issue or keep it here). ☑ passed ·
 | P4 Live studio | ☑ 2026-10-19 | ☑ 2026-10-20 | Laragon: phone studio → PC listener, end show, safety net (phone offline → timeout → AutoDJ). cPanel: phone studio on 4G uploads every 6 s with an empty queue; PC listener went live with no stall; AutoDJ back right after End show. Safety net not repeated on cPanel (same code path). |
 | Cloudflare caching (P1 behind a proxied subdomain) | n/a | ☑ 2026-10-20 | MP3 byte ranges HIT once sent as `public, max-age=31536000, immutable`. Playlist: Cache Rule on `…/api/stream.php*` plus `s-maxage=2`. 100 simulated listeners for 60 s: 990 requests, 961 HIT, 29 reached PHP (about one per 2 s), 0 failed, median 45 ms. |
 
+The app (after the POC; every round's suite results are in `HANDOVER.md`):
+
+| Part | Laragon | cPanel | Phone | Notes |
+|---|---|---|---|---|
+| Listener player (v0.4) | ☑ 2026-10-20 | ☑ 2026-10-20 | ☑ 2026-10-20 | Headless Edge: joins within 0.05 s, crossfades, live held at 20.00 s, stream-only 20.05 s, a frozen sound engine is nudged and rebuilt (20 checks; 13 listen-only on cPanel). Android phone (Xiaomi, Chrome 155, live server): joins within 0.11 s, crossfades; screen locked 2 min: 4 songs on time, engine clock 99.1 % of real time (10 checks). Found and fixed: the phone ran a week-old cached `player.js` (assets now tagged by content); Listen hung behind the lock screen; the engine clock freezes about every 60 s while locked (watchdog, about 0.5 s of sound lost each time). Safari and iPhones not tried. |
+
 
 ## Result (2026-10-20)
 

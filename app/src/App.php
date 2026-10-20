@@ -60,6 +60,25 @@ final class App
         return self::base() . '/' . ltrim($route, '/');
     }
 
+    /**
+     * The address of a file in assets/, tagged with a hash of its content (and of any files it
+     * loads itself), so browsers and Cloudflare fetch it again whenever it changes: the host tells
+     * browsers to keep scripts for a week.
+     */
+    public static function asset(string $path, array $alsoHash = []): string
+    {
+        static $seen = [];
+        $key = $path . '|' . implode('|', $alsoHash);
+        if (!isset($seen[$key])) {
+            $sums = '';
+            foreach ([$path, ...$alsoHash] as $p) {
+                $sums .= @sha1_file(SW_ROOT . '/' . $p) ?: Config::version();
+            }
+            $seen[$key] = substr(sha1($sums), 0, 10);
+        }
+        return self::url($path) . '?v=' . $seen[$key];
+    }
+
     public static function redirect(string $route): never
     {
         header('Location: ' . self::url($route), true, 303);

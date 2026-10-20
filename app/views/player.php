@@ -57,4 +57,4 @@ $hm = fn(string $t): string => substr($t, 0, 5);
     <noscript><p class="muted">The player needs JavaScript. Any HLS player can play the stream at <code><?= h(App::url('api/stream.php')) ?></code>.</p></noscript>
   </aside>
 </div>
-<script src="<?= h(App::url('assets/player.js')) ?>?v=<?= h(Config::version()) ?>" defer></script>
+<script src="<?= h(App::asset('assets/player.js')) ?>" defer></script>

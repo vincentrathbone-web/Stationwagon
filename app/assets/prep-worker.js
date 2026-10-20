@@ -1,7 +1,8 @@
 // Song prep off the main thread: measure, level, trim, fade (prep-core.js), then encode (lamejs).
 // In: { channels: Float32Array[], rate, kbps }. Out: progress messages, then { done, chunks, info },
 // { skip: reason } when there's nothing to level, or { error }.
-importScripts("prep-core.js", "vendor/lame.min.js");
+// the worker's own ?v= tag covers prep-core.js too (App::asset), so a new prep-core is fetched fresh
+importScripts("prep-core.js" + location.search, "vendor/lame.min.js");
 
 self.onmessage = (e) => {
   const { channels, rate, kbps } = e.data;

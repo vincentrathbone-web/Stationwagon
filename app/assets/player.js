@@ -54,7 +54,7 @@
       ctx.createMediaElementSource(this.el).connect(this.gainNode).connect(out);
       this.key = null; this.entry = null; this.busyUntil = 0; this.correcting = false; this.joinedAt = 0;
       // a stall after the first seconds is a dropout; waiting while a song loads is not
-      this.el.addEventListener("waiting", () => { if (this.key && performance.now() - this.joinedAt > 3000) player.dropout(); });
+      this.el.addEventListener("waiting", () => { if (this.key && performance.now() - this.joinedAt > 3000) { player.log(`${name} waiting`); player.dropout(); } });
     }
     load(entry) {
       if (this.key === key(entry)) return;
@@ -163,21 +163,28 @@
   // ---- The player ----------------------------------------------------------------------------
   const player = {
     on: false, ctx: null, master: null, analyser: null, decks: [], stream: null, started: new Set(), tries: new Map(),
-    drops: 0, lastDrop: 0, volume: 0.8, timers: [], status: "Ready", lastKey: null, events: [],
+    drops: 0, lastDrop: 0, engineAt: null, nudges: 0, nudging: false, volume: 0.8, timers: [], status: "Ready", lastKey: null, events: [],
     /** The last 40 things the player did, with the heard time (for tests and support). */
     log(what) { this.events = [...this.events, ((clock.last ? this.heard() : 0) % 1000).toFixed(1) + " " + what].slice(-40); },
 
     async start() {
       if (this.on) return;
       this.say("");
-      this.on = true; this.started.clear(); this.tries.clear(); this.lastKey = null;
+      this.on = true; this.started.clear(); this.tries.clear(); this.lastKey = null; this.engineAt = null; this.nudges = 0;
       this.setStatus("Connecting");
       if (!STREAM_ONLY) {
-        this.ctx = new Ctx();
-        if (this.ctx.state === "suspended") await this.ctx.resume().catch(() => {});
+        this.ctx = new Ctx({ latencyHint: "playback" }); // bigger buffers: a radio needs no low latency
+        // a locked phone never settles resume(): give it 2 s, then go on (play() then says it's blocked)
+        if (this.ctx.state === "suspended") await Promise.race([this.ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
         this.master = this.ctx.createGain(); this.master.gain.value = this.volume;
         this.analyser = this.ctx.createAnalyser(); this.analyser.fftSize = 256;
         this.master.connect(this.analyser); this.master.connect(this.ctx.destination);
+        // a phone can suspend (or "interrupt") the sound engine, e.g. with the screen locked: say so and ask it back
+        this.ctx.onstatechange = () => {
+          const st = this.ctx && this.ctx.state;
+          this.log("sound engine " + st + (document.hidden ? " (page hidden)" : ""));
+          if (this.on && st && st !== "running" && st !== "closed") this.ctx.resume().catch(() => {});
+        };
         this.decks = [new Deck(this.ctx, this.master, "A"), new Deck(this.ctx, this.master, "B")];
       }
       this.stream = new StreamDeck(this.ctx, this.master);
@@ -214,6 +221,32 @@
       try { localStorage.setItem("sw-volume", String(v)); } catch (_) { /* private window */ }
     },
 
+    /**
+     * Some phones (seen on a Xiaomi, about 16 s after the screen locks) freeze the sound engine's
+     * clock while it still says "running": nothing is heard and no event fires. When its clock stops
+     * for 0.3 s, nudge it (suspend, resume); if it is still stuck, build the player again. (A plain
+     * <audio> is no way out there: Chrome paused one as soon as the screen locked.)
+     */
+    watchEngine() {
+      const c = this.ctx, now = performance.now();
+      if (!c || c.state !== "running" || this.nudging) { this.engineAt = null; return; }
+      if (!this.engineAt || c.currentTime !== this.engineAt.time) {
+        if (this.engineAt && this.nudges) { this.log("sound engine moving again"); this.nudges = 0; }
+        this.engineAt = { time: c.currentTime, since: now };
+        return;
+      }
+      if (now - this.engineAt.since < 300) return;
+      this.engineAt = null;
+      if (this.nudges < 2) {
+        this.nudges++; this.nudging = true;
+        this.log(`sound engine stuck at ${c.currentTime.toFixed(2)}${document.hidden ? " (page hidden)" : ""}: nudge ${this.nudges}`);
+        c.suspend().then(() => c.resume()).catch(() => {}).finally(() => { this.nudging = false; });
+      } else {
+        this.log("sound engine still stuck: starting again"); this.dropout();
+        this.stop(); this.start(); // keeps the event log and the dropout count
+      }
+    },
+
     dropout() { const t = performance.now(); if (t - this.lastDrop > 3000) { this.drops++; this.lastDrop = t; } },
     /** A deck couldn't start: the browser blocked sound (say so), or the file failed (a dropout). */
     playFailed(e) {
@@ -237,6 +270,7 @@
     heard() { return clock.now() - DELAY; },
 
     tick() {
+      this.watchEngine();
       const tl = clock.last;
       if (!tl) return;
       const h = this.heard();
@@ -342,7 +376,8 @@
         on: this.on, mode: STREAM_ONLY ? "stream" : "decks", status: this.status, drops: this.drops, delay: DELAY, heard: h,
         current: cur ? { key: key(cur), type: cur.type, title: cur.title, start: cur.start } : null,
         decks: this.decks.map((d) => ({ name: d.name, key: d.key, playing: d.playing, gain: +d.gain.toFixed(3), pos: d.el.currentTime, title: d.entry && d.entry.title })),
-        events: this.events,
+        events: this.events, hidden: document.hidden,
+        engine: this.ctx ? { state: this.ctx.state, time: +this.ctx.currentTime.toFixed(2) } : null,
         stream: this.stream ? { active: this.stream.active, locked: this.stream.locked, gain: +this.stream.gain.toFixed(3), lag: this.stream.lag, native: this.stream.native } : null,
       };
     },
@@ -403,6 +438,7 @@
   $("lpVol").value = Math.round(player.volume * 100); $("lpVolOut").textContent = $("lpVol").value;
   $("lpVol").addEventListener("input", (e) => { $("lpVolOut").textContent = e.target.value; player.setVolume(e.target.value / 100); });
   $("lpPlay").addEventListener("click", () => player.start());
+  document.addEventListener("visibilitychange", () => { if (player.on) player.log("page " + (document.hidden ? "hidden" : "shown")); });
   $("lpStop").addEventListener("click", () => player.stop());
   if ("mediaSession" in navigator) {
     try { navigator.mediaSession.setActionHandler("play", () => player.start()); navigator.mediaSession.setActionHandler("pause", () => player.stop()); navigator.mediaSession.setActionHandler("stop", () => player.stop()); } catch (_) { /* unsupported */ }

@@ -66,6 +66,6 @@
     </tbody>
   </table>
 </div>
-<script src="<?= h(App::url('assets/prep-core.js')) ?>?v=1" defer></script>
-<script src="<?= h(App::url('assets/prep.js')) ?>?v=1" defer></script>
-<script src="<?= h(App::url('assets/upload.js')) ?>?v=3" defer></script>
+<script src="<?= h(App::asset('assets/prep-core.js')) ?>" defer></script>
+<script src="<?= h(App::asset('assets/prep.js')) ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js'])) ?>" defer></script>
+<script src="<?= h(App::asset('assets/upload.js')) ?>" defer></script>

@@ -173,8 +173,8 @@ a{color:var(--accent)}
 <script>
 /* Everything on the map comes from this one object. Update it after each round. */
 const MAP = {
-  updated: "20 Oct · 03:17",
-  commits: 17,
+  updated: "20 Oct · 04:15",
+  commits: 18,
   milestones: [
     { name: "Plan & design", when: "Done · 19 Oct", state: "done" },
     { name: "Proof of concept", when: "Done · 20 Oct", state: "done" },
@@ -205,26 +205,26 @@ const MAP = {
     { name: "Station manager", ms: "Core & manager", state: "done", foot: "Library, playlists, schedule, DJs, Skip; 62 rule checks + screen tests" },
     { name: "Sound & safety settings", ms: "Core & manager", state: "done", foot: "Fades, live timeout, repeats; the rest comes with v0.4" },
     { name: "Song prep on upload", ms: "Core & manager", state: "done", foot: "−16 LUFS, silence trimmed, lamejs in the browser; 36 checks" },
-    { name: "Listener player", ms: "Player & studio", state: "done", foot: "Crossfades, live at 20 s, stream fallback; 17 browser checks" },
+    { name: "Listener player", ms: "Player & studio", state: "done", foot: "Crossfades, live at 20 s; plays on with an Android phone locked; 30 browser + phone checks" },
     { name: "Presenter notes", ms: "Player & studio", state: "designed", foot: "Verses, links and notes beside the player" },
     { name: "Live studio on the app", ms: "Player & studio", state: "designed", foot: "Planner side tested; notes editor still to design" },
     { name: "Windows studio app", ms: "Launch", state: "todo", foot: "Same studio in WebView2 (Tauri)" }
   ],
   next: {
     title: "Presenter notes and the live studio",
-    text: "The listener player is live on the test server. Next: presenter notes for listeners, then the live studio on the real app. A real-phone check of the player waits for the phone to be unlocked."
+    text: "The listener player is live on the test server and passes on the Android phone, screen locked too. Next: presenter notes for listeners, then the live studio on the real app."
   },
   call: null,
   feedTitle: "Changed 20 Oct",
   feed: [
+    { what: "Player on the Android phone", to: "10 checks pass, locked too", at: "04:15" },
+    { what: "Sound stopping on a locked phone", to: "fixed (watchdog)", at: "04:15", kind: "info" },
+    { what: "Phone kept an old player", to: "fixed (content tags)", at: "04:15", kind: "info" },
     { what: "Player on the live server", to: "all checks pass", at: "03:17" },
     { what: "Listener player", to: "built, 17 checks", at: "03:17" },
     { what: "Core & manager", to: "closed as 0.1.0", at: "02:36" },
     { what: "Song prep on the live site", to: "works, 3 s per song", at: "02:35" },
-    { what: "Drag-and-drop upload bug", to: "fixed", at: "02:35", kind: "info" },
-    { what: "Song prep on upload", to: "built, 36 checks", at: "02:35" },
-    { what: "Sound & safety on the server", to: "all tests pass", at: "02:20" },
-    { what: "Sound & safety screen", to: "built", at: "02:20" }
+    { what: "Drag-and-drop upload bug", to: "fixed", at: "02:35", kind: "info" }
   ]
 };
 
