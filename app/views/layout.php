@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="<?= h(App::url('assets/app.css')) ?>?v=<?= h(Config::version()) ?>">
 </head>
 <body>
-<header class="top">
+<header class="top<?= !empty($wide) ? ' wide' : '' ?>">
   <a class="brand" href="<?= h(App::url('')) ?>">stationwagon</a><span class="ver"><?= h(Config::version()) ?></span>
   <nav class="who">
     <?php if (!empty($me)): ?>
@@ -22,6 +22,8 @@
     <?php endif ?>
   </nav>
 </header>
-<main class="page"><?= $content ?></main>
+<main class="page<?= !empty($wide) ? ' wide' : '' ?>">
+<?php foreach ($flash as [$kind, $message]): ?><p class="alert <?= $kind === 'ok' ? 'ok' : 'bad' ?> toast" role="<?= $kind === 'ok' ? 'status' : 'alert' ?>"><?= h($message) ?></p><?php endforeach ?>
+<?= $content ?></main>
 </body>
 </html>

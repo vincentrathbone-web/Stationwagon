@@ -14,3 +14,6 @@ spl_autoload_register(function (string $class): void {
 });
 
 const SW_ROOT = __DIR__ . '/..';
+
+// View.php also holds the small helper functions (h, clock, duration, megabytes)
+require_once __DIR__ . '/View.php';

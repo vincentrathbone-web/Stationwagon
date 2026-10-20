@@ -169,8 +169,8 @@ a{color:var(--accent)}
 <script>
 /* Everything on the map comes from this one object. Update it after each round. */
 const MAP = {
-  updated: "20 Oct · 01:40",
-  commits: 12,
+  updated: "20 Oct · 02:00",
+  commits: 13,
   milestones: [
     { name: "Plan & design", when: "Done · 19 Oct", state: "done" },
     { name: "Proof of concept", when: "Done · 20 Oct", state: "done" },
@@ -185,8 +185,9 @@ const MAP = {
     { text: "Install on the test server", state: "done" },
     { text: "Sign-in and roles", state: "done" },
     { text: "Planner on MySQL", state: "done" },
-    { text: "Station manager screens", state: "todo" },
-    { text: "Skip from the manager", state: "todo" }
+    { text: "Station manager screens", state: "done" },
+    { text: "Skip from the manager", state: "done" },
+    { text: "Sound & safety settings", state: "todo" }
   ],
   parts: [
     { name: "Host check (P0)", ms: "Proof of concept", state: "done", foot: "Green on Laragon and on cPanel" },
@@ -200,25 +201,25 @@ const MAP = {
     { name: "Database & installer", ms: "Core & manager", state: "done", foot: "12 tables; installed on the test server" },
     { name: "Sign-in & roles", ms: "Core & manager", state: "done", foot: "Admin, manager, DJ; 98 checks pass" },
     { name: "Planner on MySQL", ms: "Core & manager", state: "done", foot: "71 checks; streaming on the test server" },
-    { name: "Station manager", ms: "Core & manager", state: "designed", foot: "Library, playlists, schedule, DJs" },
+    { name: "Station manager", ms: "Core & manager", state: "done", foot: "Library, playlists, schedule, DJs; 132 checks" },
     { name: "Listener player & notes", ms: "Player & studio", state: "designed", foot: "Studio notes editor still to design" },
     { name: "Windows studio app", ms: "Launch", state: "todo", foot: "Same studio in WebView2 (Tauri)" }
   ],
   next: {
-    title: "Station manager screens",
-    text: "Library upload, playlists, the weekly schedule and DJs, built from the green-skin designs, plus Skip from the manager. The planner already follows playlists and the schedule."
+    title: "Sound & safety, then Player & studio",
+    text: "One last manager screen for the station settings (crossfade, live timeout) closes v0.1. Then v0.4: the listener player with crossfades and notes, and the live studio on the real app."
   },
   call: null,
   feedTitle: "Changed 20 Oct",
   feed: [
+    { what: "Manager tests on the server", to: "all pass", at: "02:00" },
+    { what: "Station manager screens", to: "built", at: "01:55" },
+    { what: "Library upload and Skip", to: "working", at: "01:50" },
     { what: "Browser player on the server", to: "plays, no errors", at: "01:36" },
     { what: "Cloudflare browser cache", to: "fixed", at: "01:34", kind: "info" },
     { what: "Planner on MySQL", to: "71 checks pass", at: "01:20" },
     { what: "Sign-in tests on the server", to: "all pass", at: "01:05" },
-    { what: "Sign-in, account, sign-out", to: "built", at: "01:00" },
-    { what: "App on the test server", to: "installed", at: "00:55" },
-    { what: "Installer test on MariaDB", to: "31 checks pass", at: "00:42" },
-    { what: "Web installer", to: "works on Laragon", at: "00:38" }
+    { what: "Sign-in, account, sign-out", to: "built", at: "01:00" }
   ]
 };
 

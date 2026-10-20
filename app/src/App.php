@@ -22,13 +22,22 @@ final class App
         }
 
         try {
+            if (preg_match('#^manage/playlists/(\d+)$#', $route, $m) === 1) {
+                (new ManagePage())->playlist((int) $m[1]);
+                return;
+            }
             match ($route) {
                 '' => self::home(),
                 'install' => (new InstallPage(new Installer(SW_ROOT)))->handle(),
                 'signin' => (new AuthPage(Auth::fromConfig()))->signIn(),
                 'signout' => (new AuthPage(Auth::fromConfig()))->signOut(),
                 'account' => (new AuthPage(Auth::fromConfig()))->account(),
-                'manage' => self::manage(),
+                'manage' => (new ManagePage())->overview(),
+                'manage/skip' => (new ManagePage())->skip(),
+                'manage/library' => (new ManagePage())->library(),
+                'manage/playlists' => (new ManagePage())->playlists(),
+                'manage/schedule' => (new ManagePage())->schedule(),
+                'manage/djs' => (new ManagePage())->djs(),
                 default => self::notFound(),
             };
         } catch (Throwable $ex) {
@@ -96,12 +105,6 @@ final class App
         View::render('home', ['title' => $station['name'] ?? 'Stationwagon', 'station' => $station, 'onAir' => self::onAir()]);
     }
 
-    private static function manage(): void
-    {
-        $me = self::requireRole('dj');
-        View::render('manage', ['title' => 'Station manager', 'me' => $me, 'station' => self::station(), 'onAir' => self::onAir(), 'csrf' => Session::csrf()]);
-    }
-
     /** What's on air now and next, plus the library size; null if the planner can't answer. */
     private static function onAir(): ?array
     {
@@ -116,7 +119,7 @@ final class App
         }
     }
 
-    private static function notFound(): void
+    public static function notFound(): void
     {
         http_response_code(404);
         View::render('error', ['title' => 'Page not found', 'message' => 'There’s no page at this address.']);

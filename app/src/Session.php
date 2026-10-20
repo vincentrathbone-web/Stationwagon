@@ -81,6 +81,24 @@ final class Session
         return is_string($given) && isset($_SESSION['csrf']) && hash_equals($_SESSION['csrf'], $given);
     }
 
+    /** A message for the next page (after a redirect): ok or bad. */
+    public static function flash(string $kind, string $message): void
+    {
+        self::start();
+        $_SESSION['flash'][] = [$kind, $message];
+    }
+
+    /** @return list<array{0:string,1:string}> */
+    public static function takeFlash(): array
+    {
+        if (!self::active() || empty($_SESSION['flash'])) {
+            return [];
+        }
+        $all = $_SESSION['flash'];
+        unset($_SESSION['flash']);
+        return $all;
+    }
+
     public static function isHttps(): bool
     {
         // Cloudflare talks to this server over HTTPS too, so the server's own flag is enough

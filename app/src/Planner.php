@@ -115,7 +115,7 @@ final class Planner
         ];
         $e['end'] = $e['start'] + $e['play'];
         if ($r['type'] === 'song') {
-            $e += ['track_id' => (int) $r['track_id'], 'file' => $r['file'], 'title' => (string) $r['track_title'],
+            $e += ['track_id' => (int) $r['track_id'], 'file' => $r['file'], 'title' => $r['track_title'] ?? 'Removed song',
                    'artist' => $r['artist'], 'full' => (float) $r['full_s']];
         } else {
             $e += ['live_show_id' => (int) $r['live_show_id'], 'public_id' => $r['public_id'], 'open' => (bool) $r['open'],
