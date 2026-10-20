@@ -16,6 +16,27 @@ try {
     $planner = Planner::forFirstStation();
     $now = microtime(true);
     $entries = $planner->window($now, $now - 30, $now + 900);
+    // The player reads its songs about 20 s ahead of what it plays, to draw the coming output: give
+    // the songs around that time their pieces (byte offset, byte length, seconds; the HLS cut points)
+    $near = [];
+    foreach ($entries as $e) {
+        if ($e['type'] === 'song' && $e['end'] > $now - 60 && $e['start'] < $now + 30) {
+            $near[(int) $e['track_id']] = null;
+        }
+    }
+    if ($near) {
+        $ids = array_keys($near);
+        $rows = $planner->db()->run('SELECT id, pieces FROM ' . $planner->db()->table('tracks') . ' WHERE id IN (' . implode(',', $ids) . ')')->fetchAll();
+        foreach ($rows as $r) {
+            $near[(int) $r['id']] = json_decode((string) $r['pieces'], true) ?: null;
+        }
+        foreach ($entries as &$e) {
+            if ($e['type'] === 'song' && isset($near[(int) $e['track_id']]) && $e['end'] > $now - 60 && $e['start'] < $now + 30) {
+                $e['pieces'] = $near[(int) $e['track_id']];
+            }
+        }
+        unset($e);
+    }
     echo json_encode([
         'server_now' => microtime(true),
         'station' => ['name' => $planner->station()['name'], 'timezone' => $planner->station()['timezone']],

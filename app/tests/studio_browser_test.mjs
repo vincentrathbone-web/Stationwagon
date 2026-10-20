@@ -5,7 +5,7 @@
 // removes a presenter note from the drawer, and ends the show from the page. Takes about 1.5 minutes.
 //   node app/tests/studio_browser_test.mjs http://localhost:8080/stationwagon-app
 // Needs SW_PHP (php.exe) unless php is on PATH. It goes live on the station (Laragon only).
-import { spawn, execFileSync } from "node:child_process";
+import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -141,9 +141,46 @@ try {
   const playlist = await (await fetch(`${base}/api/stream.php`, { cache: "no-store" })).text();
   check("listeners' stream carries the live pieces", playlist.includes(`storage/live/${liveId}/`), playlist.split("\n").filter((l) => l.includes("storage/")).slice(-1)[0]);
 
+  console.log("Output strip");
+  // the mic off (its ducking follows speech no one can plan), and Deck A's short test tone
+  // from the start, so there is music all through this part
+  const micWasOn = (await state()).talk;
+  if (micWasOn) await click("#talk");
+  await click("#xA"); await click("#pA");
+  await until((x) => x.decks.A.playing, 3); await sleep(2500);
+  const dB = (v) => (v > 1e-5 ? 20 * Math.log10(v) : -99), dBs = (a) => (a ? a.map((v) => dB(v).toFixed(1)).join(" / ") : "none");
+  s = await until((x) => x.wave.meter && x.wave.ahead !== null, 5);
+  check("the output strip measures what goes out, in the sound engine", s && s.wave.meter === "sample-exact", s && s.wave.meter);
+  let w = await evaluate("(() => { const n = SwStudio.wave.now(); return SwStudio.wave.measured(n - 2, n - 0.2); })()");
+  check("  Deck A shows in its own colour, and the output with it", w && w[0] > 0.01 && w[1] === 0 && w[3] > 0.01, dBs(w) + " (A / B / mic / out, dB)");
+  check("  the coming seconds are mixed ahead", s && s.wave.ahead > 10, s && s.wave.ahead + " s");
+  // what the strip mixes ahead must be what goes out when that moment comes
+  const ahead = async (wait) => {
+    const p = await evaluate("(() => { const n = SwStudio.wave.now(); return { t0: n + 2, t1: n + 3, p: SwStudio.wave.planned(n + 2, n + 3) }; })()");
+    await sleep(wait);
+    return { plan: p.p, got: await evaluate(`SwStudio.wave.measured(${p.t0}, ${p.t1})`) };
+  };
+  const same = (c) => c.plan && c.got && [0, 1, 3].every((j) => Math.abs(dB(c.plan[j]) - dB(c.got[j])) < 1);
+  let cmp = await ahead(3800);
+  check("  what it mixed ahead is what went out, each deck and the output (within 1 dB)", same(cmp), `planned ${dBs(cmp.plan)}, measured ${dBs(cmp.got)}`);
+  await click("#stOutTg");
+  check("the toggle on the left hides the strip", (await evaluate("document.getElementById('stOutBox').hidden")) && !(await state()).wave.open);
+  await click("#stOutTg");
+  check("  and shows it again", (await state()).wave.open);
+  const keyOnGrip = (k) => evaluate(`document.getElementById('stOutGrip').dispatchEvent(new KeyboardEvent('keydown', { key: '${k}', bubbles: true }))`);
+  check("  it starts 50 px high", (await state()).wave.height === 50, (await state()).wave.height + " px");
+  await keyOnGrip("ArrowDown"); await keyOnGrip("ArrowDown");
+  check("  its handle makes it taller (arrow keys too)", (await state()).wave.height === 70, (await state()).wave.height + " px");
+  check("  and the height is remembered", (await evaluate("JSON.parse(localStorage.getItem('sw.studio.wave')).height")) === 70);
+  await keyOnGrip("ArrowUp"); await keyOnGrip("ArrowUp");
+
   console.log("Mixing");
   await click("#fadeBtn");
+  cmp = await ahead(3800);
+  check("during Fade to B the strip mixes both decks ahead", cmp.plan && cmp.plan[0] > 0.001 && cmp.plan[1] > 0.001, dBs(cmp.plan));
+  check("  and that is what went out (within 1 dB)", same(cmp), `planned ${dBs(cmp.plan)}, measured ${dBs(cmp.got)}`);
   s = await until((x) => x.xf === 100 && x.decks.B.playing && !x.decks.A.playing, 10);
+  if (micWasOn) await click("#talk");
   check("Fade to B crossfades to Deck B and stops Deck A", !!s, s ? "" : JSON.stringify((await state()).decks));
   check("  the running order marks that song as on now", s && s.nowItem === 0 && (await evaluate("document.querySelector('#ro li').classList.contains('now')")));
 
@@ -187,7 +224,16 @@ try {
   try { if (dj) helper("studio-cleanup", String(dj.id), String(dj.block || 0)); } catch (e) { console.log("cleanup: " + e.message); }
   try { if (lone) helper("studio-cleanup", String(lone.id)); } catch { /* gone */ }
   try { ws && ws.close(); } catch { /* closed */ }
+  // msedge.exe hands over to the real browser and exits, so proc.kill() alone leaves Edge running
+  // (still playing sound): close it over its debug port, then end anything still using this profile
+  try {
+    const b = new WebSocket((await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()).webSocketDebuggerUrl);
+    await new Promise((ok, bad) => { b.onopen = ok; b.onerror = bad; });
+    b.send(JSON.stringify({ id: 1, method: "Browser.close" }));
+    await new Promise((r) => setTimeout(r, 1000));
+  } catch { /* already closed */ }
   proc.kill();
+  spawnSync("powershell", ["-NoProfile", "-Command", `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*${profile}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`], { stdio: "ignore" });
   await sleep(500);
   try { rmSync(profile, { recursive: true, force: true }); } catch { /* still locked */ }
   console.log("Cleanup: test DJs, their block, running orders, notes and any open show removed");

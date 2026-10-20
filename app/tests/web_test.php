@@ -158,6 +158,19 @@ try {
     $j = json_decode($r['body'], true);
     check('player feed gives the server clock and settings', $r['status'] === 200 && is_float($j['server_now'] ?? null) && abs($j['server_now'] - microtime(true)) < 30 && ($j['settings']['crossfade_seconds'] ?? 0) == 6, (string) $r['status']);
     check('player feed is never cached', str_contains(implode(',', $r['headers']['cache-control'] ?? []), 'no-store'));
+    // the player reads its songs ahead for the output strip: songs near now come with their pieces,
+    // and a piece is a byte range the web server serves on its own
+    $songs = array_values(array_filter($j['entries'] ?? [], fn($e) => $e['type'] === 'song'));
+    $near = array_values(array_filter($songs, fn($e) => $e['end'] > $j['server_now'] - 60 && $e['start'] < $j['server_now'] + 30));
+    $far = array_values(array_filter($songs, fn($e) => $e['start'] > $j['server_now'] + 120));
+    $withPieces = array_values(array_filter($near, fn($e) => !empty($e['pieces'])));
+    if ($near) {
+        check('songs near now come with their pieces (for the look-ahead)', count($withPieces) === count($near) && count($withPieces[0]['pieces'][0]) === 3, count($withPieces) . ' of ' . count($near));
+        check('  songs far ahead don\'t (the feed stays small)', !$far || !array_filter($far, fn($e) => isset($e['pieces'])));
+        [$off, $len] = $withPieces[0]['pieces'][1] ?? $withPieces[0]['pieces'][0];
+        $rr = $s->go($withPieces[0]['url'], null, ['Range: bytes=' . $off . '-' . ($off + $len - 1)]);
+        check('  a piece comes back as a byte range of the song file', $rr['status'] === 206 && strlen($rr['body']) === $len && ord($rr['body'][0]) === 0xFF, $rr['status'] . ', ' . strlen($rr['body']) . ' of ' . $len . ' bytes');
+    }
     $r2 = $s->go('api/notes.php');
     $nj = json_decode($r2['body'], true);
     check('presenter notes feed answers, with the same marker as the timeline', $r2['status'] === 200 && is_array($nj['items'] ?? null) && array_key_exists('show', $nj ?? []) && preg_match('/^\d+\.\d+\.\d+\.\d{8}$/', (string) ($j['notes_rev'] ?? '')) === 1 && ($nj['rev'] ?? '') === $j['notes_rev'], ($j['notes_rev'] ?? '-') . ' / ' . ($nj['rev'] ?? '-'));

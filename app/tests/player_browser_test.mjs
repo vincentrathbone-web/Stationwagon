@@ -7,7 +7,7 @@
 //   node app/tests/player_browser_test.mjs https://wordwave.controll.co.za/stationwagon-app --listen-only
 // Needs SW_PHP (php.exe) unless php is on PATH. The live part goes live on the station (through the
 // local database), so a public server gets --listen-only: joining, crossfade and stream only.
-import { spawn, execFileSync } from "node:child_process";
+import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -69,14 +69,36 @@ async function until(fn, seconds, log = null) {
 const audible = (s) => s.decks.filter((d) => d.playing && d.gain > 0.5);
 const drift = (s, d) => d.pos - (s.heard - s.current.start);
 
+// Song file traffic, from the browser's own network log: bytes that came over the network per file
+// (the decks and the strip's look-ahead together), and each file's size.
+const files = new Map(), reqs = new Map();
+function media({ method, params: p }) {
+  if (method === "Network.responseReceived" && p.response.url.includes("storage/media")) {
+    const url = p.response.url.split("?")[0], h = Object.fromEntries(Object.entries(p.response.headers).map(([k, v]) => [k.toLowerCase(), v]));
+    const size = +((h["content-range"] || "").split("/")[1] || (p.response.status === 200 ? h["content-length"] : 0) || 0);
+    const f = files.get(url) || { size: 0, sent: 0 };
+    if (size) f.size = size;
+    files.set(url, f); reqs.set(p.requestId, url);
+  } else if (method === "Network.loadingFinished" && reqs.has(p.requestId)) {
+    files.get(reqs.get(p.requestId)).sent += p.encodedDataLength;
+  } else if (method === "Network.requestServedFromCache") {
+    reqs.delete(p.requestId);
+  }
+}
+
 let show = null, feeder = null, notesShow = null;
 try {
   for (let i = 0; i < 50; i++) { await sleep(200); try { await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; } catch { /* starting */ } }
   const target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === "page");
   ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((ok, bad) => { ws.onopen = ok; ws.onerror = bad; });
-  ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); } };
+  ws.onmessage = (m) => {
+    const d = JSON.parse(m.data);
+    if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); }
+    else if (d.method) media(d);
+  };
   await call("Page.enable");
+  await call("Network.enable");
 
   console.log("Joining");
   await go(`${base}/`);
@@ -99,6 +121,30 @@ try {
   s = await until((x) => audible(x).length === 1 && audible(x)[0].key === x.current.key && x.decks.filter((d) => d.playing).length === 1, 10);
   check("  then only the new song plays", !!s, s && s.current.title);
   check("  on time", s && Math.abs(drift(s, audible(s)[0])) < 0.3, s && drift(s, audible(s)[0]).toFixed(3) + " s");
+
+  console.log("Output strip");
+  const dB = (v) => (v > 1e-5 ? 20 * Math.log10(v) : -99), dBs = (a) => (a ? a.map((v) => dB(v).toFixed(1)).join(" / ") : "none");
+  s = await until((x) => x.wave && x.wave.meter && x.wave.ahead !== null, 5);
+  check("the output strip measures what goes out, in the sound engine", s && s.wave.meter === "sample-exact", s && s.wave.meter);
+  check("  and reads the coming 20 s itself (song pieces)", s && s.wave.ahead > 15 && s.wave.pieces > 0, s && `${s.wave.ahead} s ahead, ${s.wave.pieces} pieces`);
+  // what the strip mixed ahead must be what goes out when that moment comes (A / B / live / output)
+  const aheadCheck = async (from) => {
+    const p = await evaluate(`(() => { const n = SwPlayer.wave.now(); return { t0: n + ${from}, t1: n + ${from + 1}, p: SwPlayer.wave.planned(n + ${from}, n + ${from + 1}) }; })()`);
+    await sleep((from + 1.6) * 1000);
+    return { plan: p.p, got: await evaluate(`SwPlayer.wave.measured(${p.t0}, ${p.t1})`) };
+  };
+  const same = (c, series) => c.plan && c.got && series.every((j) => Math.abs(dB(c.plan[j]) - dB(c.got[j])) < 1);
+  let cmp = await aheadCheck(4);
+  check("  what it mixed ahead is what went out (within 1 dB)", same(cmp, [0, 1, 3]), `planned ${dBs(cmp.plan)}, measured ${dBs(cmp.got)} (A / B / live / out, dB)`);
+  const reads = await evaluate("(() => { const r = performance.getEntriesByType('resource').filter((e) => e.initiatorType === 'fetch' && e.name.includes('storage/media')); return { n: r.length, sent: r.reduce((a, e) => a + e.transferSize, 0), body: r.reduce((a, e) => a + e.decodedBodySize, 0) }; })()");
+  // The strip reads ranges of the same files the decks play, so between them each file should come
+  // over the network once at most (the browser's cache serves the rest), never twice.
+  const fl = [...files.values()].filter((f) => f.size), sent = fl.reduce((a, f) => a + f.sent, 0), size = fl.reduce((a, f) => a + f.size, 0);
+  check("  those reads don't download the songs a second time", reads.n > 0 && fl.length > 0 && sent <= size * 1.05 + 4096 * fl.length,
+    `${reads.n} reads of ${reads.body} bytes; ${fl.length} song files of ${size} bytes, ${sent} over the network`);
+  const px = await evaluate(`(() => { const c = document.getElementById('lpWave'), g = c.getContext('2d'), d = g.getImageData(0, 0, c.width, c.height).data; let a = 0, b = 0;
+    for (let i = 0; i < d.length; i += 4) { if (d[i + 2] > 150 && d[i] < 140 && d[i + 1] > 100) a++; if (d[i] > 150 && d[i + 2] > 100 && d[i + 1] < 140) b++; } return { a, b, w: c.width, h: c.height }; })()`);
+  check("  the strip draws the songs in their colours", px.w > 0 && px.a + px.b > 100, `${px.w}×${px.h}, ${px.a} blue and ${px.b} pink pixels`);
 
   console.log("Frozen sound engine (as a Xiaomi phone does some seconds after locking)");
   await evaluate(`(() => {
@@ -152,6 +198,10 @@ try {
     s = await until((x) => x.current && x.current.type === "live" && x.stream && x.stream.gain > 0.9, 6);
     check("  and the stream deck takes over", !!s, s && JSON.stringify(s.stream));
     check("  held 20 s behind live", s && s.stream.lag !== null && Math.abs(s.stream.lag - 20) < 0.6, s && String(s.stream.lag && s.stream.lag.toFixed(2)));
+    s = await state();
+    check("  the output strip reads the live pieces ahead too", s.wave && s.wave.live > 0, s.wave && `${s.wave.live} live pieces`);
+    const lc = await aheadCheck(3);
+    check("  and what it mixed ahead of the show is what went out (within 1 dB)", same(lc, [2, 3]) && lc.got[2] > 0.01, `planned ${dBs(lc.plan)}, measured ${dBs(lc.got)}`);
     s = await until((x) => x.decks.every((d) => !d.playing), 9); // after the 6 s live cut-in fade
     check("  with the song decks quiet once the fade is done", !!s, s ? "" : JSON.stringify((await state()).decks));
     while (seq < 5) await sleep(500);
@@ -177,7 +227,16 @@ try {
   if (show && show.public_id) { try { helper("live-end", show.public_id); } catch { /* ended */ } }
   if (notesShow) { try { helper("notes-clear", notesShow); } catch { /* gone */ } }
   try { ws && ws.close(); } catch { /* closed */ }
+  // msedge.exe hands over to the real browser and exits, so proc.kill() alone leaves Edge running
+  // (still playing sound): close it over its debug port, then end anything still using this profile
+  try {
+    const b = new WebSocket((await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()).webSocketDebuggerUrl);
+    await new Promise((ok, bad) => { b.onopen = ok; b.onerror = bad; });
+    b.send(JSON.stringify({ id: 1, method: "Browser.close" }));
+    await new Promise((r) => setTimeout(r, 1000));
+  } catch { /* already closed */ }
   proc.kill();
+  spawnSync("powershell", ["-NoProfile", "-Command", `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*${profile}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`], { stdio: "ignore" });
   await sleep(500);
   for (const d of [dir, profile]) { try { rmSync(d, { recursive: true, force: true }); } catch { /* still locked */ } }
 }

@@ -5,7 +5,7 @@ $tz = new DateTimeZone($station['timezone'] ?? 'UTC');
 $day = (new DateTimeImmutable('now', $tz))->format('l j F');
 $hm = fn(string $t): string => substr($t, 0, 5);
 ?>
-<div class="lp" id="player" data-base="<?= h(App::url('')) ?>" data-delay="<?= (int) $delay ?>" data-station="<?= h($name) ?>">
+<div class="lp" id="player" data-base="<?= h(App::url('')) ?>" data-delay="<?= (int) $delay ?>" data-station="<?= h($name) ?>" data-meter="<?= h(App::asset('assets/outwave-meter.js')) ?>">
   <div class="lp-stack">
     <section class="lp-win" aria-label="Player">
       <div class="lp-titlebar"><span><?= h($name) ?></span><span class="lp-lamp"><i></i><span id="lpMode">AutoDJ</span></span></div>
@@ -15,6 +15,7 @@ $hm = fn(string $t): string => substr($t, 0, 5);
         <canvas id="lpSpec" aria-hidden="true"></canvas>
         <div class="lp-mode"><span id="lpNext"></span><span id="lpBehind"><?= (int) $delay ?> s behind live</span></div>
       </div>
+      <canvas class="lp-wave" id="lpWave" role="img" aria-label="What goes out: the sound scrolling past the white line (now), each song in its own colour, and the coming seconds dimmed on the right"></canvas>
       <div class="lp-seek" aria-hidden="true"><div class="lp-fill" id="lpFill"></div></div>
       <div class="lp-seekmeta"><span id="lpElapsed">0:00</span><span id="lpRemain"></span></div>
       <div class="lp-transport">
@@ -63,5 +64,6 @@ $hm = fn(string $t): string => substr($t, 0, 5);
   </aside>
 </div>
 <div class="lp-toast" id="lpToast" role="status" hidden></div>
+<script src="<?= h(App::asset('assets/outwave.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/player.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/notes.js')) ?>" defer></script>

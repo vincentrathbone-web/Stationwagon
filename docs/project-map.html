@@ -173,7 +173,7 @@ a{color:var(--accent)}
 <script>
 /* Everything on the map comes from this one object. Update it after each round. */
 const MAP = {
-  updated: "20 Oct · 16:15",
+  updated: "20 Oct · 17:02",
   commits: 21,
   milestones: [
     { name: "Plan & design", when: "Done · 19 Oct", state: "done" },
@@ -188,6 +188,7 @@ const MAP = {
     { text: "Presenter notes for listeners", state: "done" },
     { text: "Live studio on the app", state: "done" },
     { text: "Studio notes editor", state: "done" },
+    { text: "Output waveform (player & studio)", state: "done" },
     { text: "Player & studio settings", state: "todo" }
   ],
   parts: [
@@ -208,15 +209,21 @@ const MAP = {
     { name: "Listener player", ms: "Player & studio", state: "done", foot: "Crossfades, live at 20 s; plays on with an Android phone locked; 30 browser + phone checks" },
     { name: "Presenter notes", ms: "Player & studio", state: "done", foot: "Beside the player, in step with the 20 s delay; posting comes with the studio" },
     { name: "Live studio on the app", ms: "Player & studio", state: "done", foot: "Decks, mixer, mic chain, running order, notes drawer; 104 checks and a minute live on the server" },
+    { name: "Output waveform", ms: "Player & studio", state: "done", foot: "Wet mix, one colour per source, 20 s read ahead; 60 px in the player, resizable in the studio" },
     { name: "Windows studio app", ms: "Launch", state: "todo", foot: "Same studio in WebView2 (Tauri)" }
   ],
   next: {
-    title: "Player & studio settings",
-    text: "The live studio works in the app: DJs go live in their own slot, Deck A picks up the AutoDJ song in sync, and notes for listeners are posted from a side drawer. Next: the last v0.4 item, the player and studio settings (fade shape, ducking, silence detection, sound quality, delay)."
+    title: "Real music, then the settings",
+    text: "The output strip is in the player and the studio: what goes out (the wet mix) scrolls past a centred now, one colour per source, with faint level lines, and the next seconds are mixed ahead from the real audio. Next: test with the user's own album on Laragon (a page of short clips, then a live listening session). After that, the player and studio settings."
   },
   call: null,
   feedTitle: "Changed 20 Oct",
   feed: [
+    { what: "Output strip in the player and studio", to: "built, all tests pass", at: "18:31" },
+    { what: "Song downloads for the look-ahead", to: "once per file (browser cache)", at: "18:31", kind: "info" },
+    { what: "Output waveform", to: "working prototype", at: "17:02" },
+    { what: "Test browsers left playing sound", to: "fixed (closed properly)", at: "17:02", kind: "info" },
+    { what: "Album for testing", to: "22 tracks measured", at: "17:02", kind: "info" },
     { what: "Studio live on the test server", to: "1 minute, no errors, listener 20.0 s behind", at: "16:08" },
     { what: "Live studio in the app", to: "built, 104 checks", at: "15:55" },
     { what: "Database", to: "version 2 (running orders)", at: "15:55", kind: "info" },

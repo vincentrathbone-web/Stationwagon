@@ -4,7 +4,7 @@ Read this first. It records where the work stands, what was decided and why, and
 each round, so that anyone (a person or a new agent session) can pick up where the last one
 stopped.
 
-**Last updated:** 2026-10-20, after round 21 (the live studio in the app).
+**Last updated:** 2026-10-20, after round 23 (the output strip in the player and the studio).
 
 ## How to keep this file useful
 
@@ -64,7 +64,7 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | `app/src/` | `bootstrap.php` (autoloader, `Stationwagon\` → `src/`), `App` (routes; `url()`, and `asset()` for links tagged by content), `Config`, `Db` (PDO, UTC, table prefix), `Schema` (tables, `Schema::VERSION`, step-by-step upgrades), `Installer`, `InstallPage`, `View`, `Session` (cookie settings, form keys), `Auth` (sign-in, roles, lock-out), `AuthPage` (sign-in / sign-out / account pages), `Request` (visitor address through Cloudflare), `Mp3` (frame scanner + ID3 tags), `Library` (add songs, stored by content hash), `Planner` (the timeline on MySQL: plan, skip, go live, pieces, schedule), `Stream` (HLS playlist), `Playlists`, `Schedule` (weekly blocks, time and day helpers, the week grid), `Staff` (people and who may change whom), `StationSettings` (the Sound & safety values and their limits), `Notes` (presenter notes: rules, post/remove, the listeners' view), `ManagePage` (the station manager screens and their form actions), `Studio` (the live studio's rules: who may go live when, show ownership, notes, running order), `StudioPage` (`/studio` and its JSON feed `/studio/api/*`) |
 | `app/api/` | `stream.php` (listener HLS playlist; real file so `.htaccess` gives it the 2 s Cloudflare header), `timeline.php` (JSON for the two-deck player and studio, with `notes_rev`) and `notes.php` (presenter notes for listeners, read only) |
 | `app/views/`, `app/assets/` | PHP page templates (wrapped in `layout.php`; the station page is `player.php`; the manager screens are in `views/manage/`, framed by `frame.php`), the green-skin styles `app.css`, `upload.js` (uploads songs one by one with progress), song prep: `prep.js` (decode in the browser), `prep-worker.js`, `prep-core.js` (loudness, trim, level, fades, encode; shared with the Node test), and `vendor/lame.min.js` (lamejs 1.2.1, LGPL-3.0, byte-identical to the npm package; licence beside it); the listener player `player.js` with `vendor/hls.min.js`, the presenter notes panel `notes.js` (hls.js 1.5.13, Apache-2.0, byte-identical to npm); the live studio `studio.js` (view `studio.php`) with the mic chain `studio-mic.js` (from the POC) |
-| `app/tests/` | `install_test.php` (31 checks), `auth_test.php` (sign-in logic, 39), `planner_test.php` (library + planner, 71), `manage_test.php` (library edits, song prep on the server side, playlists, schedule and today's list, Sound & safety, staff rules, 70), `notes_test.php` (presenter notes: each kind, posting while on air, the listeners' view, the change marker; 44), `studio_test.php` (the schema upgrade, when a DJ may go live, who may send pieces, post notes and end a show, the running order; 61), `prep_test.mjs` (song prep maths against EBU Tech 3341, and a real lamejs MP3, 24; Node), `upload_browser_test.mjs` (song prep end to end in headless Edge, 12; Node, Laragon only), `player_browser_test.mjs` (the listener player in headless Edge: join, crossfade, a frozen sound engine, a live show with a presenter note, stream only; 26, or 13 with `--listen-only` for a public server), `player_phone_test.mjs` (the player on the Android phone over USB, screen locked for 2 minutes; 10), `studio_browser_test.mjs` (the studio in headless Edge with a fake mic: go-live rules, running order, going live in sync, pieces, crossfade, the notes drawer, End show; 43, Laragon only) with `browser_helper.php` (accounts, tracks, a test live show, a test DJ with a block), `web_test.php` (pages, manager screens, the studio and its feed, stream over HTTP, 113; `--public`: 43), `lib.php` (shared helpers: throwaway database and install) |
+| `app/tests/` | `install_test.php` (31 checks), `auth_test.php` (sign-in logic, 39), `planner_test.php` (library + planner, 71), `manage_test.php` (library edits, song prep on the server side, playlists, schedule and today's list, Sound & safety, staff rules, 70), `notes_test.php` (presenter notes: each kind, posting while on air, the listeners' view, the change marker; 44), `studio_test.php` (the schema upgrade, when a DJ may go live, who may send pieces, post notes and end a show, the running order; 61), `prep_test.mjs` (song prep maths against EBU Tech 3341, and a real lamejs MP3, 24; Node), `upload_browser_test.mjs` (song prep end to end in headless Edge, 12; Node, Laragon only), `player_browser_test.mjs` (the listener player in headless Edge: join, crossfade, a frozen sound engine, the output strip, a live show with a presenter note, stream only; 33, or 18 with `--listen-only` for a public server), `player_phone_test.mjs` (the player on the Android phone over USB, screen locked for 2 minutes; 10), `studio_browser_test.mjs` (the studio in headless Edge with a fake mic: go-live rules, running order, going live in sync, pieces, crossfade, the notes drawer, the output strip, End show; 54, Laragon only) with `browser_helper.php` (accounts, tracks, a test live show, a test DJ with a block), `web_test.php` (pages, manager screens, the studio and its feed, stream over HTTP, the look-ahead's pieces, 116; `--public`: 46), `lib.php` (shared helpers: throwaway database and install) |
 | `app/cli/` | `install.php` (install over SSH: the form's fields as JSON on stdin), `set-password.php <email>` (new password on stdin; for when nobody can sign in), `import.php <mp3s>` (add songs), `plan.php` (cron: plan ahead), `upgrade.php` (bring the database up to the code's schema; the deploy runs it) |
 | `app/storage/` | Songs (`media/<sha1>.mp3`), live pieces (`live/<show id>/00000.mp3`), `cache/`, `sessions/`; gitignored; only `.mp3` is served |
 | `app/config.local.php`, `app/install.key` | Written by the installer / the deploy script. Gitignored and denied by `.htaccess` |
@@ -79,6 +79,7 @@ designed from scratch for shared hosting, and named it Stationwagon.
 | Listener player | https://claude.ai/artifact/9vPMTeSZVDjgU3HaGKcjGU | https://claude.ai/artifact/CHULBMqMWbg25LjTcovES8 |
 | DJ studio | https://claude.ai/artifact/BLzkA52kEozDMxttoJAg2m | https://claude.ai/artifact/BntgUDVB3s69T6CMZYgzsz |
 | Station manager | https://claude.ai/artifact/NeuMPpuuQxvEAmBcF3cd5h | https://claude.ai/artifact/QxYADjUAtv1qbaQVugHuCq |
+| Output waveform (prototype, green only; repo copy `design/output-waveform.html`) | | https://claude.ai/artifact/7B369bBNhrMkKLBLrv1Ssa |
 
 The repo copies in `design/skins/` are the source: edit those and republish to the same URL. The
 studio mock-ups don't have the notes drawer or the "Switch on" step; `design/DESIGN.md` ("Notes
@@ -142,13 +143,13 @@ drawer", "DJ studio as built") describes how the app does them.
   php app/tests/manage_test.php                                    # manager rules, 70 checks
   php app/tests/notes_test.php                                     # presenter notes, 44 checks
   php app/tests/studio_test.php                                    # studio rules, 61 checks
-  php app/tests/web_test.php http://localhost:8080/stationwagon-app # pages, manager, studio, stream: 113 checks
+  php app/tests/web_test.php http://localhost:8080/stationwagon-app # pages, manager, studio, stream: 116 checks
   node app/tests/prep_test.mjs                                     # song prep maths, 24 checks
   node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app # prep in a real browser, 12
-  node app/tests/player_browser_test.mjs http://localhost:8080/stationwagon-app # the player, 26 (~3 min)
-  node app/tests/player_browser_test.mjs https://wordwave.controll.co.za/stationwagon-app --listen-only # 13
+  node app/tests/player_browser_test.mjs http://localhost:8080/stationwagon-app # the player, 33 (~3.5 min)
+  node app/tests/player_browser_test.mjs https://wordwave.controll.co.za/stationwagon-app --listen-only # 18
   node app/tests/player_phone_test.mjs https://wordwave.controll.co.za/stationwagon-app # on the phone, 10 (~3.5 min)
-  node app/tests/studio_browser_test.mjs http://localhost:8080/stationwagon-app # the studio, 43 (~1.5 min)
+  node app/tests/studio_browser_test.mjs http://localhost:8080/stationwagon-app # the studio, 54 (~2 min)
   ```
   The Node tests need `SW_PHP` set to the PHP path above, and run from a short folder (e.g. `D:\`).
   The test server has no Node, so these run on this PC; the player test's `--listen-only` form checks
@@ -253,6 +254,29 @@ waiting), a listener tab on the station page heard the show through Cloudflare 2
 dropouts, and End show handed back to the AutoDJ. An earlier attempt stopped when the test script
 crashed 10 s in; the server's safety net then ended that show by itself after 8 s, as designed.
 
+**Output waveform: a working prototype** (round 22, an artifact; see "Published design mock-ups"). It
+shows the wet mix, not the inputs: each source is tapped after its fades, ducking and compressor, and
+the final output after the limiter, measured in 10 ms columns by an AudioWorklet. The user asked for it
+in the player and the studio so fades, ducking, compression and silence skipping can be seen as well as
+heard. Songs loaded into the prototype are prepared as on upload; a copy is in `design/output-waveform.html`.
+
+**The output strip is in the app** (round 23; the user called the design final). The **player** has a
+60 px strip under its display: the last 5 s measured on the left, the next 5 s mixed ahead on the
+right, one colour per source (song A blue, song B pink, live yellow, the output a white line) and
+faint level lines at −1, −6, −12 and −20 dB. It reads the coming 20 s itself (byte ranges of the
+song files, served from the browser's cache, and copies of the live pieces), mixes them through the
+planned fades, and that matches what then goes out within 1 dB. The **studio** has the same strip
+above the decks, full width, 50 px high, with a show/hide toggle and a drag handle (its height is
+remembered), showing 20 s and following Fade to A/B and the mic's ducking.
+
+**Real music for testing** (round 22): the user's album "Alruin – Johannesburg Recordings" (22 MP3s,
+206 MB, on this PC in `D:\Music\Albert musiek\…\Johannesburg Recordings`), measured with the app's own
+prep maths. Useful cases: `10 Project Ibanez Rev 1` ends with 74 s of silence, `19 Redemption Process`
+with 21 s of silence after a 15 s quiet tail, `20 Project Highway` with 10.5 s of silence and two gaps
+just before it, `Cain` with 5 s of silence after a 19 s quiet tail; `02 Overdrive Project1` and
+`13 Hail the Black` open with 11–13 s of quiet; loudness runs from −6.7 to −22.4 LUFS (`08 Project So
+Iii`), so levelling matters. Stays on Laragon (not on the public test server).
+
 ## Next steps
 
 **Core & manager (`v0.1`) is done**; now **Player & studio (`v0.4`)**. The order it was built in:
@@ -269,7 +293,9 @@ crashed 10 s in; the server's safety net then ended that show by itself after 8 
    ~~the live studio with its notes drawer~~ (done 2026-10-20, live-tested on the test server). Next: the
    v0.4 Sound & safety settings (fade
    shape, ducking, silence detection, rejoin window, sound quality, delay), the last item of `v0.4` on
-   the project map.
+   the project map. Before that, at the user's request: ~~the output waveform in the player and the
+   studio~~ (done, round 23), then tests with the user's own album on Laragon (a page of short clips,
+   then a live listening session).
 
 ## Decisions
 
@@ -373,6 +399,10 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-20 | The studio's **notes editor is designed and built** as a drawer from the side (user's choice); `design/DESIGN.md` describes it and the studio as built. The mock-ups in `design/skins/` don't show it |
 | 2026-10-20 | Not in this round: **recording a show to a podcast** (in the mock-up's status strip and end-show banner). It isn't on the project map for v0.4; it comes later |
 | 2026-10-20 | The studio is the **green skin only** for now (as the presenter notes are) |
+| 2026-10-20 | The **output strip shows the wet mix**: what goes out after fades, ducking, the compressor and the limiter, measured in the sound engine (an AudioWorklet, 10 ms columns); the part to the right of "now" is mixed ahead from the real audio, not from peaks stored at upload | The user: peaks at upload are the dry mix; the strip must show ducking and processing too, and "that is what an audio buffer should be for" |
+| 2026-10-20 | The **player reads the coming 20 s itself**: song pieces as byte ranges of the files the decks play (the browser's cache serves them, so nothing downloads twice), live pieces copied as hls.js loads them; mixed ahead through the same fade curves the decks use | The user: "Load 20s ahead, process / read that 20s' graph and append to the display" |
+| 2026-10-20 | The studio's strip sits **above the decks, full width, 50 px high**, with a show/hide toggle on the left and a drag handle to change its height (30–240 px, remembered) | The user's choice |
+| 2026-10-20 | The studio's **ducking works per deck** (each deck has its own duck gain after the crossfader), so the strip can show each deck as it goes out | Needed to draw each source after its ducking |
 
 ## Milestone plan (estimates)
 
@@ -419,7 +449,9 @@ deploy on 2026-10-20.
 | 18 | 2026-10-20 | `7c1803a` | The player on the Android phone: `App::asset()` tags scripts and styles by content (the phone had kept an old `player.js`); `player.js` gets the sound engine watchdog, logs engine state, page hidden/shown and deck waits, uses `latencyHint: "playback"`, and no longer hangs on Listen behind a lock screen (resume waits 2 s at most); `player_browser_test.mjs` 20 checks (a frozen-engine part; live pieces made beforehand and sent on a fixed beat, which explains the earlier "song deck under a live show": the show had timed out); new `player_phone_test.mjs` (10, passes on the phone); `web_test.php` checks the content tags; deployed; all tests pass on Laragon, the server and the phone |
 | 19 | 2026-10-20 | `6ec17ca` | Docs brought up to date: `README.md` (status, the app, `tools/`, how it works now), the handover's file list (`App`, the app's milestone), the build-out progress in `docs/POC-PLAN.md`, the project map. No code changes |
 | 20 | 2026-10-20 | `0171ccb` | Presenter notes for listeners: `Notes` (rules per kind, post / remove for the studio, the listeners' view, `rev()`), `api/notes.php`, `notes_rev` in `api/timeline.php`, `Planner::db()`, the "From the presenter" panel (`views/player.php`, `assets/notes.js`, styles; notes appear at the listener delay), `.htaccess` no-store for `notes.php`; tests `notes_test.php` (44), `player_browser_test.mjs` 26 (notes part), `web_test.php` 95 / 40, note commands in `browser_helper.php`; the long silent sample song removed from Laragon's library (it broke crossfade checks); deployed; all tests pass on Laragon and the server |
-| 21 | 2026-10-20 | this round's commit | The live studio: `Studio` (who may go live when, show ownership, notes, running order, library search), `StudioPage` (`/studio` and `/studio/api/*`), `views/studio.php`, `assets/studio.js` (clock, decks with waveforms, mixer, encoder and piece upload, running order, notes drawer), `assets/studio-mic.js` (the POC's mic chain), studio styles; schema version 2 (`running_orders`) with `Schema::upgrade`/`ensure` and `cli/upgrade.php` (run by the deploy script); "Studio" in the header and "Open the studio" on the overview; tests `studio_test.php` (61), `studio_browser_test.mjs` (43, fake mic), `web_test.php` 113 / 43, studio commands in `browser_helper.php`; **found and fixed**: the crossfade was driven by screen frames and stalled when the page wasn't drawn (the sound engine runs fades now), and Go live showed "Joining…" only after Deck A had loaded; deployed (server upgraded to schema 2); all tests pass on Laragon (the studio test 3 runs in a row) and the server; then, with the user's OK, one minute live on the test server as the admin: 10 pieces, no errors, a listener tab 20.0 s behind with no dropouts |
+| 21 | 2026-10-20 | `053f8c1` | The live studio: `Studio` (who may go live when, show ownership, notes, running order, library search), `StudioPage` (`/studio` and `/studio/api/*`), `views/studio.php`, `assets/studio.js` (clock, decks with waveforms, mixer, encoder and piece upload, running order, notes drawer), `assets/studio-mic.js` (the POC's mic chain), studio styles; schema version 2 (`running_orders`) with `Schema::upgrade`/`ensure` and `cli/upgrade.php` (run by the deploy script); "Studio" in the header and "Open the studio" on the overview; tests `studio_test.php` (61), `studio_browser_test.mjs` (43, fake mic), `web_test.php` 113 / 43, studio commands in `browser_helper.php`; **found and fixed**: the crossfade was driven by screen frames and stalled when the page wasn't drawn (the sound engine runs fades now), and Go live showed "Joining…" only after Deck A had loaded; deployed (server upgraded to schema 2); all tests pass on Laragon (the studio test 3 runs in a row) and the server; then, with the user's OK, one minute live on the test server as the admin: 10 pieces, no errors, a listener tab 20.0 s behind with no dropouts |
+| 22 | 2026-10-20 | with round 23 | The **output waveform** prototype (an artifact, not in the app yet): the wet mix scrolling right to left past a centred "now", one colour per source (song A blue, song B pink, voice yellow, final output a white line), measured left of now and the plan to the right, with crossfade, ducking and voice compressor controls and events marked; songs loaded into it are prepared with the app's own `prep-core.js` (trimmed, levelled to −16 LUFS, as on upload; a switch turns it off), and an "Actual size in the player" copy of the player window shows the strip at 470 px wide and 60 px high, one column per screen pixel, with its own time span (10 s by default; the user asked for twice the first 30 px and a bit more detail), and level lines at −1 (dashed amber: song prep's peak ceiling and where the limiter starts), −6, −12 and −20 dB (−40 on the decibel scale) in both views, labelled in dB on either scale (the user: the levels show the best peak and how far to raise the volume); the lines are faint on purpose (white at 10 %, the −1 dB line amber at 35 %: "barely visible, but visible"); **found and fixed**: the browser tests and `tools/shot.mjs` left headless Edge running after each run (still playing sound), because `msedge.exe` hands over to the real browser and exits, so `proc.kill()` missed it; they now close Edge over its debug port and then end anything still using the test profile (`upload_browser_test.mjs` and `studio_browser_test.mjs` pass on Laragon and leave nothing running); the user's test album measured (see Current status) |
+| 23 | 2026-10-20 | this round's commit | The **output strip in the app** (design final, see `design/DESIGN.md` "Output strip"): shared `assets/outwave.js` (10 ms columns, the mix-ahead renderer, the canvas strip with faint level lines and event marks) and `assets/outwave-meter.js` (the AudioWorklet meter); **player**: a 60 px strip under the display (10 s span), a mix bus before the volume so the listener's volume doesn't change it, the look-ahead reading song pieces (new `pieces` on song entries near now in `api/timeline.php`) and live pieces (an hls.js loader that keeps a copy); **studio**: a strip above the decks (toggle, drag handle, 20 s span), per-deck ducking, a fade plan so the mix ahead follows Fade to A/B, coloured source dots on the decks and the mic; source colours as tokens in `app.css`; the prototype copied to `design/output-waveform.html`; tests: `player_browser_test.mjs` 33 / 18 listen-only (the strip measures in the sound engine, reads 20 s ahead, what it mixed ahead matches what went out within 1 dB, songs aren't downloaded twice, colours drawn; live pieces), `studio_browser_test.mjs` 54 (the same through a crossfade, toggle, height), `web_test.php` 116 / 46 (pieces near now, a piece as a byte range); **found and fixed**: the studio section's id clashed with the headphones label (`stOut`), and the studio's plan went stale after a click until the next tick, and the player test's cache check counted the look-ahead's first read of the next song as a second download (it now counts each file's bytes from the browser's network log: each file came once); deployed; all tests pass on Laragon and the server; `player_phone_test.mjs` not run this round (the phone wasn't connected) |
 
 ## Open issues
 
@@ -467,6 +499,13 @@ deploy on 2026-10-20.
   themselves "now" (only songs do, when they start on a deck).
 - The **signed-in** web checks run only on Laragon. On the server they're covered by `auth_test.php`
   and the public web checks.
+- **`player_phone_test.mjs` hasn't run since the output strip** went into the player (round 23; the
+  phone wasn't connected). Run it when the phone is plugged in and unlocked.
+- The **output strip** in the player reads the songs' pieces ahead from the browser's cache; with a
+  browser that keeps no cache (private windows on some phones) the songs' bytes would come twice.
+  Not seen in the tests (each file came over the network once). The studio's strip shows its mix
+  ahead only for the decks and the mic as they stand; a song loaded later or a mic switched on appears
+  when it happens.
 - `design/skins/make_green_skin.py` still expects the original `wordwave-*.html` file names.
 - **Locked Android phone: a short gap about every minute.** The Xiaomi freezes the Web Audio clock
   about every 60 s while the screen is locked; the watchdog brings it back in about 0.5 s. A listener

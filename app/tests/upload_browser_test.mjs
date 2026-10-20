@@ -3,7 +3,7 @@
 // checked (levelled, trimmed, tags kept, duplicates caught, fallbacks for silent and fake files).
 //   node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app
 // Needs SW_PHP (php.exe) unless php is on PATH. Signs in a throwaway account: not for a public server.
-import { spawn, execFileSync } from "node:child_process";
+import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -133,7 +133,16 @@ try {
     console.log(`Cleanup: throwaway manager and test songs removed${r.hidden ? ` (${r.hidden} on air, hidden)` : ""}`);
   }
   try { ws && ws.close(); } catch { /* closed */ }
+  // msedge.exe hands over to the real browser and exits, so proc.kill() alone leaves Edge running
+  // (still playing sound): close it over its debug port, then end anything still using this profile
+  try {
+    const b = new WebSocket((await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()).webSocketDebuggerUrl);
+    await new Promise((ok, bad) => { b.onopen = ok; b.onerror = bad; });
+    b.send(JSON.stringify({ id: 1, method: "Browser.close" }));
+    await new Promise((r) => setTimeout(r, 1000));
+  } catch { /* already closed */ }
   proc.kill();
+  spawnSync("powershell", ["-NoProfile", "-Command", `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*${profile}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`], { stdio: "ignore" });
   await sleep(500);
   for (const d of [dir, profile]) { try { rmSync(d, { recursive: true, force: true }); } catch { /* still locked */ } }
 }

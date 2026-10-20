@@ -4,6 +4,8 @@
 // Going live: the planner cuts the AutoDJ at the next piece boundary; Deck A picks up that song
 // exactly where the AutoDJ is, so listeners hear no change until the DJ fades it down.
 // The DJ hears the music bus (plus any deck on Cue); the mic is never played back to them.
+// Above the decks, the output strip (outwave.js) shows the program bus going out: measured left of
+// now, and to the right the coming seconds, mixed ahead from the decks' songs through the crossfader.
 // window.SwStudio.state() is for the browser test.
 (() => {
   "use strict";
@@ -64,6 +66,7 @@
   let encoder = null, splitter = null, pieceFrames = [], pieceSamples = 0, seq = 0, armedAt = null;
   const queue = []; let sending = false, sentCount = 0, lastSentAt = null, sendErrors = 0, lastError = null;
   let wake = null, order = { scope: null, items: [], editable: false }, nowItem = -1;
+  let wave = null, wavePlan = null, fadePlan = null; const waveMarks = [];
 
   // ---- Decks: a decoded song played from an AudioBuffer, with a waveform ----------------------
   class Deck {
@@ -72,9 +75,9 @@
       this.peaks = null; this.loading = false; this.token = 0; this.cue = false; this.orderIndex = -1;
     }
     wire() {
-      this.vol = ctx.createGain(); this.xf = ctx.createGain(); this.cueGain = ctx.createGain();
+      this.vol = ctx.createGain(); this.xf = ctx.createGain(); this.duck = ctx.createGain(); this.cueGain = ctx.createGain();
       this.vol.gain.value = Number($("v" + this.name).value) / 100; this.cueGain.gain.value = 0;
-      this.vol.connect(this.xf).connect(musicBus);
+      this.vol.connect(this.xf).connect(this.duck).connect(musicBus); // duck: the ducker, per deck, so the output strip sees each deck's share
       this.vol.connect(this.cueGain).connect(ctx.destination); // Cue: headphones only, before the crossfader
     }
     get playing() { return !!this.src; }
@@ -110,7 +113,7 @@
       src.onended = () => { if (this.src === src) { this.src = null; this.offset = this.buf ? this.buf.duration : 0; state(this.name, "Ready"); controls(); } };
       src.start(when, Math.max(0, from));
       this.src = src; this.startedAt = when; this.offset = Math.max(0, from);
-      state(this.name, "Playing");
+      state(this.name, "Playing"); planAhead();
       if (this.orderIndex >= 0) { nowItem = this.orderIndex; renderOrder(); }
       controls();
     }
@@ -118,6 +121,7 @@
     stop(keep = false) {
       if (this.src) { const s = this.src; this.src = null; try { s.onended = null; s.stop(); } catch (_) {} }
       if (!keep) { this.offset = 0; if (this.buf) state(this.name, "Ready"); }
+      planAhead();
     }
     seek(sec) { const was = this.playing; this.stop(true); this.offset = Math.max(0, Math.min(sec, this.duration)); if (was) this.play(this.offset); }
   }
@@ -208,6 +212,10 @@ registerProcessor("sw-tap", SwTap);`;
       const silent = ctx.createGain(); silent.gain.value = 0;
       programBus.connect(tap).connect(silent).connect(ctx.destination);
       tap.port.onmessage = (e) => onPcm(e.data);
+      if (window.SwOutWave) {
+        SwOutWave.meter(ctx, [decks.A.duck, decks.B.duck, micOnAir, programBus], root.dataset.meter)
+          .then((m) => { wave = m; log("output meter " + m.kind); }).catch((e) => log("output meter: " + e.message));
+      }
       try { await useMic(savedMic().device); } catch (e) { if (e.name === "NotAllowedError") throw e; await useMic(""); } // that mic is gone: use the default
       await listDevices();
       on = true; powering = false;
@@ -230,7 +238,9 @@ registerProcessor("sw-tap", SwTap);`;
     chain = next;
     applyMicUi();
     chain.output.connect(micOnAir);
-    ducker = SwMic.createDucker(ctx, musicBus, chain, () => talk);
+    // the ducker turns both decks' duck stages down together
+    const both = (f) => [decks.A.duck.gain, decks.B.duck.gain].forEach(f);
+    ducker = SwMic.createDucker(ctx, { gain: { cancelScheduledValues: (t) => both((g) => g.cancelScheduledValues(t)), setTargetAtTime: (v, t, c) => both((g) => g.setTargetAtTime(v, t, c)) } }, chain, () => talk);
   }
 
   async function listDevices() {
@@ -253,6 +263,7 @@ registerProcessor("sw-tap", SwTap);`;
     const p = (v + 100) / 200, t = ctx.currentTime;
     decks.A.xf.gain.setTargetAtTime(Math.cos(p * Math.PI / 2), t, 0.01);
     decks.B.xf.gain.setTargetAtTime(Math.sin(p * Math.PI / 2), t, 0.01);
+    setTimeout(planAhead, 60); // once the crossfader has settled
   }
   /**
    * Fade across to the other deck over `sec` seconds; it starts if loaded, the old one stops. The
@@ -267,6 +278,7 @@ registerProcessor("sw-tap", SwTap);`;
     for (let i = 0; i < n; i++) { const p = (from + (to - from) * i / (n - 1) + 100) / 200; a[i] = Math.cos(p * Math.PI / 2); b[i] = Math.sin(p * Math.PI / 2); }
     decks.A.xf.gain.setValueCurveAtTime(a, t, sec);
     decks.B.xf.gain.setValueCurveAtTime(b, t, sec);
+    fadePlan = { t, sec, a, b }; mark(t, target.name); mark(t + sec, target.name); planAhead();
     const t0 = performance.now();
     fading = setInterval(() => {
       const p = Math.min(1, (performance.now() - t0) / (sec * 1000));
@@ -278,6 +290,7 @@ registerProcessor("sw-tap", SwTap);`;
   /** Stop a running fade where it is (the DJ grabbed the crossfader). */
   function stopFade() {
     if (fading) { clearInterval(fading); fading = null; }
+    fadePlan = null;
     if (!ctx) return;
     const t = ctx.currentTime;
     for (const d of [decks.A, decks.B]) {
@@ -289,8 +302,81 @@ registerProcessor("sw-tap", SwTap);`;
     talk = v;
     $("talk").setAttribute("aria-pressed", String(talk));
     $("talk").textContent = talk ? "Mic live · tap to close" : "Mic on air";
-    if (micOnAir) micOnAir.gain.setTargetAtTime(talk ? 1 : 0, ctx.currentTime, 0.02);
+    if (micOnAir) { micOnAir.gain.setTargetAtTime(talk ? 1 : 0, ctx.currentTime, 0.02); mark(ctx.currentTime, "mic"); }
     log("mic " + (talk ? "on air" : "off"));
+  }
+
+  // ---- Output strip: what goes out, measured and (to the right of now) mixed ahead -------------
+  const WAVE_AHEAD = 12;
+  const tok = (n) => getComputedStyle(root).getPropertyValue(n).trim();
+  const WAVE_COLORS = [tok("--src-a"), tok("--src-b"), tok("--src-live"), tok("--src-out")];
+  const waveCols = { A: WAVE_COLORS[0], B: WAVE_COLORS[1], mic: WAVE_COLORS[2] };
+  function mark(t, what) { waveMarks.push({ t, color: waveCols[what] }); if (waveMarks.length > 40) waveMarks.shift(); }
+  /** Deck k's crossfader gain at context time t: a running fade's curve, else where it is now. */
+  function xfAt(k, t) {
+    const f = fadePlan;
+    if (f && t >= f.t) {
+      const arr = k === "A" ? f.a : f.b, x = (t - f.t) / f.sec;
+      if (x >= 1) return arr[arr.length - 1];
+      const p = x * (arr.length - 1), i = Math.floor(p);
+      return arr[i] + (arr[Math.min(arr.length - 1, i + 1)] - arr[i]) * (p - i);
+    }
+    return decks[k].xf.gain.value;
+  }
+  /** The coming seconds: each playing deck's song through its volume, the crossfader and the ducking now. */
+  function planAhead() {
+    if (!on || !ctx || !window.SwOutWave) return;
+    const now = ctx.currentTime, src = [];
+    ["A", "B"].forEach((k, slot) => {
+      const d = decks[k], b = d.buf;
+      if (!d.playing || !b) return;
+      src.push({ slot, rate: b.sampleRate, start: d.startedAt - d.offset, ch: [b.getChannelData(0), b.numberOfChannels > 1 ? b.getChannelData(1) : b.getChannelData(0)],
+        gain: (t) => d.vol.gain.value * xfAt(k, t) * d.duck.gain.value });
+    });
+    wavePlan = SwOutWave.render(src, now, now + WAVE_AHEAD, 4);
+  }
+  const outStrip = window.SwOutWave ? SwOutWave.strip($("stOutCv"), {
+    colors: WAVE_COLORS,
+    measured: () => (wave ? wave.cols : null),
+    plan: () => wavePlan,
+    now: () => { if (!ctx) return 0; const ts = ctx.getOutputTimestamp ? ctx.getOutputTimestamp() : null; return ts && ts.contextTime > 0 ? ts.contextTime : ctx.currentTime; },
+    span: () => 20,
+    marks: () => waveMarks,
+  }) : null;
+  // shown or hidden, and its height, are remembered on this computer
+  const savedWave = () => { try { return JSON.parse(localStorage.getItem("sw.studio.wave") || "{}"); } catch (_) { return {}; } };
+  const saveWave = (patch) => { try { localStorage.setItem("sw.studio.wave", JSON.stringify({ ...savedWave(), ...patch })); } catch (_) {} };
+  function showWave(open) {
+    $("stOutWin").classList.toggle("closed", !open);
+    $("stOutBox").hidden = !open;
+    $("stOutTg").setAttribute("aria-expanded", String(open));
+    $("stOutTg").title = open ? "Hide what goes out" : "Show what goes out";
+    if (open && outStrip) outStrip.draw();
+  }
+  function waveHeight(px) {
+    const h = Math.round(Math.max(30, Math.min(240, px)));
+    $("stOutCv").style.height = h + "px";
+    $("stOutGrip").setAttribute("aria-valuenow", String(h));
+    if (outStrip) outStrip.draw();
+    return h;
+  }
+  function wireWave() {
+    const s = savedWave();
+    waveHeight(s.height || 50); showWave(s.open !== false);
+    $("stOutTg").onclick = () => { const open = $("stOutBox").hidden; showWave(open); saveWave({ open }); };
+    const grip = $("stOutGrip");
+    grip.onpointerdown = (e) => {
+      e.preventDefault(); grip.setPointerCapture(e.pointerId);
+      const y0 = e.clientY, h0 = $("stOutCv").getBoundingClientRect().height;
+      grip.onpointermove = (m) => waveHeight(h0 + m.clientY - y0);
+      grip.onpointerup = grip.onpointercancel = () => { grip.onpointermove = grip.onpointerup = grip.onpointercancel = null; saveWave({ height: waveHeight($("stOutCv").getBoundingClientRect().height) }); };
+    };
+    grip.onkeydown = (e) => {
+      const step = e.key === "ArrowDown" ? 10 : e.key === "ArrowUp" ? -10 : 0;
+      if (!step) return;
+      e.preventDefault(); saveWave({ height: waveHeight($("stOutCv").getBoundingClientRect().height + step) });
+    };
+    if (outStrip) outStrip.start();
   }
 
   // ---- Microphone strip ---------------------------------------------------------------------
@@ -741,7 +827,7 @@ registerProcessor("sw-tap", SwTap);`;
   }
 
   // ---- Wiring ---------------------------------------------------------------------------------
-  buildChainUi(); applyMicUi();
+  buildChainUi(); applyMicUi(); wireWave();
   $("stPower").onclick = powerOn;
   $("stGo").onclick = () => (live ? (live.sending ? askEnd() : null) : goLive());
   $("xf").oninput = (e) => { setXf(Number(e.target.value)); controls(); };
@@ -782,6 +868,7 @@ registerProcessor("sw-tap", SwTap);`;
     setInterval(() => clock.fetch().then(preloadOnAir).catch(() => {}), 3000);
     setInterval(refresh, 5000);
     setInterval(ui, 200);
+    setInterval(planAhead, 500);
     ui();
   })();
 
@@ -794,7 +881,16 @@ registerProcessor("sw-tap", SwTap);`;
         drift: decks[k].handover && decks[k].playing ? decks[k].position() - (clock.now() - decks[k].handover.start) : null }])),
       events: events.slice(-60),
       serverNow: clock.now(),
+      wave: { meter: wave ? wave.kind : null, ahead: wavePlan && ctx ? +((wavePlan.i0 + wavePlan.n) * SwOutWave.STEP - ctx.currentTime).toFixed(1) : null,
+        open: !$("stOutBox").hidden, height: Math.round($("stOutCv").getBoundingClientRect().height) },
     }),
     powerOn, goLive, end: () => endShow(),
+    // the output strip, for tests: context time now, and the highest peaks (A, B, mic, output)
+    // measured or planned between two context times
+    wave: {
+      now: () => (ctx ? ctx.currentTime : null),
+      measured: (t0, t1) => (wave ? SwOutWave.range(wave.cols, t0, t1) : null),
+      planned: (t0, t1) => (wavePlan ? SwOutWave.range(wavePlan, t0, t1) : null),
+    },
   };
 })();

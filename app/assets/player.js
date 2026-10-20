@@ -2,7 +2,9 @@
 // so all devices hear the same moment and live pieces have time to arrive. Songs play on two
 // decks with real crossfades (proven in P2); live shows come from the HLS stream on a third deck
 // held at the same delay (P1's lock), faded against the song decks. Browsers without Web Audio,
-// or ?mode=stream, get the stream alone at the same delay. window.SwPlayer exposes state for tests.
+// or ?mode=stream, get the stream alone at the same delay. Under the display, the output strip
+// (outwave.js) shows what goes out: measured left of now, and to the right the coming output, which
+// the player mixes from audio it reads about 20 s ahead. window.SwPlayer exposes state for tests.
 (() => {
   "use strict";
   const root = document.getElementById("player");
@@ -102,7 +104,18 @@
       if (!window.Hls) await loadScript(BASE + "assets/vendor/hls.min.js").catch(() => null);
       if (!this.active) return;
       if (window.Hls && Hls.isSupported()) {
-        this.hls = new Hls({ liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 6, lowLatencyMode: false });
+        // hls.js's own loader, keeping a copy of each piece (about 20 s before it is heard) for the
+        // output strip's look-ahead; hls.js hands the original to its worker
+        const Base = Hls.DefaultConfig.loader;
+        class Keep extends Base {
+          load(context, config, callbacks) {
+            super.load(context, config, { ...callbacks, onSuccess: (res, stats, ctx, net) => {
+              if (ctx.frag && res.data instanceof ArrayBuffer) ahead.live({ frag: ctx.frag, payload: res.data.slice(0) });
+              callbacks.onSuccess(res, stats, ctx, net);
+            } });
+          }
+        }
+        this.hls = new Hls({ liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 6, lowLatencyMode: false, fLoader: Keep });
         this.hls.on(Hls.Events.ERROR, (_, d) => {
           if (d.details === "bufferStalledError") player.dropout();
           if (d.fatal) (d.type === Hls.ErrorTypes.MEDIA_ERROR ? this.hls.recoverMediaError() : this.hls.startLoad());
@@ -163,7 +176,7 @@
 
   // ---- The player ----------------------------------------------------------------------------
   const player = {
-    on: false, ctx: null, master: null, analyser: null, decks: [], stream: null, started: new Set(), tries: new Map(),
+    on: false, ctx: null, mix: null, master: null, analyser: null, wave: null, decks: [], stream: null, started: new Set(), tries: new Map(),
     drops: 0, lastDrop: 0, engineAt: null, nudges: 0, nudging: false, volume: 0.8, timers: [], status: "Ready", lastKey: null, events: [],
     /** The last 40 things the player did, with the heard time (for tests and support). */
     log(what) { this.events = [...this.events, ((clock.last ? this.heard() : 0) % 1000).toFixed(1) + " " + what].slice(-40); },
@@ -180,15 +193,23 @@
         this.master = this.ctx.createGain(); this.master.gain.value = this.volume;
         this.analyser = this.ctx.createAnalyser(); this.analyser.fftSize = 256;
         this.master.connect(this.analyser); this.master.connect(this.ctx.destination);
+        this.mix = this.ctx.createGain(); this.mix.connect(this.master); // the station's output, before the listener's volume
         // a phone can suspend (or "interrupt") the sound engine, e.g. with the screen locked: say so and ask it back
         this.ctx.onstatechange = () => {
           const st = this.ctx && this.ctx.state;
           this.log("sound engine " + st + (document.hidden ? " (page hidden)" : ""));
           if (this.on && st && st !== "running" && st !== "closed") this.ctx.resume().catch(() => {});
         };
-        this.decks = [new Deck(this.ctx, this.master, "A"), new Deck(this.ctx, this.master, "B")];
+        this.decks = [new Deck(this.ctx, this.mix, "A"), new Deck(this.ctx, this.mix, "B")];
       }
-      this.stream = new StreamDeck(this.ctx, this.master);
+      this.stream = new StreamDeck(this.ctx, this.mix);
+      if (this.ctx && window.SwOutWave) {
+        const ctx = this.ctx;
+        ahead.reset();
+        SwOutWave.meter(ctx, [this.decks[0].gainNode, this.decks[1].gainNode, this.stream.gainNode, this.mix], root.dataset.meter)
+          .then((m) => { if (this.ctx === ctx) this.wave = m; else m.stop(); }).catch((e) => this.log("output meter: " + e.message));
+        if (strip) strip.start();
+      }
       try {
         for (let i = 0; i < 3; i++) await clock.fetch();
       } catch (e) {
@@ -200,6 +221,7 @@
         setInterval(() => this.tick(), 100),
         setInterval(() => clock.fetch().then(() => this.online()).catch(() => this.offline()), 2000),
         setInterval(() => this.stream && this.stream.lock(), 500),
+        setInterval(() => ahead.tick(), 500),
       ];
       this.setPlaying(true); this.setStatus("Playing");
       draw();
@@ -211,6 +233,9 @@
       this.timers.forEach(clearInterval); this.timers = [];
       this.decks.forEach((d) => d.unload()); this.decks = [];
       if (this.stream) { this.stream.stop(); this.stream = null; }
+      if (this.wave) { this.wave.stop(); this.wave = null; }
+      ahead.reset();
+      if (strip) strip.stop();
       if (this.ctx) { this.ctx.close().catch(() => {}); this.ctx = null; }
       this.setStatus("Stopped"); this.setPlaying(false);
     },
@@ -380,9 +405,143 @@
         events: this.events, hidden: document.hidden,
         engine: this.ctx ? { state: this.ctx.state, time: +this.ctx.currentTime.toFixed(2) } : null,
         stream: this.stream ? { active: this.stream.active, locked: this.stream.locked, gain: +this.stream.gain.toFixed(3), lag: this.stream.lag, native: this.stream.native } : null,
+        wave: this.ctx ? {
+          meter: this.wave ? this.wave.kind : null,
+          ahead: ahead.plan ? +((ahead.plan.i0 + ahead.plan.n) * SwOutWave.STEP - this.ctx.currentTime).toFixed(1) : null,
+          pieces: [...ahead.pieces.values()].filter(Boolean).length, live: [...ahead.pieces.keys()].filter((k) => k.startsWith("live#")).length,
+          bytes: ahead.bytes,
+        } : null,
       };
     },
   };
+
+  // ---- Look-ahead: the coming output, mixed from audio read about 20 s ahead -------------------
+  // For the output strip's right half the player reads what it will play next itself: the song
+  // pieces the timeline lists (the byte ranges the stream serves) and the live pieces hls.js has
+  // already loaded. It decodes them and mixes them through the same fades tick() will play.
+  const AHEAD = 20;
+  const fadeOf = (e) => (e.type === "song" ? Math.max(0.3, Math.min(e.fade_out, (e.full || e.play) - e.play + 0.001)) : 0.5);
+  const ahead = {
+    pieces: new Map(), loading: 0, plan: null, dirty: true, renderedAt: 0, bytes: 0,
+    reset() { this.pieces.clear(); this.plan = null; this.dirty = true; },
+    /** The gain entry i of the list will have at timeline time t: tick()'s handover curves. */
+    gain(list, i, t) {
+      const e = list[i], prev = list[i - 1], next = list[i + 1];
+      if (t < e.start) return 0;
+      let g = 1;
+      if (prev && prev.end > e.start - 0.05) { const x = (t - e.start) / fadeOf(prev); if (x < 1) g = Math.sin(x * Math.PI / 2); }
+      if (next) { if (t >= next.start) { const x = (t - next.start) / fadeOf(e); g *= x >= 1 ? 0 : Math.cos(x * Math.PI / 2); } }
+      else if (!(e.type === "live" && e.open) && t > e.end) g = 0;
+      return g;
+    },
+    /** Which strip colour each entry gets: its deck (A or B), the next song the other deck, live 2. */
+    slots(list) {
+      const out = new Map();
+      let last = null;
+      for (const e of list) {
+        if (e.type === "live") { out.set(key(e), 2); continue; }
+        const d = player.deckFor(e), s = d ? player.decks.indexOf(d) : last === null ? 0 : 1 - last;
+        out.set(key(e), s); last = s;
+      }
+      return out;
+    },
+    /** Each song entry's pieces as [id, timeline start, seconds, byte offset, byte length]. */
+    piecesOf(e) {
+      let t = e.start;
+      return (e.pieces || []).map(([off, len, sec], n) => { const p = [e.url + "#" + n, t, sec, off, len]; t += sec; return p; });
+    },
+    tick() {
+      if (!player.on || !player.ctx || !clock.last || !window.SwOutWave) return;
+      const h = player.heard();
+      for (const e of clock.last.entries) {
+        if (e.type !== "song" || !e.pieces || e.end + fadeOf(e) < h - 1 || e.start > h + AHEAD) continue;
+        for (const [id, from, sec, off, len] of this.piecesOf(e)) {
+          if (from + sec < h - 1 || from > h + AHEAD || this.pieces.has(id) || this.loading >= 2) continue;
+          this.pieces.set(id, null); this.loading++;
+          this.read(e.url, off, len).then((ch) => { this.pieces.set(id, { ch }); this.dirty = true; })
+            .catch(() => this.pieces.delete(id)).finally(() => this.loading--);
+        }
+      }
+      if (this.dirty || performance.now() - this.renderedAt > 2000) this.render();
+    },
+    /** One piece of a song file, decoded (a byte range on MP3 frame boundaries, as the stream serves). */
+    async read(url, off, len) {
+      const res = await fetch(new URL(url, BASE).href, { headers: { Range: `bytes=${off}-${off + len - 1}` } });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      let bytes = await res.arrayBuffer();
+      this.bytes += bytes.byteLength;
+      if (res.status === 200) bytes = bytes.slice(off, off + len); // the whole file came back
+      const b = await player.ctx.decodeAudioData(bytes);
+      return [b.getChannelData(0), b.numberOfChannels > 1 ? b.getChannelData(1) : b.getChannelData(0)];
+    },
+    /** A live piece hls.js has loaded (about 20 s before it is heard): decode a copy. */
+    live(d) {
+      const f = d.frag, ctx = player.ctx;
+      if (!ctx || !f || !d.payload || !d.payload.byteLength || !f.programDateTime) return;
+      const id = "live#" + f.programDateTime;
+      if (this.pieces.has(id)) return;
+      this.pieces.set(id, null);
+      ctx.decodeAudioData(d.payload.slice(0)).then((b) => {
+        this.pieces.set(id, { tl: f.programDateTime / 1000, ch: [b.getChannelData(0), b.numberOfChannels > 1 ? b.getChannelData(1) : b.getChannelData(0)] });
+        this.dirty = true;
+      }).catch(() => this.pieces.delete(id));
+    },
+    /** Mix the next AHEAD seconds from the pieces read so far, through the planned fades. */
+    render() {
+      const ctx = player.ctx;
+      if (!ctx || !clock.last) return;
+      const list = clock.last.entries, hNow = player.heard(), cNow = ctx.currentTime, rate = ctx.sampleRate;
+      const toCtx = (tl) => cNow + (tl - hNow), toTl = (ct) => hNow + (ct - cNow);
+      const slots = this.slots(list), src = [], keep = new Set();
+      list.forEach((e, i) => {
+        if (e.type !== "song" || !e.pieces) return;
+        // a song already playing is placed by its deck's own position (it may run up to 0.3 s off)
+        const d = player.deckFor(e), shift = d && d.playing ? (cNow - d.el.currentTime) - toCtx(e.start) : 0;
+        for (const [id, from, sec] of this.piecesOf(e)) {
+          if (from + sec < hNow - 1 || from > hNow + AHEAD + 1) continue;
+          keep.add(id);
+          const p = this.pieces.get(id);
+          if (p) src.push({ slot: slots.get(key(e)), ch: p.ch, rate, start: toCtx(from) + shift, gain: (ct) => this.gain(list, i, toTl(ct)) });
+        }
+      });
+      const lives = list.map((e, i) => (e.type === "live" ? i : -1)).filter((i) => i >= 0);
+      for (const [id, p] of this.pieces) {
+        if (!id.startsWith("live#") || !p) continue;
+        if (p.tl + 10 < hNow - 1) continue;
+        keep.add(id);
+        if (lives.length) src.push({ slot: 2, ch: p.ch, rate, start: toCtx(p.tl), gain: (ct) => { const t = toTl(ct); let g = 0; for (const i of lives) g = Math.max(g, this.gain(list, i, t)); return g; } });
+      }
+      for (const [id, p] of [...this.pieces]) if (p && !keep.has(id)) this.pieces.delete(id);
+      this.plan = SwOutWave.render(src, cNow, cNow + AHEAD, 4);
+      this.dirty = false; this.renderedAt = performance.now();
+    },
+  };
+
+  // ---- The output strip ---------------------------------------------------------------------------
+  const outNow = () => {
+    const c = player.ctx;
+    if (!c) return 0;
+    const ts = c.getOutputTimestamp ? c.getOutputTimestamp() : null;
+    return ts && ts.contextTime > 0 ? ts.contextTime : c.currentTime;
+  };
+  const waveCv = $("lpWave"), tok = (n) => getComputedStyle(root).getPropertyValue(n).trim();
+  const COLORS = [tok("--src-a"), tok("--src-b"), tok("--src-live"), tok("--src-out")];
+  const strip = waveCv && window.SwOutWave && !STREAM_ONLY ? SwOutWave.strip(waveCv, {
+    colors: COLORS,
+    measured: () => (player.wave ? player.wave.cols : null),
+    plan: () => ahead.plan,
+    now: outNow,
+    span: () => 10,
+    // where each entry starts (a handover), in its colour
+    marks: () => {
+      const c = player.ctx, tl = clock.last;
+      if (!c || !tl) return [];
+      const hNow = player.heard(), cNow = c.currentTime, slots = ahead.slots(tl.entries);
+      return tl.entries.filter((e) => Math.abs(e.start - hNow) < 8).map((e) => ({ t: cNow + (e.start - hNow), color: COLORS[slots.get(key(e))] }));
+    },
+  }) : null;
+  if (waveCv && STREAM_ONLY) waveCv.hidden = true;
+  if (strip) strip.draw();
 
   // ---- Screen ----------------------------------------------------------------------------------
   let shownKey = null;
@@ -448,5 +607,14 @@
   clock.fetch().then(() => { const tl = clock.last, h = clock.now() - DELAY; const i = tl.entries.findIndex((e) => e.start <= h && (h < e.end || (e.type === "live" && e.open))); show(tl.entries[i] || null, tl.entries[i + 1] || null, h, tl.entries); }).catch(() => {});
   setInterval(() => { if (!player.on && clock.last) { const tl = clock.last, h = clock.now() - DELAY; const i = tl.entries.findIndex((e) => e.start <= h && (h < e.end || (e.type === "live" && e.open))); show(tl.entries[i] || null, tl.entries[i + 1] || null, h, tl.entries); } }, 1000);
   setInterval(() => { if (!player.on) clock.fetch().catch(() => {}); }, 10000);
-  window.SwPlayer = { start: () => player.start(), stop: () => player.stop(), state: () => player.state(), serverNow: () => (clock.last ? clock.now() : null) };
+  window.SwPlayer = {
+    start: () => player.start(), stop: () => player.stop(), state: () => player.state(), serverNow: () => (clock.last ? clock.now() : null),
+    // the output strip, for tests: context time now, and the highest peaks (A, B, live, output)
+    // measured or planned between two context times
+    wave: {
+      now: () => (player.ctx ? player.ctx.currentTime : null),
+      measured: (t0, t1) => (player.wave ? SwOutWave.range(player.wave.cols, t0, t1) : null),
+      planned: (t0, t1) => (ahead.plan ? SwOutWave.range(ahead.plan, t0, t1) : null),
+    },
+  };
 })();

@@ -4,7 +4,7 @@
 //   node tools/shot.mjs shots http://localhost:8080/stationwagon-app 1280 --signin admin@stationwagon.test pw.txt manage manage/library
 // The password is read from a file (first line) so it never sits on the command line.
 // Files are named after the path and width, e.g. manage_library-1280.png.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -81,7 +81,16 @@ try {
   }
 } finally {
   ws.close();
+  // msedge.exe hands over to the real browser and exits, so proc.kill() alone leaves Edge running
+  // (still playing sound): close it over its debug port, then end anything still using this profile
+  try {
+    const b = new WebSocket((await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()).webSocketDebuggerUrl);
+    await new Promise((ok, bad) => { b.onopen = ok; b.onerror = bad; });
+    b.send(JSON.stringify({ id: 1, method: "Browser.close" }));
+    await new Promise((r) => setTimeout(r, 1000));
+  } catch { /* already closed */ }
   proc.kill();
+  spawnSync("powershell", ["-NoProfile", "-Command", `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*${profile}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`], { stdio: "ignore" });
   await new Promise((x) => setTimeout(x, 500));
   try { rmSync(profile, { recursive: true, force: true }); } catch { /* still locked */ }
 }

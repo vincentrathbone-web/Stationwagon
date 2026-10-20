@@ -2,7 +2,7 @@
 /** @var array $station @var array $me @var string $csrf @var int $delay */
 $deck = fn(string $k): string => '
   <section class="st-win st-deck" id="deck' . $k . '" aria-label="Deck ' . $k . '">
-    <div class="st-titlebar"><span>Deck ' . $k . '</span><span class="st-state" id="st' . $k . '">Empty</span></div>
+    <div class="st-titlebar"><span><i class="st-dot ' . strtolower($k) . '" aria-hidden="true"></i>Deck ' . $k . '</span><span class="st-state" id="st' . $k . '">Empty</span></div>
     <div class="st-body">
       <div class="st-lcd st-info">
         <span class="t" id="t' . $k . '">Nothing loaded</span>
@@ -20,7 +20,7 @@ $deck = fn(string $k): string => '
     </div>
   </section>';
 ?>
-<div class="st" id="studio" data-base="<?= h(App::url('')) ?>" data-csrf="<?= h($csrf) ?>" data-delay="<?= (int) $delay ?>" data-tz="<?= h($station['timezone']) ?>">
+<div class="st" id="studio" data-base="<?= h(App::url('')) ?>" data-csrf="<?= h($csrf) ?>" data-delay="<?= (int) $delay ?>" data-tz="<?= h($station['timezone']) ?>" data-meter="<?= h(App::asset('assets/outwave-meter.js')) ?>">
   <section class="st-win st-top" aria-label="Show">
     <div class="st-brand">Studio<small><?= h($station['name']) ?> · live desk</small></div>
     <div class="st-show">
@@ -40,6 +40,15 @@ $deck = fn(string $k): string => '
     <span class="acts" id="stBannerActs"><button class="btn sm primary" type="button" id="stPower">Switch on the studio</button></span>
   </div>
 
+  <section class="st-win st-out" id="stOutWin" aria-label="What goes out">
+    <button class="st-out-tg" type="button" id="stOutTg" aria-expanded="true" aria-controls="stOutBox" title="Hide what goes out"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <span class="st-out-lbl">Going out</span>
+    <div class="st-out-box" id="stOutBox">
+      <canvas id="stOutCv" role="img" aria-label="What goes out: the sound scrolling past the white line (now); Deck A blue, Deck B pink, the mic yellow, the output a white line; the coming seconds dimmed on the right"></canvas>
+      <div class="st-out-grip" id="stOutGrip" role="separator" aria-orientation="horizontal" aria-valuemin="30" aria-valuemax="240" aria-valuenow="50" aria-label="Height of the output waveform: drag, or use the arrow keys" tabindex="0"></div>
+    </div>
+  </section>
+
   <div class="st-row1">
     <?= $deck('A') ?>
     <section class="st-win st-mixer" aria-label="Mixer">
@@ -48,7 +57,7 @@ $deck = fn(string $k): string => '
         <div class="st-meters" aria-label="Levels going out">
           <div class="st-mcol"><div class="st-meter"><i id="mL"></i></div><span>L</span></div>
           <div class="st-mcol"><div class="st-meter"><i id="mR"></i></div><span>R</span></div>
-          <div class="st-mcol"><div class="st-meter"><i id="mMic"></i></div><span>MIC</span></div>
+          <div class="st-mcol"><div class="st-meter"><i id="mMic"></i></div><span><i class="st-dot mic" aria-hidden="true"></i>MIC</span></div>
         </div>
         <div>
           <div class="st-xf"><b>A</b><input type="range" id="xf" min="-100" max="100" value="-100" aria-label="Crossfader" disabled><b>B</b></div>
@@ -153,4 +162,5 @@ $deck = fn(string $k): string => '
 </aside>
 <script src="<?= h(App::asset('assets/vendor/lame.min.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/studio-mic.js')) ?>" defer></script>
+<script src="<?= h(App::asset('assets/outwave.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/studio.js')) ?>" defer></script>

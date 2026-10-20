@@ -157,6 +157,34 @@ The app's `/studio` follows the green mock-up, with these additions and differen
 - **Status strip** shows "Waiting to send" and the connection as "Not sending", "Joining",
   "Connection good", "Connection slow" or "Connection trouble: …". Recording is not built yet.
 
+### Output strip (player and studio, round 22)
+
+A scrolling picture of **what goes out** (the wet mix, never the inputs), settled with the user on
+2026-10-20 from the prototype at https://claude.ai/artifact/7B369bBNhrMkKLBLrv1Ssa. Built once in
+`app/assets/outwave.js` and used by both screens.
+
+- **Now is a white line in the middle**; the sound moves right to left past it.
+- **One colour per source**, stacked and mirrored around the middle: Deck A / song A blue
+  (`--src-a` `#4da3ff`), Deck B / song B pink (`--src-b` `#ff5fa8`), the mic (studio) or the live
+  show (player) yellow (`--src-live` `#f7d23e`). The output itself is a thin white line
+  (`--src-out`).
+- **Left of now is measured** in the sound engine (an AudioWorklet meter, 10 ms peaks), after the
+  crossfades, ducking and every other gain stage. **Right of now, dimmed, is the coming output**,
+  mixed ahead from audio the page already holds: the player reads the next 20 s itself (song pieces
+  as byte ranges, from the browser's cache, and the live pieces hls.js has loaded) and mixes them
+  through the fades it will play; the studio mixes its decks' songs through the crossfader and the
+  ducking as it is now (future speech can't be known).
+- **Level lines**, barely visible on purpose: −1 dB (dashed amber at 35 %: song prep's peak ceiling),
+  −6, −12 and −20 dB (white at 10 %), labelled on the left. Linear height.
+- **Events** are short ticks at the top and bottom edges in the source's colour (a song starting,
+  a fade starting and ending, the mic going on or off).
+- **Player:** 60 px high, the width of the player window (between the display and the progress
+  bar), 10 s shown (5 s either side of now).
+- **Studio:** above the decks, full width, 50 px high to start; a drag handle under it (or the arrow
+  keys) sets 30–240 px, and a small round toggle on the left hides it (then it reads "Going out").
+  Both are remembered on that computer. 20 s shown. Deck titles and the MIC meter carry a small
+  square in their colour, as the legend.
+
 ### Station manager
 
 - **Header:** station name and a live "on air" readout.

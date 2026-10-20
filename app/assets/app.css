@@ -6,6 +6,8 @@
   --ink: #ffffff; --muted: #b3b3b3; --faint: #7c7c7c;
   --amber: #1ed760; --amber-soft: #1db954; --amber-dim: #1f5133;
   --onair: #f15e6c; --ok: #1ed760; --warn: #ffa42b; --cue: #509bf5;
+  /* the output strip: one colour per source (outwave.js) */
+  --src-a: #4da3ff; --src-b: #ff5fa8; --src-live: #f7d23e; --src-out: #ffffff;
   --f-ui: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-mono: "DM Mono", ui-monospace, Consolas, monospace;
 }
@@ -210,6 +212,8 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
 .lp-mode { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); border-top: 1px solid #2e2e2e; padding-top: 6px; min-width: 0; }
 .lp-mode span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .lp-mode span:last-child { white-space: nowrap; }
+.lp-wave { display: block; width: 100%; height: 60px; margin-top: 10px; border-radius: 8px; background: #1f1f1f; }
+.lp-wave + .lp-seek { margin-top: 8px; }
 .lp-seek { margin-top: 12px; height: 6px; border-radius: 999px; background: #3a3a3a; overflow: hidden; }
 .lp-fill { height: 100%; width: 0; background: var(--amber); border-radius: 999px; }
 .lp.live .lp-fill { background: var(--onair); }
@@ -332,6 +336,23 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
 .st-info .a { font-size: 12px; color: var(--amber-soft); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-height: 1.4em; }
 .st-info .rem { grid-row: 1 / span 2; grid-column: 2; font-weight: 600; font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
 .st-info .src { grid-column: 1 / -1; font-size: 11px; color: var(--muted); margin-top: 4px; min-height: 1.3em; }
+/* the output strip above the decks: a small toggle on the left, a drag handle under it */
+.st-out { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 6px 10px; padding: 8px 12px; }
+.st-out-tg { appearance: none; border: 0; width: 24px; height: 24px; border-radius: 999px; background: var(--raised); color: var(--muted); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.st-out-tg:hover { color: var(--ink); }
+.st-out-tg svg { width: 12px; height: 12px; transition: transform .15s; }
+.st-out.closed .st-out-tg svg { transform: rotate(-90deg); }
+.st-out-tg:focus-visible, .st-out-grip:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.st-out-lbl { display: none; font-size: 13px; font-weight: 600; color: var(--muted); align-self: center; }
+.st-out.closed .st-out-lbl { display: block; }
+.st-out-box { grid-column: 2; grid-row: 1; min-width: 0; }
+#stOutCv { display: block; width: 100%; height: 50px; border-radius: 8px; background: #1f1f1f; }
+.st-out-grip { height: 10px; margin-bottom: -6px; cursor: ns-resize; display: grid; place-items: center; touch-action: none; }
+.st-out-grip::after { content: ""; width: 36px; height: 3px; border-radius: 999px; background: var(--edge); }
+.st-out-grip:hover::after { background: var(--muted); }
+.st-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 1px; }
+.st-dot.a { background: var(--src-a); } .st-dot.b { background: var(--src-b); } .st-dot.mic { background: var(--src-live); margin-right: 3px; }
+@media (prefers-reduced-motion: reduce) { .st-out-tg svg { transition: none; } }
 .st-wave { display: block; width: 100%; height: 64px; margin-top: 8px; cursor: pointer; border-radius: 10px; }
 .st-ctl { display: flex; gap: 6px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
 .st-fader { display: flex; gap: 8px; align-items: center; flex: 1 1 140px; min-width: 120px; font-size: 12px; color: var(--muted); font-weight: 600; }
