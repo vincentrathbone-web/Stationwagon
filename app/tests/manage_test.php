@@ -95,6 +95,12 @@ try {
     $sunday = array_values(array_filter($grid, fn($g) => $g['block']['title'] === 'Sunday Service'));
     check('the grid shows weekday mornings 6:00–9:30', count(array_filter($grid, fn($g) => $g['block']['title'] === 'Mornings')) === 5 && abs($grid[0]['len'] - 3.5) < 1e-9 && $grid[0]['top'] == 0);
     check('a show past midnight shows on Sunday only (from 06:00 on Monday it’s over)', count($sunday) === 1 && $sunday[0]['day'] === 6 && $sunday[0]['top'] == 16 && $sunday[0]['len'] == 2);
+    $at = fn(string $local) => (float) (new DateTimeImmutable($local, new DateTimeZone($station['timezone'])))->getTimestamp();
+    $mon = Schedule::today($sched->all(), $at('2027-01-04 07:00'), $station['timezone']);
+    check('today’s list: Monday has the morning block, on now at 07:00', count($mon) === 1 && $mon[0]['title'] === 'Mornings' && $mon[0]['on_now']);
+    check('  not on at 10:00', !Schedule::today($sched->all(), $at('2027-01-04 10:00'), $station['timezone'])[0]['on_now']);
+    $sun = Schedule::today($sched->all(), $at('2027-01-10 23:30'), $station['timezone']);
+    check('  Sunday has only the late show, on at 23:30', count($sun) === 1 && $sun[0]['title'] === 'Sunday Service' && $sun[0]['on_now']);
     check('the planner follows the new block', $p->blockAt((float) (new DateTimeImmutable('2027-01-04 07:00', new DateTimeZone($station['timezone'])))->getTimestamp())['id'] == $blk);
     check('a block can be removed', $sched->delete((int) $live) === null && $sched->delete((int) $live) !== null);
     check('deleting a playlist removes its blocks', $lists->delete($pl) === null && $sched->all() === []);

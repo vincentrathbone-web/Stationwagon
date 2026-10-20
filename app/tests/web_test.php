@@ -93,6 +93,12 @@ try {
     check('station page opens', $r['status'] === 200, (string) $r['status']);
     check('listeners get no cookie', $b->setCookies === [], implode(' | ', $b->setCookies));
     check('station page links to sign in', str_contains($r['body'], 'href="' . $basePath . '/signin"'));
+    check('station page is the listener player', str_contains($r['body'], 'id="player"') && str_contains($r['body'], 'data-delay="20"') && str_contains($r['body'], 'assets/player.js'));
+    check('with today’s schedule', str_contains($r['body'], '<h2>Today · '));
+    foreach (['assets/player.js', 'assets/vendor/hls.min.js'] as $asset) {
+        $a = $b->go($asset);
+        check("$asset is served", $a['status'] === 200 && strlen($a['body']) > 1000, (string) $a['status']);
+    }
     $r = $b->go('manage');
     check('manager page sends you to sign in', $r['status'] === 303 && str_ends_with($location($r), '/signin?next=manage'), $location($r));
     $r = $b->go('account');

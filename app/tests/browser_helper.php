@@ -1,9 +1,12 @@
 <?php
-// Database side of tests/upload_browser_test.mjs (Laragon only): a throwaway manager, a look at
-// the tracks it uploaded, and the cleanup. Prints JSON.
+// Database and planner side of the browser tests (Laragon only): a throwaway manager, a look at
+// uploaded tracks, a test live show, and the cleanup. Prints JSON.
 //   php browser_helper.php manager            -> {"id", "email", "password"}
 //   php browser_helper.php track <title>      -> the newest ready track with that title, or null
 //   php browser_helper.php cleanup <user id> [<title> ...]
+//   php browser_helper.php live-start <title> -> {"public_id", "start"}
+//   php browser_helper.php live-piece <public id> <seq> <mp3 file> [<seconds> | auto]
+//   php browser_helper.php live-end <public id>
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
 use Stationwagon\{Db, Library, Planner};
@@ -40,7 +43,17 @@ if ($cmd === 'manager') {
     }
     $planner->replan(microtime(true));
     echo json_encode(['hidden' => $hidden]);
+} elseif ($cmd === 'live-start') {
+    $r = $planner->goLive(microtime(true), $argv[2] ?? 'Browser test show')['result'];
+    echo json_encode(isset($r['live']) ? ['public_id' => $r['live']['public_id'], 'start' => $r['live']['start']] : ['error' => $r['error'] ?? 'no show']);
+} elseif ($cmd === 'live-piece') {
+    $file = $argv[4] ?? '';
+    $seconds = ($argv[5] ?? 'auto') === 'auto' ? (float) Stationwagon\Mp3::scan($file, 6.0)['duration'] : (float) $argv[5];
+    $r = $planner->addPiece(microtime(true), $argv[2] ?? '', (int) ($argv[3] ?? 0), $seconds, (string) file_get_contents($file))['result'];
+    echo json_encode($r);
+} elseif ($cmd === 'live-end') {
+    echo json_encode($planner->endLive(microtime(true), $argv[2] ?? '')['result']);
 } else {
-    fwrite(STDERR, "Usage: php browser_helper.php manager | track <title> | cleanup <user id> [<title> ...]" . PHP_EOL);
+    fwrite(STDERR, "Usage: php browser_helper.php manager | track <title> | cleanup <user id> [<title> ...] | live-start <title> | live-piece <id> <seq> <file> <s> | live-end <id>" . PHP_EOL);
     exit(1);
 }

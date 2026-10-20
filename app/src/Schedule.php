@@ -110,6 +110,35 @@ final class Schedule
         return $h < 24 && $min < 60 ? sprintf('%02d:%02d:00', $h, $min) : null;
     }
 
+    /**
+     * The blocks that start on $now's day in $tz, by start time, each with `on_now` set when it
+     * covers $now (overnight blocks run past midnight; start = end is all day).
+     */
+    public static function today(array $blocks, float $now, string $tz): array
+    {
+        $t = (new \DateTimeImmutable('@' . (int) floor($now)))->setTimezone(new \DateTimeZone($tz));
+        $bit = 1 << ((int) $t->format('N') - 1);
+        $clock = $t->format('H:i:s');
+        $out = [];
+        foreach ($blocks as $b) {
+            if (((int) $b['days'] & $bit) === 0) {
+                continue;
+            }
+            [$s, $e] = [$b['start_time'], $b['end_time']];
+            $b['on_now'] = $s === $e || ($s < $e ? $clock >= $s && $clock < $e : $clock >= $s);
+            $out[] = $b;
+        }
+        usort($out, fn($a, $b) => [$a['start_time'], (int) $a['id']] <=> [$b['start_time'], (int) $b['id']]);
+        // where blocks overlap, the newest wins (as in the planner): only it is "on now"
+        $winner = null;
+        foreach ($out as $b) {
+            if ($b['on_now'] && ($winner === null || (int) $b['id'] > $winner)) {
+                $winner = (int) $b['id'];
+            }
+        }
+        return array_map(fn($b) => ['on_now' => (int) $b['id'] === $winner] + $b, $out);
+    }
+
     public static function dayNames(int $days): string
     {
         if ($days === 127) {

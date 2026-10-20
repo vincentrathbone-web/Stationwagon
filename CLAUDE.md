@@ -8,7 +8,7 @@
 - Run the engine test after engine changes:
   `"C:\laragon\bin\php\php-8.3.33-Win32-vs16-x64\php.exe" prototypes/tests/engine_test.php`
 - Run all app tests after app changes, on Laragon and on the server (commands in HANDOVER.md
-  "Dev environment" and "Test server"): `app/tests/install_test.php`, `auth_test.php`, `planner_test.php`, `manage_test.php`, `web_test.php`, and on this PC also the Node tests `prep_test.mjs` and `upload_browser_test.mjs`.
+  "Dev environment" and "Test server"): `app/tests/install_test.php`, `auth_test.php`, `planner_test.php`, `manage_test.php`, `web_test.php`, and on this PC also the Node tests `prep_test.mjs`, `upload_browser_test.mjs` and `player_browser_test.mjs` (`--listen-only` for the server).
 - Do the whole loop yourself (write, deploy, set up, test); never hand the user manual steps.
 - Record test results in the test log in `docs/POC-PLAN.md`.
 - Commit and push only when the user asks.

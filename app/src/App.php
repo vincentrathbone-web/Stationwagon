@@ -100,10 +100,19 @@ final class App
         return $db->run('SELECT id, name, slug, timezone FROM ' . $db->table('stations') . ' ORDER BY id LIMIT 1')->fetch() ?: null;
     }
 
+    /** The station's page: the listener player, what's on and today's schedule. No session. */
     private static function home(): void
     {
         $station = self::station();
-        View::render('home', ['title' => $station['name'] ?? 'Stationwagon', 'station' => $station, 'onAir' => self::onAir()]);
+        $vars = ['title' => $station['name'] ?? 'Stationwagon', 'station' => $station, 'onAir' => self::onAir(), 'today' => [], 'delay' => 20];
+        try {
+            $planner = Planner::forFirstStation();
+            $vars['delay'] = (int) $planner->setting('listener_delay_seconds');
+            $vars['today'] = Schedule::today((new Schedule(Db::fromConfig(), $planner->station()))->all(), microtime(true), $planner->station()['timezone']);
+        } catch (\Throwable $ex) {
+            error_log('Stationwagon player page: ' . $ex);
+        }
+        View::render('player', $vars + ['wide' => true]);
     }
 
     /** What's on air now and next, plus the library size; null if the planner can't answer. */
