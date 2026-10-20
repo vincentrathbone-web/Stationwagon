@@ -1,3 +1,5 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Stationwagon Project Map</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -67,6 +69,8 @@ a{color:var(--accent)}
 .chip.progress::before{background:var(--warn)}
 .chip.waiting{background:var(--onair-soft);border-color:transparent;color:var(--onair)}
 .chip.waiting::before{background:var(--onair)}
+.chip.done{color:var(--faint);border-color:transparent;background:var(--ground);text-decoration:line-through;text-decoration-color:var(--tick)}
+.chip.done::before{background:var(--accent)}
 
 @media (max-width:760px){
   .track{grid-template-columns:minmax(0,1fr);padding-top:0;gap:18px}
@@ -169,15 +173,15 @@ a{color:var(--accent)}
 <script>
 /* Everything on the map comes from this one object. Update it after each round. */
 const MAP = {
-  updated: "20 Oct · 02:00",
-  commits: 13,
+  updated: "20 Oct · 02:15",
+  commits: 14,
   milestones: [
     { name: "Plan & design", when: "Done · 19 Oct", state: "done" },
     { name: "Proof of concept", when: "Done · 20 Oct", state: "done" },
-    { name: "Core & manager", when: "Under way · est. Nov", ver: "v0.1", state: "now" },
-    { name: "Player & studio", when: "est. Dec", ver: "v0.4", state: "next" },
-    { name: "WordWave pilot", when: "est. Jan", ver: "v0.8", state: "later" },
-    { name: "Launch", when: "est. Feb–Mar", ver: "v1.0", state: "later" }
+    { name: "Core & manager", when: "Under way · est. late Oct", ver: "v0.1", state: "now" },
+    { name: "Player & studio", when: "est. Nov", ver: "v0.4", state: "next" },
+    { name: "WordWave pilot", when: "est. Dec", ver: "v0.8", state: "later" },
+    { name: "Launch", when: "est. Jan–Feb", ver: "v1.0", state: "later" }
   ],
   left: [
     { text: "Database schema", state: "done" },
@@ -187,7 +191,8 @@ const MAP = {
     { text: "Planner on MySQL", state: "done" },
     { text: "Station manager screens", state: "done" },
     { text: "Skip from the manager", state: "done" },
-    { text: "Sound & safety settings", state: "todo" }
+    { text: "Sound & safety settings", state: "todo" },
+    { text: "Song prep on upload", state: "todo" }
   ],
   parts: [
     { name: "Host check (P0)", ms: "Proof of concept", state: "done", foot: "Green on Laragon and on cPanel" },
@@ -201,25 +206,28 @@ const MAP = {
     { name: "Database & installer", ms: "Core & manager", state: "done", foot: "12 tables; installed on the test server" },
     { name: "Sign-in & roles", ms: "Core & manager", state: "done", foot: "Admin, manager, DJ; 98 checks pass" },
     { name: "Planner on MySQL", ms: "Core & manager", state: "done", foot: "71 checks; streaming on the test server" },
-    { name: "Station manager", ms: "Core & manager", state: "done", foot: "Library, playlists, schedule, DJs; 132 checks" },
-    { name: "Listener player & notes", ms: "Player & studio", state: "designed", foot: "Studio notes editor still to design" },
+    { name: "Station manager", ms: "Core & manager", state: "done", foot: "Library, playlists, schedule, DJs, Skip; 51 rule checks + screen tests" },
+    { name: "Sound & safety settings", ms: "Core & manager", state: "designed", foot: "Crossfade, live timeout and other station settings" },
+    { name: "Song prep on upload", ms: "Core & manager", state: "todo", foot: "Even loudness and fades, done in the browser (ffmpeg.wasm)" },
+    { name: "Listener player & notes", ms: "Player & studio", state: "designed", foot: "Two-deck crossfades, presenter notes" },
+    { name: "Live studio on the app", ms: "Player & studio", state: "designed", foot: "Planner side tested; notes editor still to design" },
     { name: "Windows studio app", ms: "Launch", state: "todo", foot: "Same studio in WebView2 (Tauri)" }
   ],
   next: {
-    title: "Sound & safety, then Player & studio",
-    text: "One last manager screen for the station settings (crossfade, live timeout) closes v0.1. Then v0.4: the listener player with crossfades and notes, and the live studio on the real app."
+    title: "Finish v0.1, then Player & studio",
+    text: "Two things close v0.1: the Sound & safety screen (crossfade, live timeout) and song prep on upload (even loudness and fades). Then v0.4: the listener player with crossfades and notes, and the live studio on the real app."
   },
   call: null,
   feedTitle: "Changed 20 Oct",
   feed: [
+    { what: "Milestone estimates", to: "moved a month earlier", at: "02:15", kind: "info" },
     { what: "Manager tests on the server", to: "all pass", at: "02:00" },
     { what: "Station manager screens", to: "built", at: "01:55" },
     { what: "Library upload and Skip", to: "working", at: "01:50" },
     { what: "Browser player on the server", to: "plays, no errors", at: "01:36" },
     { what: "Cloudflare browser cache", to: "fixed", at: "01:34", kind: "info" },
     { what: "Planner on MySQL", to: "71 checks pass", at: "01:20" },
-    { what: "Sign-in tests on the server", to: "all pass", at: "01:05" },
-    { what: "Sign-in, account, sign-out", to: "built", at: "01:00" }
+    { what: "Sign-in tests on the server", to: "all pass", at: "01:05" }
   ]
 };
 
@@ -244,8 +252,9 @@ MAP.milestones.forEach((m) => {
     (m.ver ? `<span class="ver">${esc(m.ver)}</span>` : "");
   track.appendChild(el);
 });
-$("left").innerHTML = `<span class="count">${MAP.left.length}</span><span class="lbl">left for ${esc(MAP.milestones[cur].name)}</span>` +
-  MAP.left.map((l) => `<span class="chip ${l.state}">${esc(l.text)}</span>`).join("");
+const open = MAP.left.filter((l) => l.state !== "done");
+$("left").innerHTML = `<span class="count">${open.length}</span><span class="lbl">left for ${esc(MAP.milestones[cur].name)}</span>` +
+  [...open, ...MAP.left.filter((l) => l.state === "done")].map((l) => `<span class="chip ${l.state}">${esc(l.text)}</span>`).join("");
 
 const done = MAP.parts.filter((p) => p.state === "done").length;
 $("partsDone").innerHTML = `<b>${done}</b> of ${MAP.parts.length} done`;

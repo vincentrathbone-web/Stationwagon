@@ -205,7 +205,9 @@ Continue **Core & manager (`v0.1`)** per the build-out order in `docs/POC-PLAN.m
 3. ~~Sign-in, roles and the manager shell~~ (done 2026-10-20).
 4. ~~Planner on MySQL, with a cron~~ (done 2026-10-20).
 5. ~~Station manager screens: library upload, playlists, schedule, DJs, Skip~~ (done 2026-10-20).
-   Left for later in v0.1: the "Sound & safety" settings screen from the design.
+   Still to do for v0.1: the "Sound & safety" settings screen from the design, and **song prep on
+   upload** (levelling and fades in the browser with ffmpeg.wasm, per the build-out order in
+   `docs/POC-PLAN.md`).
 6. Then **Player & studio (`v0.4`)**: the listener player on `api/timeline.php` / `api/stream.php`,
    and studio endpoints for `Planner::goLive` / `addPiece` / `endLive` (the planner already does these).
 
@@ -267,6 +269,7 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-20 | **Skip** in the manager is for managers and admins; DJs will skip from the studio | Matches the design; listeners never skip (decided 2026-10-19) |
 | 2026-10-20 | Deleting a playlist also deletes its schedule blocks | A block with no playlist can't play anything |
 | 2026-10-20 | The week grid shows 06:00–24:00; the part of an overnight block after midnight is drawn on the next day | Night hours rarely change; the blocks table lists every block in full |
+| 2026-10-20 | Milestone estimates **moved a month earlier**: v0.1 late Oct, v0.4 Nov, pilot Dec, launch Jan–Feb | User's choice; Core & manager had only 2 items left on 20 Oct |
 
 ## Scope changes
 
@@ -279,10 +282,10 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 
 ## Milestone plan (estimates)
 
-Plan & design (done 19 Oct) → **Proof of concept** (now) → Core & manager `v0.1` (est. Nov) →
-Player & studio `v0.4` (est. Dec) → WordWave pilot `v0.8`, running beside AzuraCast before the
-switch (est. Jan) → Launch `v1.0` with the Windows app (est. Feb–Mar). Only the first date is
-real.
+Plan & design (done 19 Oct) → Proof of concept (done 20 Oct) → **Core & manager `v0.1`** (now,
+est. late Oct) → Player & studio `v0.4` (est. Nov) → WordWave pilot `v0.8`, running beside
+AzuraCast before the switch (est. Dec) → Launch `v1.0` with the Windows app (est. Jan–Feb).
+Dates after 20 Oct are estimates; moved a month earlier on 2026-10-20 (see Decisions).
 
 ## Versions
 
@@ -310,7 +313,8 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
 | 10 | 2026-10-20 | `c1f47c6` | `app/cli/install.php` (install over SSH, JSON on stdin; tested on a throwaway copy); test server installed with it; live checks: home connected, `/install` locked, private files 403 |
 | 11 | 2026-10-20 | `1738762` | Sign-in: `Session`, `Auth`, `AuthPage`, `Request`; pages `/signin`, `/signout`, `/manage`, `/account`; header shows who's signed in; `cli/set-password.php`; tests `auth_test.php` (39) and `web_test.php` (37 / 22 public) with shared `tests/lib.php`; test database `controllco_swtest` on the server; all tests pass on both |
 | 12 | 2026-10-20 | `baf49aa` | Planner on MySQL: `Mp3`, `Library`, `Planner`, `Stream`; `api/stream.php`, `api/timeline.php`; `cli/import.php`, `cli/plan.php` + cron on the server; "On air" card; `planner_test.php` (71, makes its own silent MP3s) and stream checks in `web_test.php`; fixed: quiet-spell restart; Cloudflare Browser TTL fixed (the POC had the same latent bug); test tones on air on the server |
-| 13 | 2026-10-20 | this round's commit | Station manager screens: `Playlists`, `Schedule`, `Staff`, `ManagePage`; `Library` edit / search / delete; views in `views/manage/` (overview, library, playlists, playlist, schedule, DJs), `upload.js`, manager styles; flash messages (`Session::flash`); `manage_test.php` (51) and a manager section in `web_test.php` (81 / 32 public); `tools/shot.mjs` (headless screenshots); fixes from screenshots (hidden elements, column and form alignment); deployed; all tests pass on Laragon and the server |
+| 13 | 2026-10-20 | `2737f87` | Station manager screens: `Playlists`, `Schedule`, `Staff`, `ManagePage`; `Library` edit / search / delete; views in `views/manage/` (overview, library, playlists, playlist, schedule, DJs), `upload.js`, manager styles; flash messages (`Session::flash`); `manage_test.php` (51) and a manager section in `web_test.php` (81 / 32 public); `tools/shot.mjs` (headless screenshots); fixes from screenshots (hidden elements, column and form alignment); deployed; all tests pass on Laragon and the server |
+| 14 | 2026-10-20 | this round's commit | Project map fixes: the dial counted done items as "left" (said 8, really 2) and done chips looked open; added the missing v0.1 items (Sound & safety, song prep on upload) and the live studio part; charset and viewport lines added; milestone estimates moved a month earlier |
 
 ## Open issues
 
@@ -336,6 +340,7 @@ Schema version: **1** (`Schema::VERSION`; stored in the `settings` table at inst
 - No **"Sound & safety"** screen yet (station settings like crossfade and live timeout); the
   values are the defaults from install.
 - The library has no "show song titles" switch or play weights from the design yet.
+- Uploads are stored as they are: no levelling or fades yet (song prep on upload, still to do for v0.1).
 - The test station's 4 songs are test tones; real music can now be uploaded from Music library.
 - Track pieces are cut at the station's `segment_seconds` when imported; changing that setting
   later needs a rescan (not built).
