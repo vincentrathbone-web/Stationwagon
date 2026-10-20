@@ -179,6 +179,13 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
 .set h2 { margin-bottom: 4px; }
 .setrow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 240px); gap: 16px; align-items: center; padding: 12px 0; border-top: 1px solid #262626; }
 .set h2 + .setrow { border-top: 0; }
+/* wider columns than the overview's (each row needs room for its text and a 240 px control),
+   and in a narrow card the control goes under its text */
+.soundform .cols { grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); align-items: start; }
+.set { container-type: inline-size; }
+@container (max-width: 440px) { .setrow { grid-template-columns: minmax(0, 1fr); gap: 8px; } }
+/* a choice's options are sentences: its list goes under the text, full width */
+.setrow:has(.ctl.choice) { grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .setrow b { font-weight: 600; font-size: 15px; }
 .setrow p { margin: 2px 0 0; color: var(--faint); font-size: 13px; max-width: 56ch; }
 .setrow p.err { color: var(--onair); font-weight: 600; }
@@ -190,7 +197,7 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
 .ctl select { width: 100%; background: var(--raised); color: var(--ink); border: 1px solid transparent; border-radius: 10px; font: 500 14px var(--f-ui); padding: 9px 10px; }
 .ctl select:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .setrow.bad select { border-color: var(--onair); }
-.fadecurve { width: 100%; height: auto; display: block; }
+.fadecurve { width: 100%; max-width: 300px; height: auto; display: block; }
 .fadecurve path { fill: none; stroke-width: 2.5; stroke-linecap: round; }
 .fadecurve path.out { stroke: var(--amber-dim); }
 .fadecurve path.in { stroke: var(--amber); }

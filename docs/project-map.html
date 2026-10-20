@@ -173,8 +173,8 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "20 Oct · 23:39",
-  commits: 23,
+  updated: "21 Oct · 00:01",
+  commits: 24,
   version: "0.4.0-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
@@ -219,7 +219,7 @@ const MAP = {
       { text: "Playlists, schedule and DJs", v: "v0.1", state: "done" },
       { text: "Skip, and the overview", v: "v0.1", state: "done" },
       { text: "Sound & safety: crossfade, fades, live timeout, repeats", v: "v0.1", state: "done" },
-      { text: "Sound & safety: fade shape, music under the voice, silence, rejoin, quality, delay", note: "tested on Laragon; not on the test server yet", v: "v0.4", state: "done" },
+      { text: "Sound & safety: fade shape, music under the voice, silence, rejoin, quality, delay", v: "v0.4", state: "done" },
       { text: "Listener stats", note: "listening now, by hour and day", v: "v0.4", state: "next" },
       { text: "Podcast episodes: edit, hide, feed", v: "v0.4", state: "next" },
       { text: "Mastering in song prep (true-peak limiter, reference match)", note: "after you compare oXygen and master_me", v: "v0.8", state: "later" }
@@ -247,13 +247,15 @@ const MAP = {
     ]}
   ],
   next: {
-    title: "Deploy round 25 to the test server",
-    text: "Sound & safety, the now-playing API and the embed are built, pass every test on Laragon and are committed. Next they go to the test server (database version 3) and get tested there. After that, the rest of v0.4 in this order:",
-    order: ["Deploy and test round 25", "Listener count and stats", "Podcasts: record, upload, page, feed", "Small studio items", "Spectrum", "Hi-fi skin"]
+    title: "Listener count and stats",
+    text: "Sound & safety, the now-playing API and the embed are live on the test server and pass every test there. Next: each open player pings once a minute (no cookies, no IP kept), for \"listening now\" in the player and the manager, plus daily and hourly charts. Then the rest of v0.4 in this order:",
+    order: ["Listener count and stats", "Podcasts: record, upload, page, feed", "Small studio items", "Spectrum", "Hi-fi skin"]
   },
   call: null,
-  feedTitle: "Changed 20 Oct",
+  feedTitle: "Changed 20–21 Oct",
   feed: [
+    { what: "Sound & safety screen", to: "two readable columns (layout fix)", at: "00:01" },
+    { what: "Round 25 on the test server", to: "deployed, all server tests pass", at: "00:01" },
     { what: "Now-playing API", to: "built, tested on Laragon", at: "23:39" },
     { what: "Embeddable player with Copy code", to: "built, tested on Laragon", at: "23:39" },
     { what: "Round 25", to: "committed", at: "23:39", kind: "info" },
