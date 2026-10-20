@@ -131,7 +131,11 @@ final class ManagePage
                 if (!is_uploaded_file($tmp) && PHP_SAPI !== 'cli') {
                     throw new RuntimeException('That isn’t an uploaded file.');
                 }
-                $r = $library->import($tmp, null, null, $name);
+                // From prep.js: the original's hash (duplicates) and the levelled loudness
+                $source = ((array) ($_POST['source_sha1'] ?? []))[$i] ?? null;
+                $lufs = ((array) ($_POST['prep_lufs'] ?? []))[$i] ?? null;
+                $r = $library->import($tmp, null, null, $name, is_string($source) ? strtolower($source) : null,
+                    is_numeric($lufs) ? (float) $lufs : null);
                 $added = $added || !$r['duplicate'];
                 $out[] = ['name' => $name, 'ok' => true, 'duplicate' => $r['duplicate'], 'title' => $r['title'], 'id' => $r['id']];
             } catch (RuntimeException $ex) {

@@ -7,8 +7,10 @@ use RuntimeException;
 
 /**
  * A station's songs. Each file is stored once under its content hash (storage/media/<sha1>.mp3),
- * so a file's address never changes and Cloudflare may cache it for a year. Adding the same
- * file twice returns the track that's already there.
+ * so a file's address never changes and Cloudflare may cache it for a year. A track's `sha1` is
+ * the song's identity: the hash of the file as the manager chose it, before the browser levelled
+ * it (see assets/prep.js). Adding the same song twice, prepared or not, returns the track that's
+ * already there. `loudness_lufs` is set only for songs that were levelled.
  */
 final class Library
 {
@@ -21,17 +23,22 @@ final class Library
 
     /**
      * @param ?string $name the file's own name when $path is an upload's temporary file
+     * @param ?string $sourceSha1 the hash of the original file when $path is the levelled copy
+     * @param ?float $lufs the levelled copy's loudness
      * @return array{id:int,duplicate:bool,title:string}
      */
-    public function import(string $path, ?string $title = null, ?string $artist = null, ?string $name = null): array
+    public function import(string $path, ?string $title = null, ?string $artist = null, ?string $name = null,
+                           ?string $sourceSha1 = null, ?float $lufs = null): array
     {
         $name = basename($name ?? $path);
         if (!is_file($path)) {
             throw new RuntimeException("No file at $path");
         }
-        $sha1 = (string) sha1_file($path);
+        $content = (string) sha1_file($path);
+        $sha1 = $sourceSha1 !== null && preg_match('/^[0-9a-f]{40}$/', $sourceSha1) === 1 ? $sourceSha1 : $content;
         $t = $this->db->table('tracks');
-        $existing = $this->db->run("SELECT id, title FROM $t WHERE station_id = ? AND sha1 = ?", [$this->station['id'], $sha1])->fetch();
+        $existing = $this->db->run("SELECT id, title FROM $t WHERE station_id = ? AND (sha1 = ? OR sha1 = ? OR file = ?) ORDER BY id LIMIT 1",
+            [$this->station['id'], $sha1, $content, "$content.mp3"])->fetch();
         if ($existing) {
             return ['id' => (int) $existing['id'], 'duplicate' => true, 'title' => $existing['title']];
         }
@@ -41,7 +48,7 @@ final class Library
             throw new RuntimeException($name . ' is not an MP3 file this station can play.');
         }
         $tags = Mp3::tags($path);
-        $file = "$sha1.mp3";
+        $file = "$content.mp3";
         $dir = $this->root . '/storage/media';
         if (!is_dir($dir)) {
             mkdir($dir, 0775, true);
@@ -63,6 +70,7 @@ final class Library
             'sample_rate' => $scan['sample_rate'],
             'bytes' => filesize($path),
             'pieces' => json_encode($scan['pieces']),
+            'loudness_lufs' => $lufs !== null && is_finite($lufs) ? round(max(-70.0, min(0.0, $lufs)), 2) : null,
             'status' => 'ready',
             'created_at' => gmdate('Y-m-d H:i:s'),
         ]);
@@ -82,7 +90,7 @@ final class Library
             array_push($args, $like, $like);
         }
         return $this->db->run(
-            "SELECT t.id, t.file, t.title, t.artist, t.album, t.duration_s, t.bitrate_kbps, t.bytes, t.created_at,
+            "SELECT t.id, t.file, t.title, t.artist, t.album, t.duration_s, t.bitrate_kbps, t.bytes, t.loudness_lufs, t.created_at,
                     (SELECT COUNT(*) FROM $pt pt WHERE pt.track_id = t.id) AS playlists
              FROM $t t WHERE $where ORDER BY t.title, t.id",
             $args

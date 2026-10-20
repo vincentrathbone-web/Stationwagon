@@ -1,11 +1,13 @@
-// Music library uploads: drop files on the box (or choose them) and they go up one at a time
-// with progress, then the page reloads to show them. Without JavaScript the form still works.
+// Music library uploads: drop files on the box (or choose them). Each song is prepared in the
+// browser first (prep.js: levelled, trimmed, re-encoded), then they go up one at a time with
+// progress, and the page reloads to show them. Without JavaScript the form still works.
 (() => {
   const form = document.getElementById("drop");
   if (!form || !window.FormData || !window.XMLHttpRequest) return;
   const input = document.getElementById("files");
   const list = document.getElementById("uplist");
   const csrf = form.querySelector('input[name="csrf"]').value;
+  const maxBytes = Number(form.dataset.max || 0);
   form.querySelector('button[type="submit"]').hidden = true; // choosing files starts the upload
 
   const row = (name) => {
@@ -16,13 +18,22 @@
     return li;
   };
 
-  const send = (file, li) => new Promise((done) => {
+  const db = (v) => (v > 0 ? "+" : "") + v.toFixed(1).replace("-", "−") + " dB";
+  const lufs = (v) => v.toFixed(1).replace("-", "−") + " LUFS";
+  const describe = (p) => p.prepared
+    ? "levelled " + lufs(p.info.lufs_before) + " → " + lufs(p.info.lufs) + " (" + db(p.info.gain_db) + ")" +
+      (p.info.trimmed_start_s + p.info.trimmed_end_s >= 0.1 ? ", " + (p.info.trimmed_start_s + p.info.trimmed_end_s).toFixed(1) + " s of silence trimmed" : "")
+    : "as it is: " + p.note;
+
+  const send = (p, name, li) => new Promise((done) => {
     const data = new FormData();
     data.append("csrf", csrf);
     data.append("action", "upload");
-    data.append("files[]", file, file.name);
+    data.append("files[]", p.file, name);
+    if (p.sourceSha1) data.append("source_sha1[]", p.sourceSha1);
+    if (p.prepared) data.append("prep_lufs[]", String(p.info.lufs));
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", form.action);
+    xhr.open("POST", form.getAttribute("action")); // not form.action: the form has a field named "action"
     xhr.setRequestHeader("Accept", "application/json");
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
@@ -36,7 +47,7 @@
       const res = r && r.results ? r.results[0] : null;
       const ok = res && res.ok;
       li.className = ok ? "ok" : "bad";
-      li.querySelector(".s").textContent = ok ? (res.duplicate ? "Already there" : "Added") : ((res && res.error) || (r && r.error) || "Failed (" + xhr.status + ")");
+      li.querySelector(".s").textContent = ok ? (res.duplicate ? "Already there" : "Added, " + describe(p)) : ((res && res.error) || (r && r.error) || "Failed (" + xhr.status + ")");
       done(ok);
     };
     xhr.onerror = () => { li.className = "bad"; li.querySelector(".s").textContent = "Connection lost"; done(false); };
@@ -50,7 +61,21 @@
     list.innerHTML = "";
     const rows = files.map((f) => row(f.name));
     let ok = 0;
-    for (let i = 0; i < files.length; i++) ok += (await send(files[i], rows[i])) ? 1 : 0;
+    for (let i = 0; i < files.length; i++) {
+      const li = rows[i], status = li.querySelector(".s");
+      let p = { file: files[i], prepared: false, note: "song prep didn’t load" };
+      if (window.SwPrep) {
+        try {
+          p = await window.SwPrep.prepare(files[i], (stage) => { status.textContent = stage; });
+        } catch (ex) {
+          p = { file: files[i], prepared: false, note: "prep failed: " + ex.message };
+        }
+      }
+      if (p.prepared && maxBytes && p.file.size > maxBytes && files[i].size <= maxBytes) {
+        p = { file: files[i], prepared: false, sourceSha1: p.sourceSha1, note: "the prepared song is bigger than this server accepts" };
+      }
+      ok += (await send(p, files[i].name, li)) ? 1 : 0;
+    }
     if (ok) setTimeout(() => location.reload(), 900);
   };
 

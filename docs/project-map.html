@@ -173,26 +173,22 @@ a{color:var(--accent)}
 <script>
 /* Everything on the map comes from this one object. Update it after each round. */
 const MAP = {
-  updated: "20 Oct · 02:20",
-  commits: 15,
+  updated: "20 Oct · 02:36",
+  commits: 16,
   milestones: [
     { name: "Plan & design", when: "Done · 19 Oct", state: "done" },
     { name: "Proof of concept", when: "Done · 20 Oct", state: "done" },
-    { name: "Core & manager", when: "Under way · est. late Oct", ver: "v0.1", state: "now" },
-    { name: "Player & studio", when: "est. Nov", ver: "v0.4", state: "next" },
-    { name: "WordWave pilot", when: "est. Dec", ver: "v0.8", state: "later" },
+    { name: "Core & manager", when: "Done · 20 Oct", ver: "v0.1", state: "done" },
+    { name: "Player & studio", when: "Starting · est. Nov", ver: "v0.4", state: "now" },
+    { name: "WordWave pilot", when: "est. Dec", ver: "v0.8", state: "next" },
     { name: "Launch", when: "est. Jan–Feb", ver: "v1.0", state: "later" }
   ],
   left: [
-    { text: "Database schema", state: "done" },
-    { text: "Web installer", state: "done" },
-    { text: "Install on the test server", state: "done" },
-    { text: "Sign-in and roles", state: "done" },
-    { text: "Planner on MySQL", state: "done" },
-    { text: "Station manager screens", state: "done" },
-    { text: "Skip from the manager", state: "done" },
-    { text: "Sound & safety settings", state: "done" },
-    { text: "Song prep on upload", state: "todo" }
+    { text: "Listener player (two decks)", state: "todo" },
+    { text: "Presenter notes for listeners", state: "todo" },
+    { text: "Live studio on the app", state: "todo" },
+    { text: "Studio notes editor (design)", state: "todo" },
+    { text: "Player & studio settings", state: "todo" }
   ],
   parts: [
     { name: "Host check (P0)", ms: "Proof of concept", state: "done", foot: "Green on Laragon and on cPanel" },
@@ -208,26 +204,26 @@ const MAP = {
     { name: "Planner on MySQL", ms: "Core & manager", state: "done", foot: "71 checks; streaming on the test server" },
     { name: "Station manager", ms: "Core & manager", state: "done", foot: "Library, playlists, schedule, DJs, Skip; 62 rule checks + screen tests" },
     { name: "Sound & safety settings", ms: "Core & manager", state: "done", foot: "Fades, live timeout, repeats; the rest comes with v0.4" },
-    { name: "Song prep on upload", ms: "Core & manager", state: "todo", foot: "Even loudness and fades, done in the browser (ffmpeg.wasm)" },
+    { name: "Song prep on upload", ms: "Core & manager", state: "done", foot: "−16 LUFS, silence trimmed, lamejs in the browser; 36 checks" },
     { name: "Listener player & notes", ms: "Player & studio", state: "designed", foot: "Two-deck crossfades, presenter notes" },
     { name: "Live studio on the app", ms: "Player & studio", state: "designed", foot: "Planner side tested; notes editor still to design" },
     { name: "Windows studio app", ms: "Launch", state: "todo", foot: "Same studio in WebView2 (Tauri)" }
   ],
   next: {
-    title: "Song prep on upload, then Player & studio",
-    text: "One thing closes v0.1: song prep on upload, which evens out loudness and adds fades in the browser before a song is stored. Then v0.4: the listener player with crossfades and notes, and the live studio on the real app."
+    title: "The listener player",
+    text: "v0.1 is closed as 0.1.0. First in v0.4: the listener player on the real app, with two-deck crossfades from the timeline and the plain stream as the fallback. Then presenter notes and the live studio."
   },
   call: null,
   feedTitle: "Changed 20 Oct",
   feed: [
+    { what: "Core & manager", to: "closed as 0.1.0", at: "02:36" },
+    { what: "Song prep on the live site", to: "works, 3 s per song", at: "02:35" },
+    { what: "Drag-and-drop upload bug", to: "fixed", at: "02:35", kind: "info" },
+    { what: "Song prep on upload", to: "built, 36 checks", at: "02:35" },
     { what: "Sound & safety on the server", to: "all tests pass", at: "02:20" },
     { what: "Sound & safety screen", to: "built", at: "02:20" },
     { what: "Milestone estimates", to: "moved a month earlier", at: "02:15", kind: "info" },
-    { what: "Manager tests on the server", to: "all pass", at: "02:00" },
-    { what: "Station manager screens", to: "built", at: "01:55" },
-    { what: "Library upload and Skip", to: "working", at: "01:50" },
-    { what: "Browser player on the server", to: "plays, no errors", at: "01:36" },
-    { what: "Cloudflare browser cache", to: "fixed", at: "01:34", kind: "info" }
+    { what: "Manager tests on the server", to: "all pass", at: "02:00" }
   ]
 };
 

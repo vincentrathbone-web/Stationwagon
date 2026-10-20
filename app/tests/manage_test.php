@@ -41,6 +41,22 @@ try {
     check('and it no longer comes up in the plan', !in_array($other, array_column($future, 'track_id'), true));
     $ids = array_filter($ids, fn($id) => $id !== $other);
     check('storage size is counted', $lib->bytes() > 0);
+    // Song prep: a levelled copy is known by the original's hash and keeps its loudness
+    make_mp3("$root/in/levelled-tmp", 160, ['title' => 'Doxology'], 7);
+    $orig = sha1('the original upload, before levelling');
+    $lev = $lib->import("$root/in/levelled-tmp", null, null, 'Doxology.mp3', $orig, -16.004);
+    $row = $db->run('SELECT sha1, file, loudness_lufs FROM ' . $db->table('tracks') . ' WHERE id = ?', [$lev['id']])->fetch();
+    check('a levelled song keeps the original’s fingerprint', $row['sha1'] === $orig && $row['file'] === sha1_file("$root/in/levelled-tmp") . '.mp3');
+    check('  and its loudness', abs((float) $row['loudness_lufs'] + 16) < 0.01 && (float) $lib->tracks('Doxology')[0]['loudness_lufs'] === -16.0);
+    make_mp3("$root/in/levelled-tmp2", 160, [], 8);
+    $again = $lib->import("$root/in/levelled-tmp2", null, null, 'Doxology.mp3', $orig, -16.0);
+    check('the same original levelled again is a duplicate', $again['duplicate'] && $again['id'] === $lev['id']);
+    check('  even when the copy differs byte for byte', !is_file("$root/storage/media/" . sha1_file("$root/in/levelled-tmp2") . '.mp3'));
+    $plain = $lib->import("$root/in/levelled-tmp2", null, null, 'Other.mp3', 'not a hash', 99.0);
+    $prow = $db->run('SELECT sha1, loudness_lufs FROM ' . $db->table('tracks') . ' WHERE id = ?', [$plain['id']])->fetch();
+    check('a bad fingerprint falls back to the file’s own; loudness is kept in range', !$plain['duplicate'] && $prow['sha1'] === sha1_file("$root/in/levelled-tmp2") && (float) $prow['loudness_lufs'] === 0.0);
+    $lib->delete($plain['id'], $p, $now);
+    $lib->delete($lev['id'], $p, $now);
 
     echo "Playlists\n";
     $lists = new Playlists($db, $station);

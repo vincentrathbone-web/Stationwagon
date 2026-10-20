@@ -8,10 +8,10 @@
   </div>
 </div>
 
-<form class="drop" id="drop" method="post" enctype="multipart/form-data" action="<?= h(App::url('manage/library')) ?>">
+<form class="drop" id="drop" method="post" enctype="multipart/form-data" action="<?= h(App::url('manage/library')) ?>" data-max="<?= (int) $maxUpload ?>">
   <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
   <input type="hidden" name="action" value="upload">
-  <div><b>Add songs</b><br><span class="muted2">Drop MP3 files here, or choose them. Up to <?= h(megabytes($maxUpload)) ?> per upload. The same file twice is only stored once.</span></div>
+  <div><b>Add songs</b><br><span class="muted2">Drop MP3 files here, or choose them. Your browser first levels each song to the same loudness (−16 LUFS) and trims silence at both ends. Up to <?= h(megabytes($maxUpload)) ?> per upload; the same song twice is only stored once.</span></div>
   <div class="drop-actions">
     <input id="files" name="files[]" type="file" accept=".mp3,audio/mpeg" multiple>
     <button class="btn primary" type="submit">Upload</button>
@@ -45,7 +45,7 @@
         </td></tr>
       <?php else: ?>
         <tr>
-          <td><b><?= h($t['title']) ?></b><?php if ($t['album']): ?><span class="sub"><?= h($t['album']) ?></span><?php endif ?></td>
+          <td><b><?= h($t['title']) ?></b><?php if ($t['loudness_lufs'] !== null): ?> <span class="pill auto" title="Levelled to <?= h(str_replace('-', '−', number_format((float) $t['loudness_lufs'], 1))) ?> LUFS when uploaded">Levelled</span><?php endif ?><?php if ($t['album']): ?><span class="sub"><?= h($t['album']) ?></span><?php endif ?></td>
           <td><?= h($t['artist'] ?? '') ?></td>
           <td class="num"><?= h(duration((float) $t['duration_s'])) ?></td>
           <td class="num"><?= (int) $t['playlists'] ?></td>
@@ -66,4 +66,6 @@
     </tbody>
   </table>
 </div>
-<script src="<?= h(App::url('assets/upload.js')) ?>?v=1" defer></script>
+<script src="<?= h(App::url('assets/prep-core.js')) ?>?v=1" defer></script>
+<script src="<?= h(App::url('assets/prep.js')) ?>?v=1" defer></script>
+<script src="<?= h(App::url('assets/upload.js')) ?>?v=3" defer></script>
