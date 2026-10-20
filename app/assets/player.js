@@ -176,7 +176,7 @@
   // ---- The player ----------------------------------------------------------------------------
   const player = {
     on: false, ctx: null, mix: null, master: null, analyser: null, wave: null, decks: [], stream: null, started: new Set(), tries: new Map(),
-    drops: 0, lastDrop: 0, engineAt: null, nudges: 0, nudging: false, volume: 0.8, timers: [], status: "Ready", lastKey: null, events: [],
+    drops: 0, lastDrop: 0, listeners: null, ping: null, engineAt: null, nudges: 0, nudging: false, volume: 0.8, timers: [], status: "Ready", lastKey: null, events: [],
     /** The last 40 things the player did, with the heard time (for tests and support). */
     log(what) { this.events = [...this.events, ((clock.last ? this.heard() : 0) % 1000).toFixed(1) + " " + what].slice(-40); },
 
@@ -223,12 +223,15 @@
         setInterval(() => ahead.tick(), 500),
       ];
       this.setPlaying(true); this.setStatus("Playing");
+      // counted as listening while it plays: a ping a minute (assets/listeners.js)
+      if (window.SwListeners) this.ping = SwListeners.start(BASE, "player", (n) => this.setListeners(n));
       draw();
     },
 
     stop() {
       if (!this.on) return;
       this.on = false;
+      if (this.ping) { this.ping.stop(); this.ping = null; }
       this.timers.forEach(clearInterval); this.timers = [];
       this.decks.forEach((d) => d.unload()); this.decks = [];
       if (this.stream) { this.stream.stop(); this.stream = null; }
@@ -282,6 +285,7 @@
     online() { if (this.on && this.status !== "Playing") this.setStatus("Playing"); },
     offline() { if (this.on) { this.setStatus("Reconnecting"); this.dropout(); } },
     setStatus(s) { this.status = s; $("lpConn").textContent = s; },
+    setListeners(n) { this.listeners = n; $("lpListeners").textContent = String(n); },
     say(text) { $("lpNote").textContent = text; $("lpNote").hidden = !text; },
     setPlaying(on) {
       const b = $("lpPlay");
@@ -399,6 +403,7 @@
       const cur = clock.last && clock.last.entries.find((e) => e.start <= h && (h < e.end || (e.type === "live" && e.open)));
       return {
         on: this.on, mode: STREAM_ONLY ? "stream" : "decks", status: this.status, drops: this.drops, delay: DELAY, heard: h,
+        listeners: this.listeners, ping: this.ping ? this.ping.sid : null,
         current: cur ? { key: key(cur), type: cur.type, title: cur.title, start: cur.start } : null,
         decks: this.decks.map((d) => ({ name: d.name, key: d.key, playing: d.playing, gain: +d.gain.toFixed(3), pos: d.el.currentTime, title: d.entry && d.entry.title })),
         events: this.events, hidden: document.hidden,
@@ -598,6 +603,8 @@
   $("lpVol").addEventListener("input", (e) => { $("lpVolOut").textContent = e.target.value; player.setVolume(e.target.value / 100); });
   $("lpPlay").addEventListener("click", () => player.start());
   document.addEventListener("visibilitychange", () => { if (player.on) player.log("page " + (document.hidden ? "hidden" : "shown")); });
+  // "Listening now" on the health line, from every timeline fetch (and each ping's answer)
+  document.addEventListener("sw:timeline", (e) => { if (typeof e.detail.listeners === "number") player.setListeners(e.detail.listeners); });
   $("lpStop").addEventListener("click", () => player.stop());
   if ("mediaSession" in navigator) {
     try { navigator.mediaSession.setActionHandler("play", () => player.start()); navigator.mediaSession.setActionHandler("pause", () => player.stop()); navigator.mediaSession.setActionHandler("stop", () => player.stop()); } catch (_) { /* unsupported */ }

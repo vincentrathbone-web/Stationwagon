@@ -1,5 +1,5 @@
 <?php use function Stationwagon\{h, clock, duration, megabytes}; use Stationwagon\{App, Auth};
-/** @var array $me @var array $station @var array $onAir @var float $now @var ?float $plannedUntil @var int $songs @var int $bytes @var int $playlists @var int $blocks @var ?array $block */
+/** @var array $me @var array $station @var array $onAir @var float $now @var ?float $plannedUntil @var int $songs @var int $bytes @var int $playlists @var int $blocks @var ?array $block @var int $listening @var int $todayPeak */
 $tz = $station['timezone'];
 $hour = (int) clock($now, $tz, 'G');
 $hello = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good evening');
@@ -27,6 +27,11 @@ $next = $onAir['next'];
           <span><?= $cur['type'] === 'live' ? 'LIVE' : ($block ? 'AutoDJ · ' . h($block['title']) : 'AutoDJ · whole library') ?></span></div>
       </div>
       <?php if ($next): ?><p class="muted" style="margin-top:10px">Next at <?= h(clock($next['start'], $tz, 'H:i:s')) ?>: <b><?= h($label($next)) ?></b></p><?php endif ?>
+      <div class="mstats">
+        <div class="mstat"><b id="ovListening"><?= (int) $listening ?></b><span>Listening now</span></div>
+        <div class="mstat"><b><?= (int) $todayPeak ?></b><span>Most at once today</span></div>
+      </div>
+      <?php if (Auth::allows($me, 'manager')): ?><p class="muted" style="margin:8px 0 0"><a href="<?= h(App::url('manage/listeners')) ?>">Listeners by hour and day</a></p><?php endif ?>
       <?php if (Auth::allows($me, 'manager') && $cur['type'] === 'song'): ?>
         <div class="row-actions"><?= $post('manage/skip', 'Skip this song', [], 'btn') ?><span class="hint2">The song fades out over 2 s at the next piece boundary.</span></div>
       <?php endif ?>

@@ -211,6 +211,24 @@ try {
         implode(',', $r['headers']['x-frame-options'] ?? []) . ' | ' . implode(',', $r['headers']['content-security-policy'] ?? []));
     check('  ?look=light gives the light look', str_contains($e->go('embed?look=light')['body'], '<html lang="en" class="light">') && !str_contains($r['body'], 'class="light"'));
     check('the station page offers the embed code with Copy', str_contains($page, 'id="lpEmbed"') && str_contains($page, 'id="lpEmbedCopy"') && str_contains($page, 'data-path="' . $basePath . '/embed"'));
+    echo "Listener count
+";
+    $json = ['Content-Type: application/json'];
+    $sid = bin2hex(random_bytes(8));
+    $lb = new Browser($base);
+    $r = $lb->go('api/listen.php', json_encode(['sid' => $sid, 'source' => 'player']), $json);
+    $n = json_decode($r['body'], true)['listening'] ?? null;
+    check('a ping from a player counts it as listening', $r['status'] === 200 && is_int($n) && $n >= 1, $r['status'] . ' ' . $r['body']);
+    check('  with no cookie, and never cached', $lb->setCookies === [] && str_contains(implode(',', $r['headers']['cache-control'] ?? []), 'no-store'));
+    $tl = json_decode($lb->go('api/timeline.php')['body'], true);
+    check('  the player feed says how many are listening', is_int($tl['listeners'] ?? null) && $tl['listeners'] >= 1, (string) ($tl['listeners'] ?? '-'));
+    check('  and so does now playing', is_int(json_decode($lb->go('api/nowplaying.php')['body'], true)['listeners'] ?? null));
+    $r = $lb->go('api/listen.php', json_encode(['sid' => $sid, 'source' => 'player', 'stop' => true]), ['Content-Type: text/plain']);
+    check('Stop (sent as a beacon) answers the new count', $r['status'] === 200 && (json_decode($r['body'], true)['listening'] ?? -1) === $n - 1, $r['body']);
+    check('a ping with a made-up id is refused', $lb->go('api/listen.php', json_encode(['sid' => 'me', 'source' => 'player']), $json)['status'] === 400);
+    check('  and listening is counted only by POST', $lb->go('api/listen.php')['status'] === 405);
+    check('the station page shows “Listening now” and loads the ping script', str_contains($page, 'id="lpListeners"') && preg_match('~assets/listeners\.js\?v=[0-9a-f]{10}"~', $page) === 1);
+    check('  and so does the embed', preg_match('~assets/listeners\.js\?v=[0-9a-f]{10}"~', $e->go('embed')['body']) === 1);
     foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/'] as $private) {
         $code = (new Browser($base))->go($private)['status'];
         check("$private is not served", in_array($code, [403, 404], true), (string) $code);
@@ -236,6 +254,7 @@ try {
         check('a DJ sees the overview but not the library', str_contains($r['body'], '>Overview</a>') && !str_contains($r['body'], '>Music library</a>'));
         check('a DJ can’t open the library', $a->go('manage/library')['status'] === 403);
         check('or Sound & safety', $a->go('manage/sound')['status'] === 403);
+        check('or Listeners', $a->go('manage/listeners')['status'] === 403);
         check('a DJ has no Skip button', !str_contains($r['body'], 'Skip this song'));
         check('a DJ can’t skip by sending the form', $a->go('manage/skip', ['csrf' => Browser::csrf($r)])['status'] === 403);
         check('the header and overview link to the studio', str_contains($r['body'], 'href="' . $basePath . '/studio">Studio</a>') && str_contains($r['body'], 'Open the studio'));
@@ -307,6 +326,11 @@ try {
         check('a manager sees every section', $r['status'] === 200 && str_contains($r['body'], '>Music library</a>') && str_contains($r['body'], '>Playlists</a>') && str_contains($r['body'], '>Schedule</a>') && str_contains($r['body'], '>DJs</a>') && str_contains($r['body'], '>Sound &amp; safety</a>'));
         $csrf = Browser::csrf($r);
         check('a manager has a Skip button', str_contains($r['body'], 'Skip this song'));
+        check('the overview shows who is listening', !str_contains($r['body'], 'On air now') || !str_contains($r['body'], 'Skip this song') || (str_contains($r['body'], 'Listening now') && str_contains($r['body'], 'Most at once today')));
+        $lr = $m->go('manage/listeners');
+        check('Listeners opens for a manager, in the menu', $lr['status'] === 200 && str_contains($lr['body'], '>Listeners</a>') && str_contains($lr['body'], '<h1>Listeners</h1>'), (string) $lr['status']);
+        check('  with a chart of 48 hours and one of 30 days', substr_count($lr['body'], 'class="lchart"') === 2 && substr_count($lr['body'], 'class="col"') === 78);
+        check('  each with a table view', substr_count($lr['body'], 'Show as a table') === 2);
         $r = $m->go('manage/skip', ['csrf' => $csrf]);
         check('Skip cuts the song and says when the next starts', $r['status'] === 303 && $flashed($after($m, $r), 'Skipped. The next song starts at'));
         check('a form without its key is turned away', $flashed($after($m, $m->go('manage/skip', ['csrf' => 'nope'])), 'This form had expired'));

@@ -14,23 +14,25 @@ try {
     $db = Db::connect($cfg['db']);
     $station = $db->run('SELECT * FROM ' . $db->table('stations'))->fetch();
 
-    echo "Database version 3\n";
+    echo "Database upgrades (to version " . Schema::VERSION . ")\n";
     $tables = array_column($db->run('SHOW TABLES')->fetchAll(PDO::FETCH_NUM), 0);
     $cols = fn(string $t) => array_column($db->run('SHOW COLUMNS FROM ' . $db->table($t))->fetchAll(), 'Field');
-    check('a new install has the running order table and the version 3 columns', in_array('sw_running_orders', $tables, true) && Schema::installed($db) === 3
+    check('a new install has the running order table and the version 3 columns, at the latest version', in_array('sw_running_orders', $tables, true) && Schema::installed($db) === Schema::VERSION
         && in_array('outro', $cols('tracks'), true) && in_array('continues_show_id', $cols('live_shows'), true));
     $db->pdo->exec('DROP TABLE ' . $db->table('running_orders'));
     $db->pdo->exec('ALTER TABLE ' . $db->table('tracks') . ' DROP COLUMN outro');
     $db->pdo->exec('ALTER TABLE ' . $db->table('live_shows') . ' DROP COLUMN continues_show_id');
+    $db->pdo->exec('DROP TABLE ' . $db->table('listener_hours'));
+    $db->pdo->exec('DROP TABLE ' . $db->table('listeners'));
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '1' WHERE name = 'schema_version'");
     $done = Schema::upgrade($db);
     $tables = array_column($db->run('SHOW TABLES')->fetchAll(PDO::FETCH_NUM), 0);
-    check('a version 1 database is brought up to version 3, step by step', $done === [2, 3] && in_array('sw_running_orders', $tables, true) && Schema::installed($db) === 3
+    check('a version 1 database is brought up to the latest version, step by step', $done === range(2, Schema::VERSION) && in_array('sw_running_orders', $tables, true) && in_array('sw_listeners', $tables, true) && Schema::installed($db) === Schema::VERSION
         && in_array('outro', $cols('tracks'), true) && in_array('continues_show_id', $cols('live_shows'), true), json_encode($done));
     check('  and upgrading again changes nothing', Schema::upgrade($db) === []);
     @mkdir("$root/storage/cache", 0775, true);
     Schema::ensure($db, $root);
-    check('the quick check remembers the version in a small file', trim((string) @file_get_contents("$root/storage/cache/schema-version")) === '3');
+    check('the quick check remembers the version in a small file', trim((string) @file_get_contents("$root/storage/cache/schema-version")) === (string) Schema::VERSION);
 
     // people: the installer's admin, a manager and three DJs
     $user = function (string $name, string $role) use ($db, $station): array {

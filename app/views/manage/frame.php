@@ -7,6 +7,7 @@ $rail = [
     'schedule' => ['manage/schedule', 'Schedule', 'manager'],
     'djs' => ['manage/djs', 'DJs', 'manager'],
     'sound' => ['manage/sound', 'Sound & safety', 'manager'],
+    'listeners' => ['manage/listeners', 'Listeners', 'manager'],
 ];
 // A small POST form around one button; $fields are hidden inputs
 $post = function (string $route, string $label, array $fields = [], string $class = 'btn sm') use ($csrf): string {

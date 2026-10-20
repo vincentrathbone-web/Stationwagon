@@ -18,7 +18,7 @@ final class NowPlaying
     }
 
     /**
-     * @return array{station: array, heard_at: float, server_now: float, delay: int,
+     * @return array{station: array, heard_at: float, server_now: float, delay: int, listeners: int,
      *               on_air: ?array, next: list<array>, recent: list<array>}
      */
     public function at(float $now): array
@@ -47,6 +47,7 @@ final class NowPlaying
             'heard_at' => round($heard, 1),
             'server_now' => round($now, 1),
             'delay' => $delay,
+            'listeners' => (new Listeners($this->planner->db(), $station))->now($now),
             'on_air' => $current === null ? null : $this->describe($current, $heard),
             'next' => array_map(fn($e) => self::song($e) + ['starts' => round($e['start'], 1)], $next),
             'recent' => array_map(fn($e) => self::song($e) + ['started' => round($e['start'], 1)],

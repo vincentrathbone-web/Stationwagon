@@ -115,6 +115,11 @@ try {
   check("Listen joins the song the delayed timeline is on", !!s, s && s.current.title);
   check("  at the right moment (within 0.3 s)", s && Math.abs(drift(s, audible(s)[0])) < 0.3, s && drift(s, audible(s)[0]).toFixed(3) + " s");
   check("  and says it's playing", s && s.status === "Playing" && s.delay === 20, s && s.status);
+  // counted as listening: a ping with a random id, and the health line shows the count
+  s = await until((x) => x.ping && x.listeners >= 1, 5);
+  const shownCount = await evaluate("document.getElementById('lpListeners').textContent");
+  check("  it counts itself as listening (a ping with a random id)", !!s && /^[0-9a-f]{16}$/.test(s.ping) && shownCount === String(s.listeners), s ? `${s.ping}, ${shownCount} listening` : "no ping");
+  const listeningWhilePlaying = s ? s.listeners : 0;
 
   console.log("Crossfade");
   const log = [];
@@ -221,6 +226,10 @@ try {
   }
   if (failed) console.log("Player events:\n    " + ((await state()).events || []).join("\n    "));
   await evaluate("SwPlayer.stop()");
+  // Stop takes it off the count at once (its last ping)
+  let after = null;
+  for (let i = 0; i < 30 && after !== listeningWhilePlaying - 1; i++) { await sleep(200); after = (await (await fetch(`${base}/api/timeline.php`)).json()).listeners; }
+  check("Stop takes it off \"Listening now\" at once", listeningWhilePlaying > 0 && after === listeningWhilePlaying - 1 && (await state()).ping === null, `${listeningWhilePlaying} → ${after}`);
 
   console.log("Stream only");
   await go(`${base}/?mode=stream`);
@@ -263,6 +272,7 @@ try {
   await evaluate("document.getElementById('emPlay').click()");
   const lag = await waitFor("swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);
   check("Listen plays the stream at the same 20 s delay (silent until then)", !!lag, lag ? lag.toFixed(2) + " s" : String(await evaluate("swEmbed.lag + ' s, page ' + document.visibilityState")));
+  check("  and it counts itself as listening too", /^[0-9a-f]{16}$/.test((await evaluate("swEmbed.ping")) || ""), String(await evaluate("swEmbed.ping")));
   const meta = await waitFor("/^\\d+:\\d\\d \\/ \\d+:\\d\\d$|^Live for /.test(document.getElementById('emState').textContent) && document.getElementById('emState').textContent", 3);
   check("  with the time in the song", !!meta, meta || await evaluate("document.getElementById('emState').textContent"));
   await evaluate("document.getElementById('emPlay').click()");

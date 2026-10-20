@@ -23,7 +23,7 @@ $hm = fn(string $t): string => substr($t, 0, 5);
         <button class="btn" id="lpStop" type="button" disabled>Stop</button>
         <div class="lp-vol"><label for="lpVol">Volume</label><input id="lpVol" type="range" min="0" max="100" value="80"><output id="lpVolOut" for="lpVol">80</output></div>
       </div>
-      <div class="lp-health"><span>Connection <b id="lpConn">Ready</b></span><span>Dropouts <b id="lpDrops">0</b></span></div>
+      <div class="lp-health"><span>Connection <b id="lpConn">Ready</b></span><span>Dropouts <b id="lpDrops">0</b></span><span>Listening now <b id="lpListeners">–</b></span></div>
       <p class="lp-note" id="lpNote" role="status" hidden></p>
     </section>
 
@@ -76,6 +76,7 @@ $hm = fn(string $t): string => substr($t, 0, 5);
 <div class="lp-toast" id="lpToast" role="status" hidden></div>
 <script src="<?= h(App::asset('assets/fades.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/outwave.js')) ?>" defer></script>
+<script src="<?= h(App::asset('assets/listeners.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/player.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/notes.js')) ?>" defer></script>
 <script>

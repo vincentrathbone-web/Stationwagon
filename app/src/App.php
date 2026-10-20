@@ -46,6 +46,7 @@ final class App
                 'manage/schedule' => (new ManagePage())->schedule(),
                 'manage/djs' => (new ManagePage())->djs(),
                 'manage/sound' => (new ManagePage())->sound(),
+                'manage/listeners' => (new ManagePage())->listeners(),
                 'studio' => (new StudioPage())->page(),
                 'embed' => self::embed(),
                 default => self::notFound(),

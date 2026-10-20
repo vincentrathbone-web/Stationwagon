@@ -17,15 +17,17 @@ namespace Stationwagon;
  *   v2  running_orders (the studio's show plans)
  *   v3  tracks.outro (the last minute's loudness, for silence detection) and
  *       live_shows.continues_show_id (a show a DJ rejoined after a drop)
+ *   v4  listeners (who is listening now, by a random id per Listen) and listener_hours (stats)
  */
 final class Schema
 {
-    public const VERSION = 3;
+    public const VERSION = 4;
 
     /** Table names without prefix, in creation order (foreign keys need their parents first). */
     public const TABLES = [
         'settings', 'stations', 'users', 'station_users', 'tracks', 'playlists', 'playlist_tracks',
         'schedule', 'live_shows', 'live_pieces', 'timeline', 'presenter_notes', 'running_orders',
+        'listeners', 'listener_hours',
     ];
 
     /** @return array<string,string> table name => CREATE TABLE statement */
@@ -220,6 +222,8 @@ final class Schema
             ) $opts",
 
             'running_orders' => self::runningOrders($p, $opts),
+            'listeners' => self::listeners($p, $opts),
+            'listener_hours' => self::listenerHours($p, $opts),
         ];
     }
 
@@ -240,6 +244,39 @@ final class Schema
             ) $opts";
     }
 
+    /**
+     * Open players, one row per Listen: a random id the page makes when Listen is pressed (no
+     * cookie, nothing kept in the browser), never an IP address or browser details. Rows go once
+     * the player has been quiet for 10 minutes.
+     */
+    private static function listeners(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}listeners` (
+                `station_id` INT UNSIGNED NOT NULL,
+                `sid` CHAR(16) NOT NULL,
+                `source` ENUM('player','embed') NOT NULL,
+                `first_seen` DECIMAL(15,3) NOT NULL,
+                `last_seen` DECIMAL(15,3) NOT NULL,
+                PRIMARY KEY (`station_id`, `sid`),
+                KEY `{$p}listeners_seen` (`station_id`, `last_seen`),
+                CONSTRAINT `{$p}fk_listeners_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE
+            ) $opts";
+    }
+
+    /** Listening per hour (UTC hour start): the most at once, listener-minutes and Listen presses. */
+    private static function listenerHours(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}listener_hours` (
+                `station_id` INT UNSIGNED NOT NULL,
+                `hour` DATETIME NOT NULL,
+                `peak` INT UNSIGNED NOT NULL DEFAULT 0,
+                `minutes` INT UNSIGNED NOT NULL DEFAULT 0,
+                `listens` INT UNSIGNED NOT NULL DEFAULT 0,
+                PRIMARY KEY (`station_id`, `hour`),
+                CONSTRAINT `{$p}fk_lhours_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE
+            ) $opts";
+    }
+
     /** @return array<int, list<string>> version => the statements that bring the version before it up to it */
     public static function migrations(string $p): array
     {
@@ -250,6 +287,7 @@ final class Schema
                 "ALTER TABLE `{$p}tracks` ADD COLUMN `outro` MEDIUMTEXT NULL COMMENT 'JSON: loudness (LUFS) of each second of the last minute, from song prep' AFTER `loudness_lufs`",
                 "ALTER TABLE `{$p}live_shows` ADD COLUMN `continues_show_id` INT UNSIGNED NULL COMMENT 'the show this one carries on after a drop' AFTER `closed_reason`",
             ],
+            4 => [self::listeners($p, $opts), self::listenerHours($p, $opts)],
         ];
     }
 

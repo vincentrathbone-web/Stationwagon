@@ -29,7 +29,7 @@ Options -Indexes
   <Files "nowplaying.php">
     Header set Cache-Control "public, max-age=0, s-maxage=2"
   </Files>
-  <FilesMatch "^(timeline|notes)\.php$">
+  <FilesMatch "^(timeline|notes|listen)\.php$">
     Header set Cache-Control "no-store"
   </FilesMatch>
   # Songs and live pieces never change at the same address

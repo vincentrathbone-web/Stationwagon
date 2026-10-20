@@ -213,6 +213,14 @@ A scrolling picture of **what goes out** (the wet mix, never the inputs), settle
   repeat. *Sound quality*: live shows and prepared songs (96–256 kbps, each with its MB an hour), and
   the listener delay shown but not editable ("About 20 s", from the 6 s pieces), since songs on air
   are already cut into pieces of that length.
+- **Listeners** (as built, round 27; not in the mock-ups): four stat tiles (listening now, most at
+  once today, hours listened today, listens today), then two cards with a column chart each: the
+  last 48 hours (the most listeners at once in each hour; labels at 00, 06, 12 and 18, midnight by
+  its day) and the last 30 days (hours listened per day). One colour (`--chart`), 4 px rounded tops,
+  hairline grid, a tooltip per column on hover or focus, and "Show as a table" under each. On a
+  phone the tiles go two by two and the charts scroll inside their cards, starting at the newest
+  end. The overview's On air card shows "Listening now" and "Most at once today" as two tiles, as
+  in the mock-up; the player's health line shows "Listening now".
 
 ## Copy rules
 

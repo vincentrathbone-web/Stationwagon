@@ -7,7 +7,7 @@
   const BASE = root.dataset.base;
   const $ = (id) => document.getElementById(id);
   const POLL_MS = 15000;
-  let np = null, offset = 0, audio = null, hls = null, settled = false, timer = 0, polledAt = 0;
+  let np = null, offset = 0, audio = null, hls = null, settled = false, timer = 0, polledAt = 0, ping = null;
 
   const mmss = (s) => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
   const state = (text) => { $("emState").textContent = text; };
@@ -104,6 +104,7 @@
       }
       audio.addEventListener("waiting", () => { if (settled) state("Buffering…"); });
       await audio.play();
+      if (window.SwListeners) ping = SwListeners.start(BASE, "embed"); // counted as listening while it plays
       tick();
     } catch (ex) {
       stop();
@@ -112,6 +113,7 @@
   }
 
   function stop() {
+    if (ping) { ping.stop(); ping = null; }
     if (hls) { hls.destroy(); hls = null; }
     if (audio) { audio.pause(); audio.removeAttribute("src"); audio.load(); audio = null; }
     settled = false;
@@ -127,6 +129,7 @@
     get heard() { return settled && !!audio && audio.volume > 0; },
     get lag() { const pd = playingDate(); return pd === null ? null : now() - pd; },
     get np() { return np; },
+    get ping() { return ping ? ping.sid : null; },
   };
   poll();
 })();

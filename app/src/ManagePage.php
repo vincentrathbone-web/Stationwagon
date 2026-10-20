@@ -41,6 +41,8 @@ final class ManagePage
             'playlists' => count((new Playlists($this->db, $this->station))->all()),
             'blocks' => count((new Schedule($this->db, $this->station))->all()),
             'block' => $this->planner->blockAt($now),
+            'listening' => ($listeners = new Listeners($this->db, $this->station))->now($now),
+            'todayPeak' => $listeners->daily($now, 1)[0]['peak'],
         ]);
     }
 
@@ -312,6 +314,20 @@ final class ManagePage
     }
 
     // ---- Sound & safety ------------------------------------------------------------------
+
+    /** Listeners: how many now, and charts of the last 48 hours and 30 days. */
+    public function listeners(): void
+    {
+        $me = App::requireRole('manager');
+        $now = microtime(true);
+        $listeners = new Listeners($this->db, $this->station);
+        $this->render('listeners', 'Listeners', $me, [
+            'now' => $now,
+            'listening' => $listeners->now($now),
+            'hourly' => $listeners->hourly($now, 48),
+            'daily' => $listeners->daily($now, 30),
+        ]);
+    }
 
     public function sound(): void
     {

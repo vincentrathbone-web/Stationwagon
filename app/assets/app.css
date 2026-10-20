@@ -8,6 +8,8 @@
   --onair: #f15e6c; --ok: #1ed760; --warn: #ffa42b; --cue: #509bf5;
   /* the output strip: one colour per source (outwave.js) */
   --src-a: #4da3ff; --src-b: #ff5fa8; --src-live: #f7d23e; --src-out: #ffffff;
+  /* listener charts: one series, checked for lightness and contrast on the dark card */
+  --chart: #18a84a; --chart-grid: #2a2a2a;
   --f-ui: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-mono: "DM Mono", ui-monospace, Consolas, monospace;
 }
@@ -92,6 +94,7 @@ h2 { font-weight: 700; font-size: 18px; margin: 0 0 10px; }
 .rail a:hover { background: var(--panel); color: var(--ink); }
 .rail a[aria-current="page"] { background: var(--panel); color: var(--amber); }
 .mmain { display: grid; gap: 14px; min-width: 0; }
+.mmain > * { min-width: 0; } /* wide content (tables, charts) scrolls inside its card */
 .vhead h1 { margin: 0; }
 .vhead p { margin: 6px 0 0; color: var(--muted); max-width: 70ch; font-size: 14px; }
 .vhead p.crumb { margin: 0 0 4px; font-size: 13px; }
@@ -549,3 +552,29 @@ html.light .em-play { color: #fff; }
 .lp-embed small a { color: var(--muted); }
 .lp-embed .check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
 .lp-embed .check input { accent-color: var(--amber); margin: 0; }
+
+/* ---- Listeners: stat tiles (overview, Listeners screen) and the charts --------------------- */
+.mstats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 14px; }
+.mstat { background: var(--raised); border-radius: 12px; padding: 10px 12px; display: grid; gap: 2px; }
+.mstat b { font: 800 24px/1.1 var(--f-ui); color: var(--ink); font-variant-numeric: tabular-nums; }
+.mstat span { font-size: 12px; color: var(--muted); }
+.lstats { margin: 0 0 14px; }
+.lcard { margin-bottom: 14px; }
+.lcard h2 { margin-bottom: 2px; }
+.lcard .muted { margin-bottom: 10px; }
+.lwrap { overflow-x: auto; }
+.lchart { display: block; width: 100%; min-width: 520px; height: auto; }
+.lchart .grid { stroke: var(--chart-grid); stroke-width: 1; }
+.lchart .axis { stroke: #3a3a3a; stroke-width: 1; }
+.lchart .tick, .lchart .xlab { font: 500 10px var(--f-ui); fill: var(--faint); font-variant-numeric: tabular-nums; }
+.lchart .bar { fill: var(--chart); }
+.lchart .hit { fill: transparent; }
+.lchart .col { outline: none; cursor: default; }
+.lchart .col:hover .hit, .lchart .col:focus .hit { fill: rgba(255, 255, 255, .05); }
+.lchart .col:hover .bar, .lchart .col:focus .bar { fill: var(--amber); }
+.ltable { margin-top: 10px; }
+.ltable summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.ltable .tablewrap { margin-top: 8px; max-height: 320px; overflow-y: auto; }
+.ltable .tablewrap table { min-width: 0; }
+.ltip { position: absolute; z-index: 6; pointer-events: none; background: var(--raised); color: var(--ink); border: 1px solid var(--edge);
+  border-radius: 10px; padding: 6px 10px; font-size: 12px; white-space: nowrap; box-shadow: 0 6px 18px rgba(0, 0, 0, .4); }

@@ -26,6 +26,7 @@ $name = $station['name'] ?? 'Stationwagon';
   </div>
   <a class="em-open" href="<?= h(App::url('')) ?>" target="_blank" rel="noopener">Open the player <span aria-hidden="true">↗</span></a>
 </div>
+<script src="<?= h(App::asset('assets/listeners.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/embed.js')) ?>" defer></script>
 </body>
 </html>
