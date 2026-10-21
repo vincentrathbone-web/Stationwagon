@@ -224,6 +224,16 @@ final class Studio
         return $r + ['status' => isset($r['error']) ? 422 : 200];
     }
 
+    public function editNote(array $user, string $publicId, int $id, array $fields, float $now): array
+    {
+        $show = $this->show($publicId);
+        if (!$show || !$this->canControl($user, $show)) {
+            return ['error' => 'This isn’t your show.', 'status' => 403];
+        }
+        $r = (new Notes($this->db, $this->station))->edit($publicId, (int) $user['id'], $id, $fields, $now);
+        return $r + ['status' => isset($r['error']) ? 422 : 200];
+    }
+
     public function removeNote(array $user, string $publicId, int $id): array
     {
         $show = $this->show($publicId);

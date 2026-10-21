@@ -279,6 +279,38 @@ registerProcessor("sw-tap", SwTap);`;
     sel.disabled = ins.length === 0;
     const out = outs.find((d) => d.deviceId === "default") || outs[0];
     if (out && out.label) $("stOut").textContent = out.label.replace(/^Default - /, "");
+    listOutputs(outs);
+  }
+
+  // ---- Headphones: where the DJ hears the studio (everything they hear: the music going out and any
+  // deck on Cue). The whole sound engine moves to that device; what goes on air doesn't change.
+  const OUT_KEY = "sw.studio.output";
+  const canPickOutput = () => !!(ctx && typeof ctx.setSinkId === "function");
+  function savedOutput() { try { return localStorage.getItem(OUT_KEY) || ""; } catch (_) { return ""; } }
+  function listOutputs(outs) {
+    // "default" and "communications" are the system's own picks, shown as the first choice
+    const real = outs.filter((d) => d.deviceId && d.deviceId !== "default" && d.deviceId !== "communications");
+    const sel = $("stOutDev"), def = outs.find((d) => d.deviceId === "default");
+    const first = el("option", "", "System default" + (def && def.label ? ` (${def.label.replace(/^Default - /, "")})` : "")); first.value = "";
+    sel.replaceChildren(first, ...real.map((d, i) => { const o = el("option", "", d.label || `Sound output ${i + 1}`); o.value = d.deviceId; return o; }));
+    const show = canPickOutput() && real.length > 1;
+    sel.hidden = !show; $("stOut").hidden = show;
+    if (!canPickOutput()) return;
+    const want = savedOutput(), have = real.some((d) => d.deviceId === want) ? want : "";
+    sel.value = have;
+    if ((ctx.sinkId || "") !== have) setOutput(have, false); // the saved one, or back to the default if it was unplugged
+  }
+  async function setOutput(id, remember = true) {
+    if (!canPickOutput()) return;
+    const sel = $("stOutDev");
+    try {
+      await ctx.setSinkId(id);
+      if (remember) { try { localStorage.setItem(OUT_KEY, id); } catch (_) { /* not remembered */ } }
+      log("headphones: " + (id ? sel.selectedOptions[0]?.textContent || id : "system default"));
+    } catch (e) {
+      sel.value = ctx.sinkId || "";
+      banner("Couldn’t switch your headphones to that output: " + (e.message || e.name) + ". The studio stays on the one before.", "end");
+    }
   }
 
   // ---- Mixer --------------------------------------------------------------------------------
@@ -330,7 +362,10 @@ registerProcessor("sw-tap", SwTap);`;
     $("talk").textContent = talk ? "Mic live · tap to close" : "Mic on air";
     if (micOnAir) { micOnAir.gain.setTargetAtTime(talk ? 1 : 0, ctx.currentTime, 0.02); mark(ctx.currentTime, "mic"); }
     log("mic " + (talk ? "on air" : "off"));
+    // opening the mic starts the talk item that comes next in the running order
+    if (talk && order.items[nowItem + 1] && order.items[nowItem + 1].kind === "talk") markNow(nowItem + 1);
   }
+  function markNow(i) { nowItem = i; renderOrder(); log(`running order: item ${i + 1} now`); }
 
   // ---- Output strip: what goes out, measured and (to the right of now) mixed ahead -------------
   const WAVE_AHEAD = 12;
@@ -619,6 +654,7 @@ registerProcessor("sw-tap", SwTap);`;
       li.append(el("span", "nm", it.kind === "talk" ? it.title : (it.artist ? it.artist + " — " : "") + it.title), el("span", "d", fmt(it.seconds)));
       const ld = el("span", "ld");
       if (it.kind !== "talk") ["A", "B"].forEach((k) => { const b = el("button", "btn sm", k); b.type = "button"; b.title = `Load on deck ${k}`; b.disabled = !on; b.onclick = () => loadItem(k, it, i); ld.append(b); });
+      else if (i !== nowItem) { const b = el("button", "btn sm", "Now"); b.type = "button"; b.title = "Mark this talk item as now (opening the mic does it for the next one)"; b.disabled = !on; b.onclick = () => markNow(i); ld.append(b); }
       if (order.editable) {
         const up = el("button", "btn sm ghost", "↑"), dn = el("button", "btn sm ghost", "↓"), rm = el("button", "btn sm ghost", "✕");
         up.type = dn.type = rm.type = "button"; up.title = "Move up"; dn.title = "Move down"; rm.title = "Remove";
@@ -678,7 +714,7 @@ registerProcessor("sw-tap", SwTap);`;
   }
 
   // ---- Presenter notes drawer ---------------------------------------------------------------
-  let kind = "verse", notes = [], confirmRemove = null;
+  let kind = "verse", notes = [], confirmRemove = null, editing = null;
   const KIND = { verse: "Verse", refs: "References", video: "Video", note: "Note" };
   function openDrawer(open) {
     $("stDrawer").hidden = !open;
@@ -687,6 +723,7 @@ registerProcessor("sw-tap", SwTap);`;
     if (open) { const f = $("noteForm").querySelector(`.st-nf[data-for="${kind}"] input, .st-nf[data-for="${kind}"] textarea`); if (f) f.focus(); }
   }
   function setKind(k) {
+    if (editing !== null && k !== kind) return; // an edit keeps its kind
     kind = k;
     document.querySelectorAll(".st-kinds [data-kind]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.kind === k)));
     document.querySelectorAll(".st-nf").forEach((f) => (f.hidden = f.dataset.for !== k));
@@ -702,15 +739,40 @@ registerProcessor("sw-tap", SwTap);`;
     const show = myShow();
     if (!show) return;
     $("notePost").disabled = true;
-    const r = await api("note", { body: { live: show.public_id, kind, fields: noteFields() } });
+    const r = editing !== null
+      ? await api("note-edit", { body: { live: show.public_id, id: editing, fields: noteFields() } })
+      : await api("note", { body: { live: show.public_id, kind, fields: noteFields() } });
     $("notePost").disabled = false;
-    if (r.error) { $("noteErr").textContent = r.error; $("noteErr").hidden = false; return; }
+    if (r.error) { $("noteErr").textContent = r.error; $("noteErr").hidden = false; if (r.httpStatus === 404) { notes = notes.filter((n) => n.id !== editing); endEdit(); renderNotes(); } return; }
     $("noteErr").hidden = true;
+    if (r.replaces) notes = notes.filter((n) => n.id !== r.replaces);
     notes.push(r.note);
+    log(r.replaces ? `note ${r.replaces} changed, now ${r.note.id}` : `note ${r.note.id} posted`);
+    endEdit();
+    renderNotes();
+  }
+  /** Fill the note's form to change it; Save posts it again as new (listeners get it with a toast). */
+  function startEdit(n) {
+    editing = null; setKind(n.kind); editing = n.id;
+    const f = $("noteForm").querySelector(`.st-nf[data-for="${n.kind}"]`);
+    const v = { ref: n.ref, version: n.version, text: n.text, refs: (n.refs || []).map((r) => r.label).join("\n"), url: n.url };
+    f.querySelectorAll("input, textarea").forEach((i) => (i.value = v[i.name] ?? ""));
+    document.querySelectorAll(".st-kinds [data-kind]").forEach((b) => (b.disabled = b.dataset.kind !== n.kind));
+    $("notePost").textContent = "Save changes"; $("noteCancel").hidden = false;
+    $("noteHint").textContent = `Listeners get the changed note as new, ${DELAY} s after you save.`;
+    $("noteErr").hidden = true;
+    renderNotes();
+    const first = f.querySelector("input, textarea"); if (first) first.focus();
+  }
+  function endEdit() {
+    const was = editing;
+    editing = null;
     const f = $("noteForm").querySelector(`.st-nf[data-for="${kind}"]`);
     f.querySelectorAll("input, textarea").forEach((i) => { if (i.name !== "version") i.value = ""; });
-    renderNotes();
-    log(`note ${r.note.id} posted`);
+    if (was !== null) f.querySelectorAll('input[name="version"]').forEach((i) => (i.value = "KJV"));
+    document.querySelectorAll(".st-kinds [data-kind]").forEach((b) => (b.disabled = false));
+    $("notePost").textContent = "Post note"; $("noteCancel").hidden = true;
+    $("noteHint").textContent = `Listeners see it ${DELAY} s after you post, when they hear this moment.`;
   }
   function summary(n) {
     if (n.kind === "verse") return `${n.ref} (${n.version})`;
@@ -720,7 +782,7 @@ registerProcessor("sw-tap", SwTap);`;
   function renderNotes() {
     const now = clock.now();
     $("noteList").replaceChildren(...[...notes].reverse().map((n) => {
-      const li = el("li"); li.dataset.id = n.id;
+      const li = el("li", editing === n.id ? "editing" : ""); li.dataset.id = n.id;
       const head = el("div", "st-nhead");
       head.append(el("b", "", KIND[n.kind] || "Note"), el("time", "", n.at));
       const seenAt = n.posted + DELAY;
@@ -734,8 +796,10 @@ registerProcessor("sw-tap", SwTap);`;
         yes.onclick = () => removeNote(n.id); no.onclick = () => { confirmRemove = null; renderNotes(); };
         acts.append(yes, no);
       } else {
+        const ed = el("button", "btn sm ghost", editing === n.id ? "Editing…" : "Edit"); ed.type = "button"; ed.disabled = editing === n.id || !(myShow() && live);
+        ed.onclick = () => startEdit(n);
         const rm = el("button", "btn sm ghost", "Remove"); rm.type = "button"; rm.onclick = () => { confirmRemove = n.id; renderNotes(); };
-        acts.append(rm);
+        acts.append(ed, rm);
       }
       li.append(acts);
       return li;
@@ -748,7 +812,7 @@ registerProcessor("sw-tap", SwTap);`;
     confirmRemove = null;
     if (!show) return;
     const r = await api("note-remove", { body: { live: show.public_id, id } });
-    if (!r.error || r.httpStatus === 404) notes = notes.filter((n) => n.id !== id);
+    if (!r.error || r.httpStatus === 404) { notes = notes.filter((n) => n.id !== id); if (editing === id) endEdit(); }
     renderNotes();
   }
   const myShow = () => (S && S.show && S.show.mine ? S.show : null);
@@ -815,7 +879,7 @@ registerProcessor("sw-tap", SwTap);`;
     const show = S.show;
     if (show && show.mine) {
       const ids = (show.notes || []).map((n) => n.id).join();
-      if (ids !== notes.map((n) => n.id).join()) { notes = show.notes || []; renderNotes(); }
+      if (ids !== notes.map((n) => n.id).join()) { notes = show.notes || []; if (editing !== null && !notes.some((n) => n.id === editing)) endEdit(); renderNotes(); }
     } else if (notes.length && !live) { notes = []; renderNotes(); }
     if (!live && !powering) {
       const rj = slot.rejoin;
@@ -886,6 +950,8 @@ registerProcessor("sw-tap", SwTap);`;
   $("fadeBtn").onclick = () => autoFade(S ? S.settings.crossfade_seconds : 6);
   $("skipBtn").onclick = () => autoFade(S ? S.settings.skip_fade_seconds : 2);
   $("talk").onclick = () => setTalk(!talk);
+  $("stOutDev").onchange = () => setOutput($("stOutDev").value);
+  if (navigator.mediaDevices) navigator.mediaDevices.addEventListener("devicechange", () => { if (on) listDevices().catch(() => {}); });
   $("preset").value = savedMic().preset || "Preacher";
   $("preset").onchange = (e) => { saveMic({ preset: e.target.value, custom: {} }); applyMicUi(); };
   $("dev").onchange = async (e) => { saveMic({ device: e.target.value }); try { await useMic(e.target.value); } catch (err) { banner("That microphone couldn’t start: " + err.message, "end"); } };
@@ -911,6 +977,7 @@ registerProcessor("sw-tap", SwTap);`;
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("stDrawer").hidden) openDrawer(false); });
   document.querySelectorAll(".st-kinds [data-kind]").forEach((b) => (b.onclick = () => setKind(b.dataset.kind)));
   $("noteForm").onsubmit = postNote;
+  $("noteCancel").onclick = () => { endEdit(); renderNotes(); };
   if (location.hash === "#notes") openDrawer(true);
   // on air, or the show's recording still uploading (it would carry on the next time the studio opens)
   window.addEventListener("beforeunload", (e) => { if (live || (window.SwRecorder && SwRecorder.busy())) { e.preventDefault(); e.returnValue = ""; } });
@@ -929,7 +996,7 @@ registerProcessor("sw-tap", SwTap);`;
   window.SwStudio = {
     state: () => ({
       on, handheld, encoder: encReady ? "worker" : null, rec: rec ? { ...rec.state(), upload: recUp, waiting: recWaiting } : null, live: live && { ...live }, sent: sentCount, queue: queue.length, errors: sendErrors, lastError,
-      xf: xfValue, talk, mic: chain ? chain.meters().outDb : null, ducked: !!(ducker && ducker.ducked), notes: notes.map((n) => n.id), order: order.items.map((i) => i.kind + ":" + (i.track_id || i.title)), nowItem,
+      xf: xfValue, talk, mic: chain ? chain.meters().outDb : null, ducked: !!(ducker && ducker.ducked), notes: notes.map((n) => n.id), editing, output: ctx ? { sink: ctx.sinkId ?? null, choices: [...$("stOutDev").options].map((o) => o.value), shown: !$("stOutDev").hidden } : null, order: order.items.map((i) => i.kind + ":" + (i.track_id || i.title)), nowItem,
       slot: S && S.slot, show: S && S.show,
       decks: Object.fromEntries(["A", "B"].map((k) => [k, { title: decks[k].item && decks[k].item.title, playing: decks[k].playing, pos: on ? decks[k].position() : 0,
         drift: decks[k].handover && decks[k].playing ? decks[k].position() - (clock.now() - decks[k].handover.start) : null }])),

@@ -20,12 +20,14 @@ namespace Stationwagon;
  *   v4  listeners (who is listening now, by a random id per Listen) and listener_hours (stats)
  *   v5  listeners keeps each Listen for 30 days with its address, browser details, device, app
  *       and place; listener_tally (daily totals by those) and listener_visitors (daily unique marks)
+ *   v7  presenter_notes.replaced_by: an edited note is posted again as a new row; the old one stays
+ *       for listeners until they reach the edit
  *   v6  podcasts: episodes (one per live show, with its continuations), episode_takes (each show's
  *       recording: from the studio's device, or as aired) and episode_chunks (the device's pieces)
  */
 final class Schema
 {
-    public const VERSION = 6;
+    public const VERSION = 7;
 
     /** Table names without prefix, in creation order (foreign keys need their parents first). */
     public const TABLES = [
@@ -219,6 +221,7 @@ final class Schema
                 `kind` ENUM('verse','refs','video','note') NOT NULL,
                 `body` MEDIUMTEXT NOT NULL,
                 `posted_at` DATETIME NOT NULL,
+                `replaced_by` INT UNSIGNED NULL,
                 PRIMARY KEY (`id`),
                 KEY `{$p}notes_station_posted` (`station_id`, `posted_at`),
                 {$fk('notes_station', 'station_id', 'stations')},
@@ -420,6 +423,7 @@ final class Schema
             // listeners held only the open players: it is simply made again in its new shape
             5 => ["DROP TABLE IF EXISTS `{$p}listeners`", self::listeners($p, $opts), self::listenerTally($p, $opts), self::listenerVisitors($p, $opts)],
             6 => [self::episodes($p, $opts), self::episodeTakes($p, $opts), self::episodeChunks($p, $opts)],
+            7 => ["ALTER TABLE `{$p}presenter_notes` ADD COLUMN `replaced_by` INT UNSIGNED NULL COMMENT 'the edited copy that replaces this note' AFTER `posted_at`"],
         ];
     }
 
@@ -452,7 +456,14 @@ final class Schema
                     continue;
                 }
                 foreach ($statements as $sql) {
-                    $db->pdo->exec($sql);
+                    try {
+                        $db->pdo->exec($sql);
+                    } catch (\PDOException $e) {
+                        // an ADD COLUMN that a step cut short already made (MySQL has no ADD COLUMN IF NOT EXISTS)
+                        if ((int) ($e->errorInfo[1] ?? 0) !== 1060) {
+                            throw $e;
+                        }
+                    }
                 }
                 $db->run('UPDATE ' . $db->table('settings') . " SET value = ?, updated_at = ? WHERE name = 'schema_version'", [(string) $version, gmdate('Y-m-d H:i:s')]);
                 $done[] = $version;

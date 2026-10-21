@@ -96,6 +96,8 @@ try {
   s = await until((x) => x.on, 15);
   check("switching on starts sound and the phone's microphone", !!s, s ? "" : await text("#stBannerText"));
   check("  the MP3 encoder runs in its worker", !!s && s.encoder === "worker", s && String(s.encoder));
+  check("  the headphones show this phone's output (a menu only when there is more than one)", !!s && !!s.output && s.output.sink === ""
+    && (s.output.shown ? s.output.choices.length > 2 : (await text("#stOut")).length > 0), s && `${JSON.stringify(s.output)} · ${await text("#stOut")}`);
   check("  and, on a phone, reminds the DJ to turn on Do Not Disturb and wear headphones", !!s && s.handheld && (await text("#stBannerText")).includes("Turn on Do Not Disturb"), await text("#stBannerText"));
   check("  and lists the phone's microphone", ((await evaluate("document.getElementById('dev').options.length")) || 0) >= 1);
   s = await until((x) => x.mic !== null && x.mic > -100, 8);

@@ -195,11 +195,21 @@ try {
     $oldest = $db->run('SELECT MIN(`day`) FROM ' . $db->table('listener_tally'))->fetchColumn();
     check('  and go after that', count($hours()) === 2 && $count('listener_visitors') === 0 && $oldest > gmdate('Y-m-d', (int) $later), count($hours()) . " hours, tally from $oldest");
 
+    echo "A Stop that overtakes the first ping\n";
+    // on a slow server the first ping can still be running when a quick Stop arrives
+    $t9 = $later + (Listeners::KEEP_DAYS + 2) * 86400;
+    $before = $l->now($t9);
+    $l->ping($id(400), 'player', $t9 + 0.4, true, '8.8.8.8', $laptop);
+    check('a Stop before the first ping is kept as an ended Listen', $l->now($t9 + 1) === $before
+        && (int) $db->run('SELECT ended FROM ' . $db->table('listeners') . ' WHERE sid = ?', [$id(400)])->fetchColumn() === 1);
+    check('  so the first ping, arriving after it, doesn’t count the player as listening', $l->ping($id(400), 'player', $t9 + 1.4, false, '8.8.8.8', $laptop) === $before && $l->now($t9 + 2) === $before);
+
     echo "Upgrade\n";
     $p = $cfg['db']['prefix'];
     foreach (['listener_visitors', 'listener_tally', 'listener_hours', 'listeners'] as $table) {
         $db->pdo->exec("DROP TABLE `{$p}$table`");
     }
+    $db->pdo->exec("ALTER TABLE `{$p}presenter_notes` DROP COLUMN replaced_by");
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '3' WHERE name = 'schema_version'");
     check('a version 3 database upgrades to ' . Schema::VERSION, Schema::upgrade($db, $root) === range(4, Schema::VERSION) && Schema::installed($db) === Schema::VERSION);
     $tables = fn() => array_map(fn($x) => (bool) $db->run("SHOW TABLES LIKE '{$p}$x'")->fetchColumn(), ['listeners', 'listener_hours', 'listener_tally', 'listener_visitors']);

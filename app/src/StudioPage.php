@@ -15,6 +15,7 @@ use Throwable;
  *   POST piece?live=&seq=&dur=  one MP3 piece as the request body (409 gap, 410 closed)
  *   POST end    {live}
  *   POST note   {live, kind, fields}       POST note-remove {live, id}
+ *   POST note-edit {live, id, fields}      (posted again as new; the old version stays until listeners reach it)
  *   POST order  {scope, items}
  * POSTs carry the session's form key in an X-CSRF header.
  */
@@ -62,6 +63,7 @@ final class StudioPage
                 $post && $action === 'piece' => $studio->addPiece($me, (string) ($_GET['live'] ?? ''), (int) ($_GET['seq'] ?? -1), (float) ($_GET['dur'] ?? 0), (string) file_get_contents('php://input'), $now),
                 $post && $action === 'end' => $studio->endLive($me, (string) ($in['live'] ?? ''), $now),
                 $post && $action === 'note' => $studio->postNote($me, (string) ($in['live'] ?? ''), (string) ($in['kind'] ?? ''), is_array($in['fields'] ?? null) ? $in['fields'] : [], $now),
+                $post && $action === 'note-edit' => $studio->editNote($me, (string) ($in['live'] ?? ''), (int) ($in['id'] ?? 0), is_array($in['fields'] ?? null) ? $in['fields'] : [], $now),
                 $post && $action === 'note-remove' => $studio->removeNote($me, (string) ($in['live'] ?? ''), (int) ($in['id'] ?? 0)),
                 $post && $action === 'order' => $studio->saveOrder($me, (string) ($in['scope'] ?? ''), $in['items'] ?? null),
                 default => ['error' => 'No such studio action.', 'status' => 404],

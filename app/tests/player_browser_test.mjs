@@ -155,8 +155,13 @@ try {
   check("  those reads don't download the songs a second time", reads.n > 0 && fl.length > 0 && sent <= size * 1.05 + 4096 * fl.length,
     `${reads.n} reads of ${reads.body} bytes; ${fl.length} song files of ${size} bytes, ${sent} over the network: ` +
     fl.map((f) => `${f.sent}/${f.size}`).join(", "));
-  const px = await evaluate(`(() => { const c = document.getElementById('lpWave'), g = c.getContext('2d'), d = g.getImageData(0, 0, c.width, c.height).data; let a = 0, b = 0;
-    for (let i = 0; i < d.length; i += 4) { if (d[i + 2] > 150 && d[i] < 140 && d[i + 1] > 100) a++; if (d[i] > 150 && d[i + 2] > 100 && d[i + 1] < 140) b++; } return { a, b, w: c.width, h: c.height }; })()`);
+  // looked at a few times over 2 s: a look just as a song ends finds the strip nearly empty (quiet)
+  let px = null;
+  for (let i = 0; i < 6 && !(px && px.a + px.b > 100); i++) {
+    if (i) await sleep(400);
+    px = await evaluate(`(() => { const c = document.getElementById('lpWave'), g = c.getContext('2d'), d = g.getImageData(0, 0, c.width, c.height).data; let a = 0, b = 0;
+      for (let i = 0; i < d.length; i += 4) { if (d[i + 2] > 150 && d[i] < 140 && d[i + 1] > 100) a++; if (d[i] > 150 && d[i + 2] > 100 && d[i + 1] < 140) b++; } return { a, b, w: c.width, h: c.height }; })()`);
+  }
   check("  the strip draws the songs in their colours", px.w > 0 && px.a + px.b > 100, `${px.w}×${px.h}, ${px.a} blue and ${px.b} pink pixels`);
 
   console.log("Frozen sound engine (as a Xiaomi phone does some seconds after locking)");
@@ -206,6 +211,14 @@ try {
     const dom = await evaluate(`(() => { const li = document.querySelector('#lpNotesList li'), q = li.querySelector('blockquote'), t = document.getElementById('lpToast');
       return { text: q.textContent, tags: q.children.length, read: li.querySelector('a').href, toast: t.hidden ? '' : t.textContent }; })()`);
     check("  shown as text, with its Bible Gateway link and a toast", dom.text.includes("<b>I shall") && dom.tags === 0 && dom.read.startsWith("https://www.biblegateway.com/passage/?search=Psalm%2023") && dom.toast.startsWith("New note"), JSON.stringify(dom));
+    // the presenter fixes the verse: it comes again as new, and the old one stays until listeners reach the edit
+    await sleep(2700); // the first toast has gone
+    const editedAt = Date.now();
+    const changed = helper("note-edit", show.public_id, String(nid), JSON.stringify({ ref: "Psalm 23:1-2", text: "The LORD is my shepherd; I shall not want. He maketh me to lie down in green pastures.", passage: "Psalm 23" }));
+    const nid2 = changed.note && changed.note.id;
+    check("the presenter changes the note", !!nid2 && changed.replaces === nid, JSON.stringify(changed));
+    n = await untilNotes((x) => x.held.includes(nid2), 6);
+    check("  listeners keep the old version until they reach the change", !!n && n.shown.includes(nid) && !n.shown.includes(nid2), n && `shown ${n.shown}, held ${n.held}`);
     s = await until((x) => x.current && x.current.type === "live", 45);
     check("the player reaches the show 20 s later", !!s, s && `heard ${(s.heard - show.start).toFixed(1)} s after its start`);
     s = await until((x) => x.current && x.current.type === "live" && x.stream && x.stream.gain > 0.9, 6);
@@ -217,6 +230,11 @@ try {
     check("  and what it mixed ahead of the show is what went out (within 1 dB)", same(lc, [2, 3]) && lc.got[2] > 0.01, `planned ${dBs(lc.plan)}, measured ${dBs(lc.got)}`);
     s = await until((x) => x.decks.every((d) => !d.playing), 9); // after the 6 s live cut-in fade
     check("  with the song decks quiet once the fade is done", !!s, s ? "" : JSON.stringify((await state()).decks));
+    n = await untilNotes((x) => x.shown.includes(nid2), 30);
+    const after2 = (Date.now() - editedAt) / 1000;
+    check("the changed note replaces the old one 20 s after the change", !!n && !n.shown.includes(nid) && after2 > 18.5 && after2 < 23, n ? `${after2.toFixed(1)} s, shown ${n.shown}` : JSON.stringify(await notes()));
+    const dom2 = await evaluate(`(() => { const t = document.getElementById('lpToast'); return { items: document.querySelectorAll('#lpNotesList li').length, text: document.querySelector('#lpNotesList li blockquote').textContent, toast: t.hidden ? '' : t.textContent }; })()`);
+    check("  as new, with a toast", !!n && n.fresh.includes(nid2) && dom2.items === 1 && dom2.text.includes("green pastures") && dom2.toast.startsWith("New note"), JSON.stringify(dom2));
     while (seq < 5) await sleep(500);
     // the listener's tab is in the background when the show ends (another tab in front), as happened in the live test
     const other = (await call("Target.createTarget", { url: "about:blank", background: false })).result?.targetId;
@@ -231,7 +249,7 @@ try {
     s = await until((x) => x.stream && !x.stream.active, 5);
     check("  and the stream deck stops", !!s);
     const kept = await untilNotes((x) => x.show && !x.show.live, 10);
-    check("  the show's notes stay, no longer Live", !!kept && kept.shown.includes(nid) && kept.fresh.length === 0, kept && kept.show.label);
+    check("  the show's notes stay, no longer Live", !!kept && kept.shown.includes(nid2) && !kept.shown.includes(nid) && kept.fresh.length === 0, kept && kept.show.label);
   }
   if (failed) console.log("Player events:\n    " + ((await state()).events || []).join("\n    "));
   await evaluate("SwPlayer.stop()");

@@ -8,6 +8,7 @@
 //   php browser_helper.php live-piece <public id> <seq> <mp3 file> [<seconds> | auto]
 //   php browser_helper.php live-end <public id>
 //   php browser_helper.php note <public id> <kind> <fields as JSON>  -> {"note"} or {"error"}
+//   php browser_helper.php note-edit <public id> <note id> <fields as JSON>  -> {"note", "replaces"} or {"error"}
 //   php browser_helper.php notes-clear <public id>                     (the test show's notes)
 //   php browser_helper.php dj [block]              -> a throwaway DJ {"id", "email", "password", "block"}
 //   php browser_helper.php live-info <public id>   -> the show, its pieces (scanned) and how many notes
@@ -64,6 +65,8 @@ if ($cmd === 'manager') {
     echo json_encode($planner->endLive(microtime(true), $argv[2] ?? '')['result']);
 } elseif ($cmd === 'note') {
     echo json_encode((new Notes($db, $station))->post($argv[2] ?? '', null, $argv[3] ?? '', json_decode($argv[4] ?? '{}', true) ?: []));
+} elseif ($cmd === 'note-edit') {
+    echo json_encode((new Notes($db, $station))->edit($argv[2] ?? '', null, (int) ($argv[3] ?? 0), json_decode($argv[4] ?? '{}', true) ?: []));
 } elseif ($cmd === 'notes-clear') {
     $notes = new Notes($db, $station);
     foreach ($notes->forShow($argv[2] ?? '') as $n) {

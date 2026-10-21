@@ -106,6 +106,28 @@ try {
   check("  on a computer, no Do Not Disturb reminder (that's for phones and tablets)", s && !s.handheld && !(await text("#stBannerText")).includes("Do Not Disturb"), await text("#stBannerText"));
   s = await until((x) => x.mic !== null && x.mic > -80, 5);
   check("  and the mic meter moves", !!s, s && s.mic.toFixed(1) + " dB");
+
+  console.log("Headphones");
+  s = await state();
+  const outs = s.output ? s.output.choices : [];
+  check("the headphones choice starts on the system default", !!s.output && s.output.sink === "" && outs[0] === "", JSON.stringify(s.output));
+  check(outs.length > 2 ? "  and lists this computer's outputs in a menu" : "  with one output here, it shows its name instead of a menu",
+    outs.length > 2 ? s.output.shown : !s.output.shown && (await text("#stOut")).length > 0, `${outs.length - 1} outputs: ${await text("#stOut")}`);
+  if (outs.length > 2) {
+    await evaluate(`(() => { const sel = document.getElementById('stOutDev'); sel.value = ${JSON.stringify(outs[1])}; sel.dispatchEvent(new Event('change')); })()`);
+    s = await until((x) => x.output.sink === outs[1], 4);
+    check("  picking one moves everything the DJ hears there", !!s, JSON.stringify((await state()).output.sink));
+    await evaluate(`(() => { const sel = document.getElementById('stOutDev'); sel.value = ''; sel.dispatchEvent(new Event('change')); })()`);
+    s = await until((x) => x.output.sink === "", 4);
+    check("  and back to the default", !!s);
+  }
+  // a device that has gone (unplugged between listing and picking): the studio says so and stays put
+  await evaluate(`(() => { const sel = document.getElementById('stOutDev'); const o = new Option('Unplugged headset', 'no-such-device'); sel.add(o); sel.value = 'no-such-device'; sel.dispatchEvent(new Event('change')); })()`);
+  for (let i = 0; i < 20 && !(await text("#stBannerText")).includes("Couldn’t switch"); i++) await sleep(150);
+  s = await state();
+  check("  an output that can't be used says why and keeps the one before", (await text("#stBannerText")).includes("Couldn’t switch your headphones") && s.output.sink === ""
+    && (await evaluate("document.getElementById('stOutDev').value")) === "", await text("#stBannerText"));
+  await evaluate("document.querySelector('#stOutDev option[value=\"no-such-device\"]').remove()");
   check("Go live is ready", !(await evaluate("document.getElementById('stGo').disabled")));
 
   console.log("Running order");
@@ -201,9 +223,30 @@ try {
   check("during Fade to B the strip mixes both decks ahead", cmp.plan && cmp.plan[0] > 0.001 && cmp.plan[1] > 0.001, dBs(cmp.plan));
   check("  and that is what went out (within 1 dB)", same(cmp), `planned ${dBs(cmp.plan)}, measured ${dBs(cmp.got)}`);
   s = await until((x) => x.xf === 100 && x.decks.B.playing && !x.decks.A.playing, 10);
-  if (micWasOn) await click("#talk");
   check("Fade to B crossfades to Deck B and stops Deck A", !!s, s ? "" : JSON.stringify((await state()).decks));
   check("  the running order marks that song as on now", s && s.nowItem === 0 && (await evaluate("document.querySelector('#ro li').classList.contains('now')")));
+
+  console.log("Talk items");
+  const roClass = () => evaluate("[...document.querySelectorAll('#ro li')].map((li) => li.className || '-').join(' ')");
+  check("a talk item has a Now button, not deck buttons", (await evaluate("[...document.querySelectorAll('#ro li:nth-child(2) .ld button')].map((b) => b.textContent).join(',')")).startsWith("Now"),
+    await evaluate("[...document.querySelectorAll('#ro li:nth-child(2) .ld button')].map((b) => b.textContent).join(',')"));
+  if ((await state()).talk) await click("#talk");
+  await click("#talk");
+  s = await until((x) => x.talk && x.nowItem === 1, 3);
+  check("opening the mic marks the next talk item as now", !!s && (await roClass()) === "done now", await roClass());
+  check("  and it loses its Now button", !(await evaluate("[...document.querySelectorAll('#ro li:nth-child(2) .ld button')].some((b) => b.textContent === 'Now')")));
+  await evaluate("(() => { document.getElementById('talkTitle').value = 'Closing prayer'; document.getElementById('talkMin').value = '2'; document.getElementById('talkForm').requestSubmit(); })()");
+  for (let i = 0; i < 30 && ((await state()).order.length !== 3 || (await text("#roSaved")) !== "Saved"); i++) await sleep(200);
+  await click("#talk"); await click("#talk"); // closing and opening the mic again: the next talk item starts
+  s = await until((x) => x.talk && x.nowItem === 2, 2);
+  check("  closing and opening it again starts the talk item after", !!s && (await roClass()) === "done done now", await roClass());
+  await clickText("#ro li:nth-child(2) .ld button", "Now");
+  s = await until((x) => x.nowItem === 1, 2);
+  check("the Now button marks a talk item by hand (here going back one)", !!s && (await roClass()) === "done now -", await roClass());
+  await click("#talk"); await click("#talk");
+  s = await until((x) => x.talk && x.nowItem === 2, 2);
+  check("  and the mic carries on from there", !!s, await roClass());
+  if (!micWasOn) await click("#talk");
 
   console.log("Presenter notes");
   await click("#stNotesBtn");
@@ -223,6 +266,20 @@ try {
   await evaluate(`(() => { document.querySelector('.st-nf[data-for="note"] [name=text]').value = 'Thank you for listening.'; document.getElementById('noteForm').requestSubmit(); })()`);
   s = await until((x) => x.notes.length === 1, 6);
   check("a plain note is posted too", !!s);
+  const firstId = s.notes[0];
+  await clickText("#noteList li .st-nrm button", "Edit");
+  check("Edit fills the note's form to change it", (await evaluate(`document.querySelector('.st-nf[data-for="note"] [name=text]').value`)) === "Thank you for listening."
+    && (await text("#notePost")) === "Save changes" && !(await evaluate("document.getElementById('noteCancel').hidden")) && (await state()).editing === firstId);
+  check("  says listeners get it as new", (await text("#noteHint")).includes("as new"), await text("#noteHint"));
+  check("  and keeps its kind", await evaluate(`document.querySelector('.st-kinds [data-kind="verse"]').disabled`));
+  await click("#noteCancel");
+  check("Cancel leaves the note as it was", (await state()).editing === null && (await text("#notePost")) === "Post note" && (await state()).notes[0] === firstId);
+  await clickText("#noteList li .st-nrm button", "Edit");
+  await evaluate(`(() => { document.querySelector('.st-nf[data-for="note"] [name=text]').value = 'Thank you for listening. God bless.'; document.getElementById('noteForm').requestSubmit(); })()`);
+  s = await until((x) => x.notes.length === 1 && x.notes[0] !== firstId && x.editing === null, 6);
+  check("Save changes posts the note again as new", !!s && (await text("#noteList li p")) === "Thank you for listening. God bless." && helper("live-info", liveId).notes === 1,
+    `${await text("#noteList li p")} · ${JSON.stringify(s && s.notes)}`);
+  check("  listeners get it when they reach this moment", (await text("#noteList li .st-wait")).startsWith("Listeners see it at"), await text("#noteList li .st-nhead"));
   await evaluate(`(() => { document.querySelector('.st-nf[data-for="note"] [name=text]').value = ''; document.getElementById('noteForm').requestSubmit(); })()`);
   await sleep(1200);
   check("  an empty note says why and isn't posted", !(await evaluate("document.getElementById('noteErr').hidden")) && (await state()).notes.length === 1, await text("#noteErr"));

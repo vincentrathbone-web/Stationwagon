@@ -173,8 +173,8 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "21 Oct · 17:10",
-  commits: 27,
+  updated: "21 Oct · 22:50",
+  commits: 28,
   version: "0.4.0-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
@@ -211,9 +211,9 @@ const MAP = {
       { text: "Dead-air warning after 10 s of silence", v: "v0.4", state: "done" },
       { text: "Record the show for the podcast", note: "two tracks on the device, music and mic, uploaded after End show", v: "v0.4", state: "done" },
       { text: "Do Not Disturb reminder on phones and tablets", v: "v0.4", state: "done" },
-      { text: "Headphone (cue) output picker", v: "v0.4", state: "next" },
-      { text: "Edit a posted note", v: "v0.4", state: "next" },
-      { text: "Talk items mark themselves \"now\"", v: "v0.4", state: "next" }
+      { text: "Headphone (cue) output picker", note: "everything the DJ hears, on the chosen output", v: "v0.4", state: "done" },
+      { text: "Edit a posted note", note: "listeners get it again as new", v: "v0.4", state: "done" },
+      { text: "Talk items mark themselves \"now\"", note: "when the mic opens, or with Now", v: "v0.4", state: "done" }
     ]},
     { name: "Station manager", blurb: "Library, playlists, schedule, DJs, sound and safety, for the station's staff.", features: [
       { text: "Installer, sign-in and roles", v: "v0.1", state: "done" },
@@ -253,13 +253,17 @@ const MAP = {
     ]}
   ],
   next: {
-    title: "Small studio items",
-    text: "Podcasts work: every live show becomes a draft episode, recorded on the DJ's device in two tracks (music and mic). The editor cuts clips at silences, mixes down in the browser and publishes to the podcast page and its RSS feed. On a phone the studio reminds the DJ to turn on Do Not Disturb. All tests pass on Laragon, the server (now on PHP 8.4) and the phone. Next, the rest of v0.4 in this order:",
-    order: ["Small studio items", "Spectrum", "Hi-fi skin"]
+    title: "Spectrum",
+    text: "The small studio items work: a headphones menu (everything the DJ hears goes to the chosen output), editing a posted note (listeners get it again as new), and talk items that mark themselves now when the mic opens. Two server-only timing bugs were found and fixed on the way. All tests pass on Laragon, the server and the phone. Next, the rest of v0.4 in this order:",
+    order: ["Spectrum", "Hi-fi skin"]
   },
   call: null,
   feedTitle: "Changed 20–21 Oct",
   feed: [
+    { what: "Small studio items: headphones, edit a note, talk items", to: "on the test server, all tests pass", at: "22:50" },
+    { what: "A quick Stop on a slow server", to: "no longer leaves a listener counted (bug fixed)", at: "22:50" },
+    { what: "Output strip look-ahead", to: "no longer downloads a song twice (bug fixed)", at: "22:50" },
+    { what: "Round 29 (podcasts)", to: "committed and pushed", at: "17:20", kind: "info" },
     { what: "Podcasts: record, edit, mix down, page, feed", to: "on the test server, all tests pass", at: "17:10" },
     { what: "Do Not Disturb reminder in the studio", to: "on phones and tablets", at: "17:10" },
     { what: "Go live just as a song ends", to: "starts at least 1 s ahead (bug fixed)", at: "17:10" },

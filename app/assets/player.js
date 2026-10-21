@@ -459,6 +459,9 @@
       const h = player.heard();
       for (const e of clock.last.entries) {
         if (e.type !== "song" || !e.pieces || e.end + fadeOf(e) < h - 1 || e.start > h + AHEAD) continue;
+        // read a song's pieces once a deck has the whole file: the browser's cache then serves them.
+        // Read while the deck's own download still runs, they would come over the network again.
+        if (!this.downloaded(e)) continue;
         for (const [id, from, sec, off, len] of this.piecesOf(e)) {
           if (from + sec < h - 1 || from > h + AHEAD || this.pieces.has(id) || this.loading >= 2) continue;
           this.pieces.set(id, null); this.loading++;
@@ -467,6 +470,11 @@
         }
       }
       if (this.dirty || performance.now() - this.renderedAt > 2000) this.render();
+    },
+    /** A deck holds this song and isn't downloading it now (done, or paused by the browser on a long song). */
+    downloaded(e) {
+      const d = player.decks.find((x) => x.key === key(e)), el = d && d.el;
+      return !!el && el.readyState >= 3 && el.networkState !== HTMLMediaElement.NETWORK_LOADING;
     },
     /** One piece of a song file, decoded (a byte range on MP3 frame boundaries, as the stream serves). */
     async read(url, off, len) {

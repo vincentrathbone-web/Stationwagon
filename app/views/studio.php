@@ -113,7 +113,7 @@ $deck = fn(string $k): string => '
     <span>Sending <b id="stPieceLen">6-second pieces</b> · last sent <b id="lastSent">–</b></span>
     <span>Waiting to send <b id="stQueue">0</b></span>
     <span>Listeners hear you <b><?= (int) $delay ?> s</b> later</span>
-    <span>Headphones <b id="stOut">this computer’s sound output</b></span>
+    <span class="st-outdev">Headphones <b id="stOut">this computer’s sound output</b><select class="st-outsel" id="stOutDev" aria-label="Headphones: where you hear the studio" hidden></select></span>
     <span class="st-rec" id="stRec"></span>
     <span class="st-conn" id="stConn">● Not sending</span>
   </section>
@@ -154,7 +154,7 @@ $deck = fn(string $k): string => '
       <label class="field"><span class="lbl">Note</span><textarea name="text" rows="5" maxlength="1000" placeholder="Thank you for listening. Prayer requests: …"></textarea></label>
     </div>
     <p class="st-nerr" id="noteErr" role="alert" hidden></p>
-    <div class="st-nacts"><span class="st-dhint">Listeners see it <?= (int) $delay ?> s after you post, when they hear this moment.</span><button class="btn primary" type="submit" id="notePost" disabled>Post note</button></div>
+    <div class="st-nacts"><span class="st-dhint" id="noteHint">Listeners see it <?= (int) $delay ?> s after you post, when they hear this moment.</span><button class="btn" type="button" id="noteCancel" hidden>Cancel</button><button class="btn primary" type="submit" id="notePost" disabled>Post note</button></div>
   </form>
   <h3 class="st-posted">Posted in this show</h3>
   <ol class="st-nlist" id="noteList"></ol>

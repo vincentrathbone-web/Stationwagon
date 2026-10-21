@@ -24,6 +24,7 @@ try {
     $db->pdo->exec('ALTER TABLE ' . $db->table('live_shows') . ' DROP COLUMN continues_show_id');
     $db->pdo->exec('DROP TABLE ' . $db->table('listener_hours'));
     $db->pdo->exec('DROP TABLE ' . $db->table('listeners'));
+    $db->pdo->exec('ALTER TABLE ' . $db->table('presenter_notes') . ' DROP COLUMN replaced_by');
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '1' WHERE name = 'schema_version'");
     $done = Schema::upgrade($db);
     $tables = array_column($db->run('SHOW TABLES')->fetchAll(PDO::FETCH_NUM), 0);
@@ -113,6 +114,11 @@ try {
     check('  a bad note says why (422)', ($studio->postNote($sidney, $pid, 'video', ['text' => 'x', 'url' => 'ftp://x'], $start + 14)['status'] ?? 0) === 422);
     check('another DJ can’t post to it', ($studio->postNote($anna, $pid, 'note', ['text' => 'Hi'], $start + 14)['status'] ?? 0) === 403);
     check('  or remove its notes', ($studio->removeNote($anna, $pid, $n['note']['id'])['status'] ?? 0) === 403);
+    check('  or change them', ($studio->editNote($anna, $pid, $n['note']['id'], ['ref' => 'Psalm 1', 'text' => 'Blessed'], $start + 14)['status'] ?? 0) === 403);
+    $e = $studio->editNote($sidney, $pid, $n['note']['id'], ['ref' => 'Psalm 23:1', 'text' => 'The LORD is my shepherd; I shall not want!'], $start + 14.1);
+    check('the DJ changes a note: it comes back as a new one', ($e['status'] ?? 0) === 200 && $e['replaces'] === $n['note']['id'] && array_column($studio->notes($pid), 'id') === [$e['note']['id']]);
+    check('  a bad change says why (422)', ($studio->editNote($sidney, $pid, $e['note']['id'], ['ref' => '', 'text' => 'x'], $start + 14.1)['status'] ?? 0) === 422);
+    $n = $e;
     check('the studio lists the show’s notes', array_column($studio->notes($pid), 'id') === [$n['note']['id']]);
     check('the DJ removes a note', ($studio->removeNote($sidney, $pid, $n['note']['id'])['removed'] ?? 0) === $n['note']['id'] && $studio->notes($pid) === []);
     check('  once', ($studio->removeNote($sidney, $pid, $n['note']['id'])['status'] ?? 0) === 404);

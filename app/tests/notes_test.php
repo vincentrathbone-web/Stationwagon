@@ -5,7 +5,7 @@
 //   php app/tests/notes_test.php      (same SW_TEST_DB_* settings as install_test.php)
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
-use Stationwagon\{Db, Library, Notes, Planner};
+use Stationwagon\{Db, Library, Notes, Planner, Schema};
 
 $t = test_database('notes');
 $root = temp_root('notes');
@@ -79,6 +79,30 @@ try {
     check('  which changes the marker', $notes->rev($now) !== $rev2);
     check('  but not through another show', !$notes->remove('live-other', $a['note']['id']));
 
+    echo "Editing a note
+";
+    $rev3 = $notes->rev($now);
+    $c2 = $notes->edit($pid, $dj, $c['note']['id'], ['text' => 'Bring your questions and a friend'], $now + 700);
+    check('a note can be changed while on air', isset($c2['note']) && $c2['replaces'] === $c['note']['id'] && $c2['note']['text'] === 'Bring your questions and a friend' && $c2['note']['kind'] === 'note', json_encode($c2));
+    check('  it comes as a new note, posted now', $c2['note']['id'] !== $c['note']['id'] && $c2['note']['posted'] === (int) floor($now + 700));
+    check('  which changes the marker', $notes->rev($now) !== $rev3);
+    check('  the studio sees only the new version, at the end', array_column($notes->forShow($pid), 'id') === [$a['note']['id'], $c2['note']['id']]);
+    $mid = $notes->forListeners($now + 705);
+    $old = array_values(array_filter($mid['items'], fn($n) => $n['id'] === $c['note']['id']));
+    check('  listeners still get the old version, marked as replaced, until they reach the edit', array_column($mid['items'], 'id') === [$c2['note']['id'], $c['note']['id'], $a['note']['id']] && $old[0]['replaced_by'] === $c2['note']['id'],
+        json_encode(array_map(fn($n) => [$n['id'], $n['replaced_by']], $mid['items'])));
+    check('  and a minute later only the new one', array_column($notes->forListeners($now + 800)['items'], 'id') === [$c2['note']['id'], $a['note']['id']]);
+    check('  a bad change says why and keeps the note', isset($notes->edit($pid, $dj, $c2['note']['id'], ['text' => '  '], $now + 710)['error']) && count($notes->forShow($pid)) === 2);
+    check('  an old version can’t be changed again', ($notes->edit($pid, $dj, $c['note']['id'], ['text' => 'x'], $now + 710)['status'] ?? 0) === 404);
+    $v2 = $notes->edit($pid, $dj, $a['note']['id'], ['ref' => 'Psalm 23:1-2', 'text' => 'The LORD is my shepherd; I shall not want. He maketh me to lie down in green pastures.', 'version' => 'kjv'], $now + 720);
+    check('  a verse keeps its kind, with the new reference and link', ($v2['note']['kind'] ?? '') === 'verse' && $v2['note']['ref'] === 'Psalm 23:1-2' && str_contains($v2['note']['read'], 'Psalm%2023%3A1-2'), json_encode($v2));
+    $a = $v2;
+    $v3 = $notes->edit($pid, $dj, $v2['note']['id'], ['ref' => 'Psalm 23:1-3', 'text' => 'The LORD is my shepherd.'], $now + 730);
+    check('removing a changed note takes its old versions too', $notes->remove($pid, $v3['note']['id'])
+        && array_column($notes->forListeners($now + 800)['items'], 'id') === [$c2['note']['id']], json_encode(array_column($notes->forListeners($now + 800)['items'], 'id')));
+    $a = $notes->post($pid, $dj, 'verse', ['ref' => 'Psalm 23:1', 'text' => 'The LORD is my shepherd; I shall not want.'], $now + 740);
+    $c = $c2;
+
     echo "After the show\n";
     $p->endLive($now + 900, $pid);
     check('notes can’t be added once it has ended', isset($notes->post($pid, $dj, 'note', ['text' => 'Late'], $now + 950)['error']));
@@ -99,6 +123,15 @@ try {
     }
     check('a show holds ' . Notes::PER_SHOW . ' notes at most', isset($notes->post($next['public_id'], $dj, 'note', ['text' => 'One too many'], $now + 2040)['error']));
     $p->endLive($now + 2100, $next['public_id']);
+
+    echo "Upgrade
+";
+    $col = fn() => (bool) $db->run('SHOW COLUMNS FROM ' . $db->table('presenter_notes') . " LIKE 'replaced_by'")->fetchColumn();
+    $db->pdo->exec('ALTER TABLE ' . $db->table('presenter_notes') . ' DROP COLUMN replaced_by');
+    $db->run('UPDATE ' . $db->table('settings') . " SET value = '6' WHERE name = 'schema_version'");
+    check('a version 6 database upgrades to ' . Schema::VERSION . ' with the notes’ new column', Schema::upgrade($db) === range(7, Schema::VERSION) && $col() && count($notes->forShow($next['public_id'])) === Notes::PER_SHOW);
+    $db->run('UPDATE ' . $db->table('settings') . " SET value = '6' WHERE name = 'schema_version'");
+    check('  the step can run again if it was cut short (the column already there)', Schema::upgrade($db) === range(7, Schema::VERSION) && Schema::installed($db) === Schema::VERSION);
 } finally {
     drop_test_database($t);
     remove_tree($root);

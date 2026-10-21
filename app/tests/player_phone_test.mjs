@@ -103,7 +103,10 @@ try {
   check("  and counts itself as listening", /^[0-9a-f]{16}$/.test((await evaluate(em("(e) => e.ping"))) || ""));
 
   console.log("Screen locked (2 minutes)");
-  adb("input", "keyevent", "26");
+  // the sleep key only turns the screen off (the power key toggles, and a tap that crosses a wake-up turns it back on)
+  const screen = () => (/mWakefulness=(\w+)/.exec(adb("dumpsys", "power")) || [])[1];
+  for (let i = 0; i < 3 && screen() !== "Asleep"; i++) { adb("input", "keyevent", "KEYCODE_SLEEP"); await sleep(1500); }
+  check("the screen goes off", screen() === "Asleep", screen());
   const t0 = Date.now(), samples = [];
   let songs = new Set(), media = "";
   const emLags = [];

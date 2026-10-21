@@ -89,7 +89,7 @@ final class Notes
         if (!$show || !$show['open']) {
             return ['error' => 'Notes can only be posted while the show is on air.'];
         }
-        $count = (int) $this->db->run('SELECT COUNT(*) FROM ' . $this->db->table('presenter_notes') . ' WHERE live_show_id = ?', [$show['id']])->fetchColumn();
+        $count = (int) $this->db->run('SELECT COUNT(*) FROM ' . $this->db->table('presenter_notes') . ' WHERE live_show_id = ? AND replaced_by IS NULL', [$show['id']])->fetchColumn();
         if ($count >= self::PER_SHOW) {
             return ['error' => 'This show already has ' . self::PER_SHOW . ' notes. Remove one first.'];
         }
@@ -105,11 +105,60 @@ final class Notes
         return ['note' => $this->item($this->row($id))];
     }
 
-    /** Remove a note from show `$publicId` (a mistake, a wrong verse). Open or closed shows alike. */
+    /**
+     * Change a note of the open show `$publicId`. It is posted again as a new note at `$now` (listeners
+     * get it as new, with a toast, when they reach this moment); the old version stays in `replaced_by`
+     * until then, so listeners never see the note vanish early. Same kind as before.
+     * @return array{note?: array, replaces?: int, error?: string}
+     */
+    public function edit(string $publicId, ?int $userId, int $id, array $in, ?float $now = null): array
+    {
+        $now ??= microtime(true);
+        $show = $this->show($publicId);
+        if (!$show || !$show['open']) {
+            return ['error' => 'Notes can only be changed while the show is on air.'];
+        }
+        $t = $this->db->table('presenter_notes');
+        $old = $this->db->run("SELECT * FROM $t WHERE id = ? AND live_show_id = ? AND replaced_by IS NULL", [$id, $show['id']])->fetch();
+        if (!$old) {
+            return ['error' => 'That note is already gone.', 'status' => 404];
+        }
+        $clean = self::clean($old['kind'], $in);
+        if (isset($clean['error'])) {
+            return $clean;
+        }
+        $this->tidy($now);
+        $new = $this->db->insert('presenter_notes', [
+            'station_id' => $this->station['id'], 'live_show_id' => $show['id'], 'user_id' => $userId, 'kind' => $old['kind'],
+            'body' => json_encode($clean['body'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'posted_at' => gmdate('Y-m-d H:i:s', (int) floor($now)),
+        ]);
+        $this->db->run("UPDATE $t SET replaced_by = ? WHERE id = ?", [$new, $id]);
+        return ['note' => $this->item($this->row($new)), 'replaces' => $id];
+    }
+
+    /** Remove a note from show `$publicId` (a mistake, a wrong verse), with any older versions of it. Open or closed shows alike. */
     public function remove(string $publicId, int $id): bool
     {
         $show = $this->show($publicId);
-        return $show !== null && $this->db->run('DELETE FROM ' . $this->db->table('presenter_notes') . ' WHERE id = ? AND live_show_id = ?', [$id, $show['id']])->rowCount() === 1;
+        $t = $this->db->table('presenter_notes');
+        if ($show === null || $this->db->run("DELETE FROM $t WHERE id = ? AND live_show_id = ? AND replaced_by IS NULL", [$id, $show['id']])->rowCount() !== 1) {
+            return false;
+        }
+        for ($ids = [$id]; $ids; ) { // the versions it replaced would otherwise show again
+            $ids = array_map('intval', $this->db->run("SELECT id FROM $t WHERE replaced_by IN (" . implode(',', $ids) . ')')->fetchAll(\PDO::FETCH_COLUMN));
+            if ($ids) {
+                $this->db->run("DELETE FROM $t WHERE id IN (" . implode(',', $ids) . ')');
+            }
+        }
+        return true;
+    }
+
+    /** Old versions of edited notes are dropped once listeners are well past the edit (2 minutes). */
+    private function tidy(float $now): void
+    {
+        $t = $this->db->table('presenter_notes');
+        $this->db->run("DELETE o FROM $t o JOIN $t n ON n.id = o.replaced_by WHERE o.station_id = ? AND n.posted_at < ?", [$this->station['id'], gmdate('Y-m-d H:i:s', (int) floor($now) - 120)]);
     }
 
     /** The notes of show `$publicId`, oldest first (for the studio). */
@@ -119,7 +168,7 @@ final class Notes
         if (!$show) {
             return [];
         }
-        $rows = $this->db->run('SELECT * FROM ' . $this->db->table('presenter_notes') . ' WHERE live_show_id = ? ORDER BY id', [$show['id']])->fetchAll();
+        $rows = $this->db->run('SELECT * FROM ' . $this->db->table('presenter_notes') . ' WHERE live_show_id = ? AND replaced_by IS NULL ORDER BY posted_at, id', [$show['id']])->fetchAll();
         return array_map(fn($r) => $this->item($r), $rows);
     }
 
@@ -137,7 +186,8 @@ final class Notes
     /**
      * What listeners see: the open show (once it has a note) or else the newest show with notes
      * from the last week, its notes newest first. Times are in the station's time zone; `posted`
-     * (unix seconds) lets the player hold a note back until listeners, 20 s behind, reach it.
+     * (unix seconds) lets the player hold a note back until listeners, 20 s behind, reach it, and
+     * `replaced_by` lets it keep an edited note's old version until they reach the edit.
      * @return array{rev: string, show: ?array, items: array}
      */
     public function forListeners(?float $now = null): array
@@ -153,7 +203,8 @@ final class Notes
             // nothing yet, or a new show is on air and hasn't posted: don't show the last show's notes under it
             return ['rev' => $this->rev($now), 'show' => null, 'items' => []];
         }
-        $rows = $this->db->run('SELECT * FROM ' . $this->db->table('presenter_notes') . ' WHERE live_show_id = ? ORDER BY id DESC', [$show['id']])->fetchAll();
+        $rows = $this->db->run('SELECT * FROM ' . $this->db->table('presenter_notes') . ' WHERE live_show_id = ? ORDER BY posted_at DESC, id DESC', [$show['id']])->fetchAll();
+        $posted = array_column($rows, 'posted_at', 'id');
         $start = $this->local((float) $show['start_at']);
         $end = $this->local((float) $show['last_piece_at']);
         $live = (bool) $show['open'];
@@ -163,7 +214,9 @@ final class Notes
                 'title' => $show['title'], 'dj' => $show['dj_name'], 'live' => $live, 'label' => $live ? 'Live' : $this->when($start, $now),
                 'by' => implode(' · ', array_filter([$show['dj_name'], $show['title'] . ', ' . $start->format('H:i') . ($live ? '' : '–' . $end->format('H:i')), $live ? 'posting live' : null])),
             ],
-            'items' => array_map(fn($r) => $this->item($r), $rows),
+            // an edited note's old version only while listeners may not have reached the edit yet
+            'items' => array_values(array_map(fn($r) => $this->item($r), array_filter($rows, fn($r) => $r['replaced_by'] === null
+                || (($posted[(int) $r['replaced_by']] ?? 0) >= gmdate('Y-m-d H:i:s', (int) floor($now) - 60))))),
         ];
     }
 
@@ -179,12 +232,14 @@ final class Notes
     {
         $b = json_decode((string) $r['body'], true) ?: [];
         $posted = (new DateTimeImmutable($r['posted_at'], new DateTimeZone('UTC')))->getTimestamp();
-        $item = ['id' => (int) $r['id'], 'kind' => $r['kind'], 'posted' => $posted, 'at' => $this->local((float) $posted)->format('H:i'), 'text' => $b['text'] ?? ''];
+        $item = ['id' => (int) $r['id'], 'kind' => $r['kind'], 'posted' => $posted, 'at' => $this->local((float) $posted)->format('H:i'), 'text' => $b['text'] ?? '',
+                 'replaced_by' => isset($r['replaced_by']) ? (int) $r['replaced_by'] : null];
         if ($r['kind'] === 'verse') {
             $item += ['ref' => $b['ref'] ?? '', 'version' => $b['version'] ?? self::DEFAULT_VERSION, 'passage' => $b['passage'] ?? ($b['ref'] ?? ''),
                       'read' => self::passageUrl($b['passage'] ?? ($b['ref'] ?? ''), $b['version'] ?? self::DEFAULT_VERSION)];
         } elseif ($r['kind'] === 'refs') {
             $item['refs'] = array_map(fn($ref) => ['label' => $ref, 'url' => self::passageUrl($ref, $b['version'] ?? self::DEFAULT_VERSION)], $b['refs'] ?? []);
+            $item['version'] = $b['version'] ?? self::DEFAULT_VERSION;
         } elseif ($r['kind'] === 'video') {
             $item['url'] = $b['url'] ?? '';
         }

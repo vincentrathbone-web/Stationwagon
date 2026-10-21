@@ -37,7 +37,9 @@
   function render() {
     if (!data) return;
     const h = heard();
-    const items = data.show ? data.items.filter((n) => n.posted <= h) : [];
+    // a note edited in the studio comes as a new note; its old version shows until listeners reach the edit
+    const reached = new Set(data.items.filter((n) => n.posted <= h).map((n) => n.id));
+    const items = data.show ? data.items.filter((n) => n.posted <= h && !(n.replaced_by && reached.has(n.replaced_by))) : [];
     const key = rev + "|" + items.map((n) => n.id).join(",");
     if (key === shownKey) return;
     shownKey = key;

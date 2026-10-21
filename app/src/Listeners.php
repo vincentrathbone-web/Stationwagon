@@ -48,12 +48,12 @@ final class Listeners
         $ls = $this->db->table('listeners');
         $st = (int) $this->station['id'];
         $row = $this->db->run("SELECT * FROM $ls WHERE station_id = ? AND sid = ?", [$st, $sid])->fetch();
-        if ($stop) {
-            if ($row) {
-                $this->db->run("UPDATE $ls SET ended = 1 WHERE station_id = ? AND sid = ?", [$st, $sid]);
-            }
+        if ($stop && $row) {
+            $this->db->run("UPDATE $ls SET ended = 1 WHERE station_id = ? AND sid = ?", [$st, $sid]);
             return $this->now($now);
         }
+        // a Stop that overtakes the Listen's first ping (a slow first request) is kept as an ended
+        // Listen below, so that first ping, arriving after it, can't count the player as listening
         if ($row && ((int) $row['ended'] === 1 || $now - (float) $row['last_seen'] < self::MIN_GAP_SECONDS)) {
             return $this->now($now); // a late ping after Stop, or too soon after the last one
         }
@@ -70,10 +70,10 @@ final class Listeners
             $row = ['source' => $source, 'test' => (int) $agent['test'], 'ip' => $ip, 'user_agent' => $ua,
                 'device' => $agent['device'], 'browser' => $agent['browser'], 'app' => $agent['app'],
                 'country_code' => $place['country_code'] ?? '', 'country' => $place['country'] ?? '', 'city' => $place['city'] ?? ''];
-            $this->db->run("INSERT INTO $ls (station_id, sid, source, first_seen, last_seen, minutes, test, ip, user_agent, device, browser, app, country_code, country, city)
-                            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            $this->db->run("INSERT INTO $ls (station_id, sid, source, first_seen, last_seen, minutes, test, ip, user_agent, device, browser, app, country_code, country, city, ended)
+                            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)" . ($stop ? ' ON DUPLICATE KEY UPDATE ended = 1' : ''),
                 [$st, $sid, $source, $now, $now, $row['test'], $ip, $ua, $row['device'], $row['browser'], $row['app'],
-                    $row['country_code'], $row['country'], $row['city']]);
+                    $row['country_code'], $row['country'], $row['city'], $stop ? 1 : 0]);
         } else {
             $this->db->run("UPDATE $ls SET last_seen = ?, minutes = minutes + 1 WHERE station_id = ? AND sid = ?", [$now, $st, $sid]);
         }

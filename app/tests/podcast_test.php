@@ -20,13 +20,14 @@ try {
     $count = fn(string $table) => (int) $db->run('SELECT COUNT(*) FROM ' . $db->table($table))->fetchColumn();
 
     echo "Upgrade\n";
-    check('a new install is at version ' . Schema::VERSION . ' with the three podcast tables', Schema::installed($db) === 6
+    check('a new install is at version ' . Schema::VERSION . ' with the three podcast tables', Schema::installed($db) === Schema::VERSION
         && count(array_filter(['episodes', 'episode_takes', 'episode_chunks'], fn($x) => (bool) $db->run("SHOW TABLES LIKE '{$p}$x'")->fetchColumn())) === 3);
     foreach (['episode_chunks', 'episode_takes', 'episodes'] as $table) {
         $db->pdo->exec("DROP TABLE `{$p}$table`");
     }
+    $db->pdo->exec("ALTER TABLE `{$p}presenter_notes` DROP COLUMN replaced_by");
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '5' WHERE name = 'schema_version'");
-    check('a version 5 database upgrades to 6', Schema::upgrade($db, $root) === [6] && Schema::installed($db) === 6 && $count('episodes') === 0);
+    check('a version 5 database upgrades to ' . Schema::VERSION, Schema::upgrade($db, $root) === range(6, Schema::VERSION) && Schema::installed($db) === Schema::VERSION && $count('episodes') === 0);
 
     $user = function (string $name, string $role) use ($db, $station): array {
         $id = $db->insert('users', ['email' => strtolower(str_replace(' ', '.', $name)) . '@example.test', 'name' => $name, 'password_hash' => 'x', 'role' => $role, 'created_at' => gmdate('Y-m-d H:i:s')]);

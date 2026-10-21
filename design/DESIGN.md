@@ -163,6 +163,14 @@ The app's `/studio` follows the green mock-up, with these additions and differen
   Disturb (Focus on an iPhone or iPad) and wear headphones, so notification sounds can’t reach your
   mic." Leaving the page while an upload runs asks first.
 
+- **Small items (round 30):** the status strip's **Headphones** is a menu of the computer's sound
+  outputs ("System default (…)" first) when there is more than one, else the output's name;
+  everything the DJ hears goes there. A posted note has **Edit** beside Remove: the note's form
+  fills in (its kind stays; the other kind tabs are greyed), the button says **Save changes**, a
+  **Cancel** appears, the hint says "Listeners get the changed note as new, 20 s after you save.",
+  and the note being changed has an outline. In the running order a talk item has a **Now** button
+  instead of A / B (gone while it is now); opening the mic marks the next talk item as now.
+
 ### Podcast (round 29; not in the mock-ups)
 
 - **Episode editor** (`/manage/podcast/<id>`, the green manager frame): a toolbar (− and + zoom, also
