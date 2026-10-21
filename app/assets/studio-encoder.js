@@ -1,5 +1,6 @@
 // The studio's MP3 encoder, off the page's main thread so a busy page can't hold up the pieces.
-// In, in order: { init: { gen, rate, kbps } } for each show; { pcm: { gen, l, r } } (Float32Array
+// In, in order: { init: { gen, rate, kbps, channels } } for each show (channels 2, or 1 for the
+// podcast recorder's mic track, which sends only `l`); { pcm: { gen, l, r } } (Float32Array
 // left and right, sent as transferables); { flush: { gen } } at End show. Out, in the same order:
 // { gen, frames: [{ bytes, samples }], final } (whole MP3 frames only, as the pieces need), or
 // { error }. `gen` tells the page's answers for an old show from the current one.
@@ -31,7 +32,7 @@ class FrameSplitter {
 }
 
 const toInt16 = (f) => { const o = new Int16Array(f.length); for (let i = 0; i < f.length; i++) { const s = Math.max(-1, Math.min(1, f[i])); o[i] = s < 0 ? s * 0x8000 : s * 0x7fff; } return o; };
-let encoder = null, splitter = null, gen = -1;
+let encoder = null, splitter = null, gen = -1, channels = 2;
 const send = (frames, final) => self.postMessage({ gen, frames, final }, frames.map((f) => f.bytes.buffer));
 
 self.onmessage = (e) => {
@@ -39,10 +40,11 @@ self.onmessage = (e) => {
     const m = e.data;
     if (m.init) {
       gen = m.init.gen;
-      encoder = new lamejs.Mp3Encoder(2, m.init.rate, m.init.kbps);
+      channels = m.init.channels === 1 ? 1 : 2;
+      encoder = new lamejs.Mp3Encoder(channels, m.init.rate, m.init.kbps);
       splitter = new FrameSplitter();
     } else if (m.pcm && m.pcm.gen === gen && encoder) {
-      const mp3 = encoder.encodeBuffer(toInt16(m.pcm.l), toInt16(m.pcm.r));
+      const mp3 = channels === 1 ? encoder.encodeBuffer(toInt16(m.pcm.l)) : encoder.encodeBuffer(toInt16(m.pcm.l), toInt16(m.pcm.r));
       send(splitter.push(new Uint8Array(mp3.buffer, mp3.byteOffset, mp3.length)), false);
     } else if (m.flush && m.flush.gen === gen && encoder) {
       send(splitter.push(new Uint8Array(encoder.flush())), true);

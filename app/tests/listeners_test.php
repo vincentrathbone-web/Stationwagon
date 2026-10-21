@@ -201,7 +201,7 @@ try {
         $db->pdo->exec("DROP TABLE `{$p}$table`");
     }
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '3' WHERE name = 'schema_version'");
-    check('a version 3 database upgrades to ' . Schema::VERSION, Schema::upgrade($db, $root) === [4, 5] && Schema::installed($db) === 5);
+    check('a version 3 database upgrades to ' . Schema::VERSION, Schema::upgrade($db, $root) === range(4, Schema::VERSION) && Schema::installed($db) === Schema::VERSION);
     $tables = fn() => array_map(fn($x) => (bool) $db->run("SHOW TABLES LIKE '{$p}$x'")->fetchColumn(), ['listeners', 'listener_hours', 'listener_tally', 'listener_visitors']);
     check('  with all four tables', $tables() === [true, true, true, true]);
     // a version 4 database: the old listeners table, open players in it
@@ -212,11 +212,11 @@ try {
         `first_seen` DECIMAL(15,3) NOT NULL, `last_seen` DECIMAL(15,3) NOT NULL, PRIMARY KEY (`station_id`, `sid`)) ENGINE=InnoDB");
     $db->run("INSERT INTO `{$p}listeners` VALUES (?, ?, 'player', ?, ?)", [$station['id'], $id(9), $now, $now]);
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '4' WHERE name = 'schema_version'");
-    check('a version 4 database upgrades to 5', Schema::upgrade($db, $root) === [5] && $tables() === [true, true, true, true]);
+    check('a version 4 database upgrades to ' . Schema::VERSION, Schema::upgrade($db, $root) === range(5, Schema::VERSION) && $tables() === [true, true, true, true]);
     check('  and pings work in the new shape', $l->ping($id(9), 'player', $now, false, '8.8.8.8', $laptop) === 1
         && $db->run('SELECT country_code FROM ' . $db->table('listeners') . ' WHERE sid = ?', [$id(9)])->fetchColumn() === 'US');
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '4' WHERE name = 'schema_version'");
-    check('  the step can run again if it was cut short', Schema::upgrade($db, $root) === [5]);
+    check('  the step can run again if it was cut short', Schema::upgrade($db, $root) === range(5, Schema::VERSION));
 } finally {
     drop_test_database($t);
     remove_tree($root);

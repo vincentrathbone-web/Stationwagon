@@ -1,11 +1,12 @@
 // The live studio on a real Android phone (Chrome over USB) with the phone's own microphone: a
 // throwaway DJ with a block signs in, switches the studio on (sound, mic, the MP3 encoder in its
-// worker), goes live, sends pieces, and ends the show. About a minute. Laragon only: the phone
+// worker), goes live, sends pieces while recording the show for the podcast on the phone (music and
+// mic apart), and ends the show; the recording then uploads. About a minute. Laragon only: the phone
 // opens http://localhost:8080 through adb reverse, which Chrome treats as secure (the mic needs that).
 //   node app/tests/studio_phone_test.mjs http://localhost:8080/stationwagon-app
 // Needs the phone unlocked with Chrome open, and
 //   adb reverse tcp:8080 tcp:8080
-//   adb forward tcp:9222 localabstract:chrome_devtools_remote
+//   (the test points port 9222 at Chrome itself)
 // SW_ADB is adb's path (default D:/Android/platform-tools/adb.exe); SW_PHP php.exe (for the helper).
 // It goes live on the station for about 30 s with whatever the phone's mic hears.
 import { execFileSync } from "node:child_process";
@@ -32,6 +33,14 @@ if (adb("dumpsys", "window").includes("isKeyguardShowing=true")) {
 execFileSync(adbPath, ["reverse", "tcp:8080", "tcp:8080"], { stdio: "ignore" });
 adb("monkey", "-p", "com.android.chrome", "-c", "android.intent.category.LAUNCHER", "1");
 await sleep(2000);
+
+// Port 9222 to Chrome itself: other Chromium browsers on the phone (Brave) may hold the plain
+// chrome_devtools_remote socket, so use Chrome's own (chrome_devtools_remote_<pid>) when it has one
+{
+  const pid = adb("pidof", "com.android.chrome").trim().split(/\s+/)[0];
+  const own = pid && adb("cat", "/proc/net/unix").includes(`@chrome_devtools_remote_${pid}`) ? `chrome_devtools_remote_${pid}` : "chrome_devtools_remote";
+  execFileSync(adbPath, ["forward", "tcp:9222", `localabstract:${own}`], { stdio: "ignore" });
+}
 
 // the browser connection grants the mic; the page connection drives the studio
 const connect = async (url) => {
@@ -61,7 +70,7 @@ async function until(fn, seconds) {
 const text = (sel) => evaluate(`(document.querySelector(${JSON.stringify(sel)}) || {}).textContent || ""`);
 const clickText = (sel, label) => evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].find((x) => x.textContent.trim() === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`);
 
-let dj = null, liveId = null;
+let dj = null, liveId = null, minBefore = null;
 try {
   // the test mark keeps anything this run counts out of the station's stats (src/Agent.php)
   const ua = (await evaluate("navigator.userAgent")) || "";
@@ -69,6 +78,7 @@ try {
   const origin = new URL(base).origin;
   const granted = await browser.call("Browser.grantPermissions", { origin, permissions: ["audioCapture"] });
 
+  minBefore = helper("podcast-min", "5").before; // the test show is shorter than an episode needs
   console.log("Signing in on the phone");
   dj = helper("dj", "block");
   await go(`${base}/signin`);
@@ -86,6 +96,7 @@ try {
   s = await until((x) => x.on, 15);
   check("switching on starts sound and the phone's microphone", !!s, s ? "" : await text("#stBannerText"));
   check("  the MP3 encoder runs in its worker", !!s && s.encoder === "worker", s && String(s.encoder));
+  check("  and, on a phone, reminds the DJ to turn on Do Not Disturb and wear headphones", !!s && s.handheld && (await text("#stBannerText")).includes("Turn on Do Not Disturb"), await text("#stBannerText"));
   check("  and lists the phone's microphone", ((await evaluate("document.getElementById('dev').options.length")) || 0) >= 1);
   s = await until((x) => x.mic !== null && x.mic > -100, 8);
   check("  the mic meter reads the room", !!s, s && s.mic.toFixed(1) + " dB");
@@ -101,16 +112,44 @@ try {
   const info = liveId ? helper("live-info", liveId) : null;
   const durations = info ? info.pieces.map((p) => p.scanned) : [];
   check("  the station has them, whole MP3 pieces of about 6 s", durations.length >= 2 && durations.slice(0, 2).every((d) => d && Math.abs(d - 6) < 0.1), durations.join(", "));
+  s = await until((x) => x.rec && x.rec.recording && x.rec.pieces && x.rec.pieces.music >= 1 && x.rec.pieces.mic >= 1, 20);
+  check("the phone records the show for the podcast, music and mic apart, kept on the phone", !!s && !s.rec.error, JSON.stringify((await state()).rec));
 
+  console.log("A notification during the show");
+  const outDb = async () => { const w = await evaluate("(() => { const n = SwStudio.wave.now(); return SwStudio.wave.measured(n - 0.3, n - 0.1); })()"); return w ? 20 * Math.log10(Math.max(1e-5, w[0])) : null; };
+  // Deck A's song from the top (the AutoDJ's song may end any moment), so the music runs through
+  await evaluate("(() => { document.getElementById('xA').click(); document.getElementById('pA').click(); })()");
+  await sleep(2500);
+  const levels = [];
+  for (let i = 0; i < 30; i++) {
+    if (i === 8) adb("cmd", "notification", "post", "-S", "bigtext", "-t", "Stationwagon test", "swtest" + Date.now(), "A notification sound during the show");
+    levels.push(await outDb());
+    await sleep(200);
+  }
+  const lowest = Math.min(...levels.filter((v) => v !== null)), usual = levels.filter((v) => v !== null).sort((a, b) => a - b)[Math.floor(levels.length / 2)];
+  const loss = adb("dumpsys", "audio").split(String.fromCharCode(10)).some((l) => /requestAudioFocus\(\).*USAGE_NOTIFICATION/.test(l));
+  check("a notification sound mid-show doesn't turn down what goes out (Android asks apps to duck; the studio's mix isn't)", loss && usual > -60 && lowest > usual - 1.5,
+    `deck A ${usual.toFixed(1)} dB, lowest ${lowest.toFixed(1)} dB over 6 s with the notification at 1.6 s`);
   console.log("Ending the show");
   await evaluate("document.getElementById('stGo').click()");
   await clickText("#stBannerActs button", "End show");
   s = await until((x) => !x.live, 25);
   const end = liveId ? helper("live-info", liveId) : null;
   check("End show sends the last audio and hands back to the AutoDJ", !!s && end && !end.open && end.closed_reason === "ended by DJ", end && `${end.closed_reason}, ${end.pieces.length} pieces`);
+  let up = "";
+  for (let i = 0; i < 120 && !up.startsWith("Your show’s recording is uploaded"); i++) { await sleep(250); up = await text("#stBannerText"); }
+  check("then the phone uploads the recording, and offers the episode's editor", up.startsWith("Your show’s recording is uploaded. Trim it"), up);
+  const ep = helper("episode-info", liveId);
+  const dev = ep && ep.takes.find((x) => x.kind === "device");
+  const aired = ep && ep.takes.find((x) => x.kind === "aired");
+  check("  the episode has the phone's two tracks, as long as what went out (within 2 s)", dev && dev.complete && dev.chunks.music >= 1 && dev.chunks.mic >= 1 && aired && Math.abs(dev.duration - aired.duration) < 2,
+    ep && JSON.stringify(ep.takes.map((x) => [x.kind, x.complete, x.duration, x.chunks])));
   liveId = null;
 } finally {
+  try { if (minBefore !== null) helper("podcast-min", String(minBefore)); } catch (e) { console.log("cleanup: " + e.message); }
   try { if (dj) helper("studio-cleanup", String(dj.id), String(dj.block || 0)); } catch (e) { console.log("cleanup: " + e.message); }
+  // clear the test notification (cancelAllNotifications for the shell), so it can't wake the screen later
+  try { adb("service", "call", "notification", "1", "s16", "com.android.shell", "i32", "0"); } catch { /* left in the shade */ }
   try { page.ws.close(); browser.ws.close(); } catch { /* closed */ }
 }
 console.log(failed ? `\n${failed} of ${passed + failed} checks failed` : "\nAll checks passed");

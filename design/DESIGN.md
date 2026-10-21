@@ -156,6 +156,31 @@ The app's `/studio` follows the green mock-up, with these additions and differen
   in the title bar. The fill bar is the block's length; "AutoDJ fills the last …" or "Over by …".
 - **Status strip** shows "Waiting to send" and the connection as "Not sending", "Joining",
   "Connection good", "Connection slow" or "Connection trouble: …". Recording is not built yet.
+- **Recording (round 29):** the status strip says "Records your shows", then "● Recording 12:34" on
+  air, "Uploading recording 40%" after End show, "Recording waiting to upload" or "Recording trouble:
+  …". After the upload the banner says "Your show’s recording is uploaded. Trim it and publish it as a
+  podcast episode." with **Edit the episode**. On a phone or tablet, switching on adds "Turn on Do Not
+  Disturb (Focus on an iPhone or iPad) and wear headphones, so notification sounds can’t reach your
+  mic." Leaving the page while an upload runs asks first.
+
+### Podcast (round 29; not in the mock-ups)
+
+- **Episode editor** (`/manage/podcast/<id>`, the green manager frame): a toolbar (− and + zoom, also
+  Ctrl + wheel; **Whole show**; **Delete clip**; **Undo**; what is selected), then a canvas with a time
+  ruler and one row per track: **Music** and **Mic** for a studio recording, **As aired** otherwise (an
+  aired part of a two-track episode spans both rows). Clips are rounded blocks of the track's peaks,
+  split at every silence of 2 s or more; a selected clip has an outline, a cut clip is struck through and
+  greyed. A line under it explains ("12 clips. Click a clip, then Delete to cut it."), including when a
+  part is as aired and why. **Mix down** with a progress bar and "about N min left", then a player for
+  the mix. Title and description fields, **Save**, **Publish** (after a mixdown that matches the cuts)
+  and **Hide** once published.
+- **Podcast screen** (`/manage/podcast`): the episodes newest first with their state (draft,
+  mixing, published, hidden, skipped), length and an Edit link; DJs see their own, managers all. For
+  managers, "The podcast": title, description, author, language, category, explicit, a cover image,
+  the feed address with **Copy**.
+- **Public page** (`/podcast`): the cover, title and description, the feed link, and the published
+  episodes with a player each; linked from the station page ("Podcast: past shows"). The RSS feed has
+  the iTunes tags.
 
 ### Output strip (player and studio, round 22)
 

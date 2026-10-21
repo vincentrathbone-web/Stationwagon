@@ -167,6 +167,20 @@ try {
     $late = $p->addPiece($live2['start'] + 30, $live2['public_id'], 1, 6.0, $mp3)['result'];
     check('a late piece after the timeout is refused', ($late['status'] ?? 0) === 410);
 
+    echo "Go live as a song ends\n";
+    // a song that ends inside the cut lead used to be "cut" at its own end, so the show started
+    // 0.08 s later, before the studio could even hear the start time (found by the POC's test)
+    $ending = null;
+    foreach ($p->timeline($later + 30) as $e) { if ($e['type'] === 'song' && $e['start'] > $later + 40) { $ending = $e; break; } }
+    $now = $ending['end'] - 0.08;
+    $r = $p->goLive($now, 'Late DJ');
+    $live3 = $r['result']['live'] ?? null;
+    check('going live 0.08 s before a song ends still starts at least 1 s ahead', $live3 && $live3['start'] >= $now + 1, $live3 ? sprintf('starts +%.2f s', $live3['start'] - $now) : json_encode($r['result']));
+    $whole = null;
+    foreach ($r['entries'] as $e) { if ($e['n'] === $ending['n']) { $whole = $e; } }
+    check('  that song plays out whole and the next one hands over', $whole && !$whole['cut'] && $near($whole['end'], $ending['end']) && $r['result']['handover']['n'] === $ending['n'] + 1 && $r['result']['handover']['cut']);
+    $p->endLive($live3['start'] + 2, $live3['public_id']);
+
     echo "Skip from a lagging listener\n";
     $now = $t0 + 1000;
     $tl = $p->timeline($now);

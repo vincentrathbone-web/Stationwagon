@@ -243,7 +243,22 @@ try {
     check('  with no cookie', $pv->setCookies === []);
     check('  linked under the player and in the embed', str_contains($page, 'class="lp-foot"') && str_contains($page, 'href="' . $basePath . '/privacy"')
         && str_contains($e->go('embed')['body'], 'class="em-priv" href="' . $basePath . '/privacy"'));
-    foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/', 'storage/geo/dbip-city-lite.mmdb'] as $private) {
+    $pc = new Browser($base);
+    $r = $pc->go('podcast');
+    check('the podcast page opens for anyone, with its feed', $r['status'] === 200 && str_contains($r['body'], 'class="pod"') && str_contains($r['body'], 'href="' . $basePath . '/podcast/feed"'), (string) $r['status']);
+    check('  with no cookie', $pc->setCookies === []);
+    check('  linked under the player', str_contains($page, 'href="' . $basePath . '/podcast"'));
+    $r = $pc->go('podcast/feed');
+    $xml = @simplexml_load_string($r['body']);
+    check('the feed is RSS for podcast apps', $r['status'] === 200 && str_starts_with($r['headers']['content-type'][0] ?? '', 'application/rss+xml') && $xml !== false && (string) $xml->channel->title !== '',
+        $r['status'] . ' ' . ($r['headers']['content-type'][0] ?? ''));
+    $self = $xml ? (string) $xml->channel->children('http://www.w3.org/2005/Atom')->link->attributes()['href'] : '';
+    check('  pointing at itself with a full address', preg_match('~^https?://[^/]+' . preg_quote($basePath, '~') . '/podcast/feed$~', $self) === 1, $self);
+    check('  cached briefly (apps check often)', str_contains(implode(',', $r['headers']['cache-control'] ?? []), 'max-age=300'));
+    $r = $pc->go('podcast/api/episode?id=1');
+    check('the podcast API needs a signed-in DJ, and is never kept by caches', $r['status'] === 401 && implode(',', $r['headers']['cache-control'] ?? []) === 'private, no-store', implode(',', $r['headers']['cache-control'] ?? []));
+    check('  and so does the podcast screen', $pc->go('manage/podcast')['status'] === 303);
+    foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/', 'storage/geo/dbip-city-lite.mmdb', 'storage/podcasts/ep-x/raw/1-music-0000.chunk', 'storage/podcasts/ep-x/episode.chunk'] as $private) {
         $code = (new Browser($base))->go($private)['status'];
         check("$private is not served", in_array($code, [403, 404], true), (string) $code);
     }
@@ -298,6 +313,13 @@ try {
         check('a DJ saves their own running order', $q['status'] === 200 && (json_decode($q['body'], true)['items'][0]['title'] ?? '') === 'Welcome', $q['status'] . ' ' . $q['body']);
         check('  but not someone else’s', $a->go('studio/api/order', json_encode(['scope' => 'user:1', 'items' => []]), $json)['status'] === 403);
         check('unknown studio actions answer 404', $a->go('studio/api/explode')['status'] === 404);
+        $pp = $a->go('manage/podcast');
+        check('a DJ has the Podcast screen, with their own episodes', $pp['status'] === 200 && str_contains($pp['body'], '<h1>Podcast</h1>') && str_contains($pp['body'], '>Podcast</a>') && str_contains($pp['body'], 'You see your own shows.'), (string) $pp['status']);
+        check('  but not the podcast’s details', !str_contains($pp['body'], 'class="card newform podform"'));
+        $other = $db->run('SELECT id FROM ' . $db->table('episodes') . " WHERE status <> 'skipped' AND (dj_user_id IS NULL OR dj_user_id <> ?) ORDER BY id DESC LIMIT 1", [$created])->fetchColumn();
+        check('  an episode that isn’t theirs doesn’t open', $a->go('manage/podcast/' . ($other ?: 999999999))['status'] === 404 && $a->go('podcast/api/episode?id=' . ($other ?: 999999999))['status'] === ($other ? 403 : 404));
+        check('  nor does sending a recording for a show that isn’t there', $a->go('podcast/api/rec-chunk?show=live-nope&track=music&n=0&samples=1152', "\xFF\xFB\x90\x00" . str_repeat("\0", 413), ['Content-Type: audio/mpeg', 'X-CSRF: ' . ($sk[1] ?? '')])['status'] === 404);
+        check('  podcast actions need the page’s key', $a->go('podcast/api/edits', '{"id":1,"deleted":[]}', ['Content-Type: application/json'])['status'] === 400);
         check('header shows the name and sign out', str_contains($r['body'], 'Web Test DJ</a>') && str_contains($r['body'], 'Sign out'));
         $headerCsrf = Browser::csrf($r);
         $r = $a->go('signin');
@@ -352,6 +374,11 @@ try {
         check('  who listens: where, device, browser, app, country, city', str_contains($lr['body'], 'id="lk-source"') && str_contains($lr['body'], 'id="lk-device"') && str_contains($lr['body'], 'id="lk-browser"')
             && str_contains($lr['body'], 'id="lk-app"') && str_contains($lr['body'], 'id="lk-country"') && str_contains($lr['body'], 'id="lk-city"'));
         check('  with DB-IP’s credit and its edition', str_contains($lr['body'], 'IP Geolocation by DB-IP</a> (CC BY 4.0), the ') && str_contains($lr['body'], 'edition, updated each month'));
+        $pm = $m->go('manage/podcast');
+        check('a manager’s Podcast screen has every episode and the podcast’s details, with the feed address', $pm['status'] === 200 && str_contains($pm['body'], 'You see every episode.')
+            && str_contains($pm['body'], 'enctype="multipart/form-data"') && preg_match('~<code id="feedUrl">https?://[^<]+/podcast/feed</code>~', $pm['body']) === 1);
+        $r = $m->go('manage/podcast', ['csrf' => Browser::csrf($pm), 'title' => 'X', 'description' => '', 'author' => 'X', 'email' => '', 'language' => 'Afrikaans', 'category' => 'Music']);
+        check('  a language that isn’t a code is refused (and nothing saved)', $flashed($after($m, $r), 'Not saved: Give the language as a code'));
         // what this run's own ping kept: the address and browser details, marked as a test
         $mine = $db->run('SELECT * FROM ' . $db->table('listeners') . ' WHERE sid = ?', [$sid])->fetch();
         check('a ping keeps the address and browser details it came from', $mine && filter_var($mine['ip'], FILTER_VALIDATE_IP) && str_contains($mine['user_agent'], 'StationwagonTest') && (int) $mine['test'] === 1 && (int) $mine['ended'] === 1,

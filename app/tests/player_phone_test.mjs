@@ -4,7 +4,7 @@
 // engine's clock keeps moving, the embed stays 20 s behind), then wakes the screen. About four minutes.
 //   node app/tests/player_phone_test.mjs https://wordwave.controll.co.za/stationwagon-app
 // Needs the phone unlocked with Chrome open, and
-//   adb forward tcp:9222 localabstract:chrome_devtools_remote
+//   (the test points port 9222 at Chrome itself)
 // SW_ADB is adb's path (default D:/Android/platform-tools/adb.exe). Chrome can't start sound behind
 // the lock screen, so a locked phone stops the test before it starts. Changes nothing on the server.
 import { execFileSync } from "node:child_process";
@@ -25,6 +25,14 @@ if (adb("dumpsys", "window").includes("isKeyguardShowing=true")) {
   process.exit(2);
 }
 adb("monkey", "-p", "com.android.chrome", "-c", "android.intent.category.LAUNCHER", "1"); // Chrome in front
+await new Promise((r) => setTimeout(r, 2000));
+// Port 9222 to Chrome itself: other Chromium browsers on the phone (Brave) may hold the plain
+// chrome_devtools_remote socket, so use Chrome's own (chrome_devtools_remote_<pid>) when it has one
+{
+  const pid = adb("pidof", "com.android.chrome").trim().split(/\s+/)[0];
+  const own = pid && adb("cat", "/proc/net/unix").includes(`@chrome_devtools_remote_${pid}`) ? `chrome_devtools_remote_${pid}` : "chrome_devtools_remote";
+  execFileSync(adbPath, ["forward", "tcp:9222", `localabstract:${own}`], { stdio: "ignore" });
+}
 await sleep(2000);
 
 const page = (await (await fetch("http://localhost:9222/json")).json()).find((p) => p.type === "page");
@@ -102,14 +110,15 @@ try {
   for (let i = 0; i < 40; i++) {
     await sleep(3000);
     const x = await state();
-    if (x) { samples.push({ at: Date.now(), x }); if (x.current) songs.add(x.current.key); }
+    if (x) { samples.push({ at: Date.now(), x, screen: (/mWakefulness=(\w+)/.exec(adb("dumpsys", "power")) || [])[1] }); if (x.current) songs.add(x.current.key); }
     const l = await evaluate(em("(e) => e.playing && e.lag"), 2500);
     if (typeof l === "number") emLags.push(l);
     if (i === 10) media = adb("dumpsys", "media_session");
   }
   const firstS = samples[0], lastS = samples[samples.length - 1];
   check("the page keeps answering behind the lock screen", samples.length >= 36, `${samples.length} of 40`);
-  check("  and says it's hidden", samples.every((p) => p.x.hidden));
+  const shownAt = samples.filter((p) => !p.x.hidden);
+  check("  and says it's hidden", !shownAt.length, shownAt.map((p) => `${Math.round((p.at - t0) / 1000)} s: screen ${p.screen}`).join(", "));
   check("  Android shows Chrome's media session as playing", /package=com\.android\.chrome[\s\S]*?state=PlaybackState \{state=PLAYING/.test(media));
   check("  songs change while locked", songs.size >= 3, `${songs.size} songs`);
   const ran = lastS && firstS ? (lastS.x.engine.time - firstS.x.engine.time) / ((lastS.at - firstS.at) / 1000) : 0;

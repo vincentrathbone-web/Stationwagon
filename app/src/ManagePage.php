@@ -339,6 +339,47 @@ final class ManagePage
         ]);
     }
 
+    // ---- Podcast --------------------------------------------------------------------------
+
+    /** Episodes (all for managers, their own for DJs) and, for managers, the podcast's details. */
+    public function podcast(): void
+    {
+        $podcast = new Podcast($this->db, $this->station, SW_ROOT);
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+            $this->postAs('manager', 'manage/podcast');
+            $file = $_FILES['cover'] ?? null;
+            $tmp = is_array($file) && ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK && is_uploaded_file($file['tmp_name']) ? $file['tmp_name'] : null;
+            if (is_array($file) && !in_array($file['error'] ?? UPLOAD_ERR_NO_FILE, [UPLOAD_ERR_OK, UPLOAD_ERR_NO_FILE], true)) {
+                Session::flash('bad', 'Not saved: the cover didn’t upload. Try a smaller image.');
+                App::redirect('manage/podcast');
+            }
+            [, $problem] = $podcast->saveDetails($_POST, $tmp);
+            Session::flash($problem ? 'bad' : 'ok', $problem ? "Not saved: $problem" : 'Saved. Podcast apps see the changes the next time they check the feed.');
+            App::redirect('manage/podcast');
+        }
+        $me = App::requireRole('dj');
+        $podcast->sync(microtime(true));
+        $this->render('podcast', 'Podcast', $me, [
+            'episodes' => $podcast->list($me),
+            'details' => $podcast->details(),
+            'isManager' => Auth::allows($me, 'manager'),
+        ]);
+    }
+
+    /** The episode editor: two tracks of clips (or one, as aired), Mixdown, Publish. */
+    public function episode(int $id): void
+    {
+        $me = App::requireRole('dj');
+        $podcast = new Podcast($this->db, $this->station, SW_ROOT);
+        $ep = $podcast->episodeById($id);
+        if ($ep === null || $ep['status'] === 'skipped' || !$podcast->mayEdit($me, $ep)) {
+            http_response_code(404);
+            View::render('error', ['title' => 'Not found', 'message' => 'There’s no such episode, or it isn’t yours to edit.']);
+            return;
+        }
+        $this->render('episode', $ep['title'], $me, ['episode' => $ep, 'kbps' => 128], 'podcast');
+    }
+
     public function sound(): void
     {
         $settings = new StationSettings($this->db, $this->station);

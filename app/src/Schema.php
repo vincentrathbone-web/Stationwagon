@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Stationwagon;
 
 /**
- * The database tables, version 5. Plain MySQL 8 / MariaDB 10.5+ DDL: InnoDB, utf8mb4, no JSON
+ * The database tables, version 6. Plain MySQL 8 / MariaDB 10.5+ DDL: InnoDB, utf8mb4, no JSON
  * column type (JSON lives in MEDIUMTEXT so both servers behave the same), no generated columns.
  *
  * Times: DATETIME columns are UTC wall-clock times (created_at and the like). Stream times
@@ -20,16 +20,19 @@ namespace Stationwagon;
  *   v4  listeners (who is listening now, by a random id per Listen) and listener_hours (stats)
  *   v5  listeners keeps each Listen for 30 days with its address, browser details, device, app
  *       and place; listener_tally (daily totals by those) and listener_visitors (daily unique marks)
+ *   v6  podcasts: episodes (one per live show, with its continuations), episode_takes (each show's
+ *       recording: from the studio's device, or as aired) and episode_chunks (the device's pieces)
  */
 final class Schema
 {
-    public const VERSION = 5;
+    public const VERSION = 6;
 
     /** Table names without prefix, in creation order (foreign keys need their parents first). */
     public const TABLES = [
         'settings', 'stations', 'users', 'station_users', 'tracks', 'playlists', 'playlist_tracks',
         'schedule', 'live_shows', 'live_pieces', 'timeline', 'presenter_notes', 'running_orders',
         'listeners', 'listener_hours', 'listener_tally', 'listener_visitors',
+        'episodes', 'episode_takes', 'episode_chunks',
     ];
 
     /** @return array<string,string> table name => CREATE TABLE statement */
@@ -228,6 +231,9 @@ final class Schema
             'listener_hours' => self::listenerHours($p, $opts),
             'listener_tally' => self::listenerTally($p, $opts),
             'listener_visitors' => self::listenerVisitors($p, $opts),
+            'episodes' => self::episodes($p, $opts),
+            'episode_takes' => self::episodeTakes($p, $opts),
+            'episode_chunks' => self::episodeChunks($p, $opts),
         ];
     }
 
@@ -326,6 +332,80 @@ final class Schema
             ) $opts";
     }
 
+    /**
+     * Podcast episodes: one per live show (keyed by the first show of a chain of rejoins). A draft
+     * until someone publishes it; `edits` is JSON (the clips deleted in the editor); the mixdown is
+     * `audio_file` under storage/podcasts (private `.chunk` until published, then a public `.mp3`).
+     */
+    private static function episodes(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}episodes` (
+                `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `station_id` INT UNSIGNED NOT NULL,
+                `public_id` VARCHAR(40) NOT NULL,
+                `live_show_id` INT UNSIGNED NULL COMMENT 'the first show of the chain',
+                `dj_user_id` INT UNSIGNED NULL,
+                `title` VARCHAR(190) NOT NULL,
+                `description` TEXT NULL,
+                `status` ENUM('draft','published','hidden','skipped') NOT NULL DEFAULT 'draft',
+                `recorded_at` DECIMAL(15,3) NOT NULL,
+                `edits` MEDIUMTEXT NULL COMMENT 'JSON: deleted clip ids',
+                `audio_file` VARCHAR(255) NULL,
+                `audio_bytes` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+                `audio_seconds` DECIMAL(10,3) NOT NULL DEFAULT 0,
+                `mixed_at` DATETIME NULL,
+                `published_at` DATETIME NULL,
+                `raw_deleted_at` DATETIME NULL,
+                `created_at` DATETIME NOT NULL,
+                `updated_at` DATETIME NOT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `{$p}episodes_public` (`public_id`),
+                UNIQUE KEY `{$p}episodes_show` (`live_show_id`),
+                KEY `{$p}episodes_station` (`station_id`, `status`, `recorded_at`),
+                CONSTRAINT `{$p}fk_episodes_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `{$p}fk_episodes_show` FOREIGN KEY (`live_show_id`) REFERENCES `{$p}live_shows` (`id`) ON DELETE SET NULL,
+                CONSTRAINT `{$p}fk_episodes_dj` FOREIGN KEY (`dj_user_id`) REFERENCES `{$p}users` (`id`) ON DELETE SET NULL
+            ) $opts";
+    }
+
+    /**
+     * One recording per live show of an episode: `device` (the studio's two tracks, music and mic,
+     * uploaded after End show) or `aired` (the pieces listeners heard, one track). `analysis` is JSON
+     * from the browser: per track, peaks for the waveform and the clips (split at silence).
+     */
+    private static function episodeTakes(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}episode_takes` (
+                `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `episode_id` INT UNSIGNED NOT NULL,
+                `live_show_id` INT UNSIGNED NOT NULL,
+                `kind` ENUM('device','aired') NOT NULL,
+                `start_at` DECIMAL(15,3) NOT NULL,
+                `duration_s` DECIMAL(10,3) NOT NULL DEFAULT 0,
+                `complete` TINYINT(1) NOT NULL DEFAULT 0,
+                `analysis` MEDIUMTEXT NULL,
+                `created_at` DATETIME NOT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `{$p}takes_show_kind` (`episode_id`, `live_show_id`, `kind`),
+                CONSTRAINT `{$p}fk_takes_episode` FOREIGN KEY (`episode_id`) REFERENCES `{$p}episodes` (`id`) ON DELETE CASCADE
+            ) $opts";
+    }
+
+    /** A device take's pieces: 10 s of one track each, cut on whole MP3 frames. */
+    private static function episodeChunks(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}episode_chunks` (
+                `take_id` INT UNSIGNED NOT NULL,
+                `track` ENUM('music','mic') NOT NULL,
+                `n` INT UNSIGNED NOT NULL,
+                `samples` INT UNSIGNED NOT NULL,
+                `bytes` INT UNSIGNED NOT NULL,
+                `file` VARCHAR(255) NOT NULL,
+                PRIMARY KEY (`take_id`, `track`, `n`),
+                CONSTRAINT `{$p}fk_chunks_take` FOREIGN KEY (`take_id`) REFERENCES `{$p}episode_takes` (`id`) ON DELETE CASCADE
+            ) $opts";
+    }
+
     /** @return array<int, list<string>> version => the statements that bring the version before it up to it */
     public static function migrations(string $p): array
     {
@@ -339,6 +419,7 @@ final class Schema
             4 => [self::listeners($p, $opts), self::listenerHours($p, $opts)],
             // listeners held only the open players: it is simply made again in its new shape
             5 => ["DROP TABLE IF EXISTS `{$p}listeners`", self::listeners($p, $opts), self::listenerTally($p, $opts), self::listenerVisitors($p, $opts)],
+            6 => [self::episodes($p, $opts), self::episodeTakes($p, $opts), self::episodeChunks($p, $opts)],
         ];
     }
 

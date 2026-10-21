@@ -114,6 +114,7 @@ $deck = fn(string $k): string => '
     <span>Waiting to send <b id="stQueue">0</b></span>
     <span>Listeners hear you <b><?= (int) $delay ?> s</b> later</span>
     <span>Headphones <b id="stOut">this computer’s sound output</b></span>
+    <span class="st-rec" id="stRec"></span>
     <span class="st-conn" id="stConn">● Not sending</span>
   </section>
 </div>
@@ -163,4 +164,6 @@ $deck = fn(string $k): string => '
 <script src="<?= h(App::asset('assets/studio-mic.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/fades.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/outwave.js')) ?>" defer></script>
+<script src="<?= h(App::asset('assets/podcast-core.js')) ?>" defer></script>
+<script src="<?= h(App::asset('assets/studio-recorder.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/studio.js')) ?>" defer></script>

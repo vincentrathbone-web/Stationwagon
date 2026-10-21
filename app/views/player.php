@@ -73,7 +73,7 @@ $hm = fn(string $t): string => substr($t, 0, 5);
     <noscript><p class="muted">The player needs JavaScript. Any HLS player can play the stream at <code><?= h(App::url('api/stream.php')) ?></code>.</p></noscript>
   </aside>
 </div>
-<p class="lp-foot">Listening sets no cookies. The station counts its listeners for 30 days by internet address and browser: <a href="<?= h(App::url('privacy')) ?>">Privacy</a></p>
+<p class="lp-foot"><a href="<?= h(App::url('podcast')) ?>">Podcast: past shows</a> · Listening sets no cookies. The station counts its listeners for 30 days by internet address and browser: <a href="<?= h(App::url('privacy')) ?>">Privacy</a></p>
 <div class="lp-toast" id="lpToast" role="status" hidden></div>
 <script src="<?= h(App::asset('assets/fades.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/outwave.js')) ?>" defer></script>

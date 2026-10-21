@@ -2,7 +2,10 @@
 // fake microphone) on Laragon. A throwaway DJ without a block can't go live; one with a live block
 // switches the studio on, plans a running order, goes live (Deck A picks up the AutoDJ song in
 // sync), sends real MP3 pieces that reach the listener stream, crossfades to Deck B, posts and
-// removes a presenter note from the drawer, and ends the show from the page. Takes about 1.5 minutes.
+// removes a presenter note from the drawer, and ends the show from the page. All the while it records
+// the show for the podcast (music and mic apart, in this browser): what a reload left behind uploads
+// when the studio opens again, and the rest after End show, which then offers the episode's editor.
+// Takes about 2 minutes.
 //   node app/tests/studio_browser_test.mjs http://localhost:8080/stationwagon-app
 // Needs SW_PHP (php.exe) unless php is on PATH. It goes live on the station: Laragon, or the test
 // server with SW_HELPER_SSH set (see below).
@@ -62,8 +65,9 @@ async function signIn(user) {
   await until((s) => s.slot, 10);
 }
 
-let lone = null, dj = null, liveId = null;
+let lone = null, dj = null, liveId = null, minBefore = null;
 try {
+  minBefore = helper("podcast-min", "30").before; // the test show runs about a minute and a half
   for (let i = 0; i < 50; i++) { await sleep(200); try { await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; } catch { /* starting */ } }
   const target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === "page");
   ws = new WebSocket(target.webSocketDebuggerUrl);
@@ -99,14 +103,15 @@ try {
   check("switching on starts sound and the (fake) microphone", !!s, s ? "" : JSON.stringify((await state()).events.slice(-3)));
   check("  lists the microphone", (await evaluate("document.getElementById('dev').options.length")) >= 1);
   check("  and starts the MP3 encoder in a worker, off the page's main thread", s && s.encoder === "worker", s && String(s.encoder));
+  check("  on a computer, no Do Not Disturb reminder (that's for phones and tablets)", s && !s.handheld && !(await text("#stBannerText")).includes("Do Not Disturb"), await text("#stBannerText"));
   s = await until((x) => x.mic !== null && x.mic > -80, 5);
   check("  and the mic meter moves", !!s, s && s.mic.toFixed(1) + " dB");
   check("Go live is ready", !(await evaluate("document.getElementById('stGo').disabled")));
 
   console.log("Running order");
   await evaluate("(() => { const q = document.getElementById('libQ'); q.value = 'a'; q.dispatchEvent(new Event('input')); })()");
-  await sleep(1200);
-  const results = await evaluate("document.querySelectorAll('#libResults li:not(.none)').length");
+  let results = 0;
+  for (let i = 0; i < 30 && !results; i++) { await sleep(200); results = await evaluate("document.querySelectorAll('#libResults li:not(.none)').length"); }
   check("the library search finds songs", results > 0, `${results} found`);
   await clickText("#libResults li:first-child button", "+ Song");
   await evaluate("(() => { document.getElementById('talkTitle').value = 'Welcome and prayer'; document.getElementById('talkMin').value = '4'; document.getElementById('talkForm').requestSubmit(); })()");
@@ -140,6 +145,9 @@ try {
   s = await until((x) => x.sent >= 3, 30);
   check("pieces go out every 6 s", !!s, s ? `${s.sent} sent` : JSON.stringify((await state()).events.slice(-4)));
   check("  with nothing waiting and no errors", s && s.queue <= 1 && s.errors === 0, s && `queue ${s.queue}, errors ${s.errors}`);
+  check("the studio records the show for the podcast as it goes out", s && s.rec && s.rec.recording && s.rec.show === liveId && s.rec.seconds > 10 && !s.rec.error,
+    s && JSON.stringify(s.rec));
+  check("  and says so in the status strip", (await text("#stRec")).startsWith("● Recording"), await text("#stRec"));
   let info = helper("live-info", liveId);
   check("the server has them, in order, as whole MP3s of about 6 s", info.pieces.length >= 3 && info.pieces.every((p, i) => p.seq === i && Math.abs(p.duration - 6) < 0.1 && Math.abs(p.scanned - p.duration) < 0.05),
     info.pieces.map((p) => `${p.seq}:${p.duration}/${p.scanned}`).join(" "));
@@ -221,6 +229,8 @@ try {
   await click("#stDrawerClose");
 
   console.log("Rejoining after a reload");
+  s = await until((x) => x.rec && x.rec.pieces && x.rec.pieces.music >= 1 && x.rec.pieces.mic >= 1, 40);
+  check("by now the recording has whole pieces of both tracks kept in this browser", !!s, JSON.stringify((await state()).rec));
   await go(`${base}/studio`);
   let bannerOk = false;
   for (let i = 0; i < 30 && !bannerOk; i++) { await sleep(200); bannerOk = (await text("#stBannerText")).includes("Switch on the studio to rejoin it"); }
@@ -236,6 +246,8 @@ try {
   check("  as a new show at a fresh boundary, Deck A on the AutoDJ song", !!s && liveId !== oldId && Math.abs(s.live.firstAt - s.live.start) < 0.05 && s.decks.A.playing,
     s ? `first sample ${((s.live.firstAt - s.live.start) * 1000).toFixed(1)} ms from the start` : await text("#stBannerText"));
   const oldInfo = helper("live-info", oldId);
+  check("  the recording the reload cut short waits in this browser while the show is on (no upload competing with it)",
+    (await evaluate(`SwRecorder.waiting(${JSON.stringify(liveId)})`)) === 1 && !(helper("episode-info", oldId) || { takes: [] }).takes.some((x) => x.kind === "device"));
   check("  the first show is closed as rejoined, its notes moved over", oldInfo.closed_reason === "rejoined" && oldInfo.notes === 0 && helper("live-info", liveId).notes === 1,
     `${oldInfo.closed_reason}, notes ${oldInfo.notes} → ${helper("live-info", liveId).notes}`);
   s = await until((x) => x.sent >= 2, 20);
@@ -250,13 +262,41 @@ try {
   s = await until((x) => !x.live, 20);
   info = helper("live-info", liveId);
   check("End show sends the last audio and ends the show", !!s && !info.open && info.closed_reason === "ended by DJ", `${info.closed_reason}, ${info.pieces.length} pieces`);
-  check("  the banner says the AutoDJ is back", (await text("#stBannerText")).startsWith("Handed back to the AutoDJ"), await text("#stBannerText"));
+  check("  the banner says the AutoDJ is back", (await text("#stBannerText")).startsWith("Handed back to the AutoDJ") || (await text("#stBannerText")).startsWith("Uploading your show"), await text("#stBannerText"));
+  let up = "";
+  for (let i = 0; i < 120 && !up.startsWith("Your show’s recording is uploaded"); i++) { await sleep(250); up = await text("#stBannerText"); }
+  check("then the recording uploads, and the banner offers the episode's editor", up.startsWith("Your show’s recording is uploaded. Trim it") && (await evaluate("[...document.querySelectorAll('#stBannerActs button')].some((b) => b.textContent === 'Edit the episode')")), up);
+  check("  nothing is left waiting in this browser", (await evaluate("SwRecorder.waiting()")) === 0 && !(await state()).rec.recording);
+  const ep = helper("episode-info", liveId);
+  const oldTake = ep && ep.takes.find((x) => x.kind === "device" && x.show !== ep.takes[ep.takes.length - 1].show);
+  check("  the part the reload cut short uploaded with it", !!oldTake && oldTake.complete && oldTake.chunks.music >= 1 && oldTake.chunks.mic >= 1,
+    ep && JSON.stringify(ep.takes.map((x) => [x.show, x.kind, x.complete, x.chunks])));
+  const dev = ep && ep.takes.find((x) => x.kind === "device" && (!oldTake || x.show !== oldTake.show)); // the rejoined part's
+  const aired = ep && dev && ep.takes.find((x) => x.kind === "aired" && x.show === dev.show);
+  check("one episode for both parts of the show, a draft, each part recorded in the studio", ep && ep.status === "draft" && ep.takes.filter((x) => x.kind === "device" && x.complete).length === 2,
+    ep && `${ep.status}: ` + JSON.stringify(ep.takes.map((x) => [x.show, x.kind, x.complete, x.chunks])));
+  check("  the rejoined part's recording is as long as what went out (within 2 s)", dev && aired && Math.abs(dev.duration - aired.duration) < 2, dev && aired && `${dev.duration} s recorded, ${aired.duration} s aired`);
+  const first = ep && ep.takes.find((x) => x.kind === "device" && oldTake && x.show === oldTake.show);
+  check("  the music in clips; the mic's too in the first part, where it was on air (after the reload it wasn't)", dev && dev.clips && dev.clips.music.length >= 1 && dev.clips.mic.length === 0
+    && first && first.clips && first.clips.mic.length >= 1, JSON.stringify({ first: first && first.clips, rejoined: dev && dev.clips }));
+  await clickText("#stBannerActs button", "Edit the episode");
+  for (let i = 0; i < 50 && !(await evaluate("location.pathname").catch(() => "")).endsWith(`/manage/podcast/${ep.id}`); i++) await sleep(100);
+  let edState = null;
+  for (let i = 0; i < 60 && !(edState && edState.loaded); i++) { await sleep(250); edState = await evaluate("window.SwEditor && SwEditor.state()").catch(() => null); }
+  // the reload cut the first part's recording short by up to 10 s: over 1 s of that is filled in as aired
+  const firstAired = ep.takes.find((x) => x.kind === "aired" && oldTake && x.show === oldTake.show);
+  const filled = firstAired && firstAired.duration - oldTake.duration > 1;
+  const kinds = edState ? edState.takes.map((x) => x.kind).join(",") : "";
+  check("  Edit the episode opens it in the editor with both parts on two tracks" + (filled ? ", the seconds the reload lost filled in as aired" : ""),
+    edState && edState.loaded && kinds === (filled ? "device,aired,device" : "device,device") && edState.clips.length >= 2 && Math.abs(edState.total - ep.takes.filter((x) => x.kind === "aired").reduce((n, x) => n + x.duration, 0)) < (filled ? 2 : 12),
+    edState && `${kinds}: ${edState.clips.length} clips, ${edState.total.toFixed(1)} s; first part ${oldTake.duration} s recorded of ${firstAired && firstAired.duration} s aired`);
   const tl = await (await fetch(`${base}/api/timeline.php`, { cache: "no-store" })).json();
   const after = tl.entries.filter((e) => e.type === "song" && e.start >= tl.entries.find((x) => x.public_id === liveId).end - 0.01);
   check("  and the timeline carries on with songs after it", after.length > 0, after[0] && after[0].title);
   liveId = null;
-  if (failed) console.log("Studio events:\n    " + ((await state()).events || []).map((e) => e.m).join("\n    "));
+  if (failed) console.log("Studio events:\n    " + (((await state()) || {}).events || []).map((e) => e.m).join("\n    "));
 } finally {
+  try { if (minBefore !== null) helper("podcast-min", String(minBefore)); } catch (e) { console.log("cleanup: " + e.message); }
   try { if (dj) helper("studio-cleanup", String(dj.id), String(dj.block || 0)); } catch (e) { console.log("cleanup: " + e.message); }
   try { if (lone) helper("studio-cleanup", String(lone.id)); } catch { /* gone */ }
   try { ws && ws.close(); } catch { /* closed */ }
@@ -272,7 +312,7 @@ try {
   spawnSync("powershell", ["-NoProfile", "-Command", `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*${profile}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`], { stdio: "ignore" });
   await sleep(500);
   try { rmSync(profile, { recursive: true, force: true }); } catch { /* still locked */ }
-  console.log("Cleanup: test DJs, their block, running orders, notes and any open show removed");
+  console.log("Cleanup: test DJs, their block, running orders, notes, any open show and the show's episode removed");
 }
 console.log(failed ? `\n${failed} of ${passed + failed} checks failed` : "\nAll checks passed");
 process.exit(failed ? 1 : 0);

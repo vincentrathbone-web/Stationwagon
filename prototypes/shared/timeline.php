@@ -156,11 +156,13 @@ function sw_timeline_append_song(array &$tl, array $library, float $now): void
  * drop everything planned after it. Returns the cut time (stream time), or null if a live
  * block is running.
  */
-function sw_timeline_cut(array &$tl, float $now, float $fade): ?float
+function sw_timeline_cut(array &$tl, float $now, float $fade, bool $fullLead = false): ?float
 {
     $lead = sw_config()['cut_lead_seconds'];
     foreach ($tl['entries'] as $i => &$e) {
-        if (sw_entry_end($e) <= $now) {
+        // going live: a song that ends inside the lead plays out and the next one is cut instead
+        $next = $tl['entries'][$i + 1] ?? null;
+        if (sw_entry_end($e) <= $now || ($fullLead && sw_entry_end($e) < $now + $lead && $next && $next['type'] !== 'live')) {
             continue;
         }
         if ($e['type'] === 'live') {
@@ -220,7 +222,7 @@ function sw_timeline_go_live(float $now, string $dj): array
         if ($last && $last['type'] === 'live' && $last['open']) {
             return ['error' => 'A live show is already on air', 'live' => $last];
         }
-        $cutAt = sw_timeline_cut($tl, $now, $config['crossfade_seconds']);
+        $cutAt = sw_timeline_cut($tl, $now, $config['crossfade_seconds'], true);
         if ($cutAt === null) {
             return ['error' => 'Nothing to cut. Add MP3s to prototypes/media first.'];
         }

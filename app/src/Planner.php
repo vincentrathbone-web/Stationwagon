@@ -269,7 +269,7 @@ final class Planner
             if ($last && $last['type'] === 'live' && $last['open']) {
                 return ['error' => 'A live show is already on air.', 'live' => $last];
             }
-            $cutAt = $this->cut($entries, $now, (float) $this->settings['live_fade_seconds']);
+            $cutAt = $this->cut($entries, $now, (float) $this->settings['live_fade_seconds'], true);
             if ($cutAt === null) {
                 return ['error' => 'Nothing is playing to hand over from. Add songs to the library first.'];
             }
@@ -526,16 +526,19 @@ final class Planner
     /**
      * Cut whatever plays at $now on the first piece boundary at least cut_lead_seconds ahead and
      * drop everything planned after it. Returns the cut time, or null during a live block.
+     * With $fullLead (going live) a song that ends inside the lead plays out and the next one is
+     * cut instead, so the studio always hears the start time before it comes.
      */
-    private function cut(array $entries, float $now, float $fade): ?float
+    private function cut(array $entries, float $now, float $fade, bool $fullLead = false): ?float
     {
         $lead = $this->settings['cut_lead_seconds'];
         $last = $entries ? end($entries) : null;
         if ($last && $last['type'] === 'live' && $last['open']) {
             return null; // a live show is on air or about to start: cutting would drop it from the timeline
         }
-        foreach ($entries as $e) {
-            if ($e['end'] <= $now) {
+        $entries = array_values($entries);
+        foreach ($entries as $i => $e) {
+            if ($e['end'] <= $now || ($fullLead && $e['end'] < $now + $lead && isset($entries[$i + 1]) && $entries[$i + 1]['type'] !== 'live')) {
                 continue;
             }
             if ($e['type'] === 'live') {

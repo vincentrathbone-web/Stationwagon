@@ -18,6 +18,10 @@
   const kbps = () => (S && S.settings.live_kbps) || 192; // Sound & safety: sound quality of live shows
   const shape = () => (S && S.settings.fade_shape) || "equal_power"; // Sound & safety: fade shape
   const Ctx = window.AudioContext || window.webkitAudioContext;
+  // a phone or tablet: its notification sounds can reach an open mic (the page can't silence them;
+  // the mix itself isn't touched, see HANDOVER), so the studio reminds the DJ when it switches on
+  const handheld = (navigator.maxTouchPoints > 0 && matchMedia("(pointer: coarse)").matches) || /Android|iPhone|iPad/.test(navigator.userAgent);
+  const QUIET = "Turn on Do Not Disturb (Focus on an iPhone or iPad) and wear headphones, so notification sounds can’t reach your mic.";
 
   const fmt = (s) => { s = Math.max(0, Math.round(s || 0)); return s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
   const hms = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
@@ -70,6 +74,8 @@
   const queue = []; let sending = false, sentCount = 0, lastSentAt = null, sendErrors = 0, lastError = null;
   let wake = null, order = { scope: null, items: [], editable: false }, nowItem = -1;
   let wave = null, wavePlan = null, fadePlan = null; const waveMarks = [];
+  // the podcast recorder (studio-recorder.js): music and mic as two tracks on this device, uploaded after End show
+  let rec = null, recUp = null, recWaiting = 0;
 
   // ---- Decks: a decoded song played from an AudioBuffer, with a waveform ----------------------
   class Deck {
@@ -228,6 +234,10 @@ registerProcessor("sw-tap", SwTap);`;
       const silent = ctx.createGain(); silent.gain.value = 0;
       programBus.connect(tap).connect(silent).connect(ctx.destination);
       tap.port.onmessage = (e) => onPcm(e.data);
+      if (window.SwRecorder) {
+        try { rec = await SwRecorder.create({ ctx, music: musicBus, mic: micOnAir, encoder: root.dataset.encoder, log }); }
+        catch (e) { rec = null; log("recorder: " + e.message); }
+      }
       if (window.SwOutWave) {
         SwOutWave.meter(ctx, [decks.A.duck, decks.B.duck, micOnAir, programBus], root.dataset.meter)
           .then((m) => { wave = m; log("output meter " + m.kind); }).catch((e) => log("output meter: " + e.message));
@@ -237,7 +247,7 @@ registerProcessor("sw-tap", SwTap);`;
       on = true; powering = false;
       log(`switched on at ${ctx.sampleRate} Hz`);
       ctx.onstatechange = () => { log("sound engine " + ctx.state); if (ctx.state !== "running") ctx.resume().catch(() => {}); };
-      banner("Studio ready. Load songs, check your mic, then press Go live.");
+      banner("Studio ready. Load songs, check your mic, then press Go live." + (handheld ? " " + QUIET : ""));
       renderOrder(); await refresh();
     } catch (e) {
       log("switch on failed: " + e.message);
@@ -458,6 +468,7 @@ registerProcessor("sw-tap", SwTap);`;
     live = { public_id: r.live.public_id, start: r.live.start, title: r.live.title, sending: false };
     encoder.postMessage({ init: { gen: ++encGen, rate: ctx.sampleRate, kbps: kbps() } });
     pieceFrames = []; pieceSamples = 0; seq = 0; armedAt = live.start;
+    if (rec) rec.arm(live.public_id);
     sentCount = 0; sendErrors = 0; lastSentAt = null; lastError = null;
     if (r.continued) {
       log(`continuing ${r.continued} as ${live.public_id}`);
@@ -494,6 +505,7 @@ registerProcessor("sw-tap", SwTap);`;
     if (!live.sending) {
       from = Math.max(0, Math.round((armedAt - chunkStart) * ctx.sampleRate));
       live.sending = true; live.firstAt = chunkStart + from / ctx.sampleRate;
+      if (rec) rec.startAt(frame + from); // the recording starts on the same sample as the broadcast
       log(`on air: first sample at ${at(live.firstAt, hms)}`);
       banner("You’re on air. Fade Deck A down under your voice whenever you’re ready.");
       setTimeout(() => { if (live && live.sending && $("stBannerText").textContent.startsWith("You’re on air")) banner(""); }, 6000);
@@ -544,10 +556,12 @@ registerProcessor("sw-tap", SwTap);`;
   async function endShow(publicId) {
     const id = publicId || (live && live.public_id);
     if (!id) return;
+    let recStopped = null;
     $("stGo").disabled = true;
     if (live && live.public_id === id) {
       banner("Ending the show: sending the last audio, then handing back to the AutoDJ…");
       armedAt = null;
+      recStopped = rec ? rec.stop() : null;
       // the worker sends the last frames back after everything before them; then the queue empties
       await new Promise((ok) => { encFlushed = ok; encoder.postMessage({ flush: { gen: encGen } }); setTimeout(ok, 3000); });
       await waitForQueue(15000);
@@ -557,6 +571,25 @@ registerProcessor("sw-tap", SwTap);`;
     finish();
     banner(r.ended ? `Handed back to the AutoDJ at ${at(r.stream_end, hms)}.` : (r.error || "The show had already ended."));
     await refresh();
+    if (recStopped && await recStopped.catch(() => null)) uploadRec(true);
+  }
+  /** Upload the recordings kept on this device (not while on air); after End show, offer the editor. */
+  async function uploadRec(afterShow = false) {
+    if (!window.SwRecorder || live || SwRecorder.busy()) return;
+    if (!S || (S.slot && S.slot.rejoin && S.slot.rejoin.open)) return; // first rejoin the show still on air; upload after
+    recWaiting = await SwRecorder.waiting();
+    if (!recWaiting) return;
+    if (afterShow) banner("Uploading your show’s recording for the podcast. Keep this page open until it’s done…");
+    try {
+      const done = await SwRecorder.upload({ base: BASE, csrf: CSRF, log, onProgress: (p) => (recUp = p) });
+      recWaiting = 0;
+      const ep = done[done.length - 1];
+      if (ep && !live && ep.state === "skipped") banner("Your show’s recording is uploaded. The show was under " + Math.round(((S && S.settings.podcast_min_seconds) || 120) / 60) + " minutes, so it isn’t made into a podcast episode.");
+      else if (ep && !live) banner("Your show’s recording is uploaded. Trim it and publish it as a podcast episode.", "", [["Edit the episode", () => { location.href = BASE + "manage/podcast/" + ep.id; }]]);
+    } catch (e) {
+      log("recording upload: " + e.message);
+      if (afterShow && !live) banner("The recording couldn’t upload yet (" + e.message + "). It’s kept on this device and tries again by itself.", "end");
+    }
   }
   function serverEnded(reason) {
     log("server ended the show: " + reason);
@@ -567,6 +600,7 @@ registerProcessor("sw-tap", SwTap);`;
     refresh();
   }
   function finish() {
+    if (rec) rec.stop().catch((e) => log("recording: " + e.message)); // after a drop: kept here, uploaded when the studio is off air
     live = null; encGen++; encFlushed = null; armedAt = null; queue.length = 0;
     if (wake) { wake.release().catch(() => {}); wake = null; }
     if (talk) setTalk(false);
@@ -810,6 +844,12 @@ registerProcessor("sw-tap", SwTap);`;
     if (live) $("stGoLabel").textContent = live.sending ? "On air " + fmt(now - live.start) : "Joining…";
     $("lastSent").textContent = lastSentAt ? `${((performance.now() - lastSentAt) / 1000).toFixed(1)} s ago` : "–";
     $("stQueue").textContent = queue.length;
+    const rs = $("stRec"), st = rec ? rec.state() : null;
+    if (st && st.error) { rs.textContent = "Recording trouble: " + st.error; rs.className = "st-rec bad"; }
+    else if (st && st.recording) { rs.textContent = "● Recording " + fmt(st.seconds); rs.className = "st-rec on"; }
+    else if (recUp && recUp.total) { rs.textContent = `Uploading recording ${Math.round(recUp.sent / recUp.total * 100)}%`; rs.className = "st-rec"; }
+    else if (recUp && recUp.error) { rs.textContent = "Recording waiting to upload"; rs.className = "st-rec warn"; }
+    else rs.textContent = recWaiting ? "Recording waiting to upload" : rec ? "Records your shows" : window.SwRecorder ? "Recorder off" : "";
     const conn = $("stConn");
     if (!live) { conn.textContent = "● Not sending"; conn.className = "st-conn"; }
     else if (lastError && queue.length > 1) { conn.textContent = "● Connection trouble: " + lastError; conn.className = "st-conn bad"; }
@@ -872,13 +912,15 @@ registerProcessor("sw-tap", SwTap);`;
   document.querySelectorAll(".st-kinds [data-kind]").forEach((b) => (b.onclick = () => setKind(b.dataset.kind)));
   $("noteForm").onsubmit = postNote;
   if (location.hash === "#notes") openDrawer(true);
-  window.addEventListener("beforeunload", (e) => { if (live) { e.preventDefault(); e.returnValue = ""; } });
+  // on air, or the show's recording still uploading (it would carry on the next time the studio opens)
+  window.addEventListener("beforeunload", (e) => { if (live || (window.SwRecorder && SwRecorder.busy())) { e.preventDefault(); e.returnValue = ""; } });
 
   (async () => {
     for (let i = 0; i < 3; i++) await clock.fetch().catch(() => null);
     await refresh();
     setInterval(() => clock.fetch().then(preloadOnAir).catch(() => {}), 3000);
     setInterval(refresh, 5000);
+    setInterval(() => uploadRec(), 15000); uploadRec(); // what a closed or dropped page left behind
     setInterval(ui, 200);
     setInterval(planAhead, 500);
     ui();
@@ -886,7 +928,7 @@ registerProcessor("sw-tap", SwTap);`;
 
   window.SwStudio = {
     state: () => ({
-      on, encoder: encReady ? "worker" : null, live: live && { ...live }, sent: sentCount, queue: queue.length, errors: sendErrors, lastError,
+      on, handheld, encoder: encReady ? "worker" : null, rec: rec ? { ...rec.state(), upload: recUp, waiting: recWaiting } : null, live: live && { ...live }, sent: sentCount, queue: queue.length, errors: sendErrors, lastError,
       xf: xfValue, talk, mic: chain ? chain.meters().outDb : null, ducked: !!(ducker && ducker.ducked), notes: notes.map((n) => n.id), order: order.items.map((i) => i.kind + ":" + (i.track_id || i.title)), nowItem,
       slot: S && S.slot, show: S && S.show,
       decks: Object.fromEntries(["A", "B"].map((k) => [k, { title: decks[k].item && decks[k].item.title, playing: decks[k].playing, pos: on ? decks[k].position() : 0,

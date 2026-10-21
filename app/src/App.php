@@ -29,6 +29,14 @@ final class App
                 (new StudioPage())->api($m[1]);
                 return;
             }
+            if (preg_match('#^podcast/api/([a-z-]+)$#', $route, $m) === 1) {
+                (new PodcastPage())->api($m[1]);
+                return;
+            }
+            if (preg_match('#^manage/podcast/(\d+)$#', $route, $m) === 1) {
+                (new ManagePage())->episode((int) $m[1]);
+                return;
+            }
             if (preg_match('#^manage/playlists/(\d+)$#', $route, $m) === 1) {
                 (new ManagePage())->playlist((int) $m[1]);
                 return;
@@ -47,6 +55,9 @@ final class App
                 'manage/djs' => (new ManagePage())->djs(),
                 'manage/sound' => (new ManagePage())->sound(),
                 'manage/listeners' => (new ManagePage())->listeners(),
+                'manage/podcast' => (new ManagePage())->podcast(),
+                'podcast' => PodcastPage::page(),
+                'podcast/feed' => PodcastPage::feed(),
                 'studio' => (new StudioPage())->page(),
                 'embed' => self::embed(),
                 'privacy' => self::privacy(),

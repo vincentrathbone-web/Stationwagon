@@ -173,8 +173,8 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "21 Oct · 02:23",
-  commits: 26,
+  updated: "21 Oct · 17:10",
+  commits: 27,
   version: "0.4.0-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
@@ -197,7 +197,7 @@ const MAP = {
       { text: "Listeners now, on the health line and in the studio", note: "a ping a minute, no cookies", v: "v0.4", state: "done" },
       { text: "Privacy page, linked under the player and in the embed", v: "v0.4", state: "done" },
       { text: "Spectrum in the display", v: "v0.4", state: "next" },
-      { text: "Podcast page of past shows", v: "v0.4", state: "next" },
+      { text: "Podcast page of past shows", v: "v0.4", state: "done" },
       { text: "Hi-fi skin, chosen per station", v: "v0.4", state: "next" }
     ]},
     { name: "Live studio", blurb: "Go live from a browser: decks, mixer, mic chain, running order, notes.", features: [
@@ -209,7 +209,8 @@ const MAP = {
       { text: "Output strip above the decks, resizable", v: "v0.4", state: "done" },
       { text: "Rejoin your show after a reload or a drop", note: "carries on as a new show with its notes", v: "v0.4", state: "done" },
       { text: "Dead-air warning after 10 s of silence", v: "v0.4", state: "done" },
-      { text: "Record the show for the podcast", note: "uploaded after End show", v: "v0.4", state: "next" },
+      { text: "Record the show for the podcast", note: "two tracks on the device, music and mic, uploaded after End show", v: "v0.4", state: "done" },
+      { text: "Do Not Disturb reminder on phones and tablets", v: "v0.4", state: "done" },
       { text: "Headphone (cue) output picker", v: "v0.4", state: "next" },
       { text: "Edit a posted note", v: "v0.4", state: "next" },
       { text: "Talk items mark themselves \"now\"", v: "v0.4", state: "next" }
@@ -222,7 +223,7 @@ const MAP = {
       { text: "Sound & safety: crossfade, fades, live timeout, repeats", v: "v0.1", state: "done" },
       { text: "Sound & safety: fade shape, music under the voice, silence, rejoin, quality, delay", v: "v0.4", state: "done" },
       { text: "Listener stats", note: "unique listeners; device, browser, app; country and city", v: "v0.4", state: "done" },
-      { text: "Podcast episodes: edit, hide, feed", v: "v0.4", state: "next" },
+      { text: "Podcast episodes: edit, hide, feed", note: "two-track editor: zoom, cut clips, mix down, publish", v: "v0.4", state: "done" },
       { text: "Mastering in song prep (true-peak limiter, reference match)", note: "after you compare oXygen and master_me", v: "v0.8", state: "later" }
     ]},
     { name: "Streaming & hosting", blurb: "Runs on shared cPanel hosting with Cloudflare in front: PHP and Apache only.", features: [
@@ -231,13 +232,17 @@ const MAP = {
       { text: "Cloudflare caching (97 % from cache at 100 listeners)", note: "now playing too", v: "v0.1", state: "done" },
       { text: "Database that upgrades itself", v: "v0.4", state: "done" },
       { text: "Test server with a deploy script", v: "v0.1", state: "done" },
-      { text: "Podcast RSS feed (Apple, Spotify)", v: "v0.4", state: "next" },
+      { text: "Podcast RSS feed (Apple, Spotify)", v: "v0.4", state: "done" },
       { text: "Relay to an outside Icecast for classic radio apps", note: "optional, off by default", v: "v1.0", state: "later" }
     ]},
     { name: "Windows studio app", blurb: "The same studio in a desktop window, for DJs who use BUTT or Mixxx.", features: [
       { text: "Studio in WebView2 (Tauri)", v: "v0.6", state: "later" },
       { text: "Local Icecast bridge for BUTT and Mixxx", v: "v0.6", state: "later" },
       { text: "Signed installer with auto-update", v: "v0.6", state: "later" }
+    ]},
+    { name: "Android app", blurb: "The studio as an installed Android app; iPhones and iPads keep the browser studio.", features: [
+      { text: "Studio as an Android app", note: "milestone not set yet", v: "later", state: "later" },
+      { text: "Do Not Disturb on air, with a warning first", note: "on at Go live, back at End show", v: "later", state: "later" }
     ]},
     { name: "Pilot & launch", blurb: "WordWave runs beside AzuraCast first, then switches over.", features: [
       { text: "Copy WordWave's library from AzuraCast", note: "needs your friend's OK first", v: "v0.8", state: "later" },
@@ -248,13 +253,18 @@ const MAP = {
     ]}
   ],
   next: {
-    title: "Podcasts",
-    text: "Every open limit is addressed: listener analytics (unique listeners, devices, apps, countries and cities), a Privacy page, the studio on the phone and live on the test server, and the small fixes. All tests pass on Laragon, the server and the phone. Next: podcasts. The studio records each show and uploads it after End show; the station gets a podcast page, an RSS feed for Apple and Spotify, and a manager screen to edit or hide episodes. Then the rest of v0.4 in this order:",
-    order: ["Podcasts: record, upload, page, feed", "Small studio items", "Spectrum", "Hi-fi skin"]
+    title: "Small studio items",
+    text: "Podcasts work: every live show becomes a draft episode, recorded on the DJ's device in two tracks (music and mic). The editor cuts clips at silences, mixes down in the browser and publishes to the podcast page and its RSS feed. On a phone the studio reminds the DJ to turn on Do Not Disturb. All tests pass on Laragon, the server (now on PHP 8.4) and the phone. Next, the rest of v0.4 in this order:",
+    order: ["Small studio items", "Spectrum", "Hi-fi skin"]
   },
   call: null,
   feedTitle: "Changed 20–21 Oct",
   feed: [
+    { what: "Podcasts: record, edit, mix down, page, feed", to: "on the test server, all tests pass", at: "17:10" },
+    { what: "Do Not Disturb reminder in the studio", to: "on phones and tablets", at: "17:10" },
+    { what: "Go live just as a song ends", to: "starts at least 1 s ahead (bug fixed)", at: "17:10" },
+    { what: "Test server PHP", to: "8.4 with 8.1's extensions and limits", at: "16:25", kind: "info" },
+    { what: "Android app", to: "planned, with Do Not Disturb on air", at: "15:40", kind: "info" },
     { what: "Every open limit addressed: analytics, Privacy page, phone studio", to: "on the test server, all tests pass", at: "02:23" },
     { what: "Listener count and stats", to: "on the test server, all tests pass", at: "01:03" },
     { what: "Listeners screen", to: "built: 48-hour and 30-day charts", at: "01:00" },
