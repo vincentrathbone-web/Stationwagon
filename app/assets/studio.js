@@ -1,6 +1,6 @@
 // The live studio (design/skins/green/studio.html), built on the proof of concept's P4 studio.
 // Two decks and the mic are mixed in Web Audio; what listeners get (the program bus) is encoded
-// to MP3 with lamejs and sent as ~6 s pieces, in order, from the moment the planner hands over.
+// to MP3 with lamejs (in a worker, studio-encoder.js) and sent as ~6 s pieces, in order, from the moment the planner hands over.
 // Going live: the planner cuts the AutoDJ at the next piece boundary; Deck A picks up that song
 // exactly where the AutoDJ is, so listeners hear no change until the DJ fades it down.
 // The DJ hears the music bus (plus any deck on Cue); the mic is never played back to them.
@@ -65,7 +65,8 @@
   let musicBus, programBus, splitL, anL, anR, tap, chain = null, ducker = null, micOnAir;
   let talk = false, xfValue = -100, fading = null;
   let live = null;               // { public_id, start, sending, title }
-  let encoder = null, splitter = null, pieceFrames = [], pieceSamples = 0, seq = 0, armedAt = null;
+  // the MP3 encoder runs in a worker (studio-encoder.js); encGen tells the current show's answers from an old one's
+  let encoder = null, encGen = 0, encReady = false, encFlushed = null, pieceFrames = [], pieceSamples = 0, seq = 0, armedAt = null;
   const queue = []; let sending = false, sentCount = 0, lastSentAt = null, sendErrors = 0, lastError = null;
   let wake = null, order = { scope: null, items: [], editable: false }, nowItem = -1;
   let wave = null, wavePlan = null, fadePlan = null; const waveMarks = [];
@@ -197,7 +198,20 @@ registerProcessor("sw-tap", SwTap);`;
   async function powerOn() {
     if (on || powering) return;
     if (!Ctx || !window.AudioWorkletNode) { banner("This browser can’t run the studio. Use a recent Chrome or Edge.", "end"); return; }
-    if (!window.lamejs) { banner("The MP3 encoder didn’t load. Reload the page.", "end"); return; }
+    if (!encoder) {
+      encoder = new Worker(root.dataset.encoder);
+      encoder.onmessage = (e) => {
+        const m = e.data;
+        if (m.ready) { encReady = true; return; }
+        if (m.error) { log("encoder: " + m.error); return; }
+        if (m.gen !== encGen || !live) return; // an old show's tail
+        addFrames(m.frames, m.final);
+        if (m.final && encFlushed) { encFlushed(); encFlushed = null; }
+      };
+      encoder.onerror = (e) => { log("encoder failed: " + (e.message || "can't load")); };
+      for (let i = 0; i < 50 && !encReady; i++) await sleep(100);
+    }
+    if (!encReady) { encoder = null; banner("The MP3 encoder didn’t load. Reload the page.", "end"); return; }
     powering = true;
     banner("Switching on: allow the microphone when the browser asks…");
     try {
@@ -442,8 +456,8 @@ registerProcessor("sw-tap", SwTap);`;
     const r = await api(how, { body: {} });
     if (r.error) { banner(r.error, "end"); controls(); await refresh(); return; }
     live = { public_id: r.live.public_id, start: r.live.start, title: r.live.title, sending: false };
-    encoder = new lamejs.Mp3Encoder(2, ctx.sampleRate, kbps());
-    splitter = new FrameSplitter(); pieceFrames = []; pieceSamples = 0; seq = 0; armedAt = live.start;
+    encoder.postMessage({ init: { gen: ++encGen, rate: ctx.sampleRate, kbps: kbps() } });
+    pieceFrames = []; pieceSamples = 0; seq = 0; armedAt = live.start;
     sentCount = 0; sendErrors = 0; lastSentAt = null; lastError = null;
     if (r.continued) {
       log(`continuing ${r.continued} as ${live.public_id}`);
@@ -472,8 +486,6 @@ registerProcessor("sw-tap", SwTap);`;
     controls();
   }
 
-  const toInt16 = (f) => { const o = new Int16Array(f.length); for (let i = 0; i < f.length; i++) { const s = Math.max(-1, Math.min(1, f[i])); o[i] = s < 0 ? s * 0x8000 : s * 0x7fff; } return o; };
-
   function onPcm({ frame, l, r }) {
     if (!live || !encoder || armedAt === null) return;
     const chunkStart = clock.now() + (frame / ctx.sampleRate - ctx.currentTime);
@@ -487,8 +499,8 @@ registerProcessor("sw-tap", SwTap);`;
       setTimeout(() => { if (live && live.sending && $("stBannerText").textContent.startsWith("You’re on air")) banner(""); }, 6000);
       controls();
     }
-    const mp3 = encoder.encodeBuffer(toInt16(l.subarray(from)), toInt16(r.subarray(from)));
-    addFrames(splitter.push(new Uint8Array(mp3.buffer, mp3.byteOffset, mp3.length)), false);
+    const L = l.slice(from), R = r.slice(from);
+    encoder.postMessage({ pcm: { gen: encGen, l: L, r: R } }, [L.buffer, R.buffer]);
   }
 
   function addFrames(frames, final) {
@@ -536,7 +548,8 @@ registerProcessor("sw-tap", SwTap);`;
     if (live && live.public_id === id) {
       banner("Ending the show: sending the last audio, then handing back to the AutoDJ…");
       armedAt = null;
-      if (encoder) addFrames(splitter.push(new Uint8Array(encoder.flush())), true);
+      // the worker sends the last frames back after everything before them; then the queue empties
+      await new Promise((ok) => { encFlushed = ok; encoder.postMessage({ flush: { gen: encGen } }); setTimeout(ok, 3000); });
       await waitForQueue(15000);
     }
     const r = await api("end", { body: { live: id } });
@@ -554,7 +567,7 @@ registerProcessor("sw-tap", SwTap);`;
     refresh();
   }
   function finish() {
-    live = null; encoder = null; armedAt = null; queue.length = 0;
+    live = null; encGen++; encFlushed = null; armedAt = null; queue.length = 0;
     if (wake) { wake.release().catch(() => {}); wake = null; }
     if (talk) setTalk(false);
     controls();
@@ -764,6 +777,7 @@ registerProcessor("sw-tap", SwTap);`;
       renderOrder();
     }
     $("stPieceLen").textContent = `${S.settings.segment_seconds}-second pieces`;
+    $("stListeners").textContent = `${S.listeners} listening`;
     const show = S.show;
     if (show && show.mine) {
       const ids = (show.notes || []).map((n) => n.id).join();
@@ -824,30 +838,6 @@ registerProcessor("sw-tap", SwTap);`;
     du.textContent = ducked ? `Music ducked ${chain.settings.duckDepth} dB while you speak` : talk ? "Mic live · waiting for your voice" : "Music at full level";
   }
 
-  // ---- MP3 frames: pieces always start and end on a whole frame (from the POC) -----------------
-  const BR_V1 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
-  const BR_V2 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0];
-  const RATES = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
-  class FrameSplitter {
-    constructor() { this.buf = new Uint8Array(0); }
-    push(chunk) {
-      if (chunk && chunk.length) { const m = new Uint8Array(this.buf.length + chunk.length); m.set(this.buf); m.set(chunk, this.buf.length); this.buf = m; }
-      const frames = []; let pos = 0;
-      while (pos + 4 <= this.buf.length) {
-        const b1 = this.buf[pos], b2 = this.buf[pos + 1], b3 = this.buf[pos + 2];
-        const version = (b2 >> 3) & 3, layer = (b2 >> 1) & 3, bi = (b3 >> 4) & 15, ri = (b3 >> 2) & 3;
-        if (b1 !== 0xff || (b2 & 0xe0) !== 0xe0 || version === 1 || layer !== 1 || bi === 0 || bi === 15 || ri === 3) { pos++; continue; }
-        const kbps = (version === 3 ? BR_V1 : BR_V2)[bi], rate = RATES[version][ri], pad = (b3 >> 1) & 1;
-        const len = Math.floor(((version === 3 ? 144 : 72) * kbps * 1000) / rate) + pad;
-        if (pos + len > this.buf.length) break;
-        frames.push({ bytes: this.buf.slice(pos, pos + len), samples: version === 3 ? 1152 : 576 });
-        pos += len;
-      }
-      this.buf = this.buf.slice(pos);
-      return frames;
-    }
-  }
-
   // ---- Wiring ---------------------------------------------------------------------------------
   buildChainUi(); applyMicUi(); wireWave();
   $("stPower").onclick = powerOn;
@@ -896,7 +886,7 @@ registerProcessor("sw-tap", SwTap);`;
 
   window.SwStudio = {
     state: () => ({
-      on, live: live && { ...live }, sent: sentCount, queue: queue.length, errors: sendErrors, lastError,
+      on, encoder: encReady ? "worker" : null, live: live && { ...live }, sent: sentCount, queue: queue.length, errors: sendErrors, lastError,
       xf: xfValue, talk, mic: chain ? chain.meters().outDb : null, ducked: !!(ducker && ducker.ducked), notes: notes.map((n) => n.id), order: order.items.map((i) => i.kind + ":" + (i.track_id || i.title)), nowItem,
       slot: S && S.slot, show: S && S.show,
       decks: Object.fromEntries(["A", "B"].map((k) => [k, { title: decks[k].item && decks[k].item.title, playing: decks[k].playing, pos: on ? decks[k].position() : 0,

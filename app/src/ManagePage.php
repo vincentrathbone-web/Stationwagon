@@ -318,6 +318,12 @@ final class ManagePage
     /** Listeners: how many now, and charts of the last 48 hours and 30 days. */
     public function listeners(): void
     {
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+            $this->postAs('manager', 'manage/listeners');
+            [, $problem] = (new StationSettings($this->db, $this->station))->savePrivacyEmail((string) ($_POST['privacy_email'] ?? ''));
+            Session::flash($problem ? 'bad' : 'ok', $problem ? "Not saved: $problem" : 'Saved. The Privacy page shows it now.');
+            App::redirect('manage/listeners');
+        }
         $me = App::requireRole('manager');
         $now = microtime(true);
         $listeners = new Listeners($this->db, $this->station);
@@ -326,6 +332,10 @@ final class ManagePage
             'listening' => $listeners->now($now),
             'hourly' => $listeners->hourly($now, 48),
             'daily' => $listeners->daily($now, 30),
+            'monthly' => $listeners->monthly($now, 12),
+            'breakdown' => $listeners->breakdown($now, 30),
+            'geoVersion' => Geo::version(),
+            'privacyEmail' => StationSettings::privacyEmail($this->station),
         ]);
     }
 

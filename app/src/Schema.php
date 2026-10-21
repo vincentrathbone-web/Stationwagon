@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Stationwagon;
 
 /**
- * The database tables, version 3. Plain MySQL 8 / MariaDB 10.5+ DDL: InnoDB, utf8mb4, no JSON
+ * The database tables, version 5. Plain MySQL 8 / MariaDB 10.5+ DDL: InnoDB, utf8mb4, no JSON
  * column type (JSON lives in MEDIUMTEXT so both servers behave the same), no generated columns.
  *
  * Times: DATETIME columns are UTC wall-clock times (created_at and the like). Stream times
@@ -18,16 +18,18 @@ namespace Stationwagon;
  *   v3  tracks.outro (the last minute's loudness, for silence detection) and
  *       live_shows.continues_show_id (a show a DJ rejoined after a drop)
  *   v4  listeners (who is listening now, by a random id per Listen) and listener_hours (stats)
+ *   v5  listeners keeps each Listen for 30 days with its address, browser details, device, app
+ *       and place; listener_tally (daily totals by those) and listener_visitors (daily unique marks)
  */
 final class Schema
 {
-    public const VERSION = 4;
+    public const VERSION = 5;
 
     /** Table names without prefix, in creation order (foreign keys need their parents first). */
     public const TABLES = [
         'settings', 'stations', 'users', 'station_users', 'tracks', 'playlists', 'playlist_tracks',
         'schedule', 'live_shows', 'live_pieces', 'timeline', 'presenter_notes', 'running_orders',
-        'listeners', 'listener_hours',
+        'listeners', 'listener_hours', 'listener_tally', 'listener_visitors',
     ];
 
     /** @return array<string,string> table name => CREATE TABLE statement */
@@ -224,6 +226,8 @@ final class Schema
             'running_orders' => self::runningOrders($p, $opts),
             'listeners' => self::listeners($p, $opts),
             'listener_hours' => self::listenerHours($p, $opts),
+            'listener_tally' => self::listenerTally($p, $opts),
+            'listener_visitors' => self::listenerVisitors($p, $opts),
         ];
     }
 
@@ -245,9 +249,10 @@ final class Schema
     }
 
     /**
-     * Open players, one row per Listen: a random id the page makes when Listen is pressed (no
-     * cookie, nothing kept in the browser), never an IP address or browser details. Rows go once
-     * the player has been quiet for 10 minutes.
+     * One row per Listen (a random id the page makes when Listen is pressed; no cookie), kept for
+     * Listeners::RAW_DAYS: when and how long, the address and browser details it came from, and
+     * what they say (device, browser, app, country, city). `ended` is set by Stop; `test` marks our
+     * own test runs, which count as listening now but stay out of the stats.
      */
     private static function listeners(string $p, string $opts): string
     {
@@ -257,9 +262,53 @@ final class Schema
                 `source` ENUM('player','embed') NOT NULL,
                 `first_seen` DECIMAL(15,3) NOT NULL,
                 `last_seen` DECIMAL(15,3) NOT NULL,
+                `minutes` INT UNSIGNED NOT NULL DEFAULT 1,
+                `ended` TINYINT(1) NOT NULL DEFAULT 0,
+                `test` TINYINT(1) NOT NULL DEFAULT 0,
+                `ip` VARCHAR(45) NOT NULL DEFAULT '',
+                `user_agent` VARCHAR(400) NOT NULL DEFAULT '',
+                `device` VARCHAR(20) NOT NULL DEFAULT '',
+                `browser` VARCHAR(30) NOT NULL DEFAULT '',
+                `app` VARCHAR(30) NOT NULL DEFAULT '',
+                `country_code` CHAR(2) NOT NULL DEFAULT '',
+                `country` VARCHAR(80) NOT NULL DEFAULT '',
+                `city` VARCHAR(120) NOT NULL DEFAULT '',
                 PRIMARY KEY (`station_id`, `sid`),
                 KEY `{$p}listeners_seen` (`station_id`, `last_seen`),
+                KEY `{$p}listeners_first` (`station_id`, `first_seen`),
+                KEY `{$p}listeners_ip` (`station_id`, `ip`, `first_seen`),
                 CONSTRAINT `{$p}fk_listeners_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE
+            ) $opts";
+    }
+
+    /** Daily totals (the station's days) by where, device, browser, app, country and city: Listen presses and minutes. */
+    private static function listenerTally(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}listener_tally` (
+                `station_id` INT UNSIGNED NOT NULL,
+                `day` DATE NOT NULL,
+                `kind` ENUM('source','device','browser','app','country','city') NOT NULL,
+                `value` VARCHAR(160) NOT NULL,
+                `listens` INT UNSIGNED NOT NULL DEFAULT 0,
+                `minutes` INT UNSIGNED NOT NULL DEFAULT 0,
+                PRIMARY KEY (`station_id`, `day`, `kind`, `value`),
+                CONSTRAINT `{$p}fk_ltally_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE
+            ) $opts";
+    }
+
+    /**
+     * Unique listeners: one mark per listener per day, a hash of address and browser details with
+     * a salt that changes each month (so a month's marks can be counted together, and once the
+     * salt is gone they can't be traced back to anyone).
+     */
+    private static function listenerVisitors(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}listener_visitors` (
+                `station_id` INT UNSIGNED NOT NULL,
+                `day` DATE NOT NULL,
+                `visitor` BINARY(8) NOT NULL,
+                PRIMARY KEY (`station_id`, `day`, `visitor`),
+                CONSTRAINT `{$p}fk_lvisitors_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE
             ) $opts";
     }
 
@@ -288,6 +337,8 @@ final class Schema
                 "ALTER TABLE `{$p}live_shows` ADD COLUMN `continues_show_id` INT UNSIGNED NULL COMMENT 'the show this one carries on after a drop' AFTER `closed_reason`",
             ],
             4 => [self::listeners($p, $opts), self::listenerHours($p, $opts)],
+            // listeners held only the open players: it is simply made again in its new shape
+            5 => ["DROP TABLE IF EXISTS `{$p}listeners`", self::listeners($p, $opts), self::listenerTally($p, $opts), self::listenerVisitors($p, $opts)],
         ];
     }
 

@@ -51,6 +51,8 @@ const profile = mkdtempSync(join(tmpdir(), "sw-player-profile-"));
 const port = 9300 + Math.floor(Math.random() * 500);
 const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run",
   "--autoplay-policy=no-user-gesture-required",
+  // the test mark keeps this run's listening out of the station's stats (src/Agent.php)
+  "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0 StationwagonTest",
   // the embed part frames this server from a made-up church website, which Edge would otherwise
   // block from reaching a localhost address (a real website framing a public server is fine)
   "--disable-features=LocalNetworkAccessChecks", "about:blank"], { stdio: "ignore" });
@@ -216,9 +218,16 @@ try {
     s = await until((x) => x.decks.every((d) => !d.playing), 9); // after the 6 s live cut-in fade
     check("  with the song decks quiet once the fade is done", !!s, s ? "" : JSON.stringify((await state()).decks));
     while (seq < 5) await sleep(500);
+    // the listener's tab is in the background when the show ends (another tab in front), as happened in the live test
+    const other = (await call("Target.createTarget", { url: "about:blank", background: false })).result?.targetId;
+    await sleep(500);
+    const vis = await evaluate("document.visibilityState");
     helper("live-end", show.public_id); show = null;
     s = await until((x) => x.current && x.current.type === "song" && audible(x).length === 1, 60);
     check("after the show the AutoDJ comes back", !!s, s && s.current.title);
+    const back = s && s.events.filter((e) => e.includes(s.current.title));
+    check(`  with a fade from the stream, not a fresh join (tab ${vis})`, !!back && back.some((e) => e.includes("handover to " + s.current.title)) && !back.some((e) => e.includes("join " + s.current.title)), back && back.join(" | "));
+    if (other) await call("Target.closeTarget", { targetId: other });
     s = await until((x) => x.stream && !x.stream.active, 5);
     check("  and the stream deck stops", !!s);
     const kept = await untilNotes((x) => x.show && !x.show.live, 10);

@@ -4,7 +4,7 @@ Read this first. It records where the work stands, what was decided and why, and
 each round, so that anyone (a person or a new agent session) can pick up where the last one
 stopped.
 
-**Last updated:** 2026-10-21, round 27 (listener count and stats).
+**Last updated:** 2026-10-21, round 28 (every open limit addressed: listener analytics, the Privacy page, the small fixes).
 
 ## How to keep this file useful
 
@@ -95,13 +95,14 @@ drawer", "DJ studio as built") describes how the app does them.
 - DNS: Cloudflare account `vincent.rathbone@gmail.com` (the user signs in; no API token on this
   PC). Record `wordwave` A → 169.239.217.60, **proxied**, like `demo`. The same Cloudflare account also holds
   `wordwave.co.za`, which the user owns.
-- **Cloudflare Cache Rule** "Stationwagon playlist (2 s)" on the controll.co.za zone: `http.request.full_uri wildcard "https://wordwave.controll.co.za/*/api/stream.php*"` → Eligible for cache, Edge TTL from the origin header, **Browser TTL: Respect origin TTL** (added 2026-10-20 with the user's OK). Covers the POC, the app and a future station at the root.
+- **Cloudflare Cache Rule** "Stationwagon playlist and now playing (2 s)" on the controll.co.za zone: `http.request.full_uri wildcard "https://wordwave.controll.co.za/*/api/stream.php*"` or the same for `*/api/nowplaying.php*` (now playing added 2026-10-21 with the user's OK) → Eligible for cache, Edge TTL from the origin header, **Browser TTL: Respect origin TTL** (added 2026-10-20 with the user's OK). Covers the POC, the app and a future station at the root.
   Without the Browser TTL setting Cloudflare rewrote the playlist's `max-age=0` to the zone's 2 h
   Browser Cache TTL (it overrides any browser header on cached responses, `no-cache` and `no-store`
   too), which would freeze browser players. `web_test.php` checks the header through Cloudflare.
 - The main site's `~/public_html/.htaccess` (WordPress, "Flying Pages Plugin Fix") sets `Cache-Control: no-cache` on everything below it, the subdomain included, and Wordfence WAF is prepended to every PHP request. Don't edit that file; override headers in our own `.htaccess`.
-- Origin certificate is self-signed until AutoSSL replaces it (check started 2026-10-20). Cloudflare
-  currently accepts it.
+- Origin certificate: Let's Encrypt from cPanel AutoSSL (checked 2026-10-21, valid to 17 Jan 2027; AutoSSL renews it).
+- Cloudflare's **Email Address Obfuscation** is on for the zone: email addresses in pages reach browsers as a
+  `/cdn-cgi/l/email-protection` link that a script decodes. `web_test.php` accepts that form.
 - **App (Core & manager):** **https://wordwave.controll.co.za/stationwagon-app/**, **installed**
   2026-10-20 over SSH with `cli/install.php`: station "Radio WordWave / Radio WoordGolf"
   (Africa/Johannesburg), admin `vincent@controll.co.za`. The admin password is in
@@ -115,9 +116,12 @@ drawer", "DJ studio as built") describes how the app does them.
   (copy in `tools/deploy/controll.install-key.local.txt`) that the web installer asks for and then deletes.
   **Tests on the server** use the empty database `controllco_swtest` (same user), never the station's:
   `SW_TEST_DB_HOST=localhost SW_TEST_DB_USER=controllco_swapp SW_TEST_DB_PASS=… SW_TEST_DB_NAME=controllco_swtest php tests/auth_test.php`
-  (and `install_test.php`, `planner_test.php`, `manage_test.php`, `notes_test.php`, `studio_test.php`, `listeners_test.php`). Web test: `php tests/web_test.php https://wordwave.controll.co.za/stationwagon-app --public`
-  (from the server or this PC). The signed-in web checks run only on Laragon: no test accounts are
-  made on the public server.
+  (and `install_test.php`, `planner_test.php`, `manage_test.php`, `notes_test.php`, `studio_test.php`, `listeners_test.php`). Web test, signed in: on the
+  server `php tests/web_test.php https://wordwave.controll.co.za/stationwagon-app` (throwaway DJ and manager accounts, removed
+  afterwards; the user's OK of 2026-10-21); `--public` from this PC. The studio test can go live on the server from this PC:
+  `SW_HELPER_SSH=controll:public_html/wordwave.controll.co.za/stationwagon-app node app/tests/studio_browser_test.mjs https://wordwave.controll.co.za/stationwagon-app`.
+  The location database is in `storage/geo/` (121 MB, not served); after a fresh install run `php cli/geo-update.php`; the cron
+  fetches each new month's file.
 - **Deploy (POC):** `bash prototypes/tools/deploy-cpanel.sh controll public_html/wordwave.controll.co.za/stationwagon-poc`.
   It replaces the code and keeps the server's `data/`. The server's control key is in
   `prototypes/tools/deploy/controll.config.local.php` (gitignored). Paste it into the page's
@@ -144,14 +148,15 @@ drawer", "DJ studio as built") describes how the app does them.
   php app/tests/manage_test.php                                    # manager rules, 81 checks
   php app/tests/notes_test.php                                     # presenter notes, 44 checks
   php app/tests/studio_test.php                                    # studio rules, 77 checks
-  php app/tests/listeners_test.php                                 # listener count and stats, 28 checks
-  php app/tests/web_test.php http://localhost:8080/stationwagon-app # pages, manager, studio, stream, now playing, embed, listeners: 146 checks
+  php app/tests/listeners_test.php                                 # listeners: pings, analytics, places, uniques, cap, 82 checks (needs storage/geo: php app/cli/geo-update.php)
+  php app/tests/web_test.php http://localhost:8080/stationwagon-app # pages, manager, studio, stream, now playing, embed, listeners, privacy: 161 checks
   node app/tests/prep_test.mjs                                     # song prep maths, 27 checks
   node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app # prep in a real browser, 13
-  node app/tests/player_browser_test.mjs http://localhost:8080/stationwagon-app # the player and the embed, 41 (~4 min)
+  node app/tests/player_browser_test.mjs http://localhost:8080/stationwagon-app # the player and the embed, 42 (~4 min)
   node app/tests/player_browser_test.mjs https://wordwave.controll.co.za/stationwagon-app --listen-only # 26
-  node app/tests/player_phone_test.mjs https://wordwave.controll.co.za/stationwagon-app # on the phone, 10 (~3.5 min)
-  node app/tests/studio_browser_test.mjs http://localhost:8080/stationwagon-app # the studio, 60 (~2.5 min)
+  node app/tests/player_phone_test.mjs https://wordwave.controll.co.za/stationwagon-app # on the phone, with the embed, 15 (~4 min)
+  node app/tests/studio_browser_test.mjs http://localhost:8080/stationwagon-app # the studio, 62 (~2.5 min)
+  node app/tests/studio_phone_test.mjs http://localhost:8080/stationwagon-app # the studio on the phone, 11 (~1 min)
   ```
   The Node tests need `SW_PHP` set to the PHP path above, and run from a short folder (e.g. `D:\`).
   The test server has no Node, so these run on this PC; the player test's `--listen-only` form checks
@@ -300,6 +305,8 @@ rejoining always starts a continuation show instead (see Decisions).
 
 **Listener count and stats work** (round 27). Every open player and embed pings once a minute while it plays (a random id per Listen; no cookie, no address kept), so the player's health line shows "Listening now", the manager's overview shows it with the most at once today, and the new **Listeners** screen has four tiles and two charts (the most at once per hour over 48 hours, hours listened per day over 30 days), each with a table view. Apps that play the stream address directly aren't counted.
 
+**Every open limit addressed** (round 28, before podcasts). Each Listen is now kept 30 days with the address and browser details it came from (the user reversed the anonymous-ping decision): the **Listeners** screen adds unique listeners (per day and month), and who listens over the last 30 days by where, device, browser, app, country and city (DB-IP's free city database, looked up on the server and updated monthly by the cron). A **Privacy page** says what is kept and why, linked under the player and in the embed; managers set its contact address on the Listeners screen. Test runs carry a mark and stay out of the stats; one address may start at most 20 Listens in 10 minutes. The studio shows how many are listening and encodes MP3 in a worker. Tried for the first time: the studio on the phone (its own mic, live, End show), the embed on the phone (20 s behind through 2 minutes locked), the full signed-in web test and a live studio show on the test server. Now playing is cached at Cloudflare. All tests pass on Laragon, the server and the phone; what is left is in Open issues (hardware the user has to bring, and limits agreed as unfixable).
+
 **Song changes heard with the album** (round 24): `tools/song-changes.mjs` prepared all 22 songs as on upload and mixed the 21 changes as the player does; the clips page is at http://localhost:8080/song-changes/ (Laragon only, outside the repo). No clipping (highest peak −1.3 dB) and no dead air. Worth hearing: `19 → 20` (5.1 s very quiet), `20 → Cain` (quiet into quiet) and three levelling steps of 5.7–8.5 LU. Two songs couldn't reach −16 LUFS because of their peaks (−17.8 and −16.5): a true-peak limiter in song prep would fix that (see the decision on mastering plugins). Next: the user listens, then a live session.
 
 ## Next steps
@@ -324,8 +331,7 @@ rejoining always starts a continuation show instead (see Decisions).
 8. **Then the Windows studio app (`v0.6`)**: Tauri, a local Icecast bridge for BUTT/Mixxx, a signed
    installer with auto-update. **Then the WordWave pilot (`v0.8`)**, then **launch (`v1.0`)** with the
    optional relay to an outside Icecast.
-9. Later: `player_phone_test.mjs` on the phone (not run since round 23); mastering in song prep once the
-   user has compared oXygen and master_me.
+9. Later: mastering in song prep once the user has compared oXygen and master_me.
 
 ## Decisions
 
@@ -436,6 +442,13 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-21 | **How listeners are counted**: an open player (or embed) pings `api/listen.php` once a minute while it plays, with a random 16-hex id made when Listen is pressed (in memory only: no cookie, no storage), and a last ping on Stop or when the page closes (`sendBeacon`). "Listening now" = ids heard in the last 90 s. Nothing else is stored: no IP address, no browser details. Pings closer than 50 s add nothing | The user's choice (anonymous ping, 2026-10-20). Without a kept id a "listen" is one press of Listen, not one person, and the screen says so |
 | 2026-10-21 | **Stats per hour** (`listener_hours`, UTC hours): the most at once, listener-minutes (one per ping) and listens; kept 400 days; quiet players' rows deleted after 10 minutes. Days and hour labels use the station's time zone | Small, enough for hourly and daily charts, and nothing personal |
 | 2026-10-21 | The **Listeners** screen (managers): four tiles (now, most at once today, hours listened today, listens today), a 48-hour chart of the most at once per hour and a 30-day chart of hours listened per day, each with a table view and a tooltip per column; drawn on the server as SVG in one colour (`--chart: #18a84a`, checked with the dataviz validator against the dark card). "Listening now" also shows on the player's health line (from every timeline fetch) and the manager's overview; now playing carries the count for other sites | The design's health line and overview stat, plus the charts the user asked for |
+| 2026-10-21 | **A round is done only when every feature is fully written and tested**; limits are fixed in the round or put to the user as a choice, and a limit that can't be fixed is agreed, not just listed | The user's rule, so nothing is forgotten (also in `CLAUDE.md`) |
+| 2026-10-21 | **Listener analytics with addresses** (reverses the anonymous ping of 2026-10-20): each Listen keeps its address and user agent for **30 days**; device, browser and app from the user agent; country and city from **DB-IP Lite** stored and looked up on our server (CC BY 4.0 credit on the screen); unique listeners per day and month. After 30 days only totals are left (kept 400 days) | The user's choice, for analytics. Lookups on our own server send no address anywhere |
+| 2026-10-21 | **Unique listeners** = one address and browser, marked per day as a truncated HMAC with a **salt that changes each month** (the old one is deleted), so a month's days count together and old marks can't be traced back | Counts people across days without keeping an identifier longer than a month |
+| 2026-10-21 | **A Privacy page, no banner**: listening sets no cookies, so POPIA asks for a notice, not consent; the page (what, why, how long, who sees it, rights, Information Regulator, who to ask) is linked under the player and in the embed; the station sets its contact address on the Listeners screen | The user's choice |
+| 2026-10-21 | **Test runs carry `StationwagonTest` in their user agent** and stay out of every total (they still count as listening now, which the tests check); **at most 20 new Listens per address in 10 minutes** (429 after that) | Test runs no longer bend the numbers; one address can't inflate them |
+| 2026-10-21 | The studio's **MP3 encoder runs in a worker** (`studio-encoder.js`), with a generation number per show so an old show's tail is dropped | A busy page could otherwise delay the pieces |
+| 2026-10-21 | **Signed-in tests on the test server**: the full web test (throwaway DJ and manager, removed afterwards) and the studio test live through Cloudflare; the Cloudflare cache rule covers now playing too | The user's OK |
 | 2026-10-20 | Saved copies of the published mock-ups in `prototypes/*.html` are **gitignored** | The user's choice; the sources are in `design/` |
 
 ## Scope changes
@@ -452,6 +465,7 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-10-20 | **Added to `v0.4`**: listener count and stats, and podcasts (recording, upload, page, RSS feed, episode editing); recording was left out of round 21 and is now in |
 | 2026-10-20 | **New milestone `v0.6`: the Windows studio app**, before the pilot (it was part of launch) |
 | 2026-10-20 | Added for `v1.0`: an optional relay to an outside Icecast server, off by default |
+| 2026-10-21 | **Added to `v0.4`**: listener analytics (unique listeners; device, browser, app; country and city) and a Privacy page |
 
 ## Milestone plan (estimates)
 
@@ -471,7 +485,7 @@ The POC is unversioned (its commits are the record). The app's version is in `ap
 | 2026-10-20 | `0.1.0` | v0.1 closed: installer, sign-in, planner on MySQL, the manager screens, Sound & safety, song prep. The Player & studio work becomes `0.4.0-dev` with its first code change |
 | 2026-10-20 | `0.4.0-dev` | Player & studio started (the listener player) |
 
-Schema version: **4** (`Schema::VERSION`; stored in the `settings` table). Version 4 (round 27) adds `listeners` and `listener_hours`. Version 3 (round 25) adds `tracks.outro` and `live_shows.continues_show_id`; Laragon and the test server are on 4 (the server went 2 → 3 and 3 → 4 by the deploys of 2026-10-21). Version 1 was the first
+Schema version: **5** (`Schema::VERSION`; stored in the `settings` table). Version 5 (round 28) makes `listeners` again (one row per Listen, kept 30 days, with address, browser details and what they say) and adds `listener_tally` and `listener_visitors`; Laragon and the test server are on 5. Version 4 (round 27) adds `listeners` and `listener_hours`. Version 3 (round 25) adds `tracks.outro` and `live_shows.continues_show_id`; Laragon and the test server are on 4 (the server went 2 → 3 and 3 → 4 by the deploys of 2026-10-21). Version 1 was the first
 twelve tables; version 2 (2026-10-20) adds `running_orders`. The test server was upgraded 1 → 2 by the
 deploy on 2026-10-20.
 
@@ -505,88 +519,44 @@ deploy on 2026-10-20.
 | 24 | 2026-10-20 | with round 25 | **Song changes with real music**: `tools/song-changes.mjs` and `tools/song-changes.html` (prepare a folder of songs as on upload, cut pieces with `Mp3::scan`, plan each change by the planner's rule, mix it as the player does, write a page of 15 s clips with charts and measurements; quiet starts and endings are noted, not flagged); run on the user's album (results in Current status and the POC test log; clips on Laragon only); the tool closes its browser when stopped early. Mastering plugins oXygen and master_me installed in Adobe Audition for comparison (see Decisions). No app changes, so no app tests this round |
 | 25 | 2026-10-20 | `911631a` | **Sound & safety v0.4**: `StationSettings` rewritten (sliders and choices: fade shape, music under the voice, rejoin window, silence level, live and prepared-song quality; `mbPerHour`), new defaults in `Installer`, `views/manage/sound.php` rewritten (selects, a fade-curve preview, MB an hour, the listener delay shown) with styles; `assets/fades.js` used by the player (and its look-ahead) and the studio; `fade_shape` in `api/timeline.php`; song prep measures the last minute (`outro`, `prep-core.js`), `upload.js` sends it, `Library::outro` checks it, `Planner::quietFrom` moves on before a quiet tail; prep encodes at the station's quality (`data-kbps`); the studio's encoder uses the live quality, its mic presets the station's ducking, a dead-air warning after 10 s, and **Rejoin your show** (`Studio::rejoinable`/`rejoin`, `/studio/api/rejoin`, `Planner::endLive` takes a reason); schema 3 (`tracks.outro`, `live_shows.continues_show_id`). Tests: `manage_test.php` 81, `studio_test.php` 77, `web_test.php` 118 / 46, `prep_test.mjs` 27, `upload_browser_test.mjs` 13, `studio_browser_test.mjs` 60 (reload mid-show, "Leave site?" asked and accepted, Rejoin your show: a continuation show at a fresh boundary, notes moved, pieces in order); all tests pass on Laragon. **Found and fixed**: rejoining the same open show would have made listeners stall after a gap over ~12 s (now a continuation show). Also the project map was refactored around the final app (v28), and decision rows from rounds 23–24 that had landed under Scope changes moved to Decisions. **Now playing and the embed**: `NowPlaying` and `api/nowplaying.php` (at the listener delay, CORS, 2 s edge-cache header), the `/embed` route in `App` (no header, `frame-ancestors *`, `?look=light`), `views/embed.php` and `assets/embed.js` (hls.js first, holds the 20 s delay, silent at volume 0 until then), embed styles and a light look in `app.css`, "Put the player on your website" on the station page (iframe code, light-look switch, Copy); tests: `web_test.php` 132 / 60 (now playing against the timeline, the embed page, framing, light look, the card), `player_browser_test.mjs` 38 (an embed part: a made-up church website frames it, it shows what's on, plays 20.1 s behind, stops; the test's Edge runs without its local-network check so a web page may frame localhost); **found and fixed**: Edge claims native HLS but can't play it, and pauses muted media in a background tab; and (older, from round 12) Skip in the seconds between Go live and the show's start dropped the show from the timeline (`Planner::cut` and `skip` now leave a waiting show alone; `planner_test.php` 72); screenshots of the embed (470 and 340 px, dark and light) and the station page (1280 and 390 px). The saved mock-up copies in `prototypes/*.html` are gitignored. All tests pass on Laragon. Not deployed |
 | 26 | 2026-10-21 | `d5e7c8e` | **Round 25 deployed** to the test server (schema 2 → 3 by the deploy). Server tests on MariaDB: install 31, auth 39, planner 72, manage 81, notes 44, studio 77; from this PC: `web_test.php --public` 60 and `player_browser_test.mjs --listen-only` 23 through Cloudflare (the embed framed by a made-up church site, playing 20.06 s behind; stream only 19.70 s). Live headers: the embed sends `frame-ancestors *` and no `X-Frame-Options` (the host's WordPress `.htaccess` adds none), now playing has CORS `*` and the 2 s edge header (Cloudflare doesn't cache it yet: `DYNAMIC`). **Found and fixed** from a signed-in screenshot of Sound & safety on the server (view only): with four cards the screen put three side by side and squeezed each setting's text to one word a line, and the choices were cut off; it now has two wider columns (`.soundform .cols`), a setting's control goes under its text in a narrow card (container query), choices sit full width under their text and the fade curve is capped at 300 px. Checked at 1280, 900 and 390 px on Laragon and at 1280 on the server; deployed again; `web_test.php` passes on Laragon and `--public` on the server |
-| 27 | 2026-10-21 | this round's commit | **Listener count and stats**: schema 4 (`listeners`, `listener_hours`), `Listeners` (ping, now, hourly, daily), `api/listen.php` (POST pings, sendBeacon on Stop, 400 for a bad id, 405 for GET; `.htaccess` no-store), `assets/listeners.js` (a random id per Listen, a ping a minute, a last ping on Stop or page close), the player's health line "Listening now" (from the timeline feed's new `listeners` and each ping), the embed pings too, now playing carries `listeners`, the overview's two tiles (listening now, most at once today), the **Listeners** screen (`manage/listeners`, managers: four tiles, a 48-hour and a 30-day column chart as server-drawn SVG with tooltips and table views; `--chart` checked with the dataviz validator), `.mmain > *` may shrink (wide content scrolls in its card). Tests: new `listeners_test.php` (28), `web_test.php` 146 / 69 public (pings, Stop, bad ids, the counts in the feeds, the screen and its access), `player_browser_test.mjs` 41 / 26 listen-only (the player and the embed count themselves; Stop takes the player off at once), `studio_test.php`'s upgrade checks now follow `Schema::VERSION` (77). Screenshots at 1280 and 390 px with sample data (removed afterwards) and live at 1280; found and fixed on the phone: the charts' minimum width made the whole page 572 px wide. Deployed (schema 3 → 4); all tests pass on Laragon and the server |
+| 27 | 2026-10-21 | `f358712` | **Listener count and stats**: schema 4 (`listeners`, `listener_hours`), `Listeners` (ping, now, hourly, daily), `api/listen.php` (POST pings, sendBeacon on Stop, 400 for a bad id, 405 for GET; `.htaccess` no-store), `assets/listeners.js` (a random id per Listen, a ping a minute, a last ping on Stop or page close), the player's health line "Listening now" (from the timeline feed's new `listeners` and each ping), the embed pings too, now playing carries `listeners`, the overview's two tiles (listening now, most at once today), the **Listeners** screen (`manage/listeners`, managers: four tiles, a 48-hour and a 30-day column chart as server-drawn SVG with tooltips and table views; `--chart` checked with the dataviz validator), `.mmain > *` may shrink (wide content scrolls in its card). Tests: new `listeners_test.php` (28), `web_test.php` 146 / 69 public (pings, Stop, bad ids, the counts in the feeds, the screen and its access), `player_browser_test.mjs` 41 / 26 listen-only (the player and the embed count themselves; Stop takes the player off at once), `studio_test.php`'s upgrade checks now follow `Schema::VERSION` (77). Screenshots at 1280 and 390 px with sample data (removed afterwards) and live at 1280; found and fixed on the phone: the charts' minimum width made the whole page 572 px wide. Deployed (schema 3 → 4); all tests pass on Laragon and the server |
+| 28 | 2026-10-21 | this round's commit | **Every open limit addressed before podcasts** (the user's rule: a round is done only when every feature is fully written and tested; in `CLAUDE.md` and Working agreements). **Listener analytics** (reverses the anonymous-ping decision, the user's choice): schema 5 (`listeners` made again: one row per Listen kept 30 days with `ip`, `user_agent`, device, browser, app, country, city, minutes, `ended`, `test`; new `listener_tally` (daily totals by where, device, browser, app, country, city) and `listener_visitors` (a daily unique mark: an HMAC of address and browser with a monthly salt in `settings.listener_salt`, replaced each month)); `Agent` (reads device, browser and app from the user agent; the test mark `StationwagonTest`); `Geo` (our own reader for DB-IP's IP to City Lite MMDB file, looked up on the server, 0.4 ms a lookup; `update()` fetches the month's file, checks it and swaps it in); `cli/geo-update.php`, and `cli/plan.php` (cron) fetches the new file once a month (one try a day); `api/listen.php` passes `Request::clientAddress()` (the real address through Cloudflare) and the user agent, and answers 429 past 20 new Listens per address in 10 minutes; Stop marks a Listen ended (a late ping no longer brings it back); test runs count as listening now but stay out of every total. **Listeners screen**: six tiles (with unique listeners today and this month), a unique-listeners chart with a by-month table, "Who listens, the last 30 days" (where, device, browser, app, country, city as share-of-hours bars, top 6 and Others), the DB-IP credit (CC BY 4.0, its edition) and the privacy contact form (`StationSettings::privacyEmail` / `savePrivacyEmail`). **Privacy page** (`/privacy`, POPIA: what, why, how long, who sees it, rights, who to ask), linked under the player (`.lp-foot`) and in the embed (`.em-priv`). **Small fixes**: the studio shows "N listening" (its state feed); the studio's MP3 encoder runs in a worker (`assets/studio-encoder.js`, with the frame splitter; `lame.min.js` no longer on the page); the web test skips its silent test song if it is playing at the live edge; `make_green_skin.py` reads `hifi/` and refuses to overwrite `green/`. **Checked and closed**: old sessions are cleaned up on cPanel (none older than 2 days); AutoSSL replaced the self-signed certificate (Let's Encrypt to 17 Jan 2027); the very short last live piece is by design (End show sends what built up since the last 6 s boundary); a hidden listener tab fades back to the AutoDJ after a show (in the browser test and live on the server). **With the user's OK**: the Cloudflare Cache Rule now covers `api/nowplaying.php` too (renamed "Stationwagon playlist and now playing (2 s)"; MISS → HIT); the full signed-in web test runs on the server with throwaway accounts (removed afterwards); the studio test went live on the server through Cloudflare (`SW_HELPER_SSH`); the old test-run hourly stats on the server were deleted. **Found and fixed by the tests**: the Privacy page never showed the contact (the station loader skipped `settings`); through Cloudflare its Email Address Obfuscation rewrites addresses, so the checks accept its protected link. Tests: `listeners_test.php` 82, `web_test.php` 161 on Laragon / 162 signed in and 74 public on the server, `player_browser_test.mjs` 42 (a hidden tab fades back after a show) / 26 listen-only, `studio_browser_test.mjs` 62 on Laragon and live on the server, `player_phone_test.mjs` 15 (the embed in a frame keeps playing 20.0–20.1 s behind through 2 minutes locked; the test is marked so it stays out of the stats), new `studio_phone_test.mjs` 11 (the studio on the phone with its own mic: worker encoder, live, 6.06 s pieces, End show). Deployed (schema 4 → 5); all tests pass on Laragon, the server and the phone |
 
 ## Open issues
 
-- **USB headset** not tried with P3 (the user's PC test passed).
-- Cloudflare still holds the old copies of the 4 test MP3s with the old 2-hour header. They expire
-  on their own; new files cache correctly.
-- **Safety net** (silence → AutoDJ): tested on Laragon, and on cPanel by accident on 2026-10-20 (a test
-  script crashed mid-show; the server ended the show after 8 s).
-- The origin's **self-signed certificate** should be replaced by AutoSSL; check
-  `uapi SSL installed_hosts` on the server.
-- The **hi-fi skin** has no presenter notes panel and no studio notes drawer (only the green skin does).
-- The **handover in P4** shows about 90 ms deck drift (a tiny jump at go-live). Under 100 ms, but
-  worth a look.
-- The **last live piece** after End show can be very short (about 1 s). It plays fine, but check
-  how the tail is flushed.
-- **BUTT on the user's PC:** the only remaining copy is in an old session folder that the app
-  clears about a week after 2026-10-19. Reinstall BUTT before the next live show; its server
-  settings are kept in `%APPDATA%\buttrc`.
-- The test-server admin (`vincent@controll.co.za`) has a generated password, kept in
-  `tools/deploy/controll.admin.local.txt`. It can be changed on `/account` after signing in.
-- Sound & safety: the **piece length** (and so the listener delay) can't be changed from the screen;
-  it needs a rescan of every song's pieces. Silence detection works only for songs prepared from round
-  25 on (older songs have no `outro`; a "prepare again" button would fix that). Changing the
-  prepared-song quality doesn't re-encode songs already in the library.
-- The library has no "show song titles" switch or play weights from the design yet.
-- Songs added before round 16 or with `cli/import.php` are **not levelled** (the 4 test tones), and there's
-  no "level again" button for existing songs yet.
-- Prep holds the whole decoded song in memory (about 10 MB a minute), so files over 60 MB go up as they
-  are, and a phone may struggle with long songs. Re-encoding MP3 → MP3 costs a little quality.
-- Between rounds 13 and 15, drag-and-drop uploads failed (fixed in round 16). The web test sends forms
-  with curl, so only `upload_browser_test.mjs` runs the page's own scripts.
-- The test station's 4 songs are test tones; real music can now be uploaded from Music library.
-- Track pieces are cut at the station's `segment_seconds` when imported; changing that setting
-  later needs a rescan (not built).
-- The two **test shows of 2026-10-20 on the test server** ("Live with Vincent Rathbone", one ended by the
-  safety net, one by End show) stay in the station's history. They have no notes, so listeners see nothing.
-- After the live test, the listener tab (hidden at that moment) came back to the AutoDJ by joining the
-  next song rather than fading into it. No dropout; worth a look in the player.
-- The studio was tested with Chromium's **fake microphone** only (the mic chain itself passed P3 by ear).
-  Not tried on a phone, or with a real show of real music.
-- The studio encodes MP3 on the page's main thread (as the POC did); a very busy PC could delay pieces.
-  A worker would be safer.
-- Reloading the studio during a show now offers **Rejoin your show** (round 25): a continuation show
-  with the notes; listeners hear the AutoDJ for the seconds in between. The decks and the mic start
-  empty again after a reload. Not tried on the test server yet.
-- Not built yet in the studio: recording to a podcast, an output (headphones) device picker (the strip
-  shows the default output), editing a posted note (remove and post again), and talk items marking
-  themselves "now" (only songs do, when they start on a deck).
-- The **signed-in** web checks run only on Laragon. On the server they're covered by `auth_test.php`
-  and the public web checks.
-- **`player_phone_test.mjs` hasn't run since the output strip** went into the player (round 23; the
-  phone wasn't connected). Run it when the phone is plugged in and unlocked.
-- The **output strip** in the player reads the songs' pieces ahead from the browser's cache; with a
-  browser that keeps no cache (private windows on some phones) the songs' bytes would come twice.
-  Not seen in the tests (each file came over the network once). The studio's strip shows its mix
-  ahead only for the decks and the mic as they stand; a song loaded later or a mic switched on appears
-  when it happens.
-- `design/skins/make_green_skin.py` still expects the original `wordwave-*.html` file names.
-- **Locked Android phone: a short gap about every minute.** The Xiaomi freezes the Web Audio clock
-  about every 60 s while the screen is locked; the watchdog brings it back in about 0.5 s. A listener
-  may hear that. Not tried on other Android phones yet. Starting to listen *behind* the lock screen
-  isn't possible (Chrome blocks it; the player says "Tap Listen again").
-- **Test order on Laragon:** don't run `web_test.php` at the same time as a browser test (it skips, replans and
-  uploads), and give it a few minutes before `player_browser_test.mjs`: the web test's silent `[test]` song can
-  still be on air, and then the output-strip checks fail (nothing to draw, odd download counts).
-- **Listener count:** anyone can send made-up pings, so the numbers can be inflated on purpose (no address is kept
-  to stop it). Test runs count too: `web_test.php --public` and `player_browser_test.mjs --listen-only` each add a
-  listen or two to the test server's stats. Apps that play `api/stream.php` directly aren't counted. The studio
-  doesn't show the count yet.
-- The phone's Wi-Fi drops now and then (and `phone.mjs offline` can leave a tab offline); the phone
-  test retries the page load.
-- Not tried: Safari and iPhones. Safari's own HLS can't be faded through Web Audio, so live hand-overs
-  there use element volume steps (a hard switch on iPhones, whose volume is fixed).
-- The design's player extras not built yet: listener count (next).
-- **Now playing** is not cached at Cloudflare yet: the Cache Rule covers only `api/stream.php`. Every embed asks once
-  every 15 s, so 100 embed listeners run PHP about 7 times a second. Widening the rule to `nowplaying.php` (its 2 s
-  header is already sent) needs the user to change it in Cloudflare.
-- The **embed** was tested in headless Edge only (framed by another page, and on its own); not on a phone, in Safari,
-  or on a real church website. Its iframe asks for `allow="autoplay"`, but Listen still needs a tap.
-- Check that old session files in `storage/sessions` get cleaned up on cPanel (PHP's session clean-up is
-  often switched off there); 18 files on 2026-10-20, so not urgent.
+Every item from before round 28 was fixed, checked, decided with the user or moved to the roadmap on
+2026-10-21 (see the change log, round 28). What is left:
+
+**Waiting on the user (hardware)**
+
+- **USB headset** not tried with the mic chain (P3; the user's PC test passed).
+- **iPhone and Safari** not tried. Safari's own HLS can't be faded through Web Audio, so live
+  hand-overs there use element volume steps (a hard switch on iPhones, whose volume is fixed).
+- **BUTT on the user's PC** must be reinstalled before the next BUTT show; its server settings are
+  kept in `%APPDATA%\buttrc`.
+
+**Known limits (agreed with the user 2026-10-21; the app can't remove them)**
+
+- Apps that play `api/stream.php` directly aren't counted as listeners: they never ping.
+- Listen needs a tap, in the player and the embed (browsers' autoplay rule; the iframe's
+  `allow="autoplay"` doesn't change that).
+- **Locked Xiaomi phone:** the Web Audio clock freezes about every 60 s; the watchdog brings it back in
+  about 0.5 s, which a listener may hear. Not tried on other Android phones. Starting to listen behind
+  the lock screen isn't possible (Chrome blocks it; the player says "Tap Listen again").
+- A browser that keeps no cache (private windows on some phones) would fetch the songs twice for the
+  player's output strip. Not seen in any test.
+- Made-up pings: one address may start at most 20 Listens in 10 minutes (more get 429 and aren't
+  counted), but someone with many addresses could still inflate the numbers.
+- Places on the Listeners screen are approximate (DB-IP Lite: a phone on mobile data can show a city far
+  away).
+
+**On the roadmap, not open issues** (in the project map's order): podcasts (next); the small studio
+items (a headphone output picker, editing a posted note, talk items marking themselves "now"); the
+spectrum; the hi-fi skin (with the presenter notes panel and the studio notes drawer the green skin
+has); the library's "show song titles" switch and play weights; "prepare again" / "level again" for
+songs already in the library (older songs have no `outro` and the 4 test tones aren't levelled); and
+changing the piece length (it needs a rescan of every song's pieces, so the listener delay stays shown,
+not editable).
 
 ## Working agreements
 
@@ -598,6 +568,11 @@ deploy on 2026-10-20.
   user a manual step (setup, sign-in, clicking through). Credentials you need: generate them and keep
   them in gitignored `tools/deploy/*.local.txt`.
 - Never store or repeat passwords or keys in the repo, chat or this file.
+- **A round is done only when every feature in it is fully written and tested.** Don't close a round
+  with "limits", "not tried yet" or "comes later" left over: fix each one in the same round, or put it
+  to the user as a multiple-choice decision before going on. A limit that truly can't be fixed (a
+  browser rule, something only the user can do) is said plainly and agreed with the user, not just
+  listed under Open issues. (The user, 2026-10-21.)
 - After each code round: run the engine test (if the engine changed) and all of `app/tests/`
   locally and on the server, update the POC test log if prototype tests ran, and update this file and
   the project map.

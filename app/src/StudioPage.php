@@ -100,6 +100,7 @@ final class StudioPage
                 'fade_shape' => $s('fade_shape'), 'duck_db' => $s('duck_db'), 'live_kbps' => $s('live_kbps'), 'silence_db' => $s('silence_db'), 'rejoin_minutes' => $s('rejoin_minutes'),
             ],
             'station' => ['name' => $planner->station()['name'], 'timezone' => $planner->station()['timezone']],
+            'listeners' => (new Listeners($planner->db(), $planner->station()))->now($now),
         ];
     }
 

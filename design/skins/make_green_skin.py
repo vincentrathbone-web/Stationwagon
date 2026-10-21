@@ -1,11 +1,25 @@
+"""Make the green skin from the hi-fi skin: python make_green_skin.py <out_dir>
+
+Reads hifi/player.html, studio.html and manager.html next to this script and writes green copies
+to <out_dir>. It never writes to green/: the green skin has been edited by hand since it was made
+(the presenter notes panel and the studio notes drawer exist only there), so compare the output
+with green/ and carry over by hand what you want.
+"""
 import re, sys, pathlib
 
-src_dir = pathlib.Path(sys.argv[1])
+here = pathlib.Path(__file__).resolve().parent
+src_dir = here / "hifi"
+if len(sys.argv) != 2:
+    sys.exit(__doc__)
+out_dir = pathlib.Path(sys.argv[1]).resolve()
+if out_dir == (here / "green").resolve():
+    sys.exit("Not into green/: it has hand edits this script doesn't know about. Pick another folder.")
+out_dir.mkdir(parents=True, exist_ok=True)
 
 TITLES = {
-    "wordwave-player": "WordWave Green Player",
-    "wordwave-studio": "WordWave Green Studio",
-    "wordwave-manager": "WordWave Green Manager",
+    "player": "WordWave Green Player",
+    "studio": "WordWave Green Studio",
+    "manager": "WordWave Green Manager",
 }
 
 FONT_LINK = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap">'
@@ -132,5 +146,5 @@ for name, title in TITLES.items():
     s = s.replace("rgba(255,178,74,", "rgba(30,215,96,")
     s = s.replace("Share Tech Mono,monospace", "Figtree,sans-serif")
     s = s.replace("</style>", OVERRIDES + "</style>", 1)
-    (src_dir / f"{name}-green.html").write_text(s, encoding="utf-8")
-    print("wrote", name + "-green.html", len(s))
+    (out_dir / f"{name}.html").write_text(s, encoding="utf-8")
+    print("wrote", out_dir / f"{name}.html", len(s))

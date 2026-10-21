@@ -1,10 +1,12 @@
 <?php
 // A ping from an open player or embed, once a minute while it plays: {"sid": 16 hex, "source":
 // "player"|"embed", "stop": true when Listen is stopped}. Answers how many are listening now.
-// The id is random per Listen and nothing else is kept: no cookie, no address (see Listeners).
+// The id is random per Listen (no cookie); the address and browser details it came from are kept
+// for 30 days for the stats (see Listeners and the Privacy page). 429 when one address starts too
+// many Listens at once.
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
-use Stationwagon\{Config, Listeners, Planner};
+use Stationwagon\{Config, Listeners, Planner, Request};
 
 header('Content-Type: application/json');
 header('Cache-Control: no-store');
@@ -25,8 +27,12 @@ try {
     $planner = Planner::forFirstStation();
     $count = (new Listeners($planner->db(), $planner->station()))->ping(
         is_array($in) ? (string) ($in['sid'] ?? '') : '', is_array($in) ? (string) ($in['source'] ?? '') : '',
-        microtime(true), is_array($in) && !empty($in['stop']));
+        microtime(true), is_array($in) && !empty($in['stop']), Request::clientAddress(), (string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));
     echo json_encode(['listening' => $count]);
+} catch (OverflowException $ex) {
+    http_response_code(429);
+    header('Retry-After: 600');
+    echo json_encode(['error' => $ex->getMessage()]);
 } catch (InvalidArgumentException $ex) {
     http_response_code(400);
     echo json_encode(['error' => $ex->getMessage()]);

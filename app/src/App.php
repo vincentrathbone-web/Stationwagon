@@ -49,6 +49,7 @@ final class App
                 'manage/listeners' => (new ManagePage())->listeners(),
                 'studio' => (new StudioPage())->page(),
                 'embed' => self::embed(),
+                'privacy' => self::privacy(),
                 default => self::notFound(),
             };
         } catch (Throwable $ex) {
@@ -126,7 +127,7 @@ final class App
     private static function station(): ?array
     {
         $db = Db::fromConfig();
-        return $db->run('SELECT id, name, slug, timezone FROM ' . $db->table('stations') . ' ORDER BY id LIMIT 1')->fetch() ?: null;
+        return $db->run('SELECT id, name, slug, timezone, settings FROM ' . $db->table('stations') . ' ORDER BY id LIMIT 1')->fetch() ?: null;
     }
 
     /** The station's page: the listener player, what's on and today's schedule. No session. */
@@ -156,6 +157,13 @@ final class App
         header('Content-Security-Policy: frame-ancestors *');
         header('Content-Type: text/html; charset=utf-8');
         require SW_ROOT . '/views/embed.php';
+    }
+
+    /** What the station keeps about listeners, and why (linked under the player and in the embed). */
+    private static function privacy(): void
+    {
+        $station = self::station();
+        View::render('privacy', ['title' => 'Privacy', 'station' => $station, 'email' => $station ? StationSettings::privacyEmail($station) : '']);
     }
 
     /** What's on air now and next, plus the library size; null if the planner can't answer. */

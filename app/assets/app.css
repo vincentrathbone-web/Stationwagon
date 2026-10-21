@@ -536,11 +536,16 @@ html.light .em-play { color: #fff; }
 .em.live .em-bar div { background: var(--onair); }
 .em-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .em-meta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.em-open { font-size: 13px; font-weight: 600; color: var(--muted); text-decoration: none; white-space: nowrap; align-self: start; }
-.em-open:hover { color: var(--ink); }
+.em { position: relative; }
+.em-side { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; align-self: stretch; gap: 8px; }
+.em-open { font-size: 13px; font-weight: 600; color: var(--muted); text-decoration: none; white-space: nowrap; }
+.em-open:hover, .em-priv:hover { color: var(--ink); }
+.em-priv { font-size: 11px; color: var(--faint); text-decoration: none; }
 @media (max-width: 380px) {
   .em { grid-template-columns: 52px minmax(0, 1fr); }
   .em-open { display: none; } /* the station name links to the player instead */
+  .em-side { position: absolute; top: 12px; right: 14px; }
+  .em-top { padding-right: 46px; }
   #emNext { display: none; }
 }
 
@@ -578,3 +583,27 @@ html.light .em-play { color: #fff; }
 .ltable .tablewrap table { min-width: 0; }
 .ltip { position: absolute; z-index: 6; pointer-events: none; background: var(--raised); color: var(--ink); border: 1px solid var(--edge);
   border-radius: 10px; padding: 6px 10px; font-size: 12px; white-space: nowrap; box-shadow: 0 6px 18px rgba(0, 0, 0, .4); }
+
+/* the Privacy page, and its link under the player */
+.lp-foot { max-width: 1180px; margin: 28px auto 0; padding: 0 4px; font-size: 13px; color: var(--faint); }
+.lp-foot a { color: var(--muted); }
+.privacy { max-width: 680px; }
+.privacy h2 { font-size: 18px; margin: 28px 0 8px; }
+.privacy p, .privacy li { line-height: 1.6; color: var(--muted); }
+.privacy b { color: var(--ink); }
+.privacy ul { padding-left: 20px; }
+
+/* Listeners: who listens (share of hours, by kind), the credit, the privacy contact */
+.lkinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px 28px; margin-top: 14px; }
+.lkind h3 { font-size: 14px; margin: 0 0 8px; color: var(--muted); font-weight: 700; }
+.lkind ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+.lkind li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px; font-size: 13px; }
+.lkind .lname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lkind .lpct { color: var(--muted); font-variant-numeric: tabular-nums; }
+.lkind .lbar { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: var(--chart-grid); overflow: hidden; }
+.lkind .lbar i { display: block; height: 100%; min-width: 2px; border-radius: 3px; background: var(--chart); }
+.lcredit { margin-top: 16px; font-size: 12px; }
+.lprivacy label { display: block; font-weight: 600; margin: 12px 0 6px; }
+.lprivacy .lrow { display: flex; gap: 10px; flex-wrap: wrap; }
+.lprivacy input { flex: 1 1 240px; max-width: 360px; background: var(--raised); color: var(--ink); border: 1px solid transparent; border-radius: 10px; font: 500 15px var(--f-ui); padding: 10px 12px; }
+.lwarn { color: var(--warn); font-size: 13px; margin: 8px 0 0; }

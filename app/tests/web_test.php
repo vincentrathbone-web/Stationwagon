@@ -40,6 +40,8 @@ final class Browser
         $headers = [];
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => false, CURLOPT_TIMEOUT => 20,
+            // the test mark keeps this run's pings out of the station's listener stats (src/Agent.php)
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; web_test.php) StationwagonTest',
             CURLOPT_HTTPHEADER => array_merge($extra, $this->cookies ? ['Cookie: ' . implode('; ', array_map(fn($k, $v) => "$k=$v", array_keys($this->cookies), $this->cookies))] : []),
             CURLOPT_HEADERFUNCTION => function ($ch, $line) use (&$headers) {
                 if (str_contains($line, ':')) {
@@ -185,6 +187,12 @@ try {
     check('  any website may read it (CORS)', ($r['headers']['access-control-allow-origin'][0] ?? '') === '*');
     $ncc = implode(',', $r['headers']['cache-control'] ?? []);
     check('  browsers always ask again; Cloudflare may keep it 2 s', str_contains($ncc, 'max-age=0') && str_contains($ncc, 's-maxage=2'), $ncc);
+    if (isset($r['headers']['cf-cache-status'])) {
+        // behind Cloudflare its Cache Rule covers nowplaying.php too: a second ask straight after is served from the edge
+        $again = $s->go('api/nowplaying.php');
+        $status = $again['headers']['cf-cache-status'][0] ?? '';
+        check('  Cloudflare keeps it (the embeds’ every-15 s asks mostly don’t reach PHP)', $status === 'HIT' || ($status === 'EXPIRED' && ($r['headers']['cf-cache-status'][0] ?? '') === 'HIT'), ($r['headers']['cf-cache-status'][0] ?? '') . ' → ' . $status);
+    }
     check('  it is told at the listener delay', ($np['delay'] ?? 0) === 20 && abs(($np['server_now'] ?? 0) - ($np['heard_at'] ?? 0) - 20) < 0.2 && abs(($np['server_now'] ?? 0) - microtime(true)) < 30);
     check('  with the station, now, next and recent', isset($np['station']['name']) && array_key_exists('on_air', $np) && is_array($np['next'] ?? null) && is_array($np['recent'] ?? null));
     $heardEntry = null;
@@ -211,8 +219,7 @@ try {
         implode(',', $r['headers']['x-frame-options'] ?? []) . ' | ' . implode(',', $r['headers']['content-security-policy'] ?? []));
     check('  ?look=light gives the light look', str_contains($e->go('embed?look=light')['body'], '<html lang="en" class="light">') && !str_contains($r['body'], 'class="light"'));
     check('the station page offers the embed code with Copy', str_contains($page, 'id="lpEmbed"') && str_contains($page, 'id="lpEmbedCopy"') && str_contains($page, 'data-path="' . $basePath . '/embed"'));
-    echo "Listener count
-";
+    echo "Listener count\n";
     $json = ['Content-Type: application/json'];
     $sid = bin2hex(random_bytes(8));
     $lb = new Browser($base);
@@ -229,7 +236,14 @@ try {
     check('  and listening is counted only by POST', $lb->go('api/listen.php')['status'] === 405);
     check('the station page shows “Listening now” and loads the ping script', str_contains($page, 'id="lpListeners"') && preg_match('~assets/listeners\.js\?v=[0-9a-f]{10}"~', $page) === 1);
     check('  and so does the embed', preg_match('~assets/listeners\.js\?v=[0-9a-f]{10}"~', $e->go('embed')['body']) === 1);
-    foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/'] as $private) {
+    $pv = new Browser($base);
+    $r = $pv->go('privacy');
+    check('the Privacy page says what is kept, for how long, and who to ask', $r['status'] === 200 && str_contains($r['body'], '<h1>Privacy</h1>')
+        && str_contains($r['body'], '<b>30 days</b>') && str_contains($r['body'], 'IP address') && str_contains($r['body'], 'Information Regulator') && str_contains($r['body'], 'Who to ask'), (string) $r['status']);
+    check('  with no cookie', $pv->setCookies === []);
+    check('  linked under the player and in the embed', str_contains($page, 'class="lp-foot"') && str_contains($page, 'href="' . $basePath . '/privacy"')
+        && str_contains($e->go('embed')['body'], 'class="em-priv" href="' . $basePath . '/privacy"'));
+    foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/', 'storage/geo/dbip-city-lite.mmdb'] as $private) {
         $code = (new Browser($base))->go($private)['status'];
         check("$private is not served", in_array($code, [403, 404], true), (string) $code);
     }
@@ -261,7 +275,7 @@ try {
         $st = $a->go('studio');
         preg_match('/data-csrf="([0-9a-f]{64})"/', $st['body'], $sk);
         check('the studio opens for a DJ', $st['status'] === 200 && str_contains($st['body'], 'id="studio"') && isset($sk[1]), (string) $st['status']);
-        check('  with its scripts tagged by content', preg_match('~assets/studio\.js\?v=[0-9a-f]{10}"~', $st['body']) && preg_match('~assets/studio-mic\.js\?v=[0-9a-f]{10}"~', $st['body']) && preg_match('~assets/vendor/lame\.min\.js\?v=[0-9a-f]{10}"~', $st['body']));
+        check('  with its scripts tagged by content', preg_match('~assets/studio\.js\?v=[0-9a-f]{10}"~', $st['body']) && preg_match('~assets/studio-mic\.js\?v=[0-9a-f]{10}"~', $st['body']) && preg_match('~data-encoder="[^"]*assets/studio-encoder\.js\?v=[0-9a-f]{10}"~', $st['body']));
         check('  and the notes drawer', str_contains($st['body'], 'id="stDrawer"') && str_contains($st['body'], 'data-kind="verse"'));
         foreach (['assets/studio.js', 'assets/studio-mic.js'] as $asset) {
             $as = $a->go($asset);
@@ -271,6 +285,7 @@ try {
         $q = $a->go('studio/api/state');
         $sj = json_decode($q['body'], true);
         check('the studio feed knows the DJ and their (missing) show', $q['status'] === 200 && ($sj['me']['name'] ?? '') === 'Web Test DJ' && ($sj['slot']['may'] ?? true) === false && str_contains((string) ($sj['slot']['reason'] ?? ''), 'Ask a manager'), (string) ($sj['slot']['reason'] ?? $q['status']));
+        check('  and how many are listening now', is_int($sj['listeners'] ?? null), (string) ($sj['listeners'] ?? '-'));
         check('  and is never kept by shared caches', !preg_match('/public|max-age=[1-9]/', implode(',', $q['headers']['cache-control'] ?? [])), implode(',', $q['headers']['cache-control'] ?? []));
         check('studio actions need the page’s key', $a->go('studio/api/golive', '{}', ['Content-Type: application/json'])['status'] === 400);
         $q = $a->go('studio/api/golive', '{}', $json);
@@ -293,7 +308,9 @@ try {
         check('a second device can sign in too', $phone->go('manage')['status'] === 200);
 
         $r = $a->go('account');
-        check('account page opens', $r['status'] === 200 && str_contains($r['body'], $email));
+        // through Cloudflare, its Email Address Obfuscation swaps addresses in pages for a protected link that a script shows
+        $hasEmail = fn(string $body, string $address) => str_contains($body, $address) || str_contains($body, '/cdn-cgi/l/email-protection');
+        check('account page opens', $r['status'] === 200 && $hasEmail($r['body'], $email), $r['status'] . ' ' . (preg_match('~[^<>]{0,60}(?:example\.test|email-protection)[^<>]{0,40}~', $r['body'], $mm) ? $mm[0] : 'no address in the page'));
         $csrf = Browser::csrf($r);
         $r = $a->go('account', ['csrf' => $csrf, 'current_password' => 'not it at all', 'new_password' => 'a new password 1', 'confirm_password' => 'a new password 1']);
         check('wrong current password refused', $r['status'] === 422 && str_contains($r['body'], 'isn’t right'), (string) $r['status']);
@@ -329,8 +346,39 @@ try {
         check('the overview shows who is listening', !str_contains($r['body'], 'On air now') || !str_contains($r['body'], 'Skip this song') || (str_contains($r['body'], 'Listening now') && str_contains($r['body'], 'Most at once today')));
         $lr = $m->go('manage/listeners');
         check('Listeners opens for a manager, in the menu', $lr['status'] === 200 && str_contains($lr['body'], '>Listeners</a>') && str_contains($lr['body'], '<h1>Listeners</h1>'), (string) $lr['status']);
-        check('  with a chart of 48 hours and one of 30 days', substr_count($lr['body'], 'class="lchart"') === 2 && substr_count($lr['body'], 'class="col"') === 78);
-        check('  each with a table view', substr_count($lr['body'], 'Show as a table') === 2);
+        check('  with a chart of 48 hours, 30 days and unique listeners', substr_count($lr['body'], 'class="lchart"') === 3 && substr_count($lr['body'], 'class="col"') === 108);
+        check('  each with a table view, and unique listeners by month', substr_count($lr['body'], 'Show as a table') === 2 && str_contains($lr['body'], '<summary>By month</summary>'));
+        check('  unique listeners today and this month', str_contains($lr['body'], 'Unique listeners today') && str_contains($lr['body'], 'Unique listeners in ' . date('F')));
+        check('  who listens: where, device, browser, app, country, city', str_contains($lr['body'], 'id="lk-source"') && str_contains($lr['body'], 'id="lk-device"') && str_contains($lr['body'], 'id="lk-browser"')
+            && str_contains($lr['body'], 'id="lk-app"') && str_contains($lr['body'], 'id="lk-country"') && str_contains($lr['body'], 'id="lk-city"'));
+        check('  with DB-IP’s credit and its edition', str_contains($lr['body'], 'IP Geolocation by DB-IP</a> (CC BY 4.0), the ') && str_contains($lr['body'], 'edition, updated each month'));
+        // what this run's own ping kept: the address and browser details, marked as a test
+        $mine = $db->run('SELECT * FROM ' . $db->table('listeners') . ' WHERE sid = ?', [$sid])->fetch();
+        check('a ping keeps the address and browser details it came from', $mine && filter_var($mine['ip'], FILTER_VALIDATE_IP) && str_contains($mine['user_agent'], 'StationwagonTest') && (int) $mine['test'] === 1 && (int) $mine['ended'] === 1,
+            $mine ? "{$mine['ip']} {$mine['device']} {$mine['country']}" : 'no row');
+        check('  the real address, not Cloudflare’s', $mine && !Stationwagon\Request::inRanges($mine['ip'], (new ReflectionClassConstant(Stationwagon\Request::class, 'CLOUDFLARE'))->getValue()), $mine['ip'] ?? '');
+        // the cap on new Listens from one address (the rows are removed again, so later runs aren't held up)
+        $capIds = [];
+        $capped = null;
+        for ($i = 0; $i <= Stationwagon\Listeners::NEW_PER_ADDRESS && !$capped; $i++) {
+            $capIds[] = $cs = bin2hex(random_bytes(8));
+            $r = $lb->go('api/listen.php', json_encode(['sid' => $cs, 'source' => 'player']), $json);
+            if ($r['status'] === 429) { $capped = $r; }
+        }
+        check('one address may start only ' . Stationwagon\Listeners::NEW_PER_ADDRESS . ' Listens in ' . (Stationwagon\Listeners::CAP_SECONDS / 60) . ' minutes (429, try later)',
+            $capped !== null && ($capped['headers']['retry-after'][0] ?? '') === '600', count($capIds) . ' tries');
+        $db->run('DELETE FROM ' . $db->table('listeners') . ' WHERE sid IN (' . implode(',', array_fill(0, count($capIds), '?')) . ')', $capIds);
+        // the privacy contact
+        $keepEmail = Stationwagon\StationSettings::privacyEmail($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch());
+        $lcsrf = Browser::csrf($lr);
+        check('the privacy contact refuses something that isn’t an email address', $flashed($after($m, $m->go('manage/listeners', ['csrf' => $lcsrf, 'privacy_email' => 'not an email'])), 'Not saved'));
+        $r = $m->go('manage/listeners', ['csrf' => $lcsrf, 'privacy_email' => 'privacy@example.test']);
+        check('  saves one', $flashed($after($m, $r), 'Saved. The Privacy page shows it now.'));
+        $pb = (new Browser($base))->go('privacy')['body'];
+        check('  and the Privacy page shows it', str_contains($pb, 'href="mailto:privacy@example.test"') || str_contains($pb, '/cdn-cgi/l/email-protection'),
+            preg_match('~Who to ask</h2>\s*(.{0,160})~s', $pb, $mm) ? trim($mm[1]) : 'no Who to ask');
+        $m->go('manage/listeners', ['csrf' => $lcsrf, 'privacy_email' => $keepEmail]);
+        check('  (put back as it was)', Stationwagon\StationSettings::privacyEmail($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch()) === $keepEmail);
         $r = $m->go('manage/skip', ['csrf' => $csrf]);
         check('Skip cuts the song and says when the next starts', $r['status'] === 303 && $flashed($after($m, $r), 'Skipped. The next song starts at'));
         check('a form without its key is turned away', $flashed($after($m, $m->go('manage/skip', ['csrf' => 'nope'])), 'This form had expired'));
@@ -455,11 +503,18 @@ try {
                 // On air right now: hide it from the AutoDJ; it can be removed later
                 $db->run('UPDATE ' . $db->table('tracks') . " SET status = 'error', title = CONCAT('[test] ', title) WHERE id = ?", [$id]);
                 $kept++;
+                // and if it's playing at the live edge, skip it, so the silent test song doesn't stay on air
+                $t = microtime(true);
+                foreach ($planner->timeline($t) as $e) {
+                    if ($e['type'] === 'song' && $e['track_id'] === $id && $e['start'] <= $t && $e['end'] > $t + 5) {
+                        $skipped = $planner->skip($t)['cut_at'] ?? null;
+                    }
+                }
             }
         }
         $planner->replan(microtime(true)); // nothing planned may use a hidden song
         $left = (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('users') . " WHERE email LIKE 'web-test-%'")->fetchColumn();
-        echo "Cleanup: throwaway accounts deleted ($left left)" . ($kept ? ", $kept test song hidden (it was on air)" : '') . "\n";
+        echo "Cleanup: throwaway accounts deleted ($left left)" . ($kept ? ", $kept test song hidden (it was on air)" . (!empty($skipped) ? ' and skipped' : '') : '') . "\n";
     }
     if (isset($tmpDir)) {
         remove_tree($tmpDir);

@@ -20,13 +20,13 @@ $deck = fn(string $k): string => '
     </div>
   </section>';
 ?>
-<div class="st" id="studio" data-base="<?= h(App::url('')) ?>" data-csrf="<?= h($csrf) ?>" data-delay="<?= (int) $delay ?>" data-tz="<?= h($station['timezone']) ?>" data-meter="<?= h(App::asset('assets/outwave-meter.js')) ?>">
+<div class="st" id="studio" data-base="<?= h(App::url('')) ?>" data-csrf="<?= h($csrf) ?>" data-delay="<?= (int) $delay ?>" data-tz="<?= h($station['timezone']) ?>" data-meter="<?= h(App::asset('assets/outwave-meter.js')) ?>" data-encoder="<?= h(App::asset('assets/studio-encoder.js')) ?>">
   <section class="st-win st-top" aria-label="Show">
     <div class="st-brand">Studio<small><?= h($station['name']) ?> · live desk</small></div>
     <div class="st-show">
       <b id="stShow">Loading your show…</b>
       <div class="st-showbar" aria-hidden="true"><i id="stShowFill"></i></div>
-      <div class="st-showmeta"><span id="stSlot"></span><span id="stLeft"></span></div>
+      <div class="st-showmeta"><span id="stSlot"></span><span id="stListeners" title="Listening now, on the station page and embeds"></span><span id="stLeft"></span></div>
     </div>
     <div class="st-clock" id="stClock" aria-label="Station time">--:--:--</div>
     <div class="st-topacts">
@@ -160,7 +160,6 @@ $deck = fn(string $k): string => '
   <p class="st-dhint" id="noteNone">Nothing posted yet.</p>
   <datalist id="stVersions"><option value="KJV"><option value="NKJV"><option value="NIV"><option value="ESV"><option value="NLT"><option value="AFR53"><option value="AFR83"></datalist>
 </aside>
-<script src="<?= h(App::asset('assets/vendor/lame.min.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/studio-mic.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/fades.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/outwave.js')) ?>" defer></script>

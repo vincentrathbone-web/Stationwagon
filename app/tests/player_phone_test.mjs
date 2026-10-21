@@ -1,6 +1,7 @@
 // The listener player on a real Android phone (Chrome over USB), at 1 % volume: it joins, crossfades,
-// then the test locks the screen for two minutes and checks the sound carries on (songs change on
-// time, the sound engine's clock keeps moving), then wakes the screen. About three and a half minutes.
+// then starts the embed in a frame on the same page (it plays at the same 20 s delay), then locks the
+// screen for two minutes and checks the sound carries on in both (songs change on time, the sound
+// engine's clock keeps moving, the embed stays 20 s behind), then wakes the screen. About four minutes.
 //   node app/tests/player_phone_test.mjs https://wordwave.controll.co.za/stationwagon-app
 // Needs the phone unlocked with Chrome open, and
 //   adb forward tcp:9222 localabstract:chrome_devtools_remote
@@ -46,8 +47,13 @@ const audible = (s) => s.decks.filter((d) => d.playing && d.gain > 0.5);
 const onCurrent = (s) => s.current && s.current.type === "song" && audible(s).find((d) => d.key === s.current.key);
 const drift = (s, d) => d.pos - (s.heard - s.current.start);
 const blending = (s) => s.decks.filter((d) => d.playing && d.gain > 0.05 && d.gain < 0.95).length === 2;
+// the embed in its frame on the station page (same site, so its test hooks can be read)
+const em = (x) => `(() => { const w = document.getElementById('swEm'); return w && w.contentWindow.swEmbed ? (${x})(w.contentWindow.swEmbed, w.contentWindow.document) : null; })()`;
 
 try {
+  // the test mark keeps this run's listening out of the station's stats (src/Agent.php)
+  const ua = (await evaluate("navigator.userAgent")) || "";
+  await call("Network.setUserAgentOverride", { userAgent: ua + " StationwagonTest" });
   console.log("Joining");
   let loaded = false;
   for (let i = 0; i < 4 && !loaded; i++) { // the phone's Wi-Fi drops now and then: try the page again
@@ -61,6 +67,9 @@ try {
   for (let i = 0; i < 100 && !(s && onCurrent(s)); i++) { s = await state(); await sleep(100); }
   check("Listen joins the song the delayed timeline is on", !!(s && onCurrent(s)), s && s.status);
   check("  at the right moment (within 0.3 s)", !!(s && onCurrent(s)) && Math.abs(drift(s, onCurrent(s))) < 0.3, s && onCurrent(s) && drift(s, onCurrent(s)).toFixed(3) + " s");
+  let counted = null;
+  for (let i = 0; i < 20 && !(counted && counted.listeners >= 1); i++) { counted = await state(); await sleep(500); }
+  check("  and counts itself as listening", !!(counted && /^[0-9a-f]{16}$/.test(counted.ping || "") && counted.listeners >= 1), counted && `${counted.ping}, ${counted.listeners} listening`);
 
   console.log("Crossfade (screen on)");
   const first = s && s.current && s.current.key;
@@ -72,16 +81,30 @@ try {
     await sleep(100);
   }
   check("the next song crossfades in on both decks", !!blend, blend && blend.decks.map((d) => d.gain).join(" / "));
-  await sleep(4000);
+
+  console.log("The embed (in a frame on the same page)");
+  await evaluate("(() => { const f = document.createElement('iframe'); f.id = 'swEm'; f.src = 'embed'; f.width = 360; f.height = 124; document.body.prepend(f); })()");
+  let np = null;
+  for (let i = 0; i < 20 && !np; i++) { await sleep(1000); np = await evaluate(em("(e) => e.np")); }
+  const shown = (await evaluate(em("(e, d) => d.getElementById('emTitle').textContent"))) || "";
+  check("the embed shows what's on air", !!(np && np.on_air) && shown.startsWith(np.on_air.title), shown);
+  await evaluate(em("(e, d) => { d.getElementById('emPlay').click(); return true; }"));
+  let lag = null;
+  for (let i = 0; i < 60 && !lag; i++) { await sleep(500); lag = await evaluate(em("(e) => e.heard && Math.abs(e.lag - 20) < 0.6 && e.lag")); }
+  check("  Listen plays the stream at the same 20 s delay", !!lag, lag ? lag.toFixed(2) + " s" : String(await evaluate(em("(e) => e.lag"))));
+  check("  and counts itself as listening", /^[0-9a-f]{16}$/.test((await evaluate(em("(e) => e.ping"))) || ""));
 
   console.log("Screen locked (2 minutes)");
   adb("input", "keyevent", "26");
   const t0 = Date.now(), samples = [];
   let songs = new Set(), media = "";
+  const emLags = [];
   for (let i = 0; i < 40; i++) {
     await sleep(3000);
     const x = await state();
     if (x) { samples.push({ at: Date.now(), x }); if (x.current) songs.add(x.current.key); }
+    const l = await evaluate(em("(e) => e.playing && e.lag"), 2500);
+    if (typeof l === "number") emLags.push(l);
     if (i === 10) media = adb("dumpsys", "media_session");
   }
   const firstS = samples[0], lastS = samples[samples.length - 1];
@@ -95,12 +118,14 @@ try {
   check("  and stays on time (at most 3 of 40 looks off by over 0.3 s)", late <= 3, `${late} off`);
   const stuck = lastS ? lastS.x.events.filter((e) => e.includes("sound engine stuck")) : [];
   console.log(`  (the watchdog nudged the sound engine ${stuck.length} time(s)${stuck.length ? ": " + stuck.join("; ") : ""})`);
+  check("  the embed keeps playing, still about 20 s behind", emLags.length >= 36 && emLags.every((l) => Math.abs(l - 20) < 1.5), `${emLags.length} of 40, ${Math.min(...emLags).toFixed(1)} to ${Math.max(...emLags).toFixed(1)} s`);
   console.log(`  locked for ${Math.round((Date.now() - t0) / 1000)} s`);
 } finally {
   adb("input", "keyevent", "KEYCODE_WAKEUP");
   await sleep(2000);
   const end = await state(3000);
   if (failed && end) console.log("Player events:\n    " + end.events.join("\n    "));
+  await evaluate(em("(e, d) => { if (e.playing) d.getElementById('emPlay').click(); return true; }"), 3000);
   await evaluate("SwPlayer.stop()", 3000);
   try { ws.close(); } catch { /* closed */ }
 }

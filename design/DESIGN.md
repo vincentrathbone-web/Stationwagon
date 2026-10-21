@@ -213,8 +213,8 @@ A scrolling picture of **what goes out** (the wet mix, never the inputs), settle
   repeat. *Sound quality*: live shows and prepared songs (96–256 kbps, each with its MB an hour), and
   the listener delay shown but not editable ("About 20 s", from the 6 s pieces), since songs on air
   are already cut into pieces of that length.
-- **Listeners** (as built, round 27; not in the mock-ups): four stat tiles (listening now, most at
-  once today, hours listened today, listens today), then two cards with a column chart each: the
+- **Listeners** (as built, rounds 27–28; not in the mock-ups): six stat tiles (listening now, most at
+  once today, hours listened today, listens today, unique listeners today and this month), then two cards with a column chart each: the
   last 48 hours (the most listeners at once in each hour; labels at 00, 06, 12 and 18, midnight by
   its day) and the last 30 days (hours listened per day). One colour (`--chart`), 4 px rounded tops,
   hairline grid, a tooltip per column on hover or focus, and "Show as a table" under each. On a
@@ -224,6 +224,14 @@ A scrolling picture of **what goes out** (the wet mix, never the inputs), settle
 
 ## Copy rules
 
+  Round 28 adds a third chart card (unique listeners per day, "By month" as its table), "Who listens,
+  the last 30 days" (six small lists: where, device, browser, app, country, city; each a name, its
+  share of the hours listened and a thin bar in `--chart`, top 6 then "Others (n)"), the DB-IP credit
+  line, and a Privacy card with the contact address field.
+- **Privacy page** (`/privacy`, round 28): plain sections in the site layout (what is kept when you
+  listen, why, how long, who can see it, your rights, who to ask), 680 px wide. Linked by a quiet line
+  under the player ("Listening sets no cookies… Privacy") and a small "Privacy" link in the embed
+  (under "Open the player", or top right when the embed is narrower than 380 px).
 - Name things by what people recognise: "Show song titles", "Back to AutoDJ if a DJ drops".
 - Buttons say exactly what happens: "Go live", "End show", "Copy code". A toast confirms
   ("Copied", "Saved. New settings apply from the next song.").

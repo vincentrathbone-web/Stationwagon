@@ -1,6 +1,8 @@
-<?php use function Stationwagon\h; use Stationwagon\Listeners;
-/** @var float $now @var int $listening @var array $hourly @var array $daily */
+<?php use function Stationwagon\h; use Stationwagon\{App, Geo, Listeners};
+/** @var float $now @var int $listening @var array $hourly @var array $daily @var array $monthly @var array $breakdown
+ *  @var ?string $geoVersion @var string $privacyEmail @var string $csrf */
 $today = end($daily);
+$thisMonth = end($monthly);
 $hours = fn(int $minutes): string => $minutes >= 600 ? (string) round($minutes / 60) : rtrim(rtrim(number_format($minutes / 60, 1, '.', ''), '0'), '.');
 
 /**
@@ -52,11 +54,25 @@ $dayRows = array_map(function (array $r, int $i) use ($daily, $hours) {
     $label = ($i % 5 === 4 || $i === count($daily) - 1) ? preg_replace('/^\w+ /', '', $r['label']) : '';
     return [$label, round($r['minutes'] / 60, 2), sprintf('%s · %s h listened · %d at once at most · %d listens', $r['label'], $hours($r['minutes']), $r['peak'], $r['listens'])];
 }, $daily, array_keys($daily));
+$uniqueRows = array_map(function (array $r, int $i) use ($daily) {
+    $label = ($i % 5 === 4 || $i === count($daily) - 1) ? preg_replace('/^\w+ /', '', $r['label']) : '';
+    return [$label, $r['uniques'], sprintf('%s · %d unique listener%s', $r['label'], $r['uniques'], $r['uniques'] === 1 ? '' : 's')];
+}, $daily, array_keys($daily));
+
+/** One kind's list: the top few by hours listened, the rest as "Others". @return list<array{value:string, listens:int, minutes:int}> */
+$top = function (array $rows, int $keep = 6): array {
+    if (count($rows) <= $keep + 1) {
+        return $rows;
+    }
+    $rest = array_slice($rows, $keep);
+    return [...array_slice($rows, 0, $keep), ['value' => 'Others (' . count($rest) . ')', 'listens' => array_sum(array_column($rest, 'listens')), 'minutes' => array_sum(array_column($rest, 'minutes'))]];
+};
+$geoMonth = $geoVersion ? (new DateTimeImmutable($geoVersion . '-01'))->format('F Y') : null;
 ?>
 <div class="vhead">
   <div>
     <h1>Listeners</h1>
-    <p>Counted from open players: each one says once a minute that it's playing. No cookies and no addresses are kept, so a listen is one press of Listen, not one person.</p>
+    <p>Counted from open players: each one says once a minute that it's playing. Each Listen is kept for <?= Listeners::RAW_DAYS ?> days with the address and browser it came from, which tell the device, app and place; after that only the totals below are left. A unique listener is one address and browser in a day or a month.</p>
   </div>
 </div>
 
@@ -65,6 +81,8 @@ $dayRows = array_map(function (array $r, int $i) use ($daily, $hours) {
   <div class="mstat"><b><?= (int) $today['peak'] ?></b><span>Most at once today</span></div>
   <div class="mstat"><b><?= h($hours($today['minutes'])) ?></b><span>Hours listened today</span></div>
   <div class="mstat"><b><?= (int) $today['listens'] ?></b><span>Listens today</span></div>
+  <div class="mstat"><b><?= (int) $today['uniques'] ?></b><span>Unique listeners today</span></div>
+  <div class="mstat"><b><?= (int) $thisMonth['uniques'] ?></b><span>Unique listeners in <?= h(explode(' ', $thisMonth['label'])[0]) ?></span></div>
 </div>
 
 <section class="card lcard">
@@ -91,16 +109,76 @@ $dayRows = array_map(function (array $r, int $i) use ($daily, $hours) {
   <details class="ltable">
     <summary>Show as a table</summary>
     <div class="tablewrap"><table>
-      <thead><tr><th>Day</th><th class="num">Hours listened</th><th class="num">Most at once</th><th class="num">Listens</th></tr></thead>
+      <thead><tr><th>Day</th><th class="num">Hours listened</th><th class="num">Unique listeners</th><th class="num">Most at once</th><th class="num">Listens</th></tr></thead>
       <tbody>
         <?php foreach (array_reverse($daily) as $r): ?>
-          <tr><td><?= h($r['label']) ?></td><td class="num"><?= h($hours($r['minutes'])) ?></td><td class="num"><?= (int) $r['peak'] ?></td><td class="num"><?= (int) $r['listens'] ?></td></tr>
+          <tr><td><?= h($r['label']) ?></td><td class="num"><?= h($hours($r['minutes'])) ?></td><td class="num"><?= (int) $r['uniques'] ?></td><td class="num"><?= (int) $r['peak'] ?></td><td class="num"><?= (int) $r['listens'] ?></td></tr>
         <?php endforeach ?>
       </tbody>
     </table></div>
   </details>
 </section>
-<p class="muted">Players on this site and on websites with the embed are counted. Apps that play the stream address directly aren't. Hourly figures are kept for <?= (int) round(Listeners::KEEP_DAYS / 30) ?> months.</p>
+
+<section class="card lcard">
+  <h2>Unique listeners</h2>
+  <p class="muted">Each day: one per address and browser, however often they pressed Listen. A family on one phone counts once; one person on a phone and a laptop counts twice.</p>
+  <div class="lwrap"><?= $chart($uniqueRows, 'Unique listeners on each of the last 30 days') ?></div>
+  <details class="ltable">
+    <summary>By month</summary>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Month</th><th class="num">Unique listeners</th><th class="num">Hours listened</th><th class="num">Most at once</th><th class="num">Listens</th></tr></thead>
+      <tbody>
+        <?php foreach (array_reverse($monthly) as $r): ?>
+          <tr><td><?= h($r['label']) ?></td><td class="num"><?= (int) $r['uniques'] ?></td><td class="num"><?= h($hours($r['minutes'])) ?></td><td class="num"><?= (int) $r['peak'] ?></td><td class="num"><?= (int) $r['listens'] ?></td></tr>
+        <?php endforeach ?>
+      </tbody>
+    </table></div>
+  </details>
+</section>
+
+<section class="card lcard">
+  <h2>Who listens, the last 30 days</h2>
+  <p class="muted">Each one’s share of the hours listened.</p>
+  <div class="lkinds">
+    <?php foreach (Listeners::KINDS as $kind => $name):
+        $rows = $top($breakdown[$kind]); $total = max(1, array_sum(array_column($breakdown[$kind], 'minutes'))); ?>
+      <section class="lkind" id="lk-<?= h($kind) ?>">
+        <h3><?= h($name) ?></h3>
+        <?php if (!$rows): ?>
+          <p class="muted">Nobody yet.</p>
+        <?php else: ?>
+          <ol>
+            <?php foreach ($rows as $r): $pct = $r['minutes'] / $total * 100; ?>
+              <li title="<?= h(sprintf('%s · %s h listened · %d listen%s', $r['value'], $hours($r['minutes']), $r['listens'], $r['listens'] === 1 ? '' : 's')) ?>">
+                <span class="lname"><?= h($r['value']) ?></span>
+                <span class="lpct"><?= $pct >= 1 || $pct == 0 ? (int) round($pct) : '&lt;1' ?> %</span>
+                <span class="lbar" aria-hidden="true"><i style="width: <?= round($pct, 1) ?>%"></i></span>
+              </li>
+            <?php endforeach ?>
+          </ol>
+        <?php endif ?>
+      </section>
+    <?php endforeach ?>
+  </div>
+  <p class="muted lcredit">Countries and cities come from the address, looked up on this server in
+    <a href="<?= h(Geo::CREDIT_URL) ?>" rel="noopener" target="_blank">IP Geolocation by DB-IP</a> (CC BY 4.0)<?= $geoMonth ? ', the ' . h($geoMonth) . ' edition, updated each month.' : '. <b>The location database isn’t here yet</b>: it is fetched within the day.' ?>
+    Places are often only roughly right: a phone on mobile data can show a city far away.</p>
+</section>
+
+<section class="card lcard">
+  <h2>Privacy</h2>
+  <p class="muted">Listeners can read what is kept and why on the <a href="<?= h(App::url('privacy')) ?>">Privacy page</a>, linked under the player and in the embed. Give them an address to write to about it.</p>
+  <form method="post" class="lprivacy">
+    <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
+    <label for="privacyEmail">Email for privacy questions</label>
+    <div class="lrow">
+      <input type="email" id="privacyEmail" name="privacy_email" value="<?= h($privacyEmail) ?>" maxlength="190" placeholder="privacy@yourchurch.org" autocomplete="email">
+      <button class="btn">Save</button>
+    </div>
+    <?php if ($privacyEmail === ''): ?><p class="lwarn">Not set yet: the Privacy page asks listeners to contact the station instead.</p><?php endif ?>
+  </form>
+</section>
+<p class="muted">Players on this site and on websites with the embed are counted. Apps that play the stream address directly can’t be (they never say they’re playing). Totals are kept for <?= (int) round(Listeners::KEEP_DAYS / 30) ?> months.</p>
 
 <div class="ltip" id="lTip" role="tooltip" hidden></div>
 <script>

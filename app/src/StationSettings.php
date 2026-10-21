@@ -101,6 +101,31 @@ final class StationSettings
         return [['settings' => $json] + $this->station, []];
     }
 
+    /** The email address listeners can write to about their data (the Privacy page), or ''. */
+    public static function privacyEmail(array $station): string
+    {
+        $own = json_decode((string) ($station['settings'] ?? ''), true);
+        return is_array($own) && is_string($own['privacy_email'] ?? null) ? $own['privacy_email'] : '';
+    }
+
+    /**
+     * Store the privacy contact ('' clears it). @return array{0: ?array, 1: ?string} [the updated
+     * station row, or null with what's wrong]
+     */
+    public function savePrivacyEmail(string $email): array
+    {
+        $email = trim($email);
+        if ($email !== '' && (strlen($email) > 190 || !filter_var($email, FILTER_VALIDATE_EMAIL))) {
+            return [null, 'That doesn’t look like an email address.'];
+        }
+        $own = json_decode((string) ($this->station['settings'] ?? ''), true);
+        $own = is_array($own) ? $own : [];
+        $own['privacy_email'] = $email;
+        $json = json_encode($own, JSON_UNESCAPED_SLASHES);
+        $this->db->run('UPDATE ' . $this->db->table('stations') . ' SET settings = ? WHERE id = ?', [$json, $this->station['id']]);
+        return [['settings' => $json] + $this->station, null];
+    }
+
     /** Whole-step fields are ints, half steps floats (JSON keeps them that way). */
     private static function number(float|int|string $v, float|int $step): float|int
     {

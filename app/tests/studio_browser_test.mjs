@@ -4,7 +4,8 @@
 // sync), sends real MP3 pieces that reach the listener stream, crossfades to Deck B, posts and
 // removes a presenter note from the drawer, and ends the show from the page. Takes about 1.5 minutes.
 //   node app/tests/studio_browser_test.mjs http://localhost:8080/stationwagon-app
-// Needs SW_PHP (php.exe) unless php is on PATH. It goes live on the station (Laragon only).
+// Needs SW_PHP (php.exe) unless php is on PATH. It goes live on the station: Laragon, or the test
+// server with SW_HELPER_SSH set (see below).
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,7 +16,11 @@ const base = (process.argv[2] || "").replace(/\/$/, "");
 if (!base) { console.error("Usage: node app/tests/studio_browser_test.mjs <base url>"); process.exit(1); }
 const here = dirname(fileURLToPath(import.meta.url));
 const php = process.env.SW_PHP || "php";
-const helper = (...args) => JSON.parse(execFileSync(php, [join(here, "browser_helper.php"), ...args], { encoding: "utf8" }));
+// SW_HELPER_SSH="<ssh host>:<app folder>" runs the helper on that server instead, for a live test there
+const remote = process.env.SW_HELPER_SSH ? process.env.SW_HELPER_SSH.split(":") : null;
+const helper = (...args) => JSON.parse(remote
+  ? execFileSync("ssh", [remote[0], `cd ${remote[1]} && php tests/browser_helper.php ${args.map((a) => "'" + String(a).replace(/'/g, "'\''") + "'").join(" ")}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+  : execFileSync(php, [join(here, "browser_helper.php"), ...args], { encoding: "utf8" }));
 let failed = 0, passed = 0;
 const check = (label, ok, detail = "") => {
   ok ? passed++ : failed++;
@@ -87,11 +92,13 @@ try {
   s = await state();
   check("the studio knows the show", s && s.slot.may && s.slot.title === "[test] Studio test show", s && JSON.stringify(s.slot.title));
   check("  and shows it in the top bar", (await text("#stShow")).startsWith("[test] Studio test show"), await text("#stShow"));
+  check("  with how many are listening now", /^\d+ listening$/.test(await text("#stListeners")), await text("#stListeners"));
   check("  Go live waits until the studio is on", await evaluate("document.getElementById('stGo').disabled"));
   await clickText("#stBannerActs button", "Switch on the studio");
   s = await until((x) => x.on, 10);
   check("switching on starts sound and the (fake) microphone", !!s, s ? "" : JSON.stringify((await state()).events.slice(-3)));
   check("  lists the microphone", (await evaluate("document.getElementById('dev').options.length")) >= 1);
+  check("  and starts the MP3 encoder in a worker, off the page's main thread", s && s.encoder === "worker", s && String(s.encoder));
   s = await until((x) => x.mic !== null && x.mic > -80, 5);
   check("  and the mic meter moves", !!s, s && s.mic.toFixed(1) + " dB");
   check("Go live is ready", !(await evaluate("document.getElementById('stGo').disabled")));
