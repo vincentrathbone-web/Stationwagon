@@ -79,6 +79,14 @@ try {
   for (let i = 0; i < 20 && !(counted && counted.listeners >= 1); i++) { counted = await state(); await sleep(500); }
   check("  and counts itself as listening", !!(counted && /^[0-9a-f]{16}$/.test(counted.ping || "") && counted.listeners >= 1), counted && `${counted.ping}, ${counted.listeners} listening`);
 
+  // the spectrum on the phone: the tallest bar is the band of the test tone playing
+  const BAND = (f) => Math.max(0, Math.min(27, Math.floor(Math.log(f / 40) / Math.log(16000 / 40) * 28)));
+  const toneOf = (x) => { const m = x && x.current && /(\d{3,4})\s*Hz/.exec(x.current.title || ""); return m ? Number(m[1]) : null; };
+  let sp = null;
+  for (let i = 0; i < 60 && !(sp && sp.spectrum && sp.spectrum.level > 0.3 && toneOf(sp) && sp.decks.filter((d) => d.playing && d.gain > 0.05).length === 1); i++) { await sleep(250); sp = await state(); }
+  check("the display's spectrum shows the tone playing", !!sp && !!toneOf(sp) && sp.spectrum.running && Math.abs(sp.spectrum.top - BAND(toneOf(sp))) <= 1,
+    sp && sp.spectrum ? `${toneOf(sp)} Hz → band ${BAND(toneOf(sp))}; tallest ${sp.spectrum.top}, ${sp.spectrum.frames} frames` : "no state");
+
   console.log("Crossfade (screen on)");
   const first = s && s.current && s.current.key;
   let blend = null;

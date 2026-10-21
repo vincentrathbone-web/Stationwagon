@@ -10,6 +10,8 @@
   --src-a: #4da3ff; --src-b: #ff5fa8; --src-live: #f7d23e; --src-out: #ffffff;
   /* listener charts: one series, checked for lightness and contrast on the dark card */
   --chart: #18a84a; --chart-grid: #2a2a2a;
+  /* the player's spectrum: segments light at the top, the falling peak marks dim */
+  --spec-hi: #8affb8; --spec-mid: #1ed760; --spec-lo: #1db954; --spec-peak: #2f7a4c;
   --f-ui: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-mono: "DM Mono", ui-monospace, Consolas, monospace;
 }

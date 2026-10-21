@@ -190,9 +190,12 @@
         // a locked phone never settles resume(): give it 2 s, then go on (play() then says it's blocked)
         if (this.ctx.state === "suspended") await Promise.race([this.ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
         this.master = this.ctx.createGain(); this.master.gain.value = this.volume;
-        this.analyser = this.ctx.createAnalyser(); this.analyser.fftSize = 256;
-        this.master.connect(this.analyser); this.master.connect(this.ctx.destination);
+        this.master.connect(this.ctx.destination);
         this.mix = this.ctx.createGain(); this.mix.connect(this.master); // the station's output, before the listener's volume
+        // the spectrum reads the station's output, so the listener's volume doesn't shrink it
+        this.analyser = this.ctx.createAnalyser(); this.analyser.fftSize = 4096; this.analyser.smoothingTimeConstant = 0.5;
+        this.analyser.minDecibels = -90; this.analyser.maxDecibels = -20;
+        this.mix.connect(this.analyser);
         // a phone can suspend (or "interrupt") the sound engine, e.g. with the screen locked: say so and ask it back
         this.ctx.onstatechange = () => {
           const st = this.ctx && this.ctx.state;
@@ -225,7 +228,7 @@
       this.setPlaying(true); this.setStatus("Playing");
       // counted as listening while it plays: a ping a minute (assets/listeners.js)
       if (window.SwListeners) this.ping = SwListeners.start(BASE, "player", (n) => this.setListeners(n));
-      draw();
+      if (this.analyser) spectrum.run(); // stream only: no Web Audio, so nothing to measure
     },
 
     stop() {
@@ -409,6 +412,7 @@
         events: this.events, hidden: document.hidden,
         engine: this.ctx ? { state: this.ctx.state, time: +this.ctx.currentTime.toFixed(2) } : null,
         stream: this.stream ? { active: this.stream.active, locked: this.stream.locked, gain: +this.stream.gain.toFixed(3), lag: this.stream.lag, native: this.stream.native } : null,
+        spectrum: spectrum.state(),
         wave: this.ctx ? {
           meter: this.wave ? this.wave.kind : null,
           ahead: ahead.plan ? +((ahead.plan.i0 + ahead.plan.n) * SwOutWave.STEP - this.ctx.currentTime).toFixed(1) : null,
@@ -589,21 +593,74 @@
     [...$("lpList").querySelectorAll(".t")].forEach((t, j) => { t.textContent = label(around[Math.max(0, at - 2) + j]); });
   }
 
-  // a simple level display while playing through Web Audio
-  function draw() {
-    const c = $("lpSpec");
-    if (!player.on || !c) return;
-    const g = c.getContext("2d"), w = (c.width = c.clientWidth * (window.devicePixelRatio || 1)), hh = (c.height = 46 * (window.devicePixelRatio || 1));
-    g.clearRect(0, 0, w, hh);
-    if (player.analyser) {
-      const bins = new Uint8Array(player.analyser.frequencyBinCount);
-      player.analyser.getByteFrequencyData(bins);
-      const n = 32, bw = w / n;
-      g.fillStyle = getComputedStyle(root).getPropertyValue("--amber").trim() || "#1ed760";
-      for (let b = 0; b < n; b++) { const v = bins[Math.floor(b * bins.length / n / 1.4)] / 255; g.fillRect(b * bw + 1, hh - v * hh, bw - 2, v * hh); }
-    }
-    requestAnimationFrame(draw);
-  }
+  // ---- Spectrum in the display: 28 bars on a musical (logarithmic) scale, 40 Hz to 16 kHz, read from
+  // the station's output before the listener's volume. Bars rise at once and fall smoothly; a peak
+  // mark holds for 0.6 s, then falls. When playback stops the bars fall to nothing and drawing stops.
+  // With "reduce motion" set on the device it redraws once a second, without peak marks.
+  const spectrum = {
+    BANDS: 28, LOW: 40, HIGH: 16000,
+    bars: new Float32Array(28), peaks: new Float32Array(28), held: new Float32Array(28), last: 0, running: false, frames: 0,
+    calm: matchMedia("(prefers-reduced-motion: reduce)").matches,
+    /** The band (0–27) a frequency falls in. */
+    band(f) { return Math.max(0, Math.min(this.BANDS - 1, Math.floor(Math.log(f / this.LOW) / Math.log(this.HIGH / this.LOW) * this.BANDS))); },
+    edges() { return Array.from({ length: this.BANDS + 1 }, (_, i) => this.LOW * Math.pow(this.HIGH / this.LOW, i / this.BANDS)); },
+    run() { if (!this.running) { this.running = true; this.last = performance.now(); requestAnimationFrame((t) => this.frame(t)); } },
+    read() {
+      const a = player.on && player.analyser, out = new Float32Array(this.BANDS);
+      if (!a) return out;
+      const bins = new Uint8Array(a.frequencyBinCount), hz = a.context.sampleRate / a.fftSize, e = this.edges();
+      a.getByteFrequencyData(bins);
+      for (let b = 0; b < this.BANDS; b++) {
+        // the loudest bin in the band (a low band can be narrower than one bin: then the nearest bin)
+        const lo = Math.floor(e[b] / hz), hi = Math.max(lo, Math.ceil(e[b + 1] / hz) - 1);
+        let m = 0;
+        for (let k = lo; k <= hi && k < bins.length; k++) m = Math.max(m, bins[k]);
+        out[b] = m / 255;
+      }
+      return out;
+    },
+    frame(t) {
+      const dt = Math.min(0.1, (t - this.last) / 1000);
+      if (this.calm && t - this.last < 1000 && player.on) { requestAnimationFrame((x) => this.frame(x)); return; }
+      this.last = t;
+      const now = this.read();
+      let any = false;
+      for (let b = 0; b < this.BANDS; b++) {
+        this.bars[b] = this.calm ? now[b] : Math.max(now[b], this.bars[b] - 1.6 * dt); // up at once, down smoothly
+        if (this.bars[b] >= this.peaks[b]) { this.peaks[b] = this.bars[b]; this.held[b] = 0.6; }
+        else if ((this.held[b] -= dt) < 0) this.peaks[b] = Math.max(this.bars[b], this.peaks[b] - 0.5 * dt);
+        if (this.bars[b] > 0.005 || this.peaks[b] > 0.005) any = true;
+      }
+      this.draw();
+      this.frames++;
+      if (player.on || any) requestAnimationFrame((x) => this.frame(x));
+      else { this.running = false; this.bars.fill(0); this.peaks.fill(0); this.draw(); }
+    },
+    draw() {
+      const c = $("lpSpec");
+      if (!c) return;
+      const dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+      if (!w || !h) return;
+      if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+      const g = c.getContext("2d"), tok = (n) => getComputedStyle(root).getPropertyValue(n).trim();
+      const hi = tok("--spec-hi"), mid = tok("--spec-mid"), lo = tok("--spec-lo"), pk = tok("--spec-peak");
+      g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+      const n = this.BANDS, gap = 2, bw = (w - (n - 1) * gap) / n;
+      for (let b = 0; b < n; b++) {
+        const x = b * (bw + gap), top = h - this.bars[b] * h;
+        for (let y = h; y > top + 0.5; y -= 3) { g.fillStyle = y < h * 0.3 ? hi : y < h * 0.6 ? mid : lo; g.fillRect(x, y - 2, bw, 2); } // 2 px segments
+        if (!this.calm && this.peaks[b] > 0.02) { g.fillStyle = pk; g.fillRect(x, h - this.peaks[b] * h - 2, bw, 1.5); }
+      }
+    },
+    /** For tests: the loudest band and its range, how many bars show, frames drawn. */
+    state() {
+      let top = 0;
+      for (let b = 1; b < this.BANDS; b++) if (this.bars[b] > this.bars[top]) top = b;
+      const e = this.edges();
+      return { running: this.running, calm: this.calm, frames: this.frames, top, topHz: [Math.round(e[top]), Math.round(e[top + 1])], level: +this.bars[top].toFixed(3),
+        lit: [...this.bars].filter((v) => v > 0.05).length };
+    },
+  };
 
   // ---- Controls ---------------------------------------------------------------------------------
   try { const v = parseFloat(localStorage.getItem("sw-volume")); if (v >= 0 && v <= 1) player.volume = v; } catch (_) { /* private window */ }

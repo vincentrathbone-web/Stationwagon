@@ -105,6 +105,7 @@ try {
     else if (d.method) media(d);
   };
   await call("Page.enable");
+  await call("Page.bringToFront"); // a page in the background draws nothing (the spectrum)
   await call("Network.enable");
 
   console.log("Joining");
@@ -122,6 +123,25 @@ try {
   const shownCount = await evaluate("document.getElementById('lpListeners').textContent");
   check("  it counts itself as listening (a ping with a random id)", !!s && /^[0-9a-f]{16}$/.test(s.ping) && shownCount === String(s.listeners), s ? `${s.ping}, ${shownCount} listening` : "no ping");
   const listeningWhilePlaying = s ? s.listeners : 0;
+
+  console.log("Spectrum");
+  // the test songs are pure tones: the tallest bar must be the band that holds the tone
+  const BAND = (f) => Math.max(0, Math.min(27, Math.floor(Math.log(f / 40) / Math.log(16000 / 40) * 28)));
+  const specPx = () => evaluate(`(() => { const c = document.getElementById('lpSpec'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0) n++; return n; })()`);
+  const toneOf = (x) => { const m = x && x.current && /(\d{3,4})\s*Hz/.exec(x.current.title || ""); return m ? Number(m[1]) : null; };
+  s = await until((x) => x.spectrum && x.spectrum.running && x.spectrum.level > 0.3 && toneOf(x) && x.decks.filter((d) => d.playing && d.gain > 0.05).length === 1, 20);
+  const tone = toneOf(s);
+  check("the display's spectrum moves with the music", !!s && s.spectrum.frames > 10 && (await specPx()) > 200, s && `${s.spectrum.frames} frames, level ${s.spectrum.level}`);
+  check("  its tallest bar is the band that holds the tone playing", !!s && Math.abs(s.spectrum.top - BAND(tone)) <= 1,
+    s && `${tone} Hz → band ${BAND(tone)}; tallest ${s.spectrum.top} (${s.spectrum.topHz.join("–")} Hz)`);
+  check("  a pure tone lights only a few of the 28 bars", !!s && s.spectrum.lit <= 8, s && `${s.spectrum.lit} lit`);
+  const loud = s ? s.spectrum.level : 0;
+  await evaluate("(() => { const v = document.getElementById('lpVol'); v.value = 0; v.dispatchEvent(new Event('input')); })()");
+  await sleep(600);
+  s = await state();
+  check("  turning the volume down doesn't shrink it (it reads the station's output)", s.spectrum.level > loud - 0.15, `${loud} → ${s.spectrum.level}`);
+  await evaluate("(() => { const v = document.getElementById('lpVol'); v.value = 80; v.dispatchEvent(new Event('input')); })()");
 
   console.log("Crossfade");
   const log = [];
@@ -213,6 +233,9 @@ try {
     check("  shown as text, with its Bible Gateway link and a toast", dom.text.includes("<b>I shall") && dom.tags === 0 && dom.read.startsWith("https://www.biblegateway.com/passage/?search=Psalm%2023") && dom.toast.startsWith("New note"), JSON.stringify(dom));
     // the presenter fixes the verse: it comes again as new, and the old one stays until listeners reach the edit
     await sleep(2700); // the first toast has gone
+    // every toast is recorded as it shows (it hides after 2.6 s, maybe before the test looks)
+    await evaluate(`(() => { const t = document.getElementById('lpToast'); window.__toasts = [];
+      new MutationObserver(() => { if (!t.hidden) window.__toasts.push({ at: Date.now(), text: t.textContent }); }).observe(t, { attributes: true, childList: true, characterData: true, subtree: true }); return true; })()`);
     const editedAt = Date.now();
     const changed = helper("note-edit", show.public_id, String(nid), JSON.stringify({ ref: "Psalm 23:1-2", text: "The LORD is my shepherd; I shall not want. He maketh me to lie down in green pastures.", passage: "Psalm 23" }));
     const nid2 = changed.note && changed.note.id;
@@ -233,7 +256,8 @@ try {
     n = await untilNotes((x) => x.shown.includes(nid2), 30);
     const after2 = (Date.now() - editedAt) / 1000;
     check("the changed note replaces the old one 20 s after the change", !!n && !n.shown.includes(nid) && after2 > 18.5 && after2 < 23, n ? `${after2.toFixed(1)} s, shown ${n.shown}` : JSON.stringify(await notes()));
-    const dom2 = await evaluate(`(() => { const t = document.getElementById('lpToast'); return { items: document.querySelectorAll('#lpNotesList li').length, text: document.querySelector('#lpNotesList li blockquote').textContent, toast: t.hidden ? '' : t.textContent }; })()`);
+    const dom2 = await evaluate(`(() => ({ items: document.querySelectorAll('#lpNotesList li').length, text: document.querySelector('#lpNotesList li blockquote').textContent,
+      toast: (window.__toasts.find((x) => x.at > ${editedAt} + 18000) || {}).text || '' }))()`);
     check("  as new, with a toast", !!n && n.fresh.includes(nid2) && dom2.items === 1 && dom2.text.includes("green pastures") && dom2.toast.startsWith("New note"), JSON.stringify(dom2));
     while (seq < 5) await sleep(500);
     // the listener's tab is in the background when the show ends (another tab in front), as happened in the live test
@@ -246,6 +270,7 @@ try {
     const back = s && s.events.filter((e) => e.includes(s.current.title));
     check(`  with a fade from the stream, not a fresh join (tab ${vis})`, !!back && back.some((e) => e.includes("handover to " + s.current.title)) && !back.some((e) => e.includes("join " + s.current.title)), back && back.join(" | "));
     if (other) await call("Target.closeTarget", { targetId: other });
+    await call("Page.bringToFront"); // drawing (the spectrum) only runs on a page in front
     s = await until((x) => x.stream && !x.stream.active, 5);
     check("  and the stream deck stops", !!s);
     const kept = await untilNotes((x) => x.show && !x.show.live, 10);
@@ -256,13 +281,27 @@ try {
   // Stop takes it off the count at once (its last ping)
   let after = null;
   for (let i = 0; i < 30 && after !== listeningWhilePlaying - 1; i++) { await sleep(200); after = (await (await fetch(`${base}/api/timeline.php`)).json()).listeners; }
+  s = await until((x) => x.spectrum && !x.spectrum.running, 4);
+  check("after Stop the spectrum falls to nothing and stops drawing", !!s && (await specPx()) === 0, s ? "" : JSON.stringify((await state()).spectrum) + ", page " + (await evaluate("document.visibilityState")));
   check("Stop takes it off \"Listening now\" at once", listeningWhilePlaying > 0 && after === listeningWhilePlaying - 1 && (await state()).ping === null, `${listeningWhilePlaying} → ${after}`);
 
   console.log("Stream only");
+  // with "reduce motion" set on the device the spectrum redraws once a second, without peak marks
+  await call("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+  await go(`${base}/`);
+  await evaluate("SwPlayer.start()");
+  s = await until((x) => x.spectrum && x.spectrum.running && x.spectrum.level > 0.3, 15);
+  const f0 = s ? s.spectrum.frames : 0;
+  await sleep(4000);
+  s = await state();
+  check("with reduced motion the spectrum still shows, redrawn about once a second", !!s && s.spectrum.calm && s.spectrum.frames - f0 >= 2 && s.spectrum.frames - f0 <= 6, s && `${s.spectrum.frames - f0} frames in 4 s`);
+  await evaluate("SwPlayer.stop()");
+  await call("Emulation.setEmulatedMedia", { features: [] });
   await go(`${base}/?mode=stream`);
   await evaluate("SwPlayer.start()");
   s = await until((x) => x.stream && x.stream.active && x.stream.lag !== null && Math.abs(x.stream.lag - 20) < 0.6, 30);
   check("?mode=stream plays the stream at the same 20 s delay", !!s && s.mode === "stream", s && String(s.stream.lag.toFixed(2)));
+  check("  without Web Audio there is no spectrum (an empty display, nothing drawing)", !!s && !s.spectrum.running && s.spectrum.frames === 0 && (await specPx()) === 0, s && JSON.stringify(s.spectrum));
   await evaluate("SwPlayer.stop()");
 
   console.log("Embed");

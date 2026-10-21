@@ -89,6 +89,12 @@ All digits that line up in columns use `font-variant-numeric: tabular-nums`.
 - **Main window:** state glyph and elapsed time, the song title (scrolls when long), quality
   (192 kbps · 44 kHz · stereo), spectrum, mode line (AutoDJ + playlist, or Live + DJ name), and
   "12 s behind live".
+  **Spectrum as built (round 31):** 28 bars, 2 px apart, across the display, 46 px high; each bar
+  is 2 px segments every 3 px (light green in the top 30 %, the accent to 60 %, darker below) and a
+  1.5 px peak mark that holds 0.6 s and falls. Bands are log-spaced from 40 Hz to 16 kHz, so music
+  fills the left two thirds. It shows the station's sound (the listener's volume doesn't change it),
+  falls to nothing on Stop, redraws once a second with reduced motion (no peak marks), and stays
+  empty in stream-only mode.
 - **Progress bar** with the crossfade zone shaded at the end of the song.
 - **Transport:** Listen/Pause, Stop, volume. No skip, because it's radio.
 - **Health line:** connection, dropouts, listener count.

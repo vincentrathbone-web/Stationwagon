@@ -173,8 +173,8 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "21 Oct · 22:50",
-  commits: 28,
+  updated: "22 Oct · 00:40",
+  commits: 29,
   version: "0.4.0-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
@@ -196,7 +196,7 @@ const MAP = {
       { text: "Embeddable player with Copy code", note: "dark or light; plays at the same 20 s delay", v: "v0.4", state: "done" },
       { text: "Listeners now, on the health line and in the studio", note: "a ping a minute, no cookies", v: "v0.4", state: "done" },
       { text: "Privacy page, linked under the player and in the embed", v: "v0.4", state: "done" },
-      { text: "Spectrum in the display", v: "v0.4", state: "next" },
+      { text: "Spectrum in the display", note: "28 bars of what goes out, peak marks", v: "v0.4", state: "done" },
       { text: "Podcast page of past shows", v: "v0.4", state: "done" },
       { text: "Hi-fi skin, chosen per station", v: "v0.4", state: "next" }
     ]},
@@ -253,13 +253,15 @@ const MAP = {
     ]}
   ],
   next: {
-    title: "Spectrum",
-    text: "The small studio items work: a headphones menu (everything the DJ hears goes to the chosen output), editing a posted note (listeners get it again as new), and talk items that mark themselves now when the mic opens. Two server-only timing bugs were found and fixed on the way. All tests pass on Laragon, the server and the phone. Next, the rest of v0.4 in this order:",
-    order: ["Spectrum", "Hi-fi skin"]
+    title: "Hi-fi skin",
+    text: "The spectrum is in the player's display: 28 bars of what goes out, with peak marks, as in the mock-up. With a test tone playing the right bar is tallest, on the PC and the phone. All tests pass on Laragon, the server and the phone. Last item of v0.4:",
+    order: ["Hi-fi skin"]
   },
   call: null,
   feedTitle: "Changed 20–21 Oct",
   feed: [
+    { what: "Spectrum in the player's display", to: "on the test server, all tests pass", at: "00:40" },
+    { what: "Round 30 (small studio items)", to: "committed and pushed", at: "23:00", kind: "info" },
     { what: "Small studio items: headphones, edit a note, talk items", to: "on the test server, all tests pass", at: "22:50" },
     { what: "A quick Stop on a slow server", to: "no longer leaves a listener counted (bug fixed)", at: "22:50" },
     { what: "Output strip look-ahead", to: "no longer downloads a song twice (bug fixed)", at: "22:50" },
