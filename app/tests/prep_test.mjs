@@ -1,6 +1,7 @@
 // Test of the song prep maths in assets/prep-core.js: loudness against the EBU Tech 3341 test
 // cases, silence trim, levelling and its caps, fades, and a real MP3 from lamejs that the PHP
-// scanner reads back (length, bit rate, copied tags).
+// scanner reads back (length, bit rate, copied tags). Then mastering (assets/master-core.js)
+// against the response Audition measured with the station's chain, and levelling switched off.
 //   node app/tests/prep_test.mjs        (SW_PHP = path to php.exe if php isn't on PATH)
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
@@ -107,6 +108,67 @@ try {
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
+
+// ---- Mastering (master-core.js) against what Audition did with the station's chain ----------
+// Audition's own numbers, measured from its exports of the test signals (tools/mastering-signals.mjs):
+// the gain (dB) the multiband step gave a steady tone at each level (dBFS RMS), and the gain of
+// the whole chain on quiet tones.
+console.log("Mastering, against Audition's measured response");
+const master = createRequire(import.meta.url)("../assets/master-core.js");
+const MR = 44100;
+const rmsDb = (x, from, to) => { let s = 0; for (let i = from; i < to; i++) s += x[i] * x[i]; return 10 * Math.log10(s / (to - from)); };
+function sine(hz, db, sec = 1.5, side = false) {
+  const n = Math.round(sec * MR), l = new Float32Array(n), r = new Float32Array(n), a = Math.pow(10, db / 20) * Math.SQRT2;
+  for (let i = 0; i < n; i++) { l[i] = a * Math.sin(2 * Math.PI * hz * i / MR); r[i] = side ? -l[i] : l[i]; }
+  return [l, r];
+}
+const gainOf = (fn, x) => { const y = fn(x, MR); return rmsDb(y[0], MR / 2, x[0].length) - rmsDb(x[0], MR / 2, x[0].length); };
+const audition = {
+  60: [[-36, 5.9], [-21, 4.8], [-18, 3.0], [-15, 1.2], [-12, -0.6]],
+  400: [[-36, 4.9], [-18, 3.7], [-15, 2.2], [-12, 0.8], [-9, -0.7]],
+  3000: [[-36, 5.0], [-24, 3.3], [-21, 1.8], [-18, 0.4], [-15, -1.0], [-12, -2.3]],
+  12000: [[-36, 7.8], [-24, 5.5], [-21, 3.6], [-18, 1.8], [-15, -0.1], [-12, -1.9]],
+};
+for (const [hz, points] of Object.entries(audition)) {
+  const diffs = points.map(([db, want]) => gainOf(master.multiband, sine(Number(hz), db)) - want);
+  check(`multiband at ${hz} Hz: within 1 dB of Audition at every level`, diffs.every((d) => Math.abs(d) <= 1), diffs.map((d) => (d >= 0 ? "+" : "") + d.toFixed(2)).join(" "));
+}
+const whole = { 60: 9.8, 400: 8.8, 3000: 9.1, 12000: 13.0 };
+const wd = Object.entries(whole).map(([hz, want]) => gainOf(master.master, sine(Number(hz), -36)) - want);
+check("the whole chain on quiet tones: within 0.3 dB of Audition", wd.every((d) => Math.abs(d) <= 0.3), wd.map((d) => (d >= 0 ? "+" : "") + d.toFixed(2)).join(" "));
+// the widener brightens the sides only: Audition gave the sides +4.3 dB over the middle above 3 kHz, none below 1 kHz
+const sideLow = gainOf(master.mastering, sine(200, -30, 1.5, true)) - gainOf(master.mastering, sine(200, -30));
+const sideHigh = gainOf(master.mastering, sine(8000, -30, 1.5, true)) - gainOf(master.mastering, sine(8000, -30));
+check("the widener lifts the sides by about 4.3 dB in the highs and leaves the lows", near(sideHigh, 4.3, 0.3) && Math.abs(sideLow) < 0.3, `8 kHz ${sideHigh.toFixed(2)} dB, 200 Hz ${sideLow.toFixed(2)} dB`);
+{
+  // the band split adds back up exactly, with no delay or phase shift
+  const n = MR * 3, l = new Float32Array(n), r = new Float32Array(n);
+  let seed = 7; const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32) * 2 - 1;
+  for (let i = 0; i < n; i++) { l[i] = rnd() * 0.3; r[i] = rnd() * 0.3; }
+  const [L, R2] = master.split(l, r, MR);
+  let err = 0;
+  for (let i = 0; i < n; i++) err = Math.max(err, Math.abs(L[0][i] + L[1][i] + L[2][i] + L[3][i] - l[i]), Math.abs(R2[0][i] + R2[1][i] + R2[2][i] + R2[3][i] - r[i]));
+  check("the four bands add back up to the input exactly (linear phase, as Audition)", err < 1e-5, err.toExponential(1));
+  let lowOnly = 0; const lowTone = sine(60, -20, 3);
+  const [LL] = master.split(lowTone[0], lowTone[1], MR);
+  const share = 1 / (1 + Math.pow(60 / 137, 4)); // the crossover's slope: 96.4 % of a 60 Hz tone is in the low band
+  for (let i = MR; i < 2 * MR; i++) lowOnly = Math.max(lowOnly, Math.abs(LL[0][i] - share * lowTone[0][i]));
+  check("  a 60 Hz tone's low-band part is in phase with it, at the crossover's share", lowOnly < 1e-3, lowOnly.toExponential(1));
+  // loud noise: no peak above the maximizer's ceiling (−0.87 dBFS)
+  for (let i = 0; i < n; i++) { l[i] = rnd() * 0.9; r[i] = rnd() * 0.9; }
+  let pk = 0, last = 0;
+  const y = master.master([l, r], MR, (p) => { last = p; });
+  for (const c of y) for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(c[i]));
+  check("loud music never peaks above −0.87 dBFS", 20 * Math.log10(pk) <= -0.869, (20 * Math.log10(pk)).toFixed(3) + " dBFS");
+  check("  and mastering reports progress up to 100 %", last === 1);
+  const silent = master.master([new Float32Array(MR), new Float32Array(MR)], MR);
+  check("silence stays silent", silent.every((c) => c.every((v) => Math.abs(v) < 1e-9)));
+  const mono = master.master([sine(440, -20)[0]], MR);
+  check("a mono song comes out as stereo with both sides the same", mono.length === 2 && mono[0].every((v, i) => v === mono[1][i]));
+}
+r = core.prepare(tone([[null, 1], [-20, 12], [null, 1]], R, { freq: 440 }), R, { level: false });
+check("loudness normalization off: the song keeps its level", r.info.gain_db === 0 && r.info.levelled === false && near(r.info.lufs, r.info.lufs_before, 0.001), `${r.info.lufs} LUFS`);
+check("  and is still trimmed", near(r.info.seconds, 12.1, 0.02), `${r.info.seconds} s`);
 
 console.log(failed ? `\n${failed} of ${passed + failed} checks failed` : "\nAll checks passed");
 process.exit(failed ? 1 : 0);

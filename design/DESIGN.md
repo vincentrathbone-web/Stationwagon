@@ -194,6 +194,14 @@ The app's `/studio` follows the green mock-up, with these additions and differen
   and the note being changed has an outline. In the running order a talk item has a **Now** button
   instead of A / B (gone while it is now); opening the mic marks the next talk item as now.
 
+### Song prep switches (round 34; not in the mock-ups)
+
+The Music library's drop zone has a row of two switches (the `.sw` toggles) under its text: **Apply
+pre-processing** *(mastering, as in Audition)* and **Loudness normalization** *(−16 LUFS)*, with a quiet
+"Saved for every upload" after a change. Each upload row reads "Mastering 40 %", "Levelling", "Encoding"
+while it works and ends "Added, mastered, levelled −9.1 LUFS → −16.0 LUFS (−6.9 dB)" or "Added, kept at
+−21.1 LUFS". Mastered songs carry a **Mastered** pill next to **Levelled** in the library table.
+
 ### Windows app (round 33; not in the mock-ups)
 
 The app's main window is the station's own studio page. Its own settings page (`desktop/ui/index.html`,

@@ -1,7 +1,8 @@
-// Song prep before upload: decode the MP3 in the browser, then (in prep-worker.js) level it to
-// -16 LUFS, trim silence at both ends, add 20 ms fades and encode a new 192 kbps MP3 carrying the
-// original ID3 tags. When the browser can't, the original goes up as it is, with a note why.
-//   SwPrep.prepare(file, onStage) -> { file, prepared, info?, note?, sourceSha1? }
+// Song prep before upload: decode the MP3 in the browser, then (in prep-worker.js) master it like
+// the station's Audition chain (opts.master), level it to -16 LUFS (opts.level), trim silence at
+// both ends, add 20 ms fades and encode a new 192 kbps MP3 carrying the original ID3 tags. When the
+// browser can't, the original goes up as it is, with a note why.
+//   SwPrep.prepare(file, onStage, { master, level }) -> { file, prepared, info?, note?, sourceSha1? }
 (() => {
   const here = document.currentScript.src.replace(/[^/?#]*([?#].*)?$/, "");
   const workerUrl = document.currentScript.dataset.worker || here + "prep-worker.js"; // tagged by content
@@ -11,7 +12,7 @@
   const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
   const asIs = (file, sourceSha1, note) => ({ file, prepared: false, sourceSha1, note });
 
-  const work = (channels, onStage) => new Promise((resolve, reject) => {
+  const work = (channels, onStage, opts) => new Promise((resolve, reject) => {
     const w = new Worker(workerUrl);
     const end = (fn, v) => { w.terminate(); fn(v); };
     w.onmessage = (e) => {
@@ -21,10 +22,10 @@
       else end(reject, new Error(m.error || "Prep failed"));
     };
     w.onerror = (e) => { e.preventDefault(); end(reject, new Error(e.message || "Prep failed")); };
-    w.postMessage({ channels, rate: RATE, kbps: KBPS }, channels.map((c) => c.buffer));
+    w.postMessage({ channels, rate: RATE, kbps: KBPS, master: !!opts.master, level: opts.level !== false }, channels.map((c) => c.buffer));
   });
 
-  async function prepare(file, onStage = () => {}) {
+  async function prepare(file, onStage = () => {}, opts = {}) {
     const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!Offline || !window.Worker) return asIs(file, null, "this browser can’t prepare songs");
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -42,7 +43,7 @@
     for (let c = 0; c < Math.min(2, audio.numberOfChannels); c++) channels.push(new Float32Array(audio.getChannelData(c)));
     let r;
     try {
-      r = await work(channels, onStage);
+      r = await work(channels, onStage, opts);
     } catch (ex) {
       return asIs(file, sourceSha1, "prep failed: " + ex.message);
     }

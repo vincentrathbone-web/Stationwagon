@@ -362,8 +362,9 @@ try {
   // the sound stops moving without a pause (a sound output stopped under it): after 8 s it starts again
   await sleep(5500); // past the 5 s between restarts
   await evaluate("(() => { const el = swEmbed.media, t = el.currentTime; Object.defineProperty(el, 'currentTime', { configurable: true, get: () => t, set: () => {} }); return 1; })()");
-  const moving = await waitFor("swEmbed.events.some((e) => e.includes('starting again: the sound stopped moving')) && swEmbed.playing && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);
-  check("  and when the sound stops moving while it should play, it starts again after 8 s", !!moving, moving ? moving.toFixed(2) + " s" : JSON.stringify(await evaluate("swEmbed.events.slice(-6)")));
+  // either watcher may notice first: the embed's own (8 s without moving) or hls.js's stall check
+  const moving = await waitFor("swEmbed.events.some((e) => /starting again: the sound (stopped moving|stalled)/.test(e)) && swEmbed.playing && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);
+  check("  and when the sound stops moving while it should play, it starts again (within 8 s)", !!moving, moving ? moving.toFixed(2) + " s" : JSON.stringify(await evaluate("swEmbed.events.slice(-6)")));
   await evaluate("document.getElementById('emPlay').click()");
   check("  and stops again", !(await evaluate("swEmbed.playing")) && (await evaluate("document.getElementById('emPlay').getAttribute('aria-pressed')")) === "false");
 } finally {

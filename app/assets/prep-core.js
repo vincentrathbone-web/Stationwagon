@@ -1,5 +1,5 @@
 // Song prep maths: loudness (ITU-R BS.1770-4 / EBU R128, gated), silence trim, levelling with a
-// peak ceiling, short anti-click fades and MP3 encoding with lamejs. No DOM: the browser runs it
+// peak ceiling (optional), short anti-click fades and MP3 encoding with lamejs. No DOM: the browser runs it
 // in a worker (prep-worker.js) and the Node test (tests/prep_test.mjs) runs it directly.
 (function (root) {
   "use strict";
@@ -93,16 +93,18 @@
 
   /**
    * Measure and level. Returns { channels (stereo, trimmed, levelled, faded), info } or
-   * { skip: reason } when there's nothing to level.
+   * { skip: reason } when there's nothing to level. With { level: false } the loudness is only
+   * measured: the song keeps its own level (still trimmed and faded).
    */
-  function prepare(channels, rate) {
+  function prepare(channels, rate, opts = {}) {
+    const level = opts.level !== false;
     // Measure only what will play: half-silent blocks at the edges would read too quiet
     const span = soundSpan(channels, rate);
     const before = span && loudness(channels.map((x) => x.subarray(span[0], span[1])), rate);
     if (before === null || span === null) return { skip: "it is silent or too short to measure" };
     const [a, b] = span;
     const peak = peakDb(channels, a, b);
-    const gainDb = Math.min(P.TARGET_LUFS - before, P.PEAK_CEILING_DB - peak, P.MAX_GAIN_DB);
+    const gainDb = level ? Math.min(P.TARGET_LUFS - before, P.PEAK_CEILING_DB - peak, P.MAX_GAIN_DB) : 0;
     const g = Math.pow(10, gainDb / 20), len = b - a, fade = Math.min(Math.round(P.FADE_S * rate), Math.floor(len / 2));
     const src = channels.length === 1 ? [channels[0], channels[0]] : channels.slice(0, 2);
     const out = src.map((x) => {
@@ -116,7 +118,7 @@
       info: {
         lufs_before: round(before, 2), lufs: round(before + gainDb, 2), gain_db: round(gainDb, 2),
         peak_db: round(peak + gainDb, 2), trimmed_start_s: round(a / rate, 3), trimmed_end_s: round((channels[0].length - b) / rate, 3),
-        seconds: round(len / rate, 3), capped: gainDb < P.TARGET_LUFS - before - 0.01,
+        seconds: round(len / rate, 3), levelled: level, capped: level && gainDb < P.TARGET_LUFS - before - 0.01,
         outro: outro(out, rate),
       },
     };

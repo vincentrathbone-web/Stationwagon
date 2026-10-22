@@ -35,3 +35,6 @@ prototypes/*.html
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
 desktop/dist/
+
+# reference songs for the mastering match (copyrighted music)
+mastering-ref/

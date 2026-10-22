@@ -194,6 +194,8 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
 .drop.over { border-color: var(--amber); background: var(--accent-bg); }
 .drop b { font-size: 16px; }
 .drop-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.prep-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin-top: 12px; }
+.prep-opts .swrow { padding-bottom: 0; font-weight: 500; }
 .drop input[type=file] { color: var(--muted); font: 500 13px var(--f-ui); max-width: 100%; }
 .uplist { flex-basis: 100%; list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .uplist li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; background: var(--raised); border-radius: var(--r-field); padding: 8px 12px; font-size: 13px; }

@@ -10,7 +10,8 @@ use RuntimeException;
  * so a file's address never changes and Cloudflare may cache it for a year. A track's `sha1` is
  * the song's identity: the hash of the file as the manager chose it, before the browser levelled
  * it (see assets/prep.js). Adding the same song twice, prepared or not, returns the track that's
- * already there. `loudness_lufs` is set only for songs that were levelled.
+ * already there. `loudness_lufs` is set only for songs that were levelled, `mastered` for songs
+ * that song prep mastered (assets/master-core.js).
  */
 final class Library
 {
@@ -25,10 +26,11 @@ final class Library
      * @param ?string $name the file's own name when $path is an upload's temporary file
      * @param ?string $sourceSha1 the hash of the original file when $path is the levelled copy
      * @param ?float $lufs the levelled copy's loudness
+     * @param bool $mastered song prep mastered the copy
      * @return array{id:int,duplicate:bool,title:string}
      */
     public function import(string $path, ?string $title = null, ?string $artist = null, ?string $name = null,
-                           ?string $sourceSha1 = null, ?float $lufs = null, ?array $outro = null): array
+                           ?string $sourceSha1 = null, ?float $lufs = null, ?array $outro = null, bool $mastered = false): array
     {
         $name = basename($name ?? $path);
         if (!is_file($path)) {
@@ -71,6 +73,7 @@ final class Library
             'bytes' => filesize($path),
             'pieces' => json_encode($scan['pieces']),
             'loudness_lufs' => $lufs !== null && is_finite($lufs) ? round(max(-70.0, min(0.0, $lufs)), 2) : null,
+            'mastered' => $mastered && $sourceSha1 !== null ? 1 : 0,
             'outro' => self::outro($outro),
             'status' => 'ready',
             'created_at' => gmdate('Y-m-d H:i:s'),
@@ -103,7 +106,7 @@ final class Library
             array_push($args, $like, $like);
         }
         return $this->db->run(
-            "SELECT t.id, t.file, t.title, t.artist, t.album, t.duration_s, t.bitrate_kbps, t.bytes, t.loudness_lufs, t.created_at,
+            "SELECT t.id, t.file, t.title, t.artist, t.album, t.duration_s, t.bitrate_kbps, t.bytes, t.loudness_lufs, t.mastered, t.created_at,
                     (SELECT COUNT(*) FROM $pt pt WHERE pt.track_id = t.id) AS playlists
              FROM $t t WHERE $where ORDER BY t.title, t.id",
             $args

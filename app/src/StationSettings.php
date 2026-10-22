@@ -101,6 +101,25 @@ final class StationSettings
         return [['settings' => $json] + $this->station, []];
     }
 
+    /** Song prep's two switches on the Music library page: [master, level]. */
+    public static function prep(array $station): array
+    {
+        $all = Planner::settings($station);
+        return [(bool) $all['prep_master'], (bool) $all['prep_level']];
+    }
+
+    /** Store song prep's two switches. @return array the updated station row */
+    public function savePrep(bool $master, bool $level): array
+    {
+        $own = json_decode((string) ($this->station['settings'] ?? ''), true);
+        $own = is_array($own) ? $own : [];
+        $own['prep_master'] = $master ? 1 : 0;
+        $own['prep_level'] = $level ? 1 : 0;
+        $json = json_encode($own, JSON_UNESCAPED_SLASHES);
+        $this->db->run('UPDATE ' . $this->db->table('stations') . ' SET settings = ? WHERE id = ?', [$json, $this->station['id']]);
+        return ['settings' => $json] + $this->station;
+    }
+
     /** The email address listeners can write to about their data (the Privacy page), or ''. */
     public static function privacyEmail(array $station): string
     {

@@ -442,8 +442,34 @@ try {
         };
         $r = $m->go('manage/library');
         check('the library opens with a drop zone', $r['status'] === 200 && str_contains($r['body'], 'id="drop"') && str_contains($r['body'], 'upload.js?v=') && preg_match('~data-worker="[^"]*prep-worker\.js\?v=[0-9a-f]{10}"~', $r['body']));
+        // song prep's two switches: shown as stored, saved by a manager only
+        $prepRow = fn() => Stationwagon\StationSettings::prep($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch());
+        [$keepMaster, $keepLevel] = $prepRow();
+        $shown = fn(string $body, string $id) => preg_match('~<input[^>]*id="' . $id . '"[^>]*>~', $body, $mm) ? str_contains($mm[0], 'checked') : null;
+        check('the drop zone has the two song prep switches, as stored', $shown($r['body'], 'prepMaster') === $keepMaster && $shown($r['body'], 'prepLevel') === $keepLevel
+            && str_contains($r['body'], 'Apply pre-processing') && str_contains($r['body'], 'Loudness normalization')
+            && preg_match('~data-worker="[^"]*prep-worker\.js\?v=[0-9a-f]{10}"~', $r['body']));
+        $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'prep', 'level' => '1'], ['Accept: application/json']);
+        $j = json_decode($r['body'], true);
+        check('turning pre-processing off is saved', ($j['ok'] ?? false) && $prepRow() === [false, true], $r['body']);
+        $r = $m->go('manage/library');
+        check('  and the page shows it off', $shown($r['body'], 'prepMaster') === false && $shown($r['body'], 'prepLevel') === true);
+        $r = (new Browser($base))->go('manage/library', ['csrf' => 'x', 'action' => 'prep'], ['Accept: application/json']);
+        check('  someone signed out can’t change them', $r['status'] !== 200 && $prepRow() === [false, true], (string) $r['status']);
+        $m->go('manage/library', array_filter(['csrf' => $csrf, 'action' => 'prep', 'master' => $keepMaster ? '1' : null, 'level' => $keepLevel ? '1' : null]), ['Accept: application/json']);
+        check('  (put back as they were)', $prepRow() === [$keepMaster, $keepLevel]);
+        make_mp3("$tmpDir/mastered.mp3", 20, ['title' => "Web Test Mastered " . strrev($tag)], random_int(0, 255));
+        $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'upload', 'files[0]' => new CURLFile("$tmpDir/mastered.mp3", 'audio/mpeg', 'mastered.mp3'),
+            'source_sha1[0]' => sha1("mastered $tag"), 'prep_lufs[0]' => '-16', 'prep_mastered[0]' => '1'], ['Accept: application/json']);
+        $mu = (json_decode($r['body'], true)['results'] ?? [[]])[0];
+        $tracks[] = (int) ($mu['id'] ?? 0);
+        $mrow = $db->run('SELECT mastered, loudness_lufs FROM ' . $db->table('tracks') . ' WHERE id = ?', [(int) ($mu['id'] ?? 0)])->fetch();
+        check('a song prep mastered is stored as mastered', $mrow && (int) $mrow['mastered'] === 1 && (float) $mrow['loudness_lufs'] === -16.0, json_encode($mrow));
+        $r = $m->go('manage/library?q=' . rawurlencode("Web Test Mastered " . strrev($tag)));
+        check('  and the library tags it Mastered', str_contains($r['body'], '>Mastered</span>') && str_contains($r['body'], '>Levelled</span>'));
         $u = $upload("$tmpDir/song.mp3", 'my song.mp3');
         $tracks[] = $trackId = (int) ($u['id'] ?? 0);
+        check('  a song uploaded without song prep is not', (int) $db->run('SELECT mastered FROM ' . $db->table('tracks') . ' WHERE id = ?', [$trackId])->fetchColumn() === 0);
         check('an MP3 uploads, with its tag title', ($u['ok'] ?? false) && !$u['duplicate'] && $u['title'] === $title, json_encode($u));
         $again = $upload("$tmpDir/song.mp3", 'copy.mp3');
         check('the same file again is “already there”', ($again['ok'] ?? false) && $again['duplicate'] && (int) $again['id'] === $trackId);

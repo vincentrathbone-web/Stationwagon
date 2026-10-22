@@ -19,7 +19,7 @@
 //   php browser_helper.php podcast-min <seconds | default>          -> the shortest show made into an episode, before
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
-use Stationwagon\{Db, Library, Notes, Planner, Podcast, Schedule};
+use Stationwagon\{Db, Library, Notes, Planner, Podcast, Schedule, StationSettings};
 
 $db = Db::fromConfig();
 $planner = Planner::forFirstStation();
@@ -34,9 +34,16 @@ if ($cmd === 'manager') {
     $db->insert('station_users', ['station_id' => $station['id'], 'user_id' => $id]);
     echo json_encode(['id' => $id, 'email' => $email, 'password' => $password]);
 } elseif ($cmd === 'track') {
-    $row = $db->run('SELECT id, file, sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs, outro FROM ' . $db->table('tracks') .
+    $row = $db->run('SELECT id, file, sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs, mastered, outro FROM ' . $db->table('tracks') .
         " WHERE station_id = ? AND title = ? AND status = 'ready' ORDER BY id DESC LIMIT 1", [$station['id'], $argv[2] ?? ''])->fetch();
     echo json_encode($row ?: null);
+} elseif ($cmd === 'prep') {
+    // song prep's two switches: print them, or set them first (prep <master 0|1> <level 0|1>)
+    if (isset($argv[3])) {
+        $station = (new StationSettings($db, $station))->savePrep($argv[2] === '1', $argv[3] === '1');
+    }
+    [$m, $l] = StationSettings::prep($station);
+    echo json_encode(['master' => $m, 'level' => $l]);
 } elseif ($cmd === 'cleanup') {
     $db->run('DELETE FROM ' . $db->table('users') . ' WHERE id = ? AND email LIKE ?', [(int) ($argv[2] ?? 0), 'web-test-%']);
     $lib = new Library($db, $station, SW_ROOT);

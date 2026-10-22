@@ -1,5 +1,6 @@
 <?php use function Stationwagon\{h, duration, megabytes}; use Stationwagon\App;
-/** @var array $tracks @var string $q @var int $total @var int $bytes @var int $confirm @var int $edit @var int $maxUpload @var int $prepKbps @var string $csrf */
+/** @var array $tracks @var string $q @var int $total @var int $bytes @var int $confirm @var int $edit @var int $maxUpload @var int $prepKbps @var array $prep @var string $csrf */
+[$prepMaster, $prepLevel] = $prep;
 ?>
 <div class="vhead">
   <div>
@@ -11,7 +12,13 @@
 <form class="drop" id="drop" method="post" enctype="multipart/form-data" action="<?= h(App::url('manage/library')) ?>" data-max="<?= (int) $maxUpload ?>">
   <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
   <input type="hidden" name="action" value="upload">
-  <div><b>Add songs</b><br><span class="muted2">Drop MP3 files here, or choose them. Your browser first levels each song to the same loudness (−16 LUFS) and trims silence at both ends. Up to <?= h(megabytes($maxUpload)) ?> per upload; the same song twice is only stored once.</span></div>
+  <div><b>Add songs</b><br><span class="muted2">Drop MP3 files here, or choose them. Your browser first prepares each song as chosen below and trims silence at both ends. Up to <?= h(megabytes($maxUpload)) ?> per upload; the same song twice is only stored once.</span>
+    <div class="prep-opts" id="prepOpts">
+      <label class="swrow" title="Mastering like the station's Adobe Audition chain: the multiband compressor Broadcast1, then Master1 (brighter, a little wider, louder)"><input class="sw" type="checkbox" name="master" value="1" id="prepMaster"<?= $prepMaster ? ' checked' : '' ?>> Apply pre-processing <span class="muted2">(mastering, as in Audition)</span></label>
+      <label class="swrow" title="Every song plays at the same loudness"><input class="sw" type="checkbox" name="level" value="1" id="prepLevel"<?= $prepLevel ? ' checked' : '' ?>> Loudness normalization <span class="muted2">(−16 LUFS)</span></label>
+      <span class="muted2" id="prepSaved" aria-live="polite"></span>
+    </div>
+  </div>
   <div class="drop-actions">
     <input id="files" name="files[]" type="file" accept=".mp3,audio/mpeg" multiple>
     <button class="btn primary" type="submit">Upload</button>
@@ -45,7 +52,7 @@
         </td></tr>
       <?php else: ?>
         <tr>
-          <td><b><?= h($t['title']) ?></b><?php if ($t['loudness_lufs'] !== null): ?> <span class="pill auto" title="Levelled to <?= h(str_replace('-', '−', number_format((float) $t['loudness_lufs'], 1))) ?> LUFS when uploaded">Levelled</span><?php endif ?><?php if ($t['album']): ?><span class="sub"><?= h($t['album']) ?></span><?php endif ?></td>
+          <td><b><?= h($t['title']) ?></b><?php if ((int) ($t['mastered'] ?? 0)): ?> <span class="pill auto" title="Mastered on upload, as the station's Audition chain does">Mastered</span><?php endif ?><?php if ($t['loudness_lufs'] !== null): ?> <span class="pill auto" title="Levelled to <?= h(str_replace('-', '−', number_format((float) $t['loudness_lufs'], 1))) ?> LUFS when uploaded">Levelled</span><?php endif ?><?php if ($t['album']): ?><span class="sub"><?= h($t['album']) ?></span><?php endif ?></td>
           <td><?= h($t['artist'] ?? '') ?></td>
           <td class="num"><?= h(duration((float) $t['duration_s'])) ?></td>
           <td class="num"><?= (int) $t['playlists'] ?></td>
@@ -67,5 +74,5 @@
   </table>
 </div>
 <script src="<?= h(App::asset('assets/prep-core.js')) ?>" defer></script>
-<script src="<?= h(App::asset('assets/prep.js')) ?>" data-kbps="<?= (int) $prepKbps ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js'])) ?>" defer></script>
+<script src="<?= h(App::asset('assets/prep.js')) ?>" data-kbps="<?= (int) $prepKbps ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js', 'assets/master-core.js'])) ?>" defer></script>
 <script src="<?= h(App::asset('assets/upload.js')) ?>" defer></script>

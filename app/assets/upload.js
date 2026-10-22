@@ -1,6 +1,7 @@
 // Music library uploads: drop files on the box (or choose them). Each song is prepared in the
-// browser first (prep.js: levelled, trimmed, re-encoded), then they go up one at a time with
-// progress, and the page reloads to show them. Without JavaScript the form still works.
+// browser first (prep.js: mastered and levelled as the two switches say, trimmed, re-encoded),
+// then they go up one at a time with progress, and the page reloads to show them. The switches
+// are the station's, saved as soon as they change. Without JavaScript the form still works.
 (() => {
   const form = document.getElementById("drop");
   if (!form || !window.FormData || !window.XMLHttpRequest) return;
@@ -9,6 +10,28 @@
   const csrf = form.querySelector('input[name="csrf"]').value;
   const maxBytes = Number(form.dataset.max || 0);
   form.querySelector('button[type="submit"]').hidden = true; // choosing files starts the upload
+  const master = document.getElementById("prepMaster"), level = document.getElementById("prepLevel");
+  const saved = document.getElementById("prepSaved");
+
+  // the switches are the station's: save them as soon as they change (one save at a time, the
+  // latest state last, so two quick flips can't land out of order)
+  let timer = 0, queue = Promise.resolve();
+  const savePrep = () => {
+    saved.textContent = "Saving…";
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const data = new FormData();
+      data.append("csrf", csrf);
+      data.append("action", "prep");
+      if (master.checked) data.append("master", "1");
+      if (level.checked) data.append("level", "1");
+      queue = queue.then(() => fetch(form.getAttribute("action"), { method: "POST", body: data, headers: { Accept: "application/json" }, credentials: "same-origin" })
+        .then((r) => r.json().then((j) => { if (!r.ok || !j.ok) throw new Error(j.error || r.status); }))
+        .then(() => { saved.textContent = "Saved for every upload"; })
+        .catch(() => { saved.textContent = "Couldn’t save: try again"; }));
+    }, 250);
+  };
+  if (master && level) [master, level].forEach((el) => el.addEventListener("change", savePrep));
 
   const row = (name) => {
     const li = document.createElement("li");
@@ -21,7 +44,8 @@
   const db = (v) => (v > 0 ? "+" : "") + v.toFixed(1).replace("-", "−") + " dB";
   const lufs = (v) => v.toFixed(1).replace("-", "−") + " LUFS";
   const describe = (p) => p.prepared
-    ? "levelled " + lufs(p.info.lufs_before) + " → " + lufs(p.info.lufs) + " (" + db(p.info.gain_db) + ")" +
+    ? (p.info.mastered ? "mastered, " : "") +
+      (p.info.levelled ? "levelled " + lufs(p.info.lufs_before) + " → " + lufs(p.info.lufs) + " (" + db(p.info.gain_db) + ")" : "kept at " + lufs(p.info.lufs)) +
       (p.info.trimmed_start_s + p.info.trimmed_end_s >= 0.1 ? ", " + (p.info.trimmed_start_s + p.info.trimmed_end_s).toFixed(1) + " s of silence trimmed" : "")
     : "as it is: " + p.note;
 
@@ -31,7 +55,8 @@
     data.append("action", "upload");
     data.append("files[]", p.file, name);
     if (p.sourceSha1) data.append("source_sha1[]", p.sourceSha1);
-    if (p.prepared) data.append("prep_lufs[]", String(p.info.lufs));
+    if (p.prepared && p.info.levelled) data.append("prep_lufs[]", String(p.info.lufs));
+    if (p.prepared && p.info.mastered) data.append("prep_mastered[]", "1");
     if (p.prepared && p.info.outro) data.append("prep_outro[]", JSON.stringify(p.info.outro)); // for silence detection
     const xhr = new XMLHttpRequest();
     xhr.open("POST", form.getAttribute("action")); // not form.action: the form has a field named "action"
@@ -67,7 +92,8 @@
       let p = { file: files[i], prepared: false, note: "song prep didn’t load" };
       if (window.SwPrep) {
         try {
-          p = await window.SwPrep.prepare(files[i], (stage) => { status.textContent = stage; });
+          p = await window.SwPrep.prepare(files[i], (stage) => { status.textContent = stage; },
+            { master: !master || master.checked, level: !level || level.checked });
         } catch (ex) {
           p = { file: files[i], prepared: false, note: "prep failed: " + ex.message };
         }

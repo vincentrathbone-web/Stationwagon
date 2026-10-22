@@ -27,7 +27,7 @@ namespace Stationwagon;
  */
 final class Schema
 {
-    public const VERSION = 7;
+    public const VERSION = 8;
 
     /** Table names without prefix, in creation order (foreign keys need their parents first). */
     public const TABLES = [
@@ -103,6 +103,7 @@ final class Schema
                 `bytes` INT UNSIGNED NOT NULL,
                 `pieces` MEDIUMTEXT NOT NULL,
                 `loudness_lufs` DECIMAL(5,2) NULL,
+                `mastered` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'song prep mastered it like the station''s Audition chain',
                 `outro` MEDIUMTEXT NULL COMMENT 'JSON: loudness (LUFS) of each second of the last minute, from song prep',
                 `status` ENUM('processing','ready','error') NOT NULL DEFAULT 'ready',
                 `created_at` DATETIME NOT NULL,
@@ -424,6 +425,7 @@ final class Schema
             5 => ["DROP TABLE IF EXISTS `{$p}listeners`", self::listeners($p, $opts), self::listenerTally($p, $opts), self::listenerVisitors($p, $opts)],
             6 => [self::episodes($p, $opts), self::episodeTakes($p, $opts), self::episodeChunks($p, $opts)],
             7 => ["ALTER TABLE `{$p}presenter_notes` ADD COLUMN `replaced_by` INT UNSIGNED NULL COMMENT 'the edited copy that replaces this note' AFTER `posted_at`"],
+            8 => ["ALTER TABLE `{$p}tracks` ADD COLUMN `mastered` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'song prep mastered it like the station''s Audition chain' AFTER `loudness_lufs`"],
         ];
     }
 

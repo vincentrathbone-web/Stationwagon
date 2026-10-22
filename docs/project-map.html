@@ -173,9 +173,9 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "22 Oct · 22:20",
-  commits: 32,
-  version: "0.6.0",
+  updated: "23 Oct · 03:30",
+  commits: 33,
+  version: "0.8.0-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
     { v: "v0.4", name: "Player & studio", when: "done 22 Oct" },
@@ -224,7 +224,7 @@ const MAP = {
       { text: "Sound & safety: fade shape, music under the voice, silence, rejoin, quality, delay", v: "v0.4", state: "done" },
       { text: "Listener stats", note: "unique listeners; device, browser, app; country and city", v: "v0.4", state: "done" },
       { text: "Podcast episodes: edit, hide, feed", note: "two-track editor: zoom, cut clips, mix down, publish", v: "v0.4", state: "done" },
-      { text: "Mastering in song prep (true-peak limiter, reference match)", note: "after you compare oXygen and master_me", v: "v0.8", state: "later" }
+      { text: "Mastering in song prep, as your Audition chain", note: "Broadcast1 + Master1, matched by measuring; two switches in the library", v: "v0.8", state: "done" }
     ]},
     { name: "Streaming & hosting", blurb: "Runs on shared cPanel hosting with Cloudflare in front: PHP and Apache only.", features: [
       { text: "Timeline planned on request, with a cron", v: "v0.1", state: "done" },
@@ -254,12 +254,14 @@ const MAP = {
   ],
   next: {
     title: "The WordWave pilot (v0.8)",
-    text: "The Windows app is out: v0.6.0 is on GitHub, and the studio's \"Get the Windows app\" link and the app's own updates both work through the Stationwagon Updates plugin on controll.co.za. Next is the WordWave pilot: the station run for real by WordWave's DJs.",
-    order: ["Plan the pilot round with you", "Then launch (v1.0)"]
+    text: "Song prep now masters every upload the way your Audition chain does: matched by measuring Audition's own exports, and in your blind test you heard no difference. The library has two switches: pre-processing and loudness normalization. Next, the pilot station gets its music and runs beside AzuraCast.",
+    order: ["Fill the pilot station with test music", "Run it beside AzuraCast for a week", "Copy WordWave's library when its owner agrees", "Then launch (v1.0)"]
   },
   call: null,
-  feedTitle: "Changed 20–22 Oct",
+  feedTitle: "Changed 20–23 Oct",
   feed: [
+    { what: "Mastering in song prep, as your Audition chain", to: "matched (blind test: no difference), on the test server", at: "03:30" },
+    { what: "Library switches: pre-processing and loudness normalization", to: "on the test server, saved for every upload", at: "03:30" },
     { what: "Windows studio app v0.6.0", to: "released on GitHub; download and update links work live", at: "22:20" },
     { what: "Round 33", to: "committed and pushed", at: "22:05", kind: "info" },
     { what: "Windows studio app: the app, the BUTT bridge, signed updates", to: "built, all tests pass (real BUTT too)", at: "21:50" },

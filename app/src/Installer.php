@@ -248,6 +248,8 @@ final class Installer
             // v0.4 Sound & safety (round 25)
             'fade_shape' => 'equal_power', 'duck_db' => -12, 'rejoin_minutes' => 10, 'silence_db' => -40,
             'live_kbps' => 192, 'prep_kbps' => 192,
+            // song prep on upload (round 34): master like the station's Audition chain, level to -16 LUFS
+            'prep_master' => 1, 'prep_level' => 1,
         ];
     }
 

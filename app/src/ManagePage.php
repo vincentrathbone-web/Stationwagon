@@ -80,6 +80,13 @@ final class ManagePage
                 foreach ($results as $r) {
                     Session::flash($r['ok'] ? 'ok' : 'bad', $r['ok'] ? ($r['duplicate'] ? "Already in the library: {$r['title']}" : "Added: {$r['title']}") : "{$r['name']}: {$r['error']}");
                 }
+            } elseif ($action === 'prep') {
+                // song prep's two switches, saved as soon as they change
+                $this->station = (new StationSettings($this->db, $this->station))->savePrep(!empty($_POST['master']), !empty($_POST['level']));
+                if ($wantsJson) {
+                    $this->json(['ok' => true, 'master' => !empty($_POST['master']), 'level' => !empty($_POST['level'])]);
+                }
+                Session::flash('ok', 'Song prep choices saved.');
             } elseif ($action === 'update') {
                 $problem = $library->update((int) ($_POST['id'] ?? 0), (string) ($_POST['title'] ?? ''), (string) ($_POST['artist'] ?? ''));
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Saved. Listeners see the new title from the next time it plays.');
@@ -100,6 +107,7 @@ final class ManagePage
             'edit' => (int) ($_GET['edit'] ?? 0),
             'maxUpload' => self::maxUploadBytes(),
             'prepKbps' => (int) $this->planner->setting('prep_kbps'),
+            'prep' => StationSettings::prep($this->station),
         ]);
     }
 
@@ -138,8 +146,9 @@ final class ManagePage
                 $source = ((array) ($_POST['source_sha1'] ?? []))[$i] ?? null;
                 $lufs = ((array) ($_POST['prep_lufs'] ?? []))[$i] ?? null;
                 $outro = json_decode((string) (((array) ($_POST['prep_outro'] ?? []))[$i] ?? ''), true);
+                $mastered = (string) (((array) ($_POST['prep_mastered'] ?? []))[$i] ?? '') === '1';
                 $r = $library->import($tmp, null, null, $name, is_string($source) ? strtolower($source) : null,
-                    is_numeric($lufs) ? (float) $lufs : null, is_array($outro) ? $outro : null);
+                    is_numeric($lufs) ? (float) $lufs : null, is_array($outro) ? $outro : null, $mastered);
                 $added = $added || !$r['duplicate'];
                 $out[] = ['name' => $name, 'ok' => true, 'duplicate' => $r['duplicate'], 'title' => $r['title'], 'id' => $r['id']];
             } catch (RuntimeException $ex) {

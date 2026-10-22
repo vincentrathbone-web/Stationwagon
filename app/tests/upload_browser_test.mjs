@@ -1,6 +1,7 @@
 // End-to-end test of song prep in a real browser (headless Edge or Chrome) on Laragon: a
 // throwaway manager uploads generated MP3s on the Music library page, and the stored songs are
-// checked (levelled, trimmed, tags kept, duplicates caught, fallbacks for silent and fake files).
+// checked (mastered, levelled, trimmed, tags kept, duplicates caught, fallbacks for silent and fake
+// files), and the two switches (pre-processing, loudness normalization) are saved and obeyed.
 //   node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app
 // Needs SW_PHP (php.exe) unless php is on PATH. Signs in a throwaway account: not for a public server.
 import { spawn, spawnSync, execFileSync } from "node:child_process";
@@ -48,9 +49,11 @@ const tag = Math.random().toString(16).slice(2, 8);
 const dir = mkdtempSync(join(tmpdir(), "sw-prep-browser-"));
 const songTitle = `Prep Browser Test ${tag}`;
 const silentTitle = `Prep Silent Test ${tag}`;
-const song = join(dir, "prep song.mp3"), silent = join(dir, "silent.mp3"), fake = join(dir, "fake.mp3");
+const plainTitle = `Prep Plain Test ${tag}`;
+const song = join(dir, "prep song.mp3"), silent = join(dir, "silent.mp3"), fake = join(dir, "fake.mp3"), plain = join(dir, "plain.mp3");
 writeFileSync(song, mp3([[0, 2], [0.4, 20], [0, 1.5]], songTitle));   // about -8 LUFS, silence both ends
 writeFileSync(silent, mp3([[0, 6]], silentTitle));
+writeFileSync(plain, mp3([[0, 1], [0.1, 15], [0, 1]], plainTitle));   // about -21 LUFS
 writeFileSync(fake, Buffer.from("not audio at all ".repeat(400)));
 const songSha1 = createHash("sha1").update(readFileSync(song)).digest("hex");
 
@@ -85,8 +88,10 @@ async function upload(files) {
   return null;
 }
 
-let user = null;
+let user = null, prepBefore = null;
 try {
+  prepBefore = helper("prep");
+  helper("prep", "1", "1"); // start from the defaults: both on
   for (let i = 0; i < 50; i++) { await sleep(200); try { await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; } catch { /* starting */ } }
   const target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === "page");
   ws = new WebSocket(target.webSocketDebuggerUrl);
@@ -102,9 +107,13 @@ try {
   check("a throwaway manager signs in", (await evaluate("location.pathname")).endsWith("/manage"));
 
   console.log("Upload with song prep");
+  await go(`${base}/manage/library`);
+  const sw = await evaluate(`[document.getElementById('prepMaster')?.checked, document.getElementById('prepLevel')?.checked]`);
+  check("the library shows both switches, on", sw[0] === true && sw[1] === true, JSON.stringify(sw));
   let rows = await upload([song]);
-  check("the song is prepared and added", rows && rows[0].cls === "ok" && rows[0].text.startsWith("Added, levelled"), rows && rows[0].text);
+  check("the song is mastered, levelled and added", rows && rows[0].cls === "ok" && rows[0].text.startsWith("Added, mastered, levelled"), rows && rows[0].text);
   const t = helper("track", songTitle);
+  check("it's marked as mastered", t && Number(t.mastered) === 1);
   check("the original title tag is kept", t !== null && t.title === songTitle);
   check("it's stored at -16 LUFS", t && near(t.loudness_lufs, -16, 0.05), t && t.loudness_lufs);
   check("as a new 192 kbps file", t && Number(t.bitrate_kbps) === 192 && Number(t.sample_rate) === 44100 && t.file !== `${songSha1}.mp3`, t && `${t.bitrate_kbps} kbps`);
@@ -120,8 +129,33 @@ try {
     })()`);
     check("the stored file really measures -16 LUFS", near(measured, -16, 0.3), measured && measured.toFixed(2));
   }
+  await go(`${base}/manage/library`);
+  check("the library shows it Mastered and Levelled", await evaluate(`(() => { const row = [...document.querySelectorAll('tbody tr')].find((tr) => tr.textContent.includes(${JSON.stringify(songTitle)})); return !!row && row.textContent.includes('Mastered') && row.textContent.includes('Levelled'); })()`));
   rows = await upload([song]);
   check("the same song again is caught as a duplicate", rows && rows[0].cls === "ok" && rows[0].text === "Already there", rows && rows[0].text);
+
+  console.log("Both switches off");
+  await go(`${base}/manage/library`);
+  await evaluate(`(() => { for (const id of ['prepMaster', 'prepLevel']) document.getElementById(id).click(); })()`);
+  let saved = "";
+  for (let i = 0; i < 50 && !saved.startsWith("Saved"); i++) { await sleep(100); saved = await evaluate(`document.getElementById('prepSaved').textContent`); }
+  check("turning them off is saved straight away", saved.startsWith("Saved") && JSON.stringify(helper("prep")) === '{"master":false,"level":false}', `${saved}; ${JSON.stringify(helper("prep"))}`);
+  await go(`${base}/manage/library`);
+  check("  and they stay off on the next visit", JSON.stringify(await evaluate(`[document.getElementById('prepMaster').checked, document.getElementById('prepLevel').checked]`)) === "[false,false]");
+  rows = await upload([plain]);
+  check("a song goes up kept at its own level", rows && rows[0].cls === "ok" && rows[0].text.startsWith("Added, kept at"), rows && rows[0].text);
+  const pl = helper("track", plainTitle);
+  check("  not mastered and without a levelled loudness", pl && Number(pl.mastered) === 0 && pl.loudness_lufs === null, pl && JSON.stringify({ mastered: pl.mastered, lufs: pl.loudness_lufs }));
+  check("  but still trimmed (17 s → about 15.1 s)", pl && near(pl.duration_s, 15.1, 0.15), pl && `${pl.duration_s} s`);
+  if (pl) {
+    const m = await evaluate(`(async () => {
+      const buf = await (await fetch(${JSON.stringify(`${base}/storage/media/${pl.file}`)})).arrayBuffer();
+      const a = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(buf);
+      return SwPrepCore.loudness([a.getChannelData(0), a.getChannelData(1)], 44100);
+    })()`);
+    check("  the stored file keeps its loudness (about −21.1 LUFS, as measured before upload)", near(m, -21.1, 0.4), m && m.toFixed(2));
+  }
+  helper("prep", "1", "1");
 
   console.log("Fallbacks");
   rows = await upload([silent, fake]);
@@ -130,8 +164,9 @@ try {
   check("  without a loudness", s !== null && s.loudness_lufs === null);
   check("a file that isn't audio is still refused by the server", rows && rows[1].cls === "bad" && rows[1].text.includes("not an MP3"), rows && rows[1].text);
 } finally {
+  if (prepBefore) helper("prep", prepBefore.master ? "1" : "0", prepBefore.level ? "1" : "0");
   if (user) {
-    const r = helper("cleanup", String(user.id), songTitle, silentTitle);
+    const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle);
     console.log(`Cleanup: throwaway manager and test songs removed${r.hidden ? ` (${r.hidden} on air, hidden)` : ""}`);
   }
   try { ws && ws.close(); } catch { /* closed */ }
