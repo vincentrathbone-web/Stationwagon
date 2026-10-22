@@ -115,6 +115,8 @@ $deck = fn(string $k): string => '
     <span>Listeners hear you <b><?= (int) $delay ?> s</b> later</span>
     <span class="st-outdev">Headphones <b id="stOut">this computer’s sound output</b><select class="st-outsel" id="stOutDev" aria-label="Headphones: where you hear the studio" hidden></select></span>
     <span class="st-rec" id="stRec"></span>
+    <span class="st-bridge" id="stBridge" hidden>BUTT / Mixxx <b id="stBridgeState">waiting</b> <button class="btn sm ghost" type="button" id="stAppSet" title="The app's settings: the station's address, and the port and password for BUTT or Mixxx">App settings</button></span>
+    <a class="st-getapp" id="stGetApp" href="<?= h((string) \Stationwagon\Config::get('desktop_download', 'https://controll.co.za/wp-json/stationwagon/v1/desktop/installer')) ?>" title="Stationwagon Studio for Windows: this studio, plus BUTT or Mixxx as your sound" hidden>Get the Windows app</a>
     <span class="st-conn" id="stConn">● Not sending</span>
   </section>
 </div>

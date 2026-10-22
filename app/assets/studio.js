@@ -6,6 +6,8 @@
 // The DJ hears the music bus (plus any deck on Cue); the mic is never played back to them.
 // Above the decks, the output strip (outwave.js) shows the program bus going out: measured left of
 // now, and to the right the coming seconds, mixed ahead from the decks' songs through the crossfader.
+// In the Windows app (desktop/), BUTT or Mixxx can be the sound instead: the app's bridge hands over
+// their MP3 frames, which go out as the same pieces; BUTT connecting goes live by itself, stopping ends the show.
 // window.SwStudio.state() is for the browser test.
 (() => {
   "use strict";
@@ -76,6 +78,9 @@
   let wave = null, wavePlan = null, fadePlan = null; const waveMarks = [];
   // the podcast recorder (studio-recorder.js): music and mic as two tracks on this device, uploaded after End show
   let rec = null, recUp = null, recWaiting = 0;
+  // the Windows app (desktop/): its bridge takes BUTT or Mixxx; null in a browser
+  const APP = window.__TAURI__ && window.__TAURI__.core ? window.__TAURI__ : null;
+  const bridge = { connected: false, status: null, rate: RATE, endTimer: null, frames: 0, dropped: 0, busy: false, quick: false, quickFrom: 0 };
 
   // ---- Decks: a decoded song played from an AudioBuffer, with a waveform ----------------------
   class Deck {
@@ -223,7 +228,9 @@ registerProcessor("sw-tap", SwTap);`;
     powering = true;
     banner("Switching on: allow the microphone when the browser asks…");
     try {
-      ctx = new Ctx({ sampleRate: RATE, latencyHint: "interactive" });
+      // on a phone or tablet the smallest buffers (3 ms) crackle as soon as the phone is busy (an app
+      // updating in the background gave 20+ gaps in 30 s); "balanced" (about 22 ms) gave 0–1 there
+      ctx = new Ctx({ sampleRate: RATE, latencyHint: handheld ? "balanced" : "interactive" });
       await ctx.resume();
       await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([TAP_WORKLET], { type: "text/javascript" })));
       musicBus = ctx.createGain(); programBus = ctx.createGain();
@@ -502,15 +509,15 @@ registerProcessor("sw-tap", SwTap);`;
 
   // ---- Go live, sending, end show -----------------------------------------------------------
   /** Go live, or (how = "rejoin") carry on the DJ's own show after a reload or a drop. */
-  async function goLive(how = "golive") {
-    if (!on || live) return;
+  async function goLive(how = "golive", via = bridge.connected ? "bridge" : "studio") {
+    if (live || (via === "studio" ? !on : !bridge.connected)) return;
     $("stGo").disabled = true; $("stGo").classList.add("joining"); $("stGoLabel").textContent = how === "rejoin" ? "Rejoining…" : "Joining…";
     const r = await api(how, { body: {} });
     if (r.error) { banner(r.error, "end"); controls(); await refresh(); return; }
-    live = { public_id: r.live.public_id, start: r.live.start, title: r.live.title, sending: false };
-    encoder.postMessage({ init: { gen: ++encGen, rate: ctx.sampleRate, kbps: kbps() } });
+    live = { public_id: r.live.public_id, start: r.live.start, title: r.live.title, sending: false, via };
+    if (via === "studio") encoder.postMessage({ init: { gen: ++encGen, rate: ctx.sampleRate, kbps: kbps() } });
     pieceFrames = []; pieceSamples = 0; seq = 0; armedAt = live.start;
-    if (rec) rec.arm(live.public_id);
+    if (rec && via === "studio") rec.arm(live.public_id); // BUTT's show: the podcast uses what went on air
     sentCount = 0; sendErrors = 0; lastSentAt = null; lastError = null;
     if (r.continued) {
       log(`continuing ${r.continued} as ${live.public_id}`);
@@ -519,7 +526,9 @@ registerProcessor("sw-tap", SwTap);`;
     log(`live ${live.public_id} starts at ${at(live.start, hms)} (in ${(live.start - clock.now()).toFixed(1)} s)`);
     controls();
     const h = r.handover;
-    if (h && h.type === "song") {
+    if (via === "bridge") {
+      banner(`Joining from ${bridgeName()}. Its sound goes out from ${at(live.start, hms)}.`);
+    } else if (h && h.type === "song") {
       setXf(-100);
       const ok = await decks.A.load({ title: h.title, artist: h.artist, url: h.url, seconds: h.full }, "From the AutoDJ · picked up when you went live");
       if (ok && live) {
@@ -540,7 +549,7 @@ registerProcessor("sw-tap", SwTap);`;
   }
 
   function onPcm({ frame, l, r }) {
-    if (!live || !encoder || armedAt === null) return;
+    if (!live || live.via !== "studio" || !encoder || armedAt === null) return;
     const chunkStart = clock.now() + (frame / ctx.sampleRate - ctx.currentTime);
     if (chunkStart + l.length / ctx.sampleRate <= armedAt) return; // before our slot
     let from = 0;
@@ -557,16 +566,20 @@ registerProcessor("sw-tap", SwTap);`;
     encoder.postMessage({ pcm: { gen: encGen, l: L, r: R } }, [L.buffer, R.buffer]);
   }
 
-  function addFrames(frames, final) {
-    for (const f of frames) { pieceFrames.push(f.bytes); pieceSamples += f.samples; }
-    const len = (S ? S.settings.segment_seconds : 6) * ctx.sampleRate;
-    if (pieceSamples >= len || (final && pieceFrames.length)) {
+  /** Whole MP3 frames in; a piece goes out each time one holds a piece length (`seconds`, if given). */
+  function addFrames(frames, final, rate = ctx.sampleRate, seconds = S ? S.settings.segment_seconds : 6) {
+    const cut = () => {
       const body = new Uint8Array(pieceFrames.reduce((n, b) => n + b.length, 0));
       let o = 0; for (const b of pieceFrames) { body.set(b, o); o += b.length; }
-      queue.push({ live: live.public_id, seq: seq++, dur: pieceSamples / ctx.sampleRate, body });
+      queue.push({ live: live.public_id, seq: seq++, dur: pieceSamples / rate, body });
       pieceFrames = []; pieceSamples = 0;
       pump();
+    };
+    for (const f of frames) {
+      pieceFrames.push(f.bytes); pieceSamples += f.samples;
+      if (pieceSamples >= seconds * rate) cut();
     }
+    if (final && pieceFrames.length) cut();
   }
 
   async function pump() {
@@ -603,9 +616,12 @@ registerProcessor("sw-tap", SwTap);`;
     if (live && live.public_id === id) {
       banner("Ending the show: sending the last audio, then handing back to the AutoDJ…");
       armedAt = null;
-      recStopped = rec ? rec.stop() : null;
-      // the worker sends the last frames back after everything before them; then the queue empties
-      await new Promise((ok) => { encFlushed = ok; encoder.postMessage({ flush: { gen: encGen } }); setTimeout(ok, 3000); });
+      if (live.via === "bridge") addFrames([], true, bridge.rate); // what BUTT sent last
+      else {
+        recStopped = rec ? rec.stop() : null;
+        // the worker sends the last frames back after everything before them; then the queue empties
+        await new Promise((ok) => { encFlushed = ok; encoder.postMessage({ flush: { gen: encGen } }); setTimeout(ok, 3000); });
+      }
       await waitForQueue(15000);
     }
     const r = await api("end", { body: { live: id } });
@@ -644,10 +660,107 @@ registerProcessor("sw-tap", SwTap);`;
   function finish() {
     if (rec) rec.stop().catch((e) => log("recording: " + e.message)); // after a drop: kept here, uploaded when the studio is off air
     live = null; encGen++; encFlushed = null; armedAt = null; queue.length = 0;
+    clearTimeout(bridge.endTimer); bridge.endTimer = null;
     if (wake) { wake.release().catch(() => {}); wake = null; }
     if (talk) setTalk(false);
     controls();
   }
+
+  // ---- The Windows app's bridge: BUTT or Mixxx as the sound --------------------------------------
+  const bridgeName = () => {
+    const c = (bridge.status && bridge.status.client) || "";
+    return /butt/i.test(c) ? "BUTT" : /mixxx|libshout/i.test(c) ? "Mixxx" : "BUTT or Mixxx";
+  };
+  /** BUTT started sending: go live (or carry on the show), if the slot allows it. */
+  async function bridgeConnected(status) {
+    bridge.connected = true; bridge.status = status; bridge.rate = status.rate || RATE;
+    clearTimeout(bridge.endTimer); bridge.endTimer = null;
+    log(`bridge: ${status.client || "a source"} connected (${status.kbps} kbps, ${status.rate} Hz)`);
+    if (live) {
+      if (live.via === "bridge") { bridge.quick = true; banner(`${bridgeName()} is sending again.`); }
+      else banner(`${bridgeName()} is sending, but you’re on air from the studio’s own decks and mic. End the show, and it goes live from ${bridgeName()}.`, "end");
+      controls();
+      return;
+    }
+    await refresh();
+    if (live || !bridge.connected || !S) return;
+    const rj = S.slot.rejoin, show = S.show;
+    if (show && show.mine && !show.own) banner(`${bridgeName()} is sending, but ${show.dj || "another presenter"} is on air. Their show must end first.`, "end");
+    else if (rj && (rj.open || rj.until > clock.now())) await goLive("rejoin", "bridge");
+    else if (S.slot.may) await goLive("golive", "bridge");
+    else banner(`${bridgeName()} is sending, but you can’t go live now: ${S.slot.reason}`, "end");
+  }
+  /** BUTT stopped: the show ends a few seconds later, unless it comes back. */
+  function bridgeDisconnected(reason) {
+    const was = bridge.connected;
+    bridge.connected = false;
+    log("bridge: " + reason);
+    if (!was || !live || live.via !== "bridge") { controls(); return; }
+    addFrames([], true, bridge.rate); // send what came in
+    bridge.quickFrom = seq;
+    const wait = 5;
+    banner(`${reason} The show ends in ${wait} seconds and the AutoDJ takes over, unless ${bridgeName()} comes back.`, "end", [["End now", () => endShow(), "danger"]]);
+    clearTimeout(bridge.endTimer);
+    bridge.endTimer = setTimeout(() => { bridge.endTimer = null; if (!bridge.connected && live && live.via === "bridge") endShow(); }, wait * 1000);
+    controls();
+  }
+  /** MP3 frames from BUTT: from the moment the station hands over, they go out as pieces. */
+  function bridgeFrames(ev) {
+    bridge.frames += ev.sizes.length;
+    if (!live || live.via !== "bridge" || armedAt === null) return;
+    const bin = atob(ev.data), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const per = ev.samples / ev.sizes.length, arrived = (ev.at + clock.offsetMs) / 1000; // server time
+    const frames = [];
+    let o = 0;
+    ev.sizes.forEach((n, i) => {
+      const t = arrived + (i * per) / ev.rate;
+      if (t >= armedAt) frames.push({ bytes: bytes.subarray(o, o + n), samples: per });
+      else bridge.dropped++;
+      o += n;
+    });
+    if (!frames.length) return;
+    if (!live.sending) {
+      live.sending = true; live.firstAt = clock.now();
+      log(`on air from the bridge at ${at(live.firstAt, hms)}`);
+      banner(`You’re on air from ${bridgeName()}. Stop it there to end the show.`);
+      setTimeout(() => { if (live && live.sending && $("stBannerText").textContent.startsWith("You’re on air")) banner(""); }, 6000);
+      controls();
+    }
+    bridge.rate = ev.rate;
+    // back after a drop: the first piece goes after 1 s, so the station hears from the show within its timeout
+    if (bridge.quick) { addFrames(frames, false, ev.rate, 1); if (seq > bridge.quickFrom) bridge.quick = false; }
+    else addFrames(frames, false, ev.rate);
+  }
+  function showBridge() {
+    if (!APP) return;
+    const s = bridge.status, b = $("stBridge");
+    b.hidden = false;
+    b.classList.toggle("on", bridge.connected);
+    $("stBridgeState").textContent = s && s.error ? s.error
+      : bridge.connected && s ? `${bridgeName()} sending · MP3 ${s.kbps || "?"} kbps` : s ? `waiting on 127.0.0.1:${s.port}` : "…";
+    const busy = !!live || !!(window.SwRecorder && SwRecorder.busy());
+    if (busy !== bridge.busy) { bridge.busy = busy; APP.core.invoke("set_busy", { busy }).catch(() => {}); }
+  }
+  function askClose() {
+    banner("Close the app? " + (live ? "You’re on air: the station goes back to the AutoDJ." : "Your show’s recording is still uploading; it carries on the next time you open the studio."), "end", [
+      ...(live ? [["End show and close", async () => { await endShow(); APP.core.invoke("quit_app"); }, "danger"]] : []),
+      ["Close anyway", () => APP.core.invoke("quit_app")], ["Keep going", () => banner("")],
+    ]);
+  }
+  if (APP) {
+    APP.event.listen("bridge", ({ payload: e }) => {
+      if (e.type === "connect") bridgeConnected(e.status);
+      else if (e.type === "frames") bridgeFrames(e);
+      else if (e.type === "disconnect") bridgeDisconnected(e.reason);
+      else if (e.type === "status") bridge.status = e.status;
+      else if (e.type === "refused") { log("bridge refused: " + e.reason); banner(e.reason, "end"); }
+      else if (e.type === "title" && bridge.status) bridge.status.title = e.title;
+      showBridge();
+    });
+    APP.event.listen("close-requested", askClose);
+    $("stAppSet").onclick = () => APP.core.invoke("open_settings");
+  } else if (/Windows/.test(navigator.userAgent)) $("stGetApp").hidden = false;
 
   // ---- Running order ------------------------------------------------------------------------
   let saveTimer = null, orderDirty = false, orderJson = "", saving = 0;
@@ -846,7 +959,7 @@ registerProcessor("sw-tap", SwTap);`;
     go.classList.toggle("on", !!(live && live.sending));
     go.classList.toggle("joining", !!(live && !live.sending));
     if (live) { label.textContent = live.sending ? "On air " + fmt(clock.now() - live.start) : "Joining…"; go.disabled = !live.sending; }
-    else { label.textContent = "Go live"; go.disabled = !on || !S || !S.slot.may; }
+    else { label.textContent = "Go live"; go.disabled = !(on || bridge.connected) || !S || !S.slot.may; }
     ["A", "B"].forEach((k) => {
       const d = decks[k];
       $("p" + k).disabled = !on || !d.buf; $("x" + k).disabled = !on || !d.buf; $("c" + k).disabled = !on || !d.buf;
@@ -992,6 +1105,11 @@ registerProcessor("sw-tap", SwTap);`;
   (async () => {
     for (let i = 0; i < 3; i++) await clock.fetch().catch(() => null);
     await refresh();
+    if (APP) {
+      const st = await APP.core.invoke("bridge_status").catch(() => null);
+      if (st) { bridge.status = st; if (st.connected && st.rate) bridgeConnected(st); }
+      setInterval(showBridge, 1000); showBridge();
+    }
     setInterval(() => clock.fetch().then(preloadOnAir).catch(() => {}), 3000);
     setInterval(refresh, 5000);
     setInterval(() => uploadRec(), 15000); uploadRec(); // what a closed or dropped page left behind
@@ -1005,6 +1123,9 @@ registerProcessor("sw-tap", SwTap);`;
       on, handheld, encoder: encReady ? "worker" : null, rec: rec ? { ...rec.state(), upload: recUp, waiting: recWaiting } : null, live: live && { ...live }, sent: sentCount, queue: queue.length, errors: sendErrors, lastError,
       xf: xfValue, talk, mic: chain ? chain.meters().outDb : null, ducked: !!(ducker && ducker.ducked), notes: notes.map((n) => n.id), editing, output: ctx ? { sink: ctx.sinkId ?? null, choices: [...$("stOutDev").options].map((o) => o.value), shown: !$("stOutDev").hidden } : null, order: order.items.map((i) => i.kind + ":" + (i.track_id || i.title)), nowItem,
       slot: S && S.slot, show: S && S.show,
+      // Chrome's own count of gaps in the sound engine's output (crackles), where it has playbackStats
+      sound: ctx ? { rate: ctx.sampleRate, base: Math.round(ctx.baseLatency * 1000), stats: ctx.playbackStats ? { events: ctx.playbackStats.underrunEvents, ms: Math.round(ctx.playbackStats.underrunDuration * 1000), of: Math.round(ctx.playbackStats.totalDuration) } : null } : null,
+      app: !!APP, bridge: APP ? { connected: bridge.connected, frames: bridge.frames, dropped: bridge.dropped, rate: bridge.rate, busy: bridge.busy, status: bridge.status } : null,
       decks: Object.fromEntries(["A", "B"].map((k) => [k, { title: decks[k].item && decks[k].item.title, playing: decks[k].playing, pos: on ? decks[k].position() : 0,
         drift: decks[k].handover && decks[k].playing ? decks[k].position() - (clock.now() - decks[k].handover.start) : null }])),
       events: events.slice(-60),

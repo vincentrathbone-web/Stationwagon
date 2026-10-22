@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stationwagon Studio</title>
+<style>
+  /* the station's green look (app/assets/app.css), for the app's own page */
+  :root { --ground: #121212; --panel: #181818; --raised: #242424; --edge: #2e2e2e; --ink: #ffffff; --ink-2: #b3b3b3;
+    --muted: #8a8a8a; --accent: #1db954; --accent-hover: #3be477; --on-accent: #000; --bad: #f15e6c; --warn: #f5a524;
+    --r-card: 16px; --r-field: 10px; --r-pill: 999px; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 28px 16px 40px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h1 span { color: var(--accent); }
+  .ver { color: var(--muted); font-size: 13px; }
+  .card { background: var(--panel); border-radius: var(--r-card); padding: 18px; margin-top: 16px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  label { display: block; color: var(--ink-2); font-size: 13px; margin: 12px 0 4px; }
+  input { width: 100%; padding: 10px 12px; border-radius: var(--r-field); border: 1px solid var(--edge); background: var(--raised); color: var(--ink); font: inherit; }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .row { display: flex; gap: 8px; align-items: center; } .row input { flex: 1; }
+  .btn { border: 0; border-radius: var(--r-pill); padding: 10px 18px; font: 600 14px/1 inherit; background: var(--raised); color: var(--ink); cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: var(--edge); } .btn:disabled { opacity: .5; cursor: default; }
+  .btn.primary { background: var(--accent); color: var(--on-accent); } .btn.primary:hover { background: var(--accent-hover); }
+  .acts { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+  .msg { min-height: 1.5em; margin-top: 10px; color: var(--ink-2); } .msg.bad { color: var(--bad); }
+  .lamp { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); margin-right: 8px; vertical-align: 1px; }
+  .lamp.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); } .lamp.bad { background: var(--bad); }
+  #bridgeState { font-weight: 600; } #bridgeMore { color: var(--ink-2); font-size: 13px; margin-top: 4px; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 10px 0 0; font-size: 14px; }
+  dt { color: var(--muted); } dd { margin: 0; font-family: Consolas, monospace; word-break: break-all; }
+  details { margin-top: 12px; color: var(--ink-2); font-size: 14px; } summary { cursor: pointer; color: var(--ink); }
+  ol { padding-left: 20px; margin: 8px 0; } code { font-family: Consolas, monospace; color: var(--ink); }
+  #boot { text-align: center; padding: 60px 0; color: var(--ink-2); }
+  progress { width: 100%; accent-color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1><span>stationwagon</span> studio</h1>
+  <div class="ver" id="ver"></div>
+
+  <div id="boot" hidden><div id="bootMsg">Starting…</div><progress id="bootBar" hidden></progress></div>
+
+  <div id="page" hidden>
+    <form class="card" id="form">
+      <h2>Your station</h2>
+      <label for="station">The station’s address</label>
+      <input id="station" placeholder="https://radio.example.com/stationwagon-app" autocomplete="url" required>
+      <div class="acts">
+        <button class="btn primary" type="submit" id="openBtn">Save and open the studio</button>
+        <button class="btn" type="button" id="updBtn">Check for updates</button>
+      </div>
+      <div class="msg" id="msg" role="status"></div>
+    </form>
+
+    <section class="card">
+      <h2>BUTT and Mixxx</h2>
+      <div><span class="lamp" id="lamp"></span><span id="bridgeState">…</span></div>
+      <div id="bridgeMore"></div>
+      <p style="color:var(--ink-2);font-size:14px;margin:12px 0 0">Send your show from BUTT or Mixxx to this app, as if it were an Icecast server. When the sound arrives, the studio goes live for you (if your slot allows it); when you stop, the show ends and the AutoDJ takes over.</p>
+      <dl>
+        <dt>Address</dt><dd>127.0.0.1</dd>
+        <dt>Port</dt><dd><span id="portShow"></span></dd>
+        <dt>Mount</dt><dd>/live</dd>
+        <dt>User</dt><dd>source</dd>
+        <dt>Password</dt><dd><span id="pw"></span></dd>
+        <dt>Format</dt><dd>MP3, 44.1 kHz stereo (128 kbps or more)</dd>
+      </dl>
+      <div class="acts">
+        <button class="btn" type="button" id="copyPw">Copy the password</button>
+        <button class="btn" type="button" id="newPw">New password</button>
+      </div>
+      <label for="port">Port on this PC</label>
+      <div class="row"><input id="port" type="number" min="1024" max="65535" form="form"></div>
+      <details>
+        <summary>Setting up BUTT</summary>
+        <ol>
+          <li>In BUTT, open <b>Settings → Main → Server → Add</b>.</li>
+          <li>Type <b>Icecast</b>, address <code>127.0.0.1</code>, the port and password above, mount <code>live</code>, user <code>source</code>.</li>
+          <li>Under <b>Audio</b>, pick codec <b>MP3</b>, 44100 Hz, stereo, 128 kbps or more.</li>
+          <li>Press Play in BUTT when it’s your time.</li>
+        </ol>
+        <p style="margin:0">Using BUTT’s <b>Shoutcast</b> type instead? Give it the port above <b>minus 1</b> (<code id="scPort"></code>): Shoutcast sends its sound to the next port up.</p>
+      </details>
+      <details>
+        <summary>Setting up Mixxx</summary>
+        <ol>
+          <li>In Mixxx, open <b>Options → Preferences → Live Broadcasting</b>.</li>
+          <li>Type <b>Icecast 2</b>, host <code>127.0.0.1</code>, the port above, mount <code>/live</code>, login <code>source</code>, the password above.</li>
+          <li>Encoding <b>MP3</b>, 128 kbps or more, stereo.</li>
+          <li>Turn on <b>Enable Live Broadcasting</b> when it’s your time.</li>
+        </ol>
+      </details>
+    </section>
+  </div>
+</main>
+<script>
+(() => {
+  const T = window.__TAURI__, invoke = T.core.invoke, $ = (id) => document.getElementById(id);
+  const settingsOnly = location.hash === "#settings";
+  let info = null;
+  const msg = (t, bad) => { $("msg").textContent = t || ""; $("msg").className = "msg" + (bad ? " bad" : ""); };
+
+  function showBridge(s) {
+    const lamp = $("lamp");
+    $("portShow").textContent = s.port; $("scPort").textContent = s.port - 1;
+    if (s.error) { lamp.className = "lamp bad"; $("bridgeState").textContent = s.error; $("bridgeMore").textContent = ""; return; }
+    if (s.connected) {
+      lamp.className = "lamp on";
+      $("bridgeState").textContent = `${s.client || "A source"} is sending`;
+      const parts = [s.protocol, s.kbps && `MP3 ${s.kbps} kbps`, s.rate && `${(s.rate / 1000).toFixed(1)} kHz`, s.channels && (s.channels === 1 ? "mono" : "stereo"), s.title && `“${s.title}”`];
+      $("bridgeMore").textContent = parts.filter(Boolean).join(" · ");
+    } else {
+      lamp.className = "lamp";
+      $("bridgeState").textContent = s.listening ? `Waiting for BUTT or Mixxx on 127.0.0.1:${s.port}` : "Not listening";
+      $("bridgeMore").textContent = s.refused || "";
+    }
+  }
+
+  async function load() {
+    info = await invoke("get_info");
+    $("ver").textContent = "Version " + info.version;
+    $("station").value = info.settings.station || "";
+    $("port").value = info.settings.port;
+    $("pw").textContent = info.settings.password;
+    showBridge(info.bridge);
+  }
+
+  /** Checks for a newer version; installs it and restarts if there is one. */
+  async function update(auto) {
+    const say = auto ? (t) => ($("bootMsg").textContent = t) : msg;
+    say("Checking for updates…");
+    let v = null;
+    try { v = await Promise.race([invoke("check_update"), new Promise((_, no) => setTimeout(() => no(new Error("no answer")), 10000))]); }
+    catch (e) { if (!auto) msg("Couldn’t check for updates: " + (e.message || e), true); return false; }
+    if (!v) { if (!auto) msg("You have the latest version."); return false; }
+    say(`Installing version ${v}… The app restarts by itself.`);
+    if (auto) $("bootBar").hidden = false;
+    try { await invoke("install_update"); return true; }
+    catch (e) { (auto ? say : (t) => msg(t, true))("The update didn’t install: " + (e.message || e)); return false; }
+  }
+
+  T.event.listen("bridge", (e) => { const ev = e.payload; if (ev.status) showBridge(ev.status); else invoke("bridge_status").then(showBridge); });
+  T.event.listen("update-progress", (e) => { const [got, total] = e.payload; if (total) { $("bootBar").max = total; $("bootBar").value = got; } });
+
+  $("form").onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const s = await invoke("save_settings", { station: $("station").value, port: Number($("port").value) });
+      $("station").value = s.station;
+      msg("Saved. Opening the studio…");
+      await invoke("open_station");
+    } catch (err) { msg(String(err), true); }
+  };
+  $("updBtn").onclick = () => update(false);
+  $("copyPw").onclick = async () => { await navigator.clipboard.writeText($("pw").textContent); msg("The password is copied."); };
+  $("newPw").onclick = async () => { $("pw").textContent = await invoke("renew_password"); msg("New password saved. Put it in BUTT or Mixxx too."); };
+  setInterval(() => invoke("bridge_status").then(showBridge), 2000);
+
+  (async () => {
+    await load();
+    // opening the app: update first (never during a show), then straight to the station's studio
+    if (!settingsOnly && info.settings.station) {
+      $("boot").hidden = false;
+      if (await update(true)) return;
+      $("bootMsg").textContent = "Opening the studio…";
+      try { await invoke("open_station"); return; } catch (e) { msg(String(e), true); }
+      $("boot").hidden = true;
+    }
+    $("page").hidden = false;
+    if (!info.settings.station) $("station").focus();
+  })();
+  window.SwApp = { info: () => info };
+})();
+</script>
+</body>
+</html>

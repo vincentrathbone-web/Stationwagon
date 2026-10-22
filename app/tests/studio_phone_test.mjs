@@ -148,12 +148,32 @@ try {
   const loss = adb("dumpsys", "audio").split(String.fromCharCode(10)).some((l) => /requestAudioFocus\(\).*USAGE_NOTIFICATION/.test(l));
   check("a notification sound mid-show doesn't turn down what goes out (Android asks apps to duck; the studio's mix isn't)", loss && usual > -60 && lowest > usual - 1.5,
     `deck A ${usual.toFixed(1)} dB, lowest ${lowest.toFixed(1)} dB over 6 s with the notification at 1.6 s`);
+  // Chrome's own count of gaps in what the DJ hears (a phone gets "balanced" buffers: with the
+  // smallest ones a busy phone crackled, 20+ gaps in 30 s)
+  const snd = (await state()).sound;
+  check("the DJ's sound plays without crackles (Chrome counts at most 3 gaps)", !snd || !snd.stats || snd.stats.events <= 3, JSON.stringify(snd));
   console.log("Ending the show");
   await evaluate("document.getElementById('stGo').click()");
   await clickText("#stBannerActs button", "End show");
   s = await until((x) => !x.live, 25);
   const end = liveId ? helper("live-info", liveId) : null;
   check("End show sends the last audio and hands back to the AutoDJ", !!s && end && !end.open && end.closed_reason === "ended by DJ", end && `${end.closed_reason}, ${end.pieces.length} pieces`);
+  // what went out has no holes: the pieces sent before the test restarted Deck A (that restart is a
+  // real 10-20 ms pause), decoded here and searched for a short silence (1-100 ms) inside them
+  const holes = info && info.pieces.length ? await evaluate(`(async () => {
+    const out = [];
+    for (const p of ${JSON.stringify(info.pieces.map((p) => p.seq))}) {
+      const buf = await new OfflineAudioContext(2, 44100, 44100).decodeAudioData(await (await fetch(${JSON.stringify(base + "/storage/live/" + liveId + "/")} + String(p).padStart(5, "0") + ".mp3")).arrayBuffer());
+      const d = buf.getChannelData(0), edge = 2205;
+      let run = 0;
+      for (let i = edge; i < d.length - edge; i++) {
+        if (Math.abs(d[i]) < 1e-4) run++;
+        else { if (run >= 44 && run <= 4410) out.push(p + "@" + (i / 44100).toFixed(2) + "s:" + run); run = 0; }
+      }
+    }
+    return out;
+  })()`, 30000) : null;
+  check("  and what went out has no short holes in it (every piece decoded)", Array.isArray(holes) && holes.length === 0, holes ? holes.slice(0, 5).join(" ") || `${info.pieces.length} pieces` : "couldn't decode");
   let up = "";
   for (let i = 0; i < 120 && !up.startsWith("Your show’s recording is uploaded"); i++) { await sleep(250); up = await text("#stBannerText"); }
   check("then the phone uploads the recording, and offers the episode's editor", up.startsWith("Your show’s recording is uploaded. Trim it"), up);
@@ -166,6 +186,8 @@ try {
 } finally {
   // put the phone's own look back
   try { await evaluate(`(() => { const p = ${JSON.stringify(priorSkin)}; if (p) localStorage.setItem("sw.skin", p); else localStorage.removeItem("sw.skin"); return 1; })()`, 3000); } catch { /* page gone */ }
+  // leave the studio, so its sound and the mic don't stay switched on in the phone's Chrome
+  try { await go(`${base}/privacy`); } catch { /* page gone */ }
   try { if (minBefore !== null) helper("podcast-min", String(minBefore)); } catch (e) { console.log("cleanup: " + e.message); }
   try { if (dj) helper("studio-cleanup", String(dj.id), String(dj.block || 0)); } catch (e) { console.log("cleanup: " + e.message); }
   // clear the test notification (cancelAllNotifications for the shell), so it can't wake the screen later

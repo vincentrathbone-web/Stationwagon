@@ -1,0 +1,330 @@
+// End-to-end test of Stationwagon Studio for Windows (desktop/) on Laragon: the real app (a debug or
+// release build) opens the station's studio by itself, a DJ signs in, and a stand-in for BUTT sends a
+// test MP3 to the app's bridge at the pace of real audio. It checks the bridge's refusals (wrong
+// password, Ogg, a second source), going live by itself, the pieces reaching the station whole and
+// in order, song titles, a short drop that carries on the show, Stop ending it (and its podcast from
+// the aired sound), Mixxx's and Shoutcast's ways of connecting, a DJ outside their slot, the close
+// question while on air, the settings window, and what the station's page may not do.
+// Takes about 4 minutes.
+//   node desktop/tests/app_test.mjs [base url] [path to stationwagon-studio.exe]
+// Needs SW_PHP (php.exe) unless php is on PATH. Your own app settings are put back afterwards.
+import { spawn, execFileSync } from "node:child_process";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { connect } from "node:net";
+import { createServer as httpServer } from "node:http";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const base = (process.argv[2] || "http://localhost:8080/stationwagon-app").replace(/\/$/, "");
+const exe = process.argv[3] || join(here, "../src-tauri/target/debug/stationwagon-studio.exe");
+const php = process.env.SW_PHP || "php";
+// SW_HELPER_SSH="<ssh host>:<app folder>" runs the helper on that server, for a test against it
+const remote = process.env.SW_HELPER_SSH ? process.env.SW_HELPER_SSH.split(":") : null;
+const helper = (...args) => JSON.parse(remote
+  ? execFileSync("ssh", [remote[0], `cd ${remote[1]} && php tests/browser_helper.php ${args.map((a) => "'" + String(a).replace(/'/g, "'\''") + "'").join(" ")}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+  : execFileSync(php, [join(here, "../../app/tests/browser_helper.php"), ...args], { encoding: "utf8" }));
+let failed = 0, passed = 0;
+const check = (label, ok, detail = "") => {
+  ok ? passed++ : failed++;
+  console.log(`  ${ok ? "ok  " : "FAIL"} ${label}${detail !== "" ? `  (${detail})` : ""}`);
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---- the app's settings: ours for the test, yours back afterwards ----------------------------------
+const cfgDir = join(process.env.APPDATA, "za.co.controll.stationwagon.studio");
+const cfgFile = join(cfgDir, "settings.json");
+const saved = existsSync(cfgFile) ? readFileSync(cfgFile) : null;
+const BRIDGE_PORT = 18000 + Math.floor(Math.random() * 1000), PASSWORD = "test" + Math.random().toString(36).slice(2, 10);
+mkdirSync(cfgDir, { recursive: true });
+writeFileSync(cfgFile, JSON.stringify({ station: base + "/", port: BRIDGE_PORT, password: PASSWORD }));
+
+// ---- a stand-in update server: "no update" (the update test is desktop/tests/update_test.mjs) -------
+const upd = httpServer((req, res) => { upd.hits = (upd.hits || 0) + 1; res.writeHead(204); res.end(); });
+await new Promise((ok) => upd.listen(0, "127.0.0.1", ok));
+
+// ---- the test MP3, cut into frames so the stand-in can send it at the pace of real audio ------------
+const tone = readFileSync(join(here, "../../prototypes/media/Test_Tone_A_440Hz.mp3"));
+const id3 = tone[0] === 0x49 ? 10 + ((tone[6] & 127) << 21 | (tone[7] & 127) << 14 | (tone[8] & 127) << 7 | (tone[9] & 127)) : 0;
+const frames = [];
+for (let o = id3; o + 4 <= tone.length;) {
+  const b1 = tone[o + 1], b2 = tone[o + 2];
+  if (tone[o] !== 0xff || (b1 & 0xe0) !== 0xe0) { o++; continue; }
+  const kbps = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320][b2 >> 4], rate = [44100, 48000, 32000][(b2 >> 2) & 3];
+  const len = Math.floor(144 * kbps * 1000 / rate) + ((b2 >> 1) & 1);
+  frames.push(tone.subarray(o, o + len)); o += len;
+}
+const FRAME_S = 1152 / 44100, music = Buffer.concat(frames);
+
+/** A stand-in for BUTT (or Mixxx, or a Shoutcast source): connects, then sends frames in real time. */
+function source({ head, shoutcast = false, expectReply = true, withTag = false, ctype = "audio/mpeg" } = {}) {
+  const s = { reply: "", sent: 0, closed: false, sock: null };
+  s.ready = new Promise((ok) => {
+    const sock = connect(BRIDGE_PORT, "127.0.0.1");
+    s.sock = sock;
+    sock.on("data", (d) => { s.reply += d.toString("latin1"); });
+    sock.on("close", () => { s.closed = true; ok(); });
+    sock.on("error", () => {});
+    sock.on("connect", async () => {
+      if (shoutcast) {
+        sock.write((head || PASSWORD) + "\r\n");
+        for (let i = 0; i < 40 && !s.reply; i++) await sleep(50);
+        if (!s.reply.startsWith("OK2")) { ok(); return; }
+        sock.write(`icy-name:Test show\r\ncontent-type:${ctype}\r\nicy-br:128\r\n\r\n`);
+      } else sock.write(head);
+      if (expectReply && !shoutcast) for (let i = 0; i < 40 && !s.reply; i++) await sleep(50);
+      ok();
+      if (!/^(HTTP\/1\.[01] (200|100)|OK2)/.test(s.reply)) return;
+      if (withTag) sock.write(tone.subarray(0, id3));
+      const t0 = Date.now();
+      let i = 0;
+      s.timer = setInterval(() => {
+        const due = Math.floor((Date.now() - t0) / 1000 / FRAME_S) + 4; // a little ahead, as an encoder's buffer is
+        const out = [];
+        while (i < due) { out.push(frames[i % frames.length]); i++; }
+        if (out.length && !sock.destroyed) { sock.write(Buffer.concat(out)); s.sent = i; }
+      }, 50);
+    });
+  });
+  s.stop = () => { clearInterval(s.timer); s.sock.end(); };
+  return s;
+}
+const basic = (pw = PASSWORD, user = "source") => "Basic " + Buffer.from(`${user}:${pw}`).toString("base64");
+const icecast = (opts = {}) => `${opts.method || "SOURCE"} /live HTTP/1.${opts.method === "PUT" ? 1 : 0}\r\nHost: 127.0.0.1:${BRIDGE_PORT}\r\nAuthorization: ${basic(opts.pw)}\r\n` +
+  `User-Agent: ${opts.agent || "butt 1.45.0"}\r\nContent-Type: ${opts.ctype || "audio/mpeg"}\r\nice-name: Test show\r\nice-public: 0\r\n${opts.expect ? "Expect: 100-continue\r\n" : ""}\r\n`;
+
+// ---- the app, with its WebView2 open to the test over DevTools ------------------------------------
+const cdpPort = 9400 + Math.floor(Math.random() * 400);
+let app = null, ws = null, id = 0;
+const pending = new Map();
+// no answer in 30 s (the page or the app stuck) fails the test, which still cleans up
+const call = (method, params = {}) => new Promise((ok, bad) => {
+  const i = ++id; pending.set(i, ok); ws.send(JSON.stringify({ id: i, method, params }));
+  setTimeout(() => { if (pending.delete(i)) bad(new Error(`no answer to ${method} in 30 s`)); }, 30000);
+});
+const evaluate = async (expression) => {
+  const r = await call("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true, userGesture: true });
+  if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || "page error");
+  return r.result?.result?.value;
+};
+const targets = async () => (await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json()).filter((t) => t.type === "page");
+async function attach(match) {
+  for (let i = 0; i < 100; i++) {
+    const t = (await targets().catch(() => [])).find(match);
+    if (t) {
+      if (ws) ws.close();
+      ws = new WebSocket(t.webSocketDebuggerUrl);
+      await new Promise((ok, bad) => { ws.onopen = ok; ws.onerror = bad; });
+      ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); } };
+      return t;
+    }
+    await sleep(200);
+  }
+  return null;
+}
+const path = () => evaluate("location.pathname").catch(() => "");
+const go = async (url) => { await call("Page.navigate", { url }); for (let i = 0; i < 100; i++) { await sleep(100); if ((await evaluate("document.readyState").catch(() => "")) === "complete") return; } };
+const state = () => evaluate("window.SwStudio && SwStudio.state()");
+async function until(fn, seconds) {
+  const end = Date.now() + seconds * 1000;
+  while (Date.now() < end) { const s = await state().catch(() => null); if (s && fn(s)) return s; await sleep(200); }
+  return null;
+}
+const text = (sel) => evaluate(`(document.querySelector(${JSON.stringify(sel)}) || {}).textContent || ""`);
+const clickText = (sel, label) => evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].find((x) => x.textContent.trim() === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`);
+async function signIn(user) {
+  await go(`${base}/signin`);
+  await evaluate(`(() => { const f = document.querySelector('main form'); f.email.value = ${JSON.stringify(user.email)}; f.password.value = ${JSON.stringify(user.password)}; f.submit(); })()`);
+  for (let i = 0; i < 50 && !(await path()).endsWith("/manage"); i++) await sleep(100);
+  await go(`${base}/studio`);
+  await until((s) => s.slot, 10);
+}
+const signOut = async () => { await evaluate("document.querySelector('header form[action$=\"signout\"]').submit()"); await sleep(800); };
+/** Closes one of the app's windows as its X button does (WM_CLOSE), found by its title. */
+const closeWindow = (title) => execFileSync("powershell", ["-NoProfile", "-Command",
+  `Add-Type -Namespace W -Name U -MemberDefinition '[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string t); [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);';` +
+  ` $h = [W.U]::FindWindow([NullString]::Value, '${title}'); if ($h -ne [IntPtr]::Zero) { [W.U]::PostMessage($h, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; 'closed' } else { 'none' }`], { encoding: "utf8" }).trim();
+const alive = () => { try { execFileSync("tasklist", ["/FI", `PID eq ${app.pid}`], { encoding: "utf8" }).includes(String(app.pid)) || (() => { throw 0; })(); return true; } catch { return false; } };
+
+let lone = null, dj = null, minBefore = null;
+const shows = [];
+try {
+  minBefore = helper("podcast-min", "30").before;
+  if (!existsSync(exe)) throw new Error("No app at " + exe + " (cargo build in desktop/src-tauri first)");
+  app = spawn(exe, [], { env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${cdpPort} --autoplay-policy=no-user-gesture-required`,
+    SW_UPDATE_ENDPOINT: `http://127.0.0.1:${upd.address().port}/latest?v={{current_version}}` }, stdio: "ignore" });
+
+  console.log("Opening the app");
+  let t = await attach((x) => /\/(studio|signin)/.test(x.url));
+  for (let i = 0, last = ""; i < 50; i++) { await sleep(200); const p = await path(); if (p && p === last && (await evaluate("document.readyState").catch(() => "")) === "complete") break; last = p; }
+  check("it checks for an update, then opens the saved station's studio by itself", !!t && upd.hits >= 1, t ? t.url : "no page");
+  check("  the station's page can reach the app (window.__TAURI__)", await evaluate("!!(window.__TAURI__ && window.__TAURI__.core)"));
+  check("  the bridge listens on 127.0.0.1 only", await new Promise((ok) => { const c = connect(BRIDGE_PORT, "127.0.0.1"); c.on("connect", () => { c.destroy(); ok(true); }); c.on("error", () => ok(false)); }));
+  const status = await fetch(`http://127.0.0.1:${BRIDGE_PORT}/`).then((r) => r.text()).catch((e) => e.message);
+  check("  and answers a browser with what it is", status.startsWith("Stationwagon Studio bridge"), status.trim());
+
+  console.log("A DJ without a show");
+  lone = helper("dj");
+  await signIn(lone);
+  let s = await state();
+  check("the station's page may use the bridge, but not the app's settings, windows or updates",
+    await evaluate("Promise.all([window.__TAURI__.core.invoke('bridge_status').then(() => true, () => false), ...['get_info', 'renew_password', 'plugin:window|close', 'plugin:updater|check'].map((c) => window.__TAURI__.core.invoke(c).then(() => false, () => true))]).then((r) => r.every(Boolean))"));
+  check("the studio knows it runs in the app, and shows the bridge", s && s.app && !(await evaluate("document.getElementById('stBridge').hidden")) && (await text("#stBridgeState")).includes(`127.0.0.1:${BRIDGE_PORT}`),
+    await text("#stBridgeState"));
+  check("  without the 'Get the Windows app' link", await evaluate("document.getElementById('stGetApp').hidden"));
+  let src = source({ head: icecast() });
+  await src.ready;
+  s = await until((x) => x.bridge.connected, 6);
+  check("BUTT connects", src.reply.startsWith("HTTP/1.0 200 OK") && !!s, src.reply.split("\r\n")[0]);
+  await sleep(1500);
+  s = await state();
+  check("  but outside their slot the show doesn't go live", s && !s.live, s && JSON.stringify(s.live));
+  check("  and the banner says why", (await text("#stBannerText")).includes("can’t go live now"), await text("#stBannerText"));
+  src.stop();
+  await until((x) => !x.bridge.connected, 5);
+  await signOut();
+
+  console.log("A DJ in their block, with BUTT");
+  dj = helper("dj", "block");
+  await signIn(dj);
+  s = await state();
+  check("the studio is ready, the studio itself not switched on", s && s.slot.may && !s.on, s && JSON.stringify(s.slot.title));
+  src = source({ head: icecast({ pw: "wrong" }) });
+  await src.ready;
+  await sleep(500);
+  check("a wrong password is refused (401)", src.reply.startsWith("HTTP/1.0 401"), src.reply.split("\r\n")[0]);
+  check("  and the studio says so", (await text("#stBannerText")).includes("wrong password"), await text("#stBannerText"));
+  src = source({ head: icecast({ ctype: "application/ogg" }) });
+  await src.ready;
+  await sleep(500);
+  check("Ogg is refused (415)", src.reply.startsWith("HTTP/1.0 415"), src.reply.split("\r\n")[0]);
+  check("  and the studio says to pick MP3", (await text("#stBannerText")).includes("Set it to MP3"), await text("#stBannerText"));
+
+  src = source({ head: icecast(), withTag: true });
+  await src.ready;
+  s = await until((x) => x.live && x.live.via === "bridge", 10);
+  check("BUTT connecting goes live by itself", !!s, s ? s.live.public_id : JSON.stringify((await state()).events.slice(-4)));
+  const live1 = s && s.live.public_id; shows.push(live1);
+  s = await until((x) => x.live && x.live.sending, 15);
+  check("  BUTT's sound goes out from the handover", !!s, s ? "" : await text("#stBannerText"));
+  check("  the banner says it's on air from BUTT", (await text("#stBannerText")).includes("on air from BUTT"), await text("#stBannerText"));
+  check("  the status strip names BUTT and its quality", /BUTT sending · MP3 128 kbps/.test(await text("#stBridgeState")), await text("#stBridgeState"));
+  check("  and Go live shows On air", (await text("#stGoLabel")).startsWith("On air"), await text("#stGoLabel"));
+  const second = source({ head: icecast() });
+  await second.ready;
+  check("a second source is refused while BUTT sends (403)", second.reply.startsWith("HTTP/1.0 403"), second.reply.split("\r\n")[0]);
+  const meta = await fetch(`http://127.0.0.1:${BRIDGE_PORT}/admin/metadata?mount=/live&mode=updinfo&song=${encodeURIComponent("Amazing Grace - Test Choir")}`, { headers: { Authorization: basic() } });
+  check("BUTT's song title is taken (Icecast's metadata call)", meta.status === 200 && (await meta.text()).includes("<return>1</return>"));
+  s = await until((x) => x.bridge.status && x.bridge.status.title === "Amazing Grace - Test Choir", 3);
+  check("  and reaches the studio", !!s);
+  s = await until((x) => x.sent >= 4, 40);
+  check("pieces go out every 6 s", !!s, s ? `${s.sent} sent` : JSON.stringify((await state()).events.slice(-4)));
+  check("  with nothing waiting and no errors", s && s.queue <= 1 && s.errors === 0, s && `queue ${s.queue}, errors ${s.errors}`);
+  let info = helper("live-info", live1);
+  check("the server has them, in order, as whole MP3s of about 6 s", info.pieces.length >= 4 && info.pieces.every((p, i) => p.seq === i && Math.abs(p.duration - 6) < 0.1 && Math.abs(p.scanned - p.duration) < 0.05),
+    info.pieces.map((p) => `${p.seq}:${p.duration}/${p.scanned}`).join(" "));
+  const ring = Buffer.concat([music, music]);
+  const pieces = await Promise.all(info.pieces.map(async (p) => Buffer.from(await (await fetch(`${base}/storage/live/${live1}/${String(p.seq).padStart(5, "0")}.mp3`)).arrayBuffer())));
+  const joined = Buffer.concat(pieces), at0 = ring.indexOf(joined.subarray(0, 4096));
+  check("  byte for byte BUTT's frames, nothing lost between pieces", at0 >= 0 && ring.subarray(at0, at0 + joined.length).equals(joined.subarray(0, Math.min(joined.length, ring.length - at0))),
+    `${joined.length} bytes from frame offset ${at0}`);
+  check("  under the DJ's name and their block's title", info.dj_user_id === dj.id && info.title === "[test] Studio test show");
+  const playlist = await (await fetch(`${base}/api/stream.php`, { cache: "no-store" })).text();
+  check("listeners' stream carries the live pieces", playlist.includes(`storage/live/${live1}/`));
+
+  console.log("Closing while on air");
+  check("the app knows the studio is on air", s && s.bridge.busy);
+  closeWindow("Stationwagon Studio");
+  await sleep(1200);
+  check("closing the window asks first instead", alive() && (await text("#stBannerText")).startsWith("Close the app?"), await text("#stBannerText"));
+  await clickText("#stBannerActs button", "Keep going");
+  check("  Keep going carries on", alive() && !!(await state()).live);
+
+  console.log("A short drop");
+  src.stop();
+  s = await until((x) => !x.bridge.connected, 12);
+  check("BUTT stopping is seen at once", !!s);
+  check("  the banner says the show ends in 5 seconds unless it comes back", (await text("#stBannerText")).includes("ends in 5 seconds"), await text("#stBannerText"));
+  await sleep(2000);
+  src = source({ head: icecast() });
+  await src.ready;
+  s = await until((x) => x.bridge.connected, 5);
+  await sleep(4500);
+  s = await state();
+  check("BUTT back within 5 s: the same show carries on", s && s.live && s.live.public_id === live1, s && s.live && s.live.public_id);
+  const sentBefore = s.sent;
+  s = await until((x) => x.sent >= sentBefore + 1, 12);
+  info = helper("live-info", live1);
+  check("  and its pieces go on, the first one after 1 s", !!s && info.open && info.pieces.every((p, i) => p.seq === i) && info.pieces.some((p) => Math.abs(p.duration - 1) < 0.05),
+    s ? info.pieces.map((p) => `${p.seq}:${p.duration}`).join(" ") : JSON.stringify((await state()).events.slice(-5)));
+
+  console.log("Stop in BUTT");
+  src.stop();
+  s = await until((x) => !x.live, 12);
+  check("stopping BUTT ends the show about 5 s later", !!s, s ? "" : await text("#stBannerText"));
+  info = helper("live-info", live1);
+  check("  the station closes it as ended by the DJ", !info.open && info.closed_reason === "ended by DJ", `${info.open} ${info.closed_reason}`);
+  check("  and the banner says the AutoDJ has it", (await text("#stBannerText")).startsWith("Handed back to the AutoDJ"), await text("#stBannerText"));
+  const ep = helper("episode-info", live1);
+  check("its podcast episode is made from the sound that went on air", ep && ep.takes.length >= 1 && ep.takes.every((x) => x.kind !== "device") && ep.takes.some((x) => x.kind === "aired"),
+    ep ? ep.takes.map((x) => x.kind).join(",") : "no episode");
+
+  console.log("Mixxx and Shoutcast");
+  src = source({ head: icecast({ method: "PUT", expect: true, agent: "libshout/2.4.6" }) });
+  await src.ready;
+  check("Mixxx's way (PUT, Expect: 100-continue) is answered as Icecast does: 100 Continue, then 200 OK", src.reply.startsWith("HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\n\r\n"), JSON.stringify(src.reply.slice(0, 60)));
+  s = await until((x) => x.live && x.live.sending && x.live.public_id !== live1, 20);
+  check("  and goes live as a new show", !!s, s ? "" : await text("#stBannerText"));
+  check("  the studio calls it Mixxx", (await text("#stBridgeState")).startsWith("Mixxx sending"), await text("#stBridgeState"));
+  if (s) shows.push(s.live.public_id);
+  s = await until((x) => x.sent >= 1, 12);
+  check("  and sends its pieces", !!s);
+  src.stop();
+  s = await until((x) => !x.live, 12);
+  check("  stopping Mixxx ends it", !!s);
+  src = source({ shoutcast: true, head: "wrong" });
+  await src.ready;
+  check("a Shoutcast source with a wrong password is refused", src.reply.startsWith("invalid password"), src.reply.trim());
+  src = source({ shoutcast: true });
+  await src.ready;
+  check("Shoutcast's way (the password, then OK2) works too", src.reply.startsWith("OK2"), src.reply.split("\r\n")[0]);
+  s = await until((x) => x.live && x.live.sending, 20);
+  check("  and goes live", !!s);
+  if (s) shows.push(s.live.public_id);
+  const sc = (pass) => fetch(`http://127.0.0.1:${BRIDGE_PORT - 1}/admin.cgi?pass=${pass}&mode=updinfo&song=${encodeURIComponent("Shoutcast Song")}`).then((r) => r.status).catch((e) => e.message);
+  check("  a title with the wrong password is refused (403)", (await sc("wrong")) === 403);
+  check("  its title (admin.cgi, on the port below, as Shoutcast does) reaches the studio", (await sc(PASSWORD)) === 200 && !!(await until((x) => x.bridge.status && x.bridge.status.title === "Shoutcast Song", 3)));
+  src.stop();
+  s = await until((x) => !x.live, 12);
+  check("  and ends when it stops", !!s);
+
+  console.log("The app's settings window");
+  await evaluate("window.__TAURI__.core.invoke('open_settings')");
+  const main = await targets();
+  const st = await attach((x) => x.url.includes("#settings"));
+  check("App settings opens the settings window", !!st, main.map((x) => x.url).join(" "));
+  await sleep(800);
+  check("  it shows the station, the bridge's port and password", (await evaluate("document.getElementById('station').value")) === base + "/" &&
+    (await text("#portShow")) === String(BRIDGE_PORT) && (await text("#pw")) === PASSWORD);
+  check("  and that the bridge is waiting", (await text("#bridgeState")).startsWith("Waiting for BUTT"), await text("#bridgeState"));
+  check("  closing it leaves the studio open", closeWindow("Stationwagon Studio: settings") === "closed" && (await sleep(800), alive()) && !(await targets()).some((x) => x.url.includes("#settings")));
+  await attach((x) => x.url.startsWith(base));
+
+  console.log("Closing");
+  closeWindow("Stationwagon Studio");
+  for (let i = 0; i < 30 && alive(); i++) await sleep(200);
+  check("off air, closing the window closes the app", !alive());
+} catch (e) {
+  failed++;
+  console.log("  FAIL " + (e.stack || e.message));
+} finally {
+  try { if (ws) ws.close(); } catch { /* closed */ }
+  try { if (app && alive()) execFileSync("taskkill", ["/PID", String(app.pid), "/T", "/F"], { stdio: "ignore" }); } catch { /* gone */ }
+  upd.close();
+  if (saved) writeFileSync(cfgFile, saved); else rmSync(cfgFile, { force: true });
+  try { if (minBefore !== null) helper("podcast-min", String(minBefore)); } catch (e) { console.log("cleanup: " + e.message); }
+  try { if (dj) helper("studio-cleanup", String(dj.id), String(dj.block || 0)); } catch (e) { console.log("cleanup: " + e.message); }
+  try { if (lone) helper("studio-cleanup", String(lone.id)); } catch { /* gone */ }
+}
+console.log(`\n${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

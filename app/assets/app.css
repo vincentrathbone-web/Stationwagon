@@ -499,6 +499,10 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
 .st-conn.bad { color: var(--onair); }
 .st-rec.on, .st-rec.bad { color: var(--onair); }
 .st-rec.warn { color: var(--warn); }
+.st-bridge .btn { margin-left: 6px; padding: 2px 10px; }
+.st-bridge.on b { color: var(--accent); }
+.st-getapp { color: var(--muted); }
+.st-getapp:hover { color: var(--ink); }
 
 /* notes drawer: over the right side of the desk */
 .st-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 10; width: min(420px, 100%); overflow-y: auto; background: var(--panel);

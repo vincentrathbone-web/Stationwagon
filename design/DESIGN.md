@@ -194,6 +194,17 @@ The app's `/studio` follows the green mock-up, with these additions and differen
   and the note being changed has an outline. In the running order a talk item has a **Now** button
   instead of A / B (gone while it is now); opening the mic marks the next talk item as now.
 
+### Windows app (round 33; not in the mock-ups)
+
+The app's main window is the station's own studio page. Its own settings page (`desktop/ui/index.html`,
+green tokens, one column) has two cards: **Your station** (the address, Save and open the studio, Check
+for updates) and **BUTT and Mixxx** (a lamp and what is sending, the address, port, mount, user, password
+and format to type into BUTT or Mixxx, Copy the password, New password, and folded how-tos). When the app
+opens it shows "Checking for updates…", "Installing version …" with a bar, or "Opening the studio…". In the
+studio's status strip the app adds **BUTT / Mixxx** with its state ("waiting on 127.0.0.1:8000", "BUTT
+sending · MP3 128 kbps") and an **App settings** button; a Windows browser gets **Get the Windows app**
+there instead.
+
 ### Podcast (round 29; not in the mock-ups)
 
 - **Episode editor** (`/manage/podcast/<id>`, the green manager frame): a toolbar (− and + zoom, also

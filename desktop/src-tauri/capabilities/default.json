@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The app's own pages (the settings page): everything the app can do. The station's pages get a smaller set when they open (lib.rs, allow_station).",
+  "windows": ["main", "settings"],
+  "permissions": [
+    "core:default",
+    "allow-get-info",
+    "allow-save-settings",
+    "allow-renew-password",
+    "allow-open-station",
+    "allow-check-update",
+    "allow-install-update",
+    "allow-bridge-status",
+    "allow-set-busy",
+    "allow-quit-app",
+    "allow-open-settings"
+  ]
+}
