@@ -40,7 +40,9 @@
     // a note edited in the studio comes as a new note; its old version shows until listeners reach the edit
     const reached = new Set(data.items.filter((n) => n.posted <= h).map((n) => n.id));
     const items = data.show ? data.items.filter((n) => n.posted <= h && !(n.replaced_by && reached.has(n.replaced_by))) : [];
-    const key = rev + "|" + items.map((n) => n.id).join(",");
+    // still live for listeners until they reach the end of the show's sound (they are DELAY s behind)
+    const live = data.show ? data.show.live || h < (data.show.ends || 0) : false;
+    const key = rev + "|" + live + "|" + items.map((n) => n.id).join(",");
     if (key === shownKey) return;
     shownKey = key;
     // notes already visible when the page first shows the panel are not "new"; any that turn up
@@ -48,11 +50,10 @@
     if (seen === null) seen = new Set(items.map((n) => n.id));
     box.hidden = items.length === 0;
     if (!items.length) return;
-    const live = data.show.live;
     const arrived = items.filter((n) => !seen.has(n.id));
     arrived.forEach((n) => { seen.add(n.id); if (live) fresh.add(n.id); });
     if (!live) fresh.clear();
-    $("lpNotesTag").textContent = data.show.label;
+    $("lpNotesTag").textContent = live ? "Live" : data.show.label;
     $("lpNotesTag").className = "tag" + (live ? " live" : "");
     $("lpNotesBy").textContent = data.show.by;
     $("lpNotesList").replaceChildren(...items.map(note));
@@ -118,7 +119,7 @@
       rev, show: data && data.show,
       shown: [...$("lpNotesList").children].map((li) => Number(li.dataset.id)),
       held: data && data.show ? data.items.filter((n) => n.posted > heard()).map((n) => n.id) : [],
-      fresh: [...fresh], hidden: box.hidden,
+      fresh: [...fresh], hidden: box.hidden, live: !!(data && data.show && (data.show.live || heard() < (data.show.ends || 0))),
     }),
   };
 })();

@@ -541,7 +541,9 @@
     return ts && ts.contextTime > 0 ? ts.contextTime : c.currentTime;
   };
   const waveCv = $("lpWave"), tok = (n) => getComputedStyle(root).getPropertyValue(n).trim();
-  const COLORS = [tok("--src-a"), tok("--src-b"), tok("--src-live"), tok("--src-out")];
+  const COLORS = [], colours = () => COLORS.splice(0, 4, tok("--src-a"), tok("--src-b"), tok("--src-live"), tok("--src-out"));
+  colours();
+  window.addEventListener("sw:skin", colours); // the viewer changed the look
   const strip = waveCv && window.SwOutWave && !STREAM_ONLY ? SwOutWave.strip(waveCv, {
     colors: COLORS,
     measured: () => (player.wave ? player.wave.cols : null),
@@ -658,7 +660,7 @@
       for (let b = 1; b < this.BANDS; b++) if (this.bars[b] > this.bars[top]) top = b;
       const e = this.edges();
       return { running: this.running, calm: this.calm, frames: this.frames, top, topHz: [Math.round(e[top]), Math.round(e[top + 1])], level: +this.bars[top].toFixed(3),
-        lit: [...this.bars].filter((v) => v > 0.05).length };
+        lit: [...this.bars].filter((v) => v > 0.05).length, bars: [...this.bars].map((v) => +v.toFixed(2)) };
     },
   };
 

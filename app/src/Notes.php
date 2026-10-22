@@ -194,7 +194,8 @@ final class Notes
     {
         $now ??= microtime(true);
         $t = $this->db->table('live_shows');
-        $show = $this->db->run("SELECT ls.*, u.name AS dj_name
+        $show = $this->db->run("SELECT ls.*, u.name AS dj_name,
+                (SELECT COALESCE(SUM(lp.duration_s), 0) FROM {$this->db->table('live_pieces')} lp WHERE lp.show_id = ls.id) AS sent_s
             FROM $t ls LEFT JOIN {$this->db->table('users')} u ON u.id = ls.dj_user_id
             WHERE ls.station_id = ? AND ls.start_at >= ? AND EXISTS (SELECT 1 FROM {$this->db->table('presenter_notes')} pn WHERE pn.live_show_id = ls.id)
             ORDER BY ls.start_at DESC LIMIT 1", [$this->station['id'], $now - self::KEEP_DAYS * 86400])->fetch();
@@ -212,6 +213,8 @@ final class Notes
             'rev' => $this->rev($now),
             'show' => [
                 'title' => $show['title'], 'dj' => $show['dj_name'], 'live' => $live, 'label' => $live ? 'Live' : $this->when($start, $now),
+                // where the show's sound ends on the timeline: listeners, behind live, still hear it until then
+                'ends' => round((float) $show['start_at'] + (float) $show['sent_s'], 3),
                 'by' => implode(' · ', array_filter([$show['dj_name'], $show['title'] . ', ' . $start->format('H:i') . ($live ? '' : '–' . $end->format('H:i')), $live ? 'posting live' : null])),
             ],
             // an edited note's old version only while listeners may not have reached the edit yet

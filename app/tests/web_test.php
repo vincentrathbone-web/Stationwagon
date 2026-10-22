@@ -258,6 +258,26 @@ try {
     $r = $pc->go('podcast/api/episode?id=1');
     check('the podcast API needs a signed-in DJ, and is never kept by caches', $r['status'] === 401 && implode(',', $r['headers']['cache-control'] ?? []) === 'private, no-store', implode(',', $r['headers']['cache-control'] ?? []));
     check('  and so does the podcast screen', $pc->go('manage/podcast')['status'] === 303);
+
+    echo "Skins (the look, picked per device)\n";
+    $sk = new Browser($base);
+    $headFirst = fn(string $b): bool => ($s = strpos($b, 'localStorage.getItem("sw.skin")')) !== false && ($c = strpos($b, 'assets/app.css')) !== false && $s < $c && $s < strpos($b, '</head>');
+    foreach (['' => 'the station page', 'podcast' => 'the podcast page', 'privacy' => 'the Privacy page', 'signin' => 'sign-in'] as $path => $what) {
+        $b = ($path === 'signin' ? new Browser($base) : $sk)->go($path)['body']; // sign-in sets its own session cookie
+        check("$what sets the device's look in <head> and has the Look picker", $headFirst($b) && str_contains($b, 'class="skinpick"') && str_contains($b, '<option value="hifi">Hi-fi</option>')
+            && preg_match('~assets/skin\.js\?v=[0-9a-f]{10}"~', $b) === 1);
+    }
+    $b = $e->go('embed')['body'];
+    check('  and the embed, with its own small Look button', $headFirst($b) && str_contains($b, 'class="skinbtn"') && preg_match('~assets/skin\.js\?v=[0-9a-f]{10}"~', $b) === 1);
+    check('  picking a look sets no cookie (it stays in the browser)', $sk->setCookies === []);
+    $css = $sk->go(preg_replace('~^.*?(assets/app\.css\?v=[0-9a-f]{10}).*$~s', '$1', $page))['body'];
+    $css = str_replace("\r\n", "\n", $css); // a Windows checkout may serve it with CRLF
+    $blocks = preg_match_all('~^(:root|:root\[data-skin="[a-z0-9-]+"\]|:root\.light) \{.*?\n\}?~ms', $css, $m);
+    $rest = preg_replace('~^(:root|:root\[data-skin="[a-z0-9-]+"\]|:root\.light) \{.*?\}\n~ms', '', $css);
+    preg_match_all('~#[0-9a-fA-F]{3,8}\b(?![-\w])|rgba?\(~', preg_replace('~#[a-zA-Z][\w-]*\s*[{,]~', '', $rest), $raw);
+    check('the stylesheet keeps every colour in its token blocks (green, hi-fi, light): none in the components', $blocks === 3 && $raw[0] === [], $blocks . ' blocks; ' . implode(' ', array_slice($raw[0], 0, 6)));
+    preg_match_all('~border-radius: (\d+px)~', $rest, $radii);
+    check('  and every corner size except the tiny ones (1–2 px) and circles', array_diff(array_unique($radii[1]), ['1px', '2px']) === [], implode(' ', array_unique($radii[1])));
     foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/', 'storage/geo/dbip-city-lite.mmdb', 'storage/podcasts/ep-x/raw/1-music-0000.chunk', 'storage/podcasts/ep-x/episode.chunk'] as $private) {
         $code = (new Browser($base))->go($private)['status'];
         check("$private is not served", in_array($code, [403, 404], true), (string) $code);
@@ -486,7 +506,7 @@ try {
         // Sound & safety (the station's own values are put back in the cleanup)
         $origSettings = $db->run('SELECT settings FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetchColumn();
         $r = $m->go('manage/sound');
-        check('Sound & safety opens with seven sliders and four choices', $r['status'] === 200 && substr_count($r['body'], 'type="range"') === 7 && substr_count($r['body'], '<select') === 4, (string) $r['status']);
+        check('Sound & safety opens with seven sliders and four choices', $r['status'] === 200 && substr_count($r['body'], 'type="range"') === 7 && substr_count($r['body'], '<select id="f-') === 4, (string) $r['status']);
         check('with the fade shape preview, the MB an hour and the listener delay', str_contains($r['body'], 'id="fadeCurve"') && str_contains($r['body'], 'fades.js') && str_contains($r['body'], '192 kbps · 86 MB an hour') && preg_match('/About \d+ s/', $r['body']) === 1);
         $values = ['csrf' => $csrf, 'crossfade_seconds' => '5', 'fade_shape' => 's_curve', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '4', 'duck_db' => '-10',
             'live_timeout_seconds' => '10', 'rejoin_minutes' => '5', 'silence_db' => '-50', 'recent_tracks' => '3', 'live_kbps' => '160', 'prep_kbps' => '256'];

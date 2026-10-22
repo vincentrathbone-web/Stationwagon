@@ -59,7 +59,7 @@ final class Schema
                 `slug` VARCHAR(64) NOT NULL,
                 `name` VARCHAR(190) NOT NULL,
                 `timezone` VARCHAR(64) NOT NULL DEFAULT 'Africa/Johannesburg',
-                `settings` MEDIUMTEXT NULL COMMENT 'JSON: crossfade, piece length, live timeout, skin',
+                `settings` MEDIUMTEXT NULL COMMENT 'JSON: crossfade, piece length, live timeout…',
                 `created_at` DATETIME NOT NULL,
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `{$p}stations_slug` (`slug`)

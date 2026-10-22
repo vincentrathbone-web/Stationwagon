@@ -6,7 +6,7 @@ namespace Stationwagon;
 /**
  * The "Sound & safety" settings a manager may change, with their limits. Values are kept in the
  * station's `settings` JSON over Installer::defaultStationSettings(); keys not listed here (piece
- * length, plan ahead, skin…) are left as they are.
+ * length, plan ahead…) are left as they are.
  *
  * A field is a slider (min, max, step, unit) or a choice (choices: value => label). They show in
  * the order listed, grouped by `group`.

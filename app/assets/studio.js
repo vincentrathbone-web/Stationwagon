@@ -172,17 +172,19 @@
     if (!w) return;
     if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
     g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
-    g.fillStyle = "#1f1f1f"; g.fillRect(0, 0, w, h);
+    const tk = (n, f) => (window.SwSkin ? SwSkin.tok(n) : "") || f; // the skin's tokens (skin.js)
+    g.fillStyle = tk("--lcd", "#1f1f1f"); g.fillRect(0, 0, w, h);
     if (!d.peaks) return;
+    const played = tk("--amber", "#1ed760"), ahead = tk("--amber-dim", "#1f5133");
     const n = d.peaks.length, bw = w / n, ph = d.duration ? d.position() / d.duration : 0;
     for (let i = 0; i < n; i++) {
       const a = Math.max(1, d.peaks[i] * (h / 2 - 4)), x = i * bw;
-      g.fillStyle = i / n < ph ? "#1ed760" : "#1f5133"; g.fillRect(x, h / 2 - a, Math.max(1, bw - 1), a * 2);
+      g.fillStyle = i / n < ph ? played : ahead; g.fillRect(x, h / 2 - a, Math.max(1, bw - 1), a * 2);
     }
     const xfs = S ? S.settings.crossfade_seconds : 6;
     const fx = Math.max(0, (1 - xfs / d.duration)) * w;
-    g.fillStyle = "rgba(124,196,255,.14)"; g.fillRect(fx, 0, w - fx, h);
-    g.fillStyle = "#ffffff"; g.fillRect(Math.min(w - 2, ph * w - 1), 0, 2, h);
+    g.fillStyle = tk("--cue-zone", "rgba(124,196,255,.14)"); g.fillRect(fx, 0, w - fx, h);
+    g.fillStyle = tk("--ink", "#ffffff"); g.fillRect(Math.min(w - 2, ph * w - 1), 0, 2, h);
   }
 
   // ---- Switching on: sound, mic, mixer, encoder tap -----------------------------------------
@@ -370,8 +372,13 @@ registerProcessor("sw-tap", SwTap);`;
   // ---- Output strip: what goes out, measured and (to the right of now) mixed ahead -------------
   const WAVE_AHEAD = 12;
   const tok = (n) => getComputedStyle(root).getPropertyValue(n).trim();
-  const WAVE_COLORS = [tok("--src-a"), tok("--src-b"), tok("--src-live"), tok("--src-out")];
-  const waveCols = { A: WAVE_COLORS[0], B: WAVE_COLORS[1], mic: WAVE_COLORS[2] };
+  const WAVE_COLORS = [], waveCols = {};
+  const waveColours = () => {
+    WAVE_COLORS.splice(0, 4, tok("--src-a"), tok("--src-b"), tok("--src-live"), tok("--src-out"));
+    Object.assign(waveCols, { A: WAVE_COLORS[0], B: WAVE_COLORS[1], mic: WAVE_COLORS[2] });
+  };
+  waveColours();
+  window.addEventListener("sw:skin", waveColours); // the viewer changed the look
   function mark(t, what) { waveMarks.push({ t, color: waveCols[what] }); if (waveMarks.length > 40) waveMarks.shift(); }
   /** Deck k's crossfader gain at context time t: a running fade's curve, else where it is now. */
   function xfAt(k, t) {

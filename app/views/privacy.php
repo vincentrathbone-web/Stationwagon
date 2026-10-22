@@ -14,7 +14,7 @@ $name = $station['name'] ?? 'This station';
     <li>your internet address (IP address), and the details your browser sends about itself (its “user agent”: the kind of device, system and browser or app).</li>
   </ul>
   <p>From those the station works out the kind of device (phone, computer…), the browser or app, and roughly where you are: the country and nearest city, looked up on the station’s own server in a list of internet addresses (<a href="https://db-ip.com" rel="noopener" target="_blank">DB-IP</a>). Your address isn’t sent anywhere for this, and it gives a town at best, never a street.</p>
-  <p><b>Listening sets no cookies</b> and keeps nothing on your device. Your name, email and the like are never asked for.</p>
+  <p><b>Listening sets no cookies.</b> Your browser keeps two small choices on your device, your volume and the look you picked; they stay there and aren’t sent to the station. Your name, email and the like are never asked for.</p>
 
   <h2>Why</h2>
   <p>Only to count: how many listen now and at each hour, how many different people listen in a day or a month, how long, on which devices and apps, and in which countries and cities. It helps the station plan its programmes and know whether its website, its embed on other websites, or links in apps reach people. It isn’t used for advertising and isn’t sold or given to anyone.</p>

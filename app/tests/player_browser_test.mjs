@@ -51,11 +51,14 @@ const profile = mkdtempSync(join(tmpdir(), "sw-player-profile-"));
 const port = 9300 + Math.floor(Math.random() * 500);
 const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run",
   "--autoplay-policy=no-user-gesture-required",
+  // keep the page counted as in front: a page the browser thinks is hidden draws nothing (the spectrum), and
+  // Windows marks even a headless window hidden once the PC is idle (CalculateNativeWinOcclusion, below)
+  "--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling",
   // the test mark keeps this run's listening out of the station's stats (src/Agent.php)
   "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0 StationwagonTest",
   // the embed part frames this server from a made-up church website, which Edge would otherwise
   // block from reaching a localhost address (a real website framing a public server is fine)
-  "--disable-features=LocalNetworkAccessChecks", "about:blank"], { stdio: "ignore" });
+  "--disable-features=LocalNetworkAccessChecks,CalculateNativeWinOcclusion", "about:blank"], { stdio: "ignore" });
 let ws, id = 0;
 const pending = new Map();
 const call = (method, params = {}, sessionId = undefined) => new Promise((ok) => { const i = ++id; pending.set(i, ok); ws.send(JSON.stringify({ id: i, method, params, sessionId })); });
@@ -64,12 +67,15 @@ const evaluate = async (expression) => {
   if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || "page error");
   return r.result?.result?.value;
 };
-const go = async (url) => { await call("Page.navigate", { url }); for (let i = 0; i < 100; i++) { await sleep(100); if ((await evaluate("document.readyState").catch(() => "")) === "complete") return; } };
+// each page load brings the page to the front: headless Edge sometimes reports it hidden, and a hidden page draws nothing
+const go = async (url) => { await call("Page.navigate", { url }); await call("Page.bringToFront"); for (let i = 0; i < 100; i++) { await sleep(100); if ((await evaluate("document.readyState").catch(() => "")) === "complete") return; } };
 const state = () => evaluate("window.SwPlayer && SwPlayer.state()");
+/** Headless Edge sometimes marks the page hidden (once the PC is idle), and a hidden page draws nothing: bring it back. */
+const front = async () => { if (await evaluate("document.hidden").catch(() => false)) await call("Page.bringToFront"); };
 /** Poll state() every 100 ms until fn(state) is true (returns it) or the time runs out (null). */
 async function until(fn, seconds, log = null) {
   const end = Date.now() + seconds * 1000;
-  while (Date.now() < end) { const s = await state(); if (log) log.push(s); if (s && fn(s)) return s; await sleep(100); }
+  while (Date.now() < end) { await front(); const s = await state(); if (log) log.push(s); if (s && fn(s)) return s; await sleep(100); }
   return null;
 }
 const audible = (s) => s.decks.filter((d) => d.playing && d.gain > 0.5);
@@ -125,17 +131,22 @@ try {
   const listeningWhilePlaying = s ? s.listeners : 0;
 
   console.log("Spectrum");
+  await call("Page.bringToFront"); // drawing only runs on a page in front
   // the test songs are pure tones: the tallest bar must be the band that holds the tone
   const BAND = (f) => Math.max(0, Math.min(27, Math.floor(Math.log(f / 40) / Math.log(16000 / 40) * 28)));
   const specPx = () => evaluate(`(() => { const c = document.getElementById('lpSpec'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0;
     for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0) n++; return n; })()`);
   const toneOf = (x) => { const m = x && x.current && /(\d{3,4})\s*Hz/.exec(x.current.title || ""); return m ? Number(m[1]) : null; };
-  s = await until((x) => x.spectrum && x.spectrum.running && x.spectrum.level > 0.3 && toneOf(x) && x.decks.filter((d) => d.playing && d.gain > 0.05).length === 1, 20);
+  // the test tones tick (1800 Hz) at every second and beep (1200 Hz) every 10 s, and a bar takes ~0.6 s to
+  // fall back: look between the ticks, with one deck playing (a song fading out on the other lights its bands)
+  const between = (d) => d.pos > 1.5 && d.pos % 1 > 0.7 && d.pos % 1 < 0.97 && d.pos % 10 > 1;
+  s = await until((x) => x.spectrum && x.spectrum.running && x.spectrum.frames > 90 && x.spectrum.level > 0.3 && toneOf(x) && x.decks.filter((d) => d.playing).length === 1
+    && between(x.decks.find((d) => d.playing)), 25);
   const tone = toneOf(s);
   check("the display's spectrum moves with the music", !!s && s.spectrum.frames > 10 && (await specPx()) > 200, s && `${s.spectrum.frames} frames, level ${s.spectrum.level}`);
   check("  its tallest bar is the band that holds the tone playing", !!s && Math.abs(s.spectrum.top - BAND(tone)) <= 1,
     s && `${tone} Hz → band ${BAND(tone)}; tallest ${s.spectrum.top} (${s.spectrum.topHz.join("–")} Hz)`);
-  check("  a pure tone lights only a few of the 28 bars", !!s && s.spectrum.lit <= 8, s && `${s.spectrum.lit} lit`);
+  check("  a pure tone lights only a few of the 28 bars", !!s && s.spectrum.lit <= 8, s && `${s.spectrum.lit} lit` + (s.spectrum.lit > 8 ? " " + JSON.stringify(await evaluate(`({ hidden: document.hidden, bars: SwPlayer.state().spectrum.bars, decks: SwPlayer.state().decks, cur: SwPlayer.state().current && SwPlayer.state().current.title, ev: SwPlayer.state().events.slice(-5) })`)) : ""));
   const loud = s ? s.spectrum.level : 0;
   await evaluate("(() => { const v = document.getElementById('lpVol'); v.value = 0; v.dispatchEvent(new Event('input')); })()");
   await sleep(600);
@@ -257,8 +268,8 @@ try {
     const after2 = (Date.now() - editedAt) / 1000;
     check("the changed note replaces the old one 20 s after the change", !!n && !n.shown.includes(nid) && after2 > 18.5 && after2 < 23, n ? `${after2.toFixed(1)} s, shown ${n.shown}` : JSON.stringify(await notes()));
     const dom2 = await evaluate(`(() => ({ items: document.querySelectorAll('#lpNotesList li').length, text: document.querySelector('#lpNotesList li blockquote').textContent,
-      toast: (window.__toasts.find((x) => x.at > ${editedAt} + 18000) || {}).text || '' }))()`);
-    check("  as new, with a toast", !!n && n.fresh.includes(nid2) && dom2.items === 1 && dom2.text.includes("green pastures") && dom2.toast.startsWith("New note"), JSON.stringify(dom2));
+      toast: (window.__toasts.find((x) => x.at > ${editedAt} + 18000) || {}).text || '', all: (window.__toasts || null) && window.__toasts.map((x) => ((x.at - ${editedAt}) / 1000).toFixed(1) + ' s ' + x.text) }))()`);
+    check("  as new, with a toast", !!n && n.fresh.includes(nid2) && dom2.items === 1 && dom2.text.includes("green pastures") && dom2.toast.startsWith("New note"), JSON.stringify({ ...dom2, show: n && n.show, fresh: n && n.fresh }));
     while (seq < 5) await sleep(500);
     // the listener's tab is in the background when the show ends (another tab in front), as happened in the live test
     const other = (await call("Target.createTarget", { url: "about:blank", background: false })).result?.targetId;
@@ -281,8 +292,10 @@ try {
   // Stop takes it off the count at once (its last ping)
   let after = null;
   for (let i = 0; i < 30 && after !== listeningWhilePlaying - 1; i++) { await sleep(200); after = (await (await fetch(`${base}/api/timeline.php`)).json()).listeners; }
+  const hiddenAt = ((await state()).events || []).filter((e) => e.includes("page hidden") || e.includes("page shown"));
+  await call("Page.bringToFront"); // drawing only runs on a page in front (headless Edge sometimes marks it hidden)
   s = await until((x) => x.spectrum && !x.spectrum.running, 4);
-  check("after Stop the spectrum falls to nothing and stops drawing", !!s && (await specPx()) === 0, s ? "" : JSON.stringify((await state()).spectrum) + ", page " + (await evaluate("document.visibilityState")));
+  check("after Stop the spectrum falls to nothing and stops drawing", !!s && (await specPx()) === 0, (s ? "" : JSON.stringify((await state()).spectrum) + ", page " + (await evaluate("document.visibilityState"))) + (hiddenAt.length ? ` (it was hidden: ${hiddenAt.join(" | ")})` : ""));
   check("Stop takes it off \"Listening now\" at once", listeningWhilePlaying > 0 && after === listeningWhilePlaying - 1 && (await state()).ping === null, `${listeningWhilePlaying} → ${after}`);
 
   console.log("Stream only");
@@ -292,9 +305,9 @@ try {
   await evaluate("SwPlayer.start()");
   s = await until((x) => x.spectrum && x.spectrum.running && x.spectrum.level > 0.3, 15);
   const f0 = s ? s.spectrum.frames : 0;
-  await sleep(4000);
+  for (let i = 0; i < 8; i++) { await front(); await sleep(500); }
   s = await state();
-  check("with reduced motion the spectrum still shows, redrawn about once a second", !!s && s.spectrum.calm && s.spectrum.frames - f0 >= 2 && s.spectrum.frames - f0 <= 6, s && `${s.spectrum.frames - f0} frames in 4 s`);
+  check("with reduced motion the spectrum still shows, redrawn about once a second", !!s && s.spectrum.calm && s.spectrum.frames - f0 >= 2 && s.spectrum.frames - f0 <= 6, s && `${s.spectrum.frames - f0} frames in 4 s` + (s.spectrum.frames - f0 < 2 ? "; " + JSON.stringify({ status: s.status, spectrum: s.spectrum, decks: s.decks, events: (s.events || []).slice(-8) }) : ""));
   await evaluate("SwPlayer.stop()");
   await call("Emulation.setEmulatedMedia", { features: [] });
   await go(`${base}/?mode=stream`);
@@ -341,6 +354,16 @@ try {
   check("  and it counts itself as listening too", /^[0-9a-f]{16}$/.test((await evaluate("swEmbed.ping")) || ""), String(await evaluate("swEmbed.ping")));
   const meta = await waitFor("/^\\d+:\\d\\d \\/ \\d+:\\d\\d$|^Live for /.test(document.getElementById('emState').textContent) && document.getElementById('emState').textContent", 3);
   check("  with the time in the song", !!meta, meta || await evaluate("document.getElementById('emState').textContent"));
+  const pingBefore = await evaluate("swEmbed.ping");
+  await evaluate("swEmbed.pauseFromOutside()");
+  const again = await waitFor("swEmbed.events.some((e) => e.includes('starting again: paused from outside')) && swEmbed.playing && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);
+  check("paused from outside (as a phone's power manager does), it starts again by itself, back at 20 s", !!again, again ? again.toFixed(2) + " s" : JSON.stringify(await evaluate("swEmbed.events.slice(-6)")));
+  check("  still counted as the same listener", (await evaluate("swEmbed.ping")) === pingBefore && !!pingBefore);
+  // the sound stops moving without a pause (a sound output stopped under it): after 8 s it starts again
+  await sleep(5500); // past the 5 s between restarts
+  await evaluate("(() => { const el = swEmbed.media, t = el.currentTime; Object.defineProperty(el, 'currentTime', { configurable: true, get: () => t, set: () => {} }); return 1; })()");
+  const moving = await waitFor("swEmbed.events.some((e) => e.includes('starting again: the sound stopped moving')) && swEmbed.playing && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);
+  check("  and when the sound stops moving while it should play, it starts again after 8 s", !!moving, moving ? moving.toFixed(2) + " s" : JSON.stringify(await evaluate("swEmbed.events.slice(-6)")));
   await evaluate("document.getElementById('emPlay').click()");
   check("  and stops again", !(await evaluate("swEmbed.playing")) && (await evaluate("document.getElementById('emPlay').getAttribute('aria-pressed')")) === "false");
 } finally {

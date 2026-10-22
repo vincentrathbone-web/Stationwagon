@@ -35,7 +35,17 @@ await new Promise((r) => setTimeout(r, 2000));
 }
 await sleep(2000);
 
-const page = (await (await fetch("http://localhost:9222/json")).json()).find((p) => p.type === "page");
+// a tab to work in: Chrome may have none open, and on Android DevTools can't open one, so ask Android to
+async function aTab(url) {
+  const find = async () => (await (await fetch("http://localhost:9222/json")).json()).find((p) => p.type === "page");
+  let p = await find();
+  if (!p) {
+    adb("am", "start", "-a", "android.intent.action.VIEW", "-d", url, "-p", "com.android.chrome");
+    for (let i = 0; i < 20 && !p; i++) { await sleep(500); p = await find(); }
+  }
+  return p;
+}
+const page = await aTab(`${base}/privacy`);
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((ok, bad) => { ws.onopen = ok; ws.onerror = bad; });
 let id = 0;
@@ -58,6 +68,13 @@ const blending = (s) => s.decks.filter((d) => d.playing && d.gain > 0.05 && d.ga
 // the embed in its frame on the station page (same site, so its test hooks can be read)
 const em = (x) => `(() => { const w = document.getElementById('swEm'); return w && w.contentWindow.swEmbed ? (${x})(w.contentWindow.swEmbed, w.contentWindow.document) : null; })()`;
 
+let priorSkin = null;
+// MIUI pauses an app's audio after a minute behind the lock screen when the media volume is 0: turn it
+// up to 1 of 15 for the test with the volume key (MIUI refuses a volume set from the shell; quiet: the
+// player is at 1 %, the embed's stream at full), and back down afterwards
+const mediaVolume = () => Number((/volume is (\d+)/.exec(adb("cmd", "media_session", "volume", "--stream", "3", "--get")) || [])[1] ?? -1);
+const volumeWas = mediaVolume();
+for (let i = 0; i < 3 && mediaVolume() === 0; i++) { adb("input", "keyevent", "KEYCODE_VOLUME_UP"); await sleep(400); }
 try {
   // the test mark keeps this run's listening out of the station's stats (src/Agent.php)
   const ua = (await evaluate("navigator.userAgent")) || "";
@@ -83,9 +100,20 @@ try {
   const BAND = (f) => Math.max(0, Math.min(27, Math.floor(Math.log(f / 40) / Math.log(16000 / 40) * 28)));
   const toneOf = (x) => { const m = x && x.current && /(\d{3,4})\s*Hz/.exec(x.current.title || ""); return m ? Number(m[1]) : null; };
   let sp = null;
-  for (let i = 0; i < 60 && !(sp && sp.spectrum && sp.spectrum.level > 0.3 && toneOf(sp) && sp.decks.filter((d) => d.playing && d.gain > 0.05).length === 1); i++) { await sleep(250); sp = await state(); }
+  // the test tones tick at every second and beep every 10 s, and a bar takes ~0.6 s to fall: look between the ticks
+  const between = (d) => d.pos > 1.5 && d.pos % 1 > 0.7 && d.pos % 1 < 0.97 && d.pos % 10 > 1;
+  for (let i = 0; i < 100 && !(sp && sp.spectrum && sp.spectrum.level > 0.3 && toneOf(sp) && sp.decks.filter((d) => d.playing).length === 1 && between(sp.decks.find((d) => d.playing))); i++) { await sleep(150); sp = await state(); }
   check("the display's spectrum shows the tone playing", !!sp && !!toneOf(sp) && sp.spectrum.running && Math.abs(sp.spectrum.top - BAND(toneOf(sp))) <= 1,
     sp && sp.spectrum ? `${toneOf(sp)} Hz → band ${BAND(toneOf(sp))}; tallest ${sp.spectrum.top}, ${sp.spectrum.frames} frames` : "no state");
+
+  // the look: switching to Hi-fi while it plays changes the page and the spectrum's colours at once
+  priorSkin = await evaluate("localStorage.getItem('sw.skin')");
+  await evaluate("(() => { const p = document.querySelector('select[data-skin-pick]'); p.value = 'hifi'; p.dispatchEvent(new Event('change')); return 1; })()");
+  await sleep(1500);
+  const look = await evaluate(`(() => { const c = document.getElementById("lpSpec"), d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let n = 0, r = 0, g = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) { n++; r += d[i]; g += d[i + 1]; }
+    return { skin: document.documentElement.getAttribute("data-skin"), amber: getComputedStyle(document.documentElement).getPropertyValue("--amber").trim(), n, warm: n > 0 && r > g, kept: localStorage.getItem("sw.skin") }; })()`);
+  check("picking Hi-fi on the phone switches the page and the spectrum, and is kept", !!look && look.skin === "hifi" && look.amber === "#ffb24a" && look.warm && look.kept === "hifi", JSON.stringify(look));
 
   console.log("Crossfade (screen on)");
   const first = s && s.current && s.current.key;
@@ -117,13 +145,14 @@ try {
   check("the screen goes off", screen() === "Asleep", screen());
   const t0 = Date.now(), samples = [];
   let songs = new Set(), media = "";
-  const emLags = [];
+  const emLags = [], emRaw = [];
   for (let i = 0; i < 40; i++) {
     await sleep(3000);
     const x = await state();
     if (x) { samples.push({ at: Date.now(), x, screen: (/mWakefulness=(\w+)/.exec(adb("dumpsys", "power")) || [])[1] }); if (x.current) songs.add(x.current.key); }
-    const l = await evaluate(em("(e) => e.playing && e.lag"), 2500);
-    if (typeof l === "number") emLags.push(l);
+    const l = await evaluate(em("(e, d) => ({ playing: e.playing, lag: e.lag, said: d.getElementById('emState').textContent })"), 2500);
+    emRaw.push(l ? (l.playing ? (l.lag === null ? "?" : l.lag.toFixed(1)) : "stopped: " + l.said) : String(l));
+    if (l && l.playing && typeof l.lag === "number") emLags.push(l.lag);
     if (i === 10) media = adb("dumpsys", "media_session");
   }
   const firstS = samples[0], lastS = samples[samples.length - 1];
@@ -138,15 +167,20 @@ try {
   check("  and stays on time (at most 3 of 40 looks off by over 0.3 s)", late <= 3, `${late} off`);
   const stuck = lastS ? lastS.x.events.filter((e) => e.includes("sound engine stuck")) : [];
   console.log(`  (the watchdog nudged the sound engine ${stuck.length} time(s)${stuck.length ? ": " + stuck.join("; ") : ""})`);
-  check("  the embed keeps playing, still about 20 s behind", emLags.length >= 36 && emLags.every((l) => Math.abs(l - 20) < 1.5), `${emLags.length} of 40, ${Math.min(...emLags).toFixed(1)} to ${Math.max(...emLags).toFixed(1)} s`);
+  check("  the embed keeps playing, still about 20 s behind", emLags.length >= 36 && emLags.every((l) => Math.abs(l - 20) < 1.5), `${emLags.length} of 40, ${Math.min(...emLags).toFixed(1)} to ${Math.max(...emLags).toFixed(1)} s` + (emLags.length < 36 ? "; " + emRaw.join(", ") : ""));
   console.log(`  locked for ${Math.round((Date.now() - t0) / 1000)} s`);
 } finally {
   adb("input", "keyevent", "KEYCODE_WAKEUP");
   await sleep(2000);
   const end = await state(3000);
   if (failed && end) console.log("Player events:\n    " + end.events.join("\n    "));
+  const emEnd = await evaluate(em("(e) => e.events"), 3000).catch(() => null);
+  if (failed && emEnd) console.log("Embed events:\n    " + emEnd.join("\n    "));
   await evaluate(em("(e, d) => { if (e.playing) d.getElementById('emPlay').click(); return true; }"), 3000);
   await evaluate("SwPlayer.stop()", 3000);
+  for (let i = 0; i < 16 && volumeWas >= 0 && mediaVolume() > volumeWas; i++) { adb("input", "keyevent", "KEYCODE_VOLUME_DOWN"); await sleep(300); }
+  // put the phone's own look back
+  await evaluate(`(() => { const p = ${JSON.stringify(priorSkin)}; if (p) localStorage.setItem("sw.skin", p); else localStorage.removeItem("sw.skin"); return 1; })()`, 3000);
   try { ws.close(); } catch { /* closed */ }
 }
 console.log(failed ? `\n${failed} of ${passed + failed} checks failed` : "\nAll checks passed");

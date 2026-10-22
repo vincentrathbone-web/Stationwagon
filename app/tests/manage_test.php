@@ -125,7 +125,7 @@ try {
         'live_fade_seconds' => 3.0, 'duck_db' => -18, 'live_timeout_seconds' => 12, 'rejoin_minutes' => 0, 'silence_db' => 0, 'recent_tracks' => 1, 'live_kbps' => 128, 'prep_kbps' => 256], json_encode($errs));
     check('the quality choices show megabytes an hour', StationSettings::mbPerHour(192) === 86 && StationSettings::mbPerHour(128) === 58);
     $kept = Planner::settings($fresh());
-    check('other settings are kept', $kept['skin'] === 'green' && (float) $kept['segment_seconds'] === 6.0);
+    check('other settings are kept', (int) $kept['plan_ahead_seconds'] === 10800 && (float) $kept['segment_seconds'] === 6.0);
     $p2 = new Planner($db, $updated, $root);
     $later = $now + 600;
     $p2->replan($later);

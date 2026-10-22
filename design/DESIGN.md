@@ -34,9 +34,26 @@ Published previews (private links, share from each page's Share menu):
 
 ## Skin system
 
-Every colour, font and shape comes from CSS custom properties on `:root`. The real app sets
-`data-skin="hifi"` or `data-skin="green"` on `<html>` and loads one token block per skin.
-Component CSS reads only tokens.
+Every colour, font and shape comes from CSS custom properties on `:root`. Component CSS reads only
+tokens.
+
+**As built (round 32).** The tokens are the top of `app/assets/app.css`: green is plain `:root`, each
+other skin is one `:root[data-skin="id"]` block, and `:root.light` (the embed's `?look=light`) lays
+light colours over whichever skin is on, keeping its shapes and type. Beyond the tokens below there
+are tokens for the in-between surfaces (`--lcd`, `--track`, `--raised-hover`, `--now-bg`,
+`--live-bg`…), text on the accent and on air (`--on-accent`, `--on-onair`), corner sizes
+(`--r-card` 16, `--r-box` 12, `--r-field` 10, `--r-chip` 8, `--r-small` 4, `--r-pill`), edges and
+bevels (`--card-edge`, `--card-shadow`, `--btn-shadow`, `--well-shadow`, `--lcd-glow`), title case,
+the fonts (`--f-ui`, `--f-body`, `--f-lcd`, `--f-mono`) and the canvases' colours (output strip,
+spectrum, deck waves, the episode editor), which scripts read through `SwSkin.tok()`. The web test
+fails if a colour or a corner size (other than 1–2 px and circles) is written in the components.
+
+**The viewer picks the look, per device.** A "Look" menu sits in the top bar of every page; the
+choice is kept in the browser (`localStorage` `sw.skin`, no cookie) and every screen of the
+station follows it, including tabs already open. An inline script in `<head>` applies it before
+the page draws. The embed has a small "Look" button: framed on another website, browsers keep its
+storage apart, so its choice there is its own. The list of skins is `Skins::ALL`
+(`app/src/Skins.php`); adding a skin is one token block and one line there.
 
 ### Tokens
 

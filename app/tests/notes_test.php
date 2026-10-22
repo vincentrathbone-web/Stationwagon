@@ -109,6 +109,13 @@ try {
     $after = $notes->forListeners($now + 1000);
     check('listeners keep its notes, “This morning”', $after['show']['label'] === 'This morning' && $after['show']['live'] === false && count($after['items']) === 2, $after['show']['label']);
     check('  with when it ran', str_contains($after['show']['by'], '10:00–'), $after['show']['by']);
+    // listeners hear the show until the end of its sound, 20 s after it ends live: the player keeps it "Live" till then
+    $sid = (int) $db->run('SELECT id FROM ' . $db->table('live_shows') . ' WHERE public_id = ?', [$pid])->fetchColumn();
+    $startAt = (float) $db->run('SELECT start_at FROM ' . $db->table('live_shows') . ' WHERE id = ?', [$sid])->fetchColumn();
+    foreach ([[0, 6.0], [1, 6.0], [2, 4.5]] as [$seq, $dur]) $db->insert('live_pieces', ['show_id' => $sid, 'seq' => $seq, 'file' => "x/$seq.mp3", 'duration_s' => $dur, 'received_at' => $startAt + 6 * ($seq + 1)]);
+    $ends = $notes->forListeners($now + 1000)['show']['ends'] ?? null;
+    check('  and where its sound ends on the timeline (start + the pieces it sent)', $ends !== null && abs($ends - ($startAt + 16.5)) < 0.001, json_encode([$ends, $startAt + 16.5]));
+    $db->run('DELETE FROM ' . $db->table('live_pieces') . ' WHERE show_id = ?', [$sid]);
     check('“Yesterday” the next day', $notes->forListeners($now + 86400)['show']['label'] === 'Yesterday');
     check('  and the marker moves with the day', $notes->rev($now + 86400) !== $notes->rev($now + 1000));
     check('a weekday after that', $notes->forListeners($now + 3 * 86400)['show']['label'] === 'Fri 15 Jan');

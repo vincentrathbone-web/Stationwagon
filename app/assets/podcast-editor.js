@@ -83,21 +83,23 @@
     g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
     const x0 = scroll.scrollLeft, t0 = x0 / pps, t1 = (x0 + w) / pps, rh = (h - RULER) / rows.length;
     const X = (t) => t * pps - x0;
+    const tk = (n, f) => (window.SwSkin ? SwSkin.tok(n) : "") || f; // the skin's tokens (skin.js)
+    const ui = tk("--f-ui", "Figtree, system-ui, sans-serif");
     // ruler
-    g.fillStyle = "#181818"; g.fillRect(0, 0, w, RULER);
+    g.fillStyle = tk("--panel", "#181818"); g.fillRect(0, 0, w, RULER);
     const step = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600].find((s) => s * pps >= 70) || 7200;
-    g.font = "11px Figtree, system-ui, sans-serif"; g.textBaseline = "middle";
+    g.font = `11px ${ui}`; g.textBaseline = "middle";
     for (let s = Math.floor(t0 / step) * step; s <= t1; s += step) {
       const x = Math.round(X(s)) + 0.5;
-      g.fillStyle = "#3a3a3a"; g.fillRect(x, 0, 1, h);
-      g.fillStyle = "#9a9a9a"; g.fillText(fmt(s), x + 4, RULER / 2);
+      g.fillStyle = tk("--track", "#3a3a3a"); g.fillRect(x, 0, 1, h);
+      g.fillStyle = tk("--muted", "#9a9a9a"); g.fillText(fmt(s), x + 4, RULER / 2);
     }
     // takes: their edges, and the row labels
     for (const take of ep.takes) {
       const x = X(take.offset);
-      if (take.offset > 0 && x > -2 && x < w + 2) { g.fillStyle = "#7c7c7c"; g.fillRect(Math.round(x), RULER, 2, h - RULER); }
+      if (take.offset > 0 && x > -2 && x < w + 2) { g.fillStyle = tk("--faint", "#7c7c7c"); g.fillRect(Math.round(x), RULER, 2, h - RULER); }
     }
-    rows.forEach((r, i) => { g.fillStyle = i % 2 ? "#141414" : "#171717"; g.globalCompositeOperation = "destination-over"; g.fillRect(0, RULER + i * rh, w, rh); g.globalCompositeOperation = "source-over"; });
+    rows.forEach((r, i) => { g.fillStyle = i % 2 ? tk("--ed-row", "#141414") : tk("--ed-row2", "#171717"); g.globalCompositeOperation = "destination-over"; g.fillRect(0, RULER + i * rh, w, rh); g.globalCompositeOperation = "source-over"; });
     // clips with their waveform
     for (const take of ep.takes) {
       if (take.offset > t1 || take.offset + take.duration < t0) continue;
@@ -110,10 +112,10 @@
           const gone = deleted.has(c.id), sel = selected === c.id;
           for (const ri of rowsFor(track)) {
             const y = RULER + ri * rh + 4, ch = rh - 8, xa = X(c.from), xb = X(c.to), cw = Math.max(2, xb - xa);
-            g.fillStyle = gone ? "rgba(255,255,255,.03)" : track === "mic" ? "#5a2a33" : "#1f5133";
+            g.fillStyle = gone ? tk("--hover-tint", "rgba(255,255,255,.03)") : track === "mic" ? tk("--mic-dim", "#5a2a33") : tk("--amber-dim", "#1f5133");
             roundRect(g, xa, y, cw, ch, 4); g.fill();
             if (!gone) {
-              g.fillStyle = track === "mic" ? "#ff9aa6" : "#1ed760";
+              g.fillStyle = track === "mic" ? tk("--mic-wave", "#ff9aa6") : tk("--amber", "#1ed760");
               const pa = Math.max(0, Math.floor((c.from - take.offset) * rate)), pb = Math.min(peaks.length, Math.ceil((c.to - take.offset) * rate));
               const stepPx = Math.max(1, pps / rate);
               for (let p = pa; p < pb; p++) {
@@ -122,16 +124,16 @@
                 g.fillRect(x, y + ch / 2 - bh, Math.max(1, stepPx - (stepPx > 3 ? 1 : 0)), bh * 2);
               }
             } else {
-              g.strokeStyle = "rgba(255,255,255,.18)"; g.setLineDash([4, 4]); g.lineWidth = 1; roundRect(g, xa + 0.5, y + 0.5, cw - 1, ch - 1, 4); g.stroke(); g.setLineDash([]);
+              g.strokeStyle = tk("--clip-line", "rgba(255,255,255,.18)"); g.setLineDash([4, 4]); g.lineWidth = 1; roundRect(g, xa + 0.5, y + 0.5, cw - 1, ch - 1, 4); g.stroke(); g.setLineDash([]);
             }
-            if (sel) { g.strokeStyle = "#ffffff"; g.lineWidth = 2; roundRect(g, xa + 1, y + 1, cw - 2, ch - 2, 4); g.stroke(); }
+            if (sel) { g.strokeStyle = tk("--ink", "#ffffff"); g.lineWidth = 2; roundRect(g, xa + 1, y + 1, cw - 2, ch - 2, 4); g.stroke(); }
           }
         }
       }
     }
     rows.forEach((r, i) => {
-      g.fillStyle = "rgba(16,16,16,.8)"; g.fillRect(6, RULER + i * rh + 6, 70, 18);
-      g.fillStyle = "#b3b3b3"; g.font = "600 11px Figtree, system-ui, sans-serif"; g.fillText(NAMES[r], 12, RULER + i * rh + 15);
+      g.fillStyle = tk("--wave-label-bg", "rgba(16,16,16,.8)"); g.fillRect(6, RULER + i * rh + 6, 70, 18);
+      g.fillStyle = tk("--muted", "#b3b3b3"); g.font = `600 11px ${ui}`; g.fillText(NAMES[r], 12, RULER + i * rh + 15);
     });
   }
   function roundRect(g, x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
@@ -366,6 +368,7 @@
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); undoLast(); }
     else if (e.key === "Escape") select(null);
   });
+  window.addEventListener("sw:skin", () => { if (ep) draw(); }); // the viewer changed the look
   window.addEventListener("resize", () => { if (ep) { const keep = pps * total <= scroll.clientWidth + 4; if (keep) fit(); else draw(); } });
   window.addEventListener("beforeunload", (e) => { if (busy) { e.preventDefault(); e.returnValue = ""; } }); // a mixdown under way
   window.addEventListener("pagehide", () => { // cuts made in the last moment

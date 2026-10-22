@@ -55,7 +55,17 @@ const connect = async (url) => {
   return { ws, call };
 };
 const browser = await connect((await (await fetch("http://localhost:9222/json/version")).json()).webSocketDebuggerUrl);
-const page = await connect((await (await fetch("http://localhost:9222/json")).json()).find((p) => p.type === "page").webSocketDebuggerUrl);
+// a tab to work in: Chrome may have none open, and on Android DevTools can't open one, so ask Android to
+async function aTab(url) {
+  const find = async () => (await (await fetch("http://localhost:9222/json")).json()).find((p) => p.type === "page");
+  let p = await find();
+  if (!p) {
+    adb("am", "start", "-a", "android.intent.action.VIEW", "-d", url, "-p", "com.android.chrome");
+    for (let i = 0; i < 20 && !p; i++) { await sleep(500); p = await find(); }
+  }
+  return p;
+}
+const page = await connect((await aTab(`${base}/privacy`)).webSocketDebuggerUrl);
 const evaluate = async (expression, ms) => {
   const r = await page.call("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true, userGesture: true }, ms);
   return r.timeout || r.result?.exceptionDetails ? null : r.result?.result?.value;
@@ -71,6 +81,7 @@ const text = (sel) => evaluate(`(document.querySelector(${JSON.stringify(sel)}) 
 const clickText = (sel, label) => evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].find((x) => x.textContent.trim() === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`);
 
 let dj = null, liveId = null, minBefore = null;
+let priorSkin = null;
 try {
   // the test mark keeps anything this run counts out of the station's stats (src/Agent.php)
   const ua = (await evaluate("navigator.userAgent")) || "";
@@ -82,6 +93,9 @@ try {
   console.log("Signing in on the phone");
   dj = helper("dj", "block");
   await go(`${base}/signin`);
+  // the look picked on the sign-in page is the one the studio opens in (it's kept per device)
+  priorSkin = await evaluate("localStorage.getItem('sw.skin')");
+  await evaluate("(() => { const p = document.querySelector('select[data-skin-pick]'); p.value = 'hifi'; p.dispatchEvent(new Event('change')); return 1; })()");
   await evaluate(`(() => { const f = document.querySelector('main form'); f.email.value = ${JSON.stringify(dj.email)}; f.password.value = ${JSON.stringify(dj.password)}; f.submit(); })()`);
   for (let i = 0; i < 40 && !((await evaluate("location.pathname", 1000)) || "").endsWith("/manage"); i++) await sleep(250);
   await go(`${base}/studio`);
@@ -89,6 +103,8 @@ try {
   check("the studio opens on the phone, in the DJ's block", !!s && s.slot.may, s && s.slot.title);
   const wide = await evaluate("document.documentElement.scrollWidth + ' / ' + innerWidth");
   check("  and fits the screen (no sideways scrolling)", !!wide && Number(wide.split(" / ")[0]) <= Number(wide.split(" / ")[1]), wide);
+  const look = await evaluate("({ skin: document.documentElement.getAttribute('data-skin'), pick: document.querySelector('select[data-skin-pick]').value, amber: getComputedStyle(document.documentElement).getPropertyValue('--amber').trim() })");
+  check("  in the look picked on the sign-in page (Hi-fi)", !!look && look.skin === "hifi" && look.pick === "hifi" && look.amber === "#ffb24a", JSON.stringify(look));
 
   console.log("Switching on");
   check("the mic may be used (granted for the test)", !granted.error && !granted.timeout, JSON.stringify(granted.error || ""));
@@ -148,6 +164,8 @@ try {
     ep && JSON.stringify(ep.takes.map((x) => [x.kind, x.complete, x.duration, x.chunks])));
   liveId = null;
 } finally {
+  // put the phone's own look back
+  try { await evaluate(`(() => { const p = ${JSON.stringify(priorSkin)}; if (p) localStorage.setItem("sw.skin", p); else localStorage.removeItem("sw.skin"); return 1; })()`, 3000); } catch { /* page gone */ }
   try { if (minBefore !== null) helper("podcast-min", String(minBefore)); } catch (e) { console.log("cleanup: " + e.message); }
   try { if (dj) helper("studio-cleanup", String(dj.id), String(dj.block || 0)); } catch (e) { console.log("cleanup: " + e.message); }
   // clear the test notification (cancelAllNotifications for the shell), so it can't wake the screen later

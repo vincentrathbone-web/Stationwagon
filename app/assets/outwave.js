@@ -116,7 +116,10 @@
    */
   function strip(canvas, opts) {
     const c = canvas.getContext("2d"), css = (n, f) => getComputedStyle(canvas).getPropertyValue(n).trim() || f;
-    const warn = css("--warn", "#ffa42b"), ink = css("--ink", "#ffffff"), mono = css("--f-mono", "monospace");
+    let warn, ink, mono, line, labelBg;
+    const colours = () => { warn = css("--warn", "#ffa42b"); ink = css("--ink", "#ffffff"); mono = css("--f-mono", "monospace"); line = css("--wave-grid", "rgba(255,255,255,.1)"); labelBg = css("--wave-label-bg", "rgba(18,18,18,.55)"); };
+    colours();
+    window.addEventListener("sw:skin", colours); // the viewer changed the look
     let raf = 0, running = false, odd = false;
 
     /** Level lines on both halves, faint on purpose; −1 dB dashed amber. Labels on the left. */
@@ -127,7 +130,7 @@
         const off = Math.pow(10, L / 20) * half, ceiling = L === -1;
         if (off < 2) continue; // a short strip: too close to the middle
         lines.push([L, off]);
-        c.strokeStyle = ceiling ? warn : "rgba(255,255,255,.1)"; c.globalAlpha = ceiling ? 0.35 : 1; c.setLineDash(ceiling ? [4, 3] : []);
+        c.strokeStyle = ceiling ? warn : line; c.globalAlpha = ceiling ? 0.35 : 1; c.setLineDash(ceiling ? [4, 3] : []);
         for (const s of [-1, 1]) { const y = Math.round(mid - s * off) + 0.5; c.beginPath(); c.moveTo(0, y); c.lineTo(w, y); c.stroke(); }
       }
       c.setLineDash([]);
@@ -137,8 +140,8 @@
         const y = Math.max(fs / 2 + 1, mid - off);
         if (y - prev < fs) continue;
         const label = "−" + Math.abs(L), tw = c.measureText(label).width;
-        c.globalAlpha = 1; c.fillStyle = "rgba(18,18,18,.55)"; c.fillRect(1, y - fs / 2 - 1, tw + 6, fs + 2);
-        c.globalAlpha = 0.5; c.fillStyle = L === -1 ? warn : "#fff"; c.fillText(label, 4, y + 0.5);
+        c.globalAlpha = 1; c.fillStyle = labelBg; c.fillRect(1, y - fs / 2 - 1, tw + 6, fs + 2);
+        c.globalAlpha = 0.5; c.fillStyle = L === -1 ? warn : ink; c.fillText(label, 4, y + 0.5);
         prev = y;
       }
       c.restore();

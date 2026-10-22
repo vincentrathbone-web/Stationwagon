@@ -1,18 +1,21 @@
-<?php use function Stationwagon\h; use Stationwagon\App; use Stationwagon\Config; ?>
+<?php use function Stationwagon\h; use Stationwagon\App; use Stationwagon\Config; use Stationwagon\Skins; ?>
 <!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= h($title) ?> · Stationwagon</title>
+<?= Skins::headScript() ?>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=Share+Tech+Mono&display=swap">
 <link rel="stylesheet" href="<?= h(App::asset('assets/app.css')) ?>">
+<script src="<?= h(App::asset('assets/skin.js')) ?>" defer></script>
 </head>
 <body>
 <header class="top<?= !empty($wide) ? ' wide' : '' ?>">
   <a class="brand" href="<?= h(App::url('')) ?>">stationwagon</a><span class="ver"><?= h(Config::version()) ?></span>
   <nav class="who">
+    <?= Skins::picker() ?>
     <?php if (!empty($me)): ?>
       <a href="<?= h(App::url('studio')) ?>">Studio</a>
       <a href="<?= h(App::url('manage')) ?>">Manage</a>

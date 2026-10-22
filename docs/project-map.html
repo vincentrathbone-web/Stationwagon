@@ -173,13 +173,13 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "22 Oct · 00:50",
-  commits: 29,
+  updated: "22 Oct · 04:30",
+  commits: 30,
   version: "0.4.0-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
-    { v: "v0.4", name: "Player & studio", when: "est. Nov", state: "now" },
-    { v: "v0.6", name: "Windows studio app", when: "est. Nov" },
+    { v: "v0.4", name: "Player & studio", when: "done 22 Oct" },
+    { v: "v0.6", name: "Windows studio app", when: "est. Nov", state: "now" },
     { v: "v0.8", name: "WordWave pilot", when: "est. Dec" },
     { v: "v1.0", name: "Launch", when: "est. Jan–Feb" }
   ],
@@ -198,7 +198,7 @@ const MAP = {
       { text: "Privacy page, linked under the player and in the embed", v: "v0.4", state: "done" },
       { text: "Spectrum in the display", note: "28 bars of what goes out, peak marks", v: "v0.4", state: "done" },
       { text: "Podcast page of past shows", v: "v0.4", state: "done" },
-      { text: "Hi-fi skin, chosen per station", v: "v0.4", state: "next" }
+      { text: "Skins: Green or Hi-fi, picked per device", note: "every screen follows; the embed has its own Look button", v: "v0.4", state: "done" }
     ]},
     { name: "Live studio", blurb: "Go live from a browser: decks, mixer, mic chain, running order, notes.", features: [
       { text: "Go live in step with the AutoDJ", v: "v0.4", state: "done" },
@@ -236,7 +236,7 @@ const MAP = {
       { text: "Relay to an outside Icecast for classic radio apps", note: "optional, off by default", v: "v1.0", state: "later" }
     ]},
     { name: "Windows studio app", blurb: "The same studio in a desktop window, for DJs who use BUTT or Mixxx.", features: [
-      { text: "Studio in WebView2 (Tauri)", v: "v0.6", state: "later" },
+      { text: "Studio in WebView2 (Tauri)", v: "v0.6", state: "next" },
       { text: "Local Icecast bridge for BUTT and Mixxx", v: "v0.6", state: "later" },
       { text: "Signed installer with auto-update", v: "v0.6", state: "later" }
     ]},
@@ -253,13 +253,17 @@ const MAP = {
     ]}
   ],
   next: {
-    title: "Hi-fi skin",
-    text: "The spectrum is in the player's display: 28 bars of what goes out, with peak marks, as in the mock-up. With a test tone playing the right bar is tallest, on the PC and the phone. All tests pass on Laragon, the server and the phone. Last item of v0.4:",
-    order: ["Hi-fi skin"]
+    title: "Windows studio app (v0.6)",
+    text: "v0.4 is complete. Skins work: a Look menu on every screen (Green or Hi-fi), kept per device, so picking it on one screen changes them all; every colour, corner and font is a central token. Two bugs were fixed on the way: notes stopped being \"Live\" 20 s before listeners finished hearing a show, and the embed stayed stopped after a Xiaomi phone paused it behind the lock screen. All tests pass on Laragon, the server and the phone. Next, in this order:",
+    order: ["Studio in WebView2 (Tauri)", "Local Icecast bridge for BUTT and Mixxx", "Signed installer with auto-update"]
   },
   call: null,
   feedTitle: "Changed 20–22 Oct",
   feed: [
+    { what: "Skins: a Look menu on every screen, kept per device", to: "on the test server, all tests pass", at: "02:06" },
+    { what: "Presenter notes at the end of a show", to: "stay Live until listeners hear the end (bug fixed)", at: "02:06" },
+    { what: "Player & studio (v0.4)", to: "complete", at: "02:06", kind: "info" },
+    { what: "Embed on a locked Xiaomi phone", to: "starts itself again if the phone pauses it (bug fixed)", at: "04:30" },
     { what: "Round 31 (spectrum)", to: "committed and pushed", at: "00:39", kind: "info" },
     { what: "Spectrum in the player's display", to: "on the test server, all tests pass", at: "00:40" },
     { what: "Round 30 (small studio items)", to: "committed and pushed", at: "23:26", kind: "info" },
