@@ -173,14 +173,14 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "22 Oct · 22:30",
-  commits: 31,
-  version: "0.6.0-dev",
+  updated: "22 Oct · 22:20",
+  commits: 32,
+  version: "0.6.0",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
     { v: "v0.4", name: "Player & studio", when: "done 22 Oct" },
-    { v: "v0.6", name: "Windows studio app", when: "built 22 Oct", state: "now" },
-    { v: "v0.8", name: "WordWave pilot", when: "est. Dec" },
+    { v: "v0.6", name: "Windows studio app", when: "done 22 Oct" },
+    { v: "v0.8", name: "WordWave pilot", when: "est. Dec", state: "now" },
     { v: "v1.0", name: "Launch", when: "est. Jan–Feb" }
   ],
   areas: [
@@ -238,7 +238,7 @@ const MAP = {
     { name: "Windows studio app", blurb: "The same studio in a desktop window, for DJs who use BUTT or Mixxx.", features: [
       { text: "Studio in WebView2 (Tauri)", note: "the station's own studio page, always the server's version", v: "v0.6", state: "done" },
       { text: "Local Icecast bridge for BUTT and Mixxx", note: "BUTT connecting goes live by itself; tested with the real BUTT", v: "v0.6", state: "done" },
-      { text: "Signed installer with auto-update", note: "built and tested; the first release waits for your GitHub token", v: "v0.6", state: "waiting" }
+      { text: "Signed installer with auto-update", note: "v0.6.0 released on GitHub; updates come through the Stationwagon Updates plugin", v: "v0.6", state: "done" }
     ]},
     { name: "Android app", blurb: "The studio as an installed Android app; iPhones and iPads keep the browser studio.", features: [
       { text: "Studio as an Android app", note: "milestone not set yet", v: "later", state: "later" },
@@ -253,23 +253,18 @@ const MAP = {
     ]}
   ],
   next: {
-    title: "First release of the Windows app (v0.6.0)",
-    text: "The Windows app works: it opens the station's studio, takes BUTT or Mixxx through its bridge (BUTT connecting goes live by itself, stopping hands back to the AutoDJ), and updates itself through the new Stationwagon Updates plugin on controll.co.za. Tested with the real BUTT, on Laragon, the test server and the phone. A phone crackle in the studio was found and fixed (listeners never heard it). What's left is yours: a GitHub token, then the go-ahead to publish 0.6.0.",
-    order: ["Your read-only GitHub token in the plugin's settings", "Publish v0.6.0 on GitHub", "Check the update and download links live", "Then the WordWave pilot (v0.8)"]
+    title: "The WordWave pilot (v0.8)",
+    text: "The Windows app is out: v0.6.0 is on GitHub, and the studio's \"Get the Windows app\" link and the app's own updates both work through the Stationwagon Updates plugin on controll.co.za. Next is the WordWave pilot: the station run for real by WordWave's DJs.",
+    order: ["Plan the pilot round with you", "Then launch (v1.0)"]
   },
-  call: {
-    title: "Two steps only you can do",
-    text: "The app finds its updates through the Stationwagon Updates plugin, which needs a read-only token for the private repo. Then the first release can go up.",
-    opts: [
-      { b: "Make a token", t: "github.com → Settings → Developer settings → Fine-grained tokens: the Stationwagon repo only, Contents read-only. Paste it in WordPress → Settings → Stationwagon Updates." },
-      { b: "Say go for v0.6.0", t: "I tag the commit and publish the release with the installer and its signature, then test both links live." }
-    ]
-  },
+  call: null,
   feedTitle: "Changed 20–22 Oct",
   feed: [
-    { what: "Windows studio app: the app, the BUTT bridge, signed updates", to: "built, all tests pass (real BUTT too)", at: "22:30" },
-    { what: "Stationwagon Updates plugin", to: "installed on controll.co.za, waiting for a token", at: "22:30", kind: "info" },
-    { what: "Studio crackle on a busy phone", to: "fixed with bigger buffers on phones (listeners never heard it)", at: "22:30" },
+    { what: "Windows studio app v0.6.0", to: "released on GitHub; download and update links work live", at: "22:20" },
+    { what: "Round 33", to: "committed and pushed", at: "22:05", kind: "info" },
+    { what: "Windows studio app: the app, the BUTT bridge, signed updates", to: "built, all tests pass (real BUTT too)", at: "21:50" },
+    { what: "Stationwagon Updates plugin", to: "installed on controll.co.za, token saved", at: "22:15", kind: "info" },
+    { what: "Studio crackle on a busy phone", to: "fixed with bigger buffers on phones (listeners never heard it)", at: "21:50" },
     { what: "Round 32 (skins)", to: "committed and pushed", at: "05:00", kind: "info" },
     { what: "Skins: a Look menu on every screen, kept per device", to: "on the test server, all tests pass", at: "02:06" },
     { what: "Presenter notes at the end of a show", to: "stay Live until listeners hear the end (bug fixed)", at: "02:06" },
