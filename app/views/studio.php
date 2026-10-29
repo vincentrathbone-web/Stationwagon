@@ -117,6 +117,8 @@ $deck = fn(string $k): string => '
     <span class="st-rec" id="stRec"></span>
     <span class="st-bridge" id="stBridge" hidden>BUTT / Mixxx <b id="stBridgeState">waiting</b> <button class="btn sm ghost" type="button" id="stAppSet" title="The app's settings: the station's address, and the port and password for BUTT or Mixxx">App settings</button></span>
     <a class="st-getapp" id="stGetApp" href="<?= h((string) \Stationwagon\Config::get('desktop_download', 'https://controll.co.za/wp-json/stationwagon/v1/desktop/installer')) ?>" title="Stationwagon Studio for Windows: this studio, plus BUTT or Mixxx as your sound" hidden>Get the Windows app</a>
+    <a class="st-getapp" id="stGetAndroid" href="<?= h((string) \Stationwagon\Config::get('android_download', 'https://controll.co.za/wp-json/stationwagon/v1/android/apk')) ?>" title="Stationwagon Studio for Android: this studio, with Do Not Disturb on air and your show going on with the screen off" hidden>Get the Android app</a>
+    <button class="btn sm ghost" type="button" id="stDroidSet" title="The app's settings: the station's address, Do Not Disturb, updates" hidden>App settings</button>
     <span class="st-conn" id="stConn">● Not sending</span>
   </section>
 </div>

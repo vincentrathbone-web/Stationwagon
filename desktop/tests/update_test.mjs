@@ -46,11 +46,17 @@ const gh = { mode: "good", latest: 0, assets: 0, files: 0, tokenAtFileHost: 0 };
 const github = createServer((req, res) => {
   const u = new URL(req.url, "http://x"), auth = req.headers.authorization || "";
   const send = (code, body, headers = {}) => { res.writeHead(code, headers); res.end(body); };
-  if (u.pathname === "/repos/test/stationwagon/releases/latest") {
+  if (u.pathname === "/repos/test/stationwagon/releases") {
     gh.latest++;
     if (auth !== `Bearer ${TOKEN}`) return send(auth ? 401 : 404, "{}");
-    return send(200, JSON.stringify({ tag_name: "v" + NEW, body: "Test notes", published_at: new Date().toISOString(),
-      assets: [{ id: 11, name: `Stationwagon-Studio_${NEW}_x64-setup.exe` }, { id: 12, name: `Stationwagon-Studio_${NEW}_x64-setup.exe.sig` }] }), { "Content-Type": "application/json" });
+    // the Windows release, with a newer Android one (released apart) and a draft above it
+    const at = (min) => new Date(Date.now() - min * 60000).toISOString();
+    return send(200, JSON.stringify([
+      { tag_name: "v9.9.9", draft: true, published_at: null, assets: [{ id: 91, name: "Stationwagon-Studio_9.9.9_x64-setup.exe" }] },
+      { tag_name: "android-v0.7.0", body: "Android", published_at: at(1), assets: [{ id: 21, name: "Stationwagon-Studio_0.7.0.apk" }] },
+      { tag_name: "v" + NEW, body: "Test notes", published_at: at(5),
+        assets: [{ id: 11, name: `Stationwagon-Studio_${NEW}_x64-setup.exe` }, { id: 12, name: `Stationwagon-Studio_${NEW}_x64-setup.exe.sig` }] },
+    ]), { "Content-Type": "application/json" });
   }
   const a = u.pathname.match(/^\/repos\/test\/stationwagon\/releases\/assets\/(\d+)$/);
   if (a) {

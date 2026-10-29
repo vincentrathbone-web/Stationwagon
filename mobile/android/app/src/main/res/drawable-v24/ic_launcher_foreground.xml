@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- the on-air sign, from the Windows app's icon (tools/android-icons.py) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FF141414" android:pathData="M54,54m-7.6,0a7.6,7.6 0,1 1,15.2 0a7.6,7.6 0,1 1,-15.2 0" />
+    <path android:fillColor="#00000000" android:strokeColor="#FF141414" android:strokeWidth="5.4" android:strokeLineCap="round" android:pathData="M39.86,39.86A20,20 0,0 0 39.86,68.14" />
+    <path android:fillColor="#00000000" android:strokeColor="#FF141414" android:strokeWidth="5.4" android:strokeLineCap="round" android:pathData="M68.14,39.86A20,20 0,0 1 68.14,68.14" />
+    <path android:fillColor="#00000000" android:strokeColor="#FF141414" android:strokeWidth="5.4" android:strokeLineCap="round" android:pathData="M30.95,30.95A32.6,32.6 0,0 0 30.95,77.05" />
+    <path android:fillColor="#00000000" android:strokeColor="#FF141414" android:strokeWidth="5.4" android:strokeLineCap="round" android:pathData="M77.05,30.95A32.6,32.6 0,0 1 77.05,77.05" />
+</vector>

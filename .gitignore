@@ -38,3 +38,6 @@ desktop/dist/
 
 # reference songs for the mastering match (copyrighted music)
 mastering-ref/
+
+# Android app builds (the release key lives in ~/.android-keys, its password in tools/deploy/)
+mobile/dist/

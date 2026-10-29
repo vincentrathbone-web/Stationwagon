@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stationwagon Studio</title>
+<style>
+  :root { --ground: #121212; --panel: #181818; --raised: #242424; --ink: #ffffff; --ink-2: #b3b3b3; --accent: #1db954; --on-accent: #000; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.5 system-ui, Roboto, sans-serif; }
+  main { max-width: 520px; margin: 0 auto; padding: calc(48px + env(safe-area-inset-top)) 16px 32px; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { color: var(--ink-2); margin: 0; }
+  .acts { display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+  button { border: 0; border-radius: 999px; padding: 12px 18px; min-height: 44px; font: 600 15px/1 inherit; background: var(--raised); color: var(--ink); }
+  button.primary { background: var(--accent); color: var(--on-accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>The station can’t be reached</h1>
+  <p>Check that the phone is online, then try again. If the station has moved, change its address.</p>
+  <div class="acts">
+    <button class="primary" id="retry">Try again</button>
+    <button id="settings">Change the station</button>
+  </div>
+</main>
+<script>
+  // the app's own buttons here (this page has no bridge of its own)
+  document.getElementById("retry").onclick = () => window.SwOffline && SwOffline.retry();
+  document.getElementById("settings").onclick = () => window.SwOffline && SwOffline.settings();
+</script>
+</body>
+</html>

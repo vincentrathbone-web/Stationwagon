@@ -1,0 +1,7 @@
+{
+  "appId": "za.co.controll.stationwagon.studio",
+  "appName": "Stationwagon Studio",
+  "webDir": "www",
+  "server": { "androidScheme": "https", "hostname": "stationwagon.app" },
+  "android": { "minWebViewVersion": 80 }
+}

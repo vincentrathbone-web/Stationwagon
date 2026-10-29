@@ -1,0 +1,16 @@
+{
+  "name": "stationwagon-studio-android",
+  "version": "0.7.0",
+  "private": true,
+  "description": "Stationwagon Studio for Android: the station's studio page with Do Not Disturb on air, background audio and in-app updates",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}

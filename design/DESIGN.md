@@ -7,7 +7,7 @@ browser.
 | Screen | Who uses it | Hi-fi skin | Green skin |
 |---|---|---|---|
 | Listener player | The public, and the embed on a church website | [hifi/player.html](skins/hifi/player.html) | [green/player.html](skins/green/player.html) |
-| DJ studio | DJs and preachers going live (browser or Windows app) | [hifi/studio.html](skins/hifi/studio.html) | [green/studio.html](skins/green/studio.html) |
+| DJ studio | DJs and preachers going live (browser, Windows app or Android app) | [hifi/studio.html](skins/hifi/studio.html) | [green/studio.html](skins/green/studio.html) |
 | Station manager | The station admin | [hifi/manager.html](skins/hifi/manager.html) | [green/manager.html](skins/green/manager.html) |
 
 Published previews (private links, share from each page's Share menu):
@@ -212,6 +212,22 @@ opens it shows "Checking for updates…", "Installing version …" with a bar, o
 studio's status strip the app adds **BUTT / Mixxx** with its state ("waiting on 127.0.0.1:8000", "BUTT
 sending · MP3 128 kbps") and an **App settings** button; a Windows browser gets **Get the Windows app**
 there instead.
+
+### Android app (round 35; not in the mock-ups)
+
+The same idea on Android (`mobile/`, Capacitor): the app's main screen is the station's own studio page.
+Its own start page (`mobile/www/index.html`, green tokens, one column, 44 px buttons, safe-area padding)
+has three cards: **Your station** (the address, Save and open the studio), **On air on this phone** (a lamp
+and "Do Not Disturb: allowed / not allowed yet", what the app does when you go live, and **Allow Do Not
+Disturb**, which opens Android's own screen) and **Updates** (Check for updates, a bar while it downloads, and a lamp with "Opening again after an update: allowed / not allowed yet", **Allow display over other apps**, and on Xiaomi phones **Allow Autostart**, each opening Android's own list, where the DJ switches Stationwagon Studio on).
+Opening the app shows "Checking for updates…", "Downloading version …" with a bar, or "Opening the studio…".
+When the station can't be reached the app shows its own **offline page** ("The station can't be reached",
+Try again, Change the station). In the studio, once switched on, the banner explains Do Not Disturb: with
+access, that it turns on at Go live (alarms still ring) and back at End show; without, the same with **Allow
+Do Not Disturb** and Not now. While on air an **"You're on air"** notification shows (it opens the studio),
+Back asks "Close the app?" as the Windows app's close does, and **App settings** (status strip) is refused
+until the show ends. An Android browser gets **Get the Android app** in the status strip. The launcher icon is
+the Windows icon's on-air sign on the station green (an adaptive icon); the splash is the icon on light ground.
 
 ### Podcast (round 29; not in the mock-ups)
 

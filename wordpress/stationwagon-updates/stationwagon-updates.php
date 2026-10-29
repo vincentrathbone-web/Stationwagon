@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Stationwagon Updates
- * Description: Hands out Stationwagon Studio for Windows (the installer and its updates) from the private Stationwagon repository's GitHub releases. The GitHub token stays on this server.
- * Version: 1.0.0
+ * Description: Hands out Stationwagon Studio for Windows and Android (the installers and their updates) from the private Stationwagon repository's GitHub releases. The GitHub token stays on this server.
+ * Version: 1.1.0
  * Author: Controll
  * Requires PHP: 7.4
  * License: Proprietary
@@ -17,9 +17,16 @@
  *       the newest release's file of that name (a short-lived GitHub download link, or the bytes)
  *   GET /wp-json/stationwagon/v1/desktop/installer
  *       the newest installer, for the "Get the Windows app" link in the studio
+ *   GET /wp-json/stationwagon/v1/android/latest-release?current_version=0.7.0
+ *       204 when there is nothing newer, else {version, notes, pub_date, url, size, sha256}
+ *   GET /wp-json/stationwagon/v1/android/apk
+ *       the newest Android app, for the "Get the Android app" link and the app's own updates
  *
- * A release needs the NSIS installer (…-setup.exe) and its signature (…-setup.exe.sig); its tag is
- * the version (v0.6.0). The token: a fine-grained one for this repository only, Contents read-only.
+ * Windows and Android are released apart (tags like v0.6.0 and android-v0.7.0): each takes the
+ * newest published release that has its file. A Windows release needs the NSIS installer
+ * (…-setup.exe) and its signature (…-setup.exe.sig), an Android one the APK (…apk). The version is
+ * the one in the file's name (Stationwagon-Studio_0.7.0.apk), else the tag's. The token: a
+ * fine-grained one for this repository only, Contents read-only.
  */
 
 defined('ABSPATH') || exit;
@@ -29,7 +36,9 @@ final class Stationwagon_Updates
     const OPTION_TOKEN = 'stationwagon_updates_token';
     const OPTION_REPO = 'stationwagon_updates_repo';
     const DEFAULT_REPO = 'vincentrathbone-web/Stationwagon';
-    const CACHE_KEY = 'stationwagon_updates_release';
+    const CACHE_KEY = 'stationwagon_updates_releases';
+    const DESKTOP = '-setup.exe';
+    const ANDROID = '.apk';
     const NS = 'stationwagon/v1';
 
     public static function boot(): void
@@ -47,22 +56,24 @@ final class Stationwagon_Updates
         register_rest_route(self::NS, '/desktop/latest-release', $open + ['callback' => [self::class, 'latest']]);
         register_rest_route(self::NS, '/desktop/latest-release/download', $open + ['callback' => [self::class, 'download']]);
         register_rest_route(self::NS, '/desktop/installer', $open + ['callback' => [self::class, 'installer']]);
+        register_rest_route(self::NS, '/android/latest-release', $open + ['callback' => [self::class, 'androidLatest']]);
+        register_rest_route(self::NS, '/android/apk', $open + ['callback' => [self::class, 'apk']]);
     }
 
     /** The updater's question: is there a version newer than current_version? */
     public static function latest($request)
     {
-        $release = self::release();
+        $release = self::release(self::DESKTOP);
         $current = (string) $request->get_param('current_version');
         if (!is_array($release) || $current === '') {
             return new WP_REST_Response(null, 204);
         }
-        $version = ltrim((string) $release['tag_name'], 'vV');
+        $installer = self::asset($release, self::DESKTOP);
+        $version = self::version($release, $installer);
         if (version_compare($version, $current, '<=')) {
             return new WP_REST_Response(null, 204);
         }
-        $installer = self::asset($release, '-setup.exe');
-        $signature = self::asset($release, '-setup.exe.sig');
+        $signature = self::asset($release, self::DESKTOP . '.sig');
         $sig = $signature ? self::contents((int) $signature['id']) : false;
         if (!$installer || $sig === false) {
             return new WP_REST_Response(null, 204);
@@ -82,10 +93,10 @@ final class Stationwagon_Updates
         return $response;
     }
 
-    /** One file of the newest release. */
+    /** One file of the newest Windows release. */
     public static function download($request)
     {
-        $release = self::release();
+        $release = self::release(self::DESKTOP);
         $name = (string) $request->get_param('asset');
         $asset = is_array($release) ? self::asset($release, '', $name) : null;
         if (!$asset) {
@@ -97,12 +108,58 @@ final class Stationwagon_Updates
     /** The newest installer, for people installing the app for the first time. */
     public static function installer($request)
     {
-        $release = self::release();
-        $asset = is_array($release) ? self::asset($release, '-setup.exe') : null;
+        $release = self::release(self::DESKTOP);
+        $asset = is_array($release) ? self::asset($release, self::DESKTOP) : null;
         if (!$asset) {
             return new WP_Error('stationwagon_no_release', 'No installer is published yet.', ['status' => 404]);
         }
         return self::send($asset);
+    }
+
+    /** The Android app's question: is there a version newer than current_version? */
+    public static function androidLatest($request)
+    {
+        $release = self::release(self::ANDROID);
+        $current = (string) $request->get_param('current_version');
+        $apk = is_array($release) ? self::asset($release, self::ANDROID) : null;
+        if (!$apk || $current === '') {
+            return new WP_REST_Response(null, 204);
+        }
+        $version = self::version($release, $apk);
+        if (version_compare($version, $current, '<=')) {
+            return new WP_REST_Response(null, 204);
+        }
+        $digest = (string) ($apk['digest'] ?? '');
+        $response = new WP_REST_Response([
+            'version' => $version,
+            'notes' => (string) ($release['body'] ?? ''),
+            'pub_date' => (string) ($release['published_at'] ?? gmdate('c')),
+            'url' => rest_url(self::NS . '/android/apk'),
+            'size' => (int) ($apk['size'] ?? 0),
+            'sha256' => strpos($digest, 'sha256:') === 0 ? substr($digest, 7) : '',
+        ], 200);
+        $response->header('Cache-Control', 'no-store');
+        return $response;
+    }
+
+    /** The newest Android app, for installing it the first time and for its updates. */
+    public static function apk($request)
+    {
+        $release = self::release(self::ANDROID);
+        $asset = is_array($release) ? self::asset($release, self::ANDROID) : null;
+        if (!$asset) {
+            return new WP_Error('stationwagon_no_release', 'No Android app is published yet.', ['status' => 404]);
+        }
+        return self::send($asset);
+    }
+
+    /** The version in the file's name (Stationwagon-Studio_0.7.0.apk), else the tag's (android-v0.7.0). */
+    private static function version(array $release, ?array $asset): string
+    {
+        if ($asset && preg_match('~_(\d+(?:\.\d+)+)(?=[_.-])~', (string) $asset['name'], $m)) {
+            return $m[1];
+        }
+        return (string) preg_replace('~^\D*~', '', (string) $release['tag_name']);
     }
 
     // ---- GitHub ----------------------------------------------------------------------------------
@@ -129,12 +186,23 @@ final class Stationwagon_Updates
         ];
     }
 
-    /** The newest published release (cached for 10 minutes), or null; the reason is kept for the settings page. */
-    public static function release(bool $fresh = false): ?array
+    /** The newest published release with a file ending in $suffix (Windows or Android), or null. */
+    public static function release(string $suffix, bool $fresh = false): ?array
+    {
+        foreach (self::releases($fresh) as $release) {
+            if (self::asset($release, $suffix)) {
+                return $release;
+            }
+        }
+        return null;
+    }
+
+    /** The newest published releases, newest first (cached for 10 minutes); the reason for none is kept for the settings page. */
+    private static function releases(bool $fresh = false): array
     {
         if (get_option(self::OPTION_TOKEN, '') === '') {
             self::note('No GitHub token is saved yet.');
-            return null;
+            return [];
         }
         if (!$fresh) {
             $cached = get_transient(self::CACHE_KEY);
@@ -142,24 +210,30 @@ final class Stationwagon_Updates
                 return $cached;
             }
         }
-        $r = wp_remote_get(self::api() . '/repos/' . self::repo() . '/releases/latest', ['timeout' => 10, 'headers' => self::headers('application/vnd.github+json')]);
+        $r = wp_remote_get(self::api() . '/repos/' . self::repo() . '/releases?per_page=30', ['timeout' => 10, 'headers' => self::headers('application/vnd.github+json')]);
         if (is_wp_error($r)) {
             self::note('GitHub couldn’t be reached: ' . $r->get_error_message());
-            return null;
+            return [];
         }
         $code = (int) wp_remote_retrieve_response_code($r);
         if ($code !== 200) {
-            self::note($code === 404 ? 'GitHub has no published release there (or the token can’t see the repository).' : ($code === 401 ? 'GitHub refused the token (401).' : "GitHub answered $code."));
-            return null;
+            self::note($code === 404 ? 'GitHub doesn’t show that repository (or the token can’t see it).' : ($code === 401 ? 'GitHub refused the token (401).' : "GitHub answered $code."));
+            return [];
         }
-        $release = json_decode((string) wp_remote_retrieve_body($r), true);
-        if (!is_array($release) || empty($release['tag_name'])) {
-            self::note('GitHub’s answer had no release in it.');
-            return null;
+        $list = json_decode((string) wp_remote_retrieve_body($r), true);
+        if (!is_array($list)) {
+            self::note('GitHub’s answer had no releases in it.');
+            return [];
         }
-        set_transient(self::CACHE_KEY, $release, 10 * MINUTE_IN_SECONDS);
-        self::note('');
-        return $release;
+        $list = array_values(array_filter($list, function ($x) {
+            return is_array($x) && !empty($x['tag_name']) && empty($x['draft']) && empty($x['prerelease']);
+        }));
+        usort($list, function ($a, $b) {
+            return strcmp((string) ($b['published_at'] ?? ''), (string) ($a['published_at'] ?? ''));
+        });
+        set_transient(self::CACHE_KEY, $list, 10 * MINUTE_IN_SECONDS);
+        self::note($list ? '' : 'GitHub has no published release there yet.');
+        return $list;
     }
 
     private static function note(string $text): void
@@ -265,10 +339,11 @@ final class Stationwagon_Updates
             return;
         }
         $has = get_option(self::OPTION_TOKEN, '') !== '';
-        $release = $has ? self::release(true) : null;
+        $desktop = $has ? self::release(self::DESKTOP, true) : null;
+        $android = $has ? self::release(self::ANDROID) : null;
         $err = (string) get_option('stationwagon_updates_last_error', '');
         echo '<div class="wrap"><h1>Stationwagon Updates</h1>';
-        echo '<p>Stationwagon Studio for Windows checks here for new versions, and the studio’s “Get the Windows app” link downloads from here. This server asks the private GitHub repository with the token below; the token never leaves this server.</p>';
+        echo '<p>Stationwagon Studio for Windows and for Android check here for new versions, and the studio’s “Get the Windows app” and “Get the Android app” links download from here. This server asks the private GitHub repository with the token below; the token never leaves this server.</p>';
         echo '<form method="post" action="options.php">';
         settings_fields('stationwagon_updates');
         echo '<table class="form-table" role="presentation">';
@@ -277,16 +352,24 @@ final class Stationwagon_Updates
         echo '<tr><th scope="row"><label for="sw-repo">Repository</label></th><td><input type="text" id="sw-repo" name="' . esc_attr(self::OPTION_REPO) . '" value="' . esc_attr(self::repo()) . '" class="regular-text"></td></tr>';
         echo '</table>';
         submit_button('Save');
-        echo '</form><h2>Now</h2><p>';
-        if ($release) {
-            $inst = self::asset($release, '-setup.exe');
-            $sig = self::asset($release, '-setup.exe.sig');
-            echo 'Newest release: <b>' . esc_html((string) $release['tag_name']) . '</b>, published ' . esc_html((string) ($release['published_at'] ?? '')) . '.<br>';
-            echo 'Installer: ' . ($inst ? esc_html($inst['name']) : '<b>missing</b>') . ' · Signature: ' . ($sig ? esc_html($sig['name']) : '<b>missing</b>') . '<br>';
+        echo '</form><h2>Windows</h2><p>';
+        if ($desktop) {
+            $sig = self::asset($desktop, self::DESKTOP . '.sig');
+            echo 'Newest release: <b>' . esc_html((string) $desktop['tag_name']) . '</b>, published ' . esc_html((string) ($desktop['published_at'] ?? '')) . '.<br>';
+            echo 'Installer: ' . esc_html(self::asset($desktop, self::DESKTOP)['name']) . ' · Signature: ' . ($sig ? esc_html($sig['name']) : '<b>missing</b>') . '<br>';
             echo 'The app checks: <code>' . esc_html(rest_url(self::NS . '/desktop/latest-release')) . '</code><br>';
             echo 'Download link: <a href="' . esc_url(rest_url(self::NS . '/desktop/installer')) . '">' . esc_html(rest_url(self::NS . '/desktop/installer')) . '</a>';
         } else {
-            echo esc_html($err !== '' ? $err : 'No release found yet.');
+            echo esc_html($err !== '' ? $err : 'No Windows release found yet.');
+        }
+        echo '</p><h2>Android</h2><p>';
+        if ($android) {
+            echo 'Newest release: <b>' . esc_html((string) $android['tag_name']) . '</b>, published ' . esc_html((string) ($android['published_at'] ?? '')) . '.<br>';
+            echo 'App: ' . esc_html(self::asset($android, self::ANDROID)['name']) . '<br>';
+            echo 'The app checks: <code>' . esc_html(rest_url(self::NS . '/android/latest-release')) . '</code><br>';
+            echo 'Download link: <a href="' . esc_url(rest_url(self::NS . '/android/apk')) . '">' . esc_html(rest_url(self::NS . '/android/apk')) . '</a>';
+        } else {
+            echo esc_html($err !== '' ? $err : 'No Android release found yet.');
         }
         echo '</p></div>';
     }

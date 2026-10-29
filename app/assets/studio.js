@@ -80,6 +80,8 @@
   let rec = null, recUp = null, recWaiting = 0;
   // the Windows app (desktop/): its bridge takes BUTT or Mixxx; null in a browser
   const APP = window.__TAURI__ && window.__TAURI__.core ? window.__TAURI__ : null;
+  // the Android app (mobile/): Do Not Disturb and a screen-off show while on air, Back asks first
+  const DROID = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.StationApp && window.Capacitor.getPlatform && window.Capacitor.getPlatform() === "android" ? window.Capacitor.Plugins.StationApp : null;
   const bridge = { connected: false, status: null, rate: RATE, endTimer: null, frames: 0, dropped: 0, busy: false, quick: false, quickFrom: 0 };
 
   // ---- Decks: a decoded song played from an AudioBuffer, with a waveform ----------------------
@@ -256,7 +258,8 @@ registerProcessor("sw-tap", SwTap);`;
       on = true; powering = false;
       log(`switched on at ${ctx.sampleRate} Hz`);
       ctx.onstatechange = () => { log("sound engine " + ctx.state); if (ctx.state !== "running") ctx.resume().catch(() => {}); };
-      banner("Studio ready. Load songs, check your mic, then press Go live." + (handheld ? " " + QUIET : ""));
+      if (DROID) await droidReady();
+      else banner("Studio ready. Load songs, check your mic, then press Go live." + (handheld ? " " + QUIET : ""));
       renderOrder(); await refresh();
     } catch (e) {
       log("switch on failed: " + e.message);
@@ -544,6 +547,7 @@ registerProcessor("sw-tap", SwTap);`;
       banner(`Joining. You take over at ${at(live.start, hms)}.`);
     }
     try { wake = await navigator.wakeLock.request("screen"); } catch (_) { wake = null; }
+    if (DROID && live) droidOnAir(true);
     await refresh();
     controls();
   }
@@ -662,6 +666,7 @@ registerProcessor("sw-tap", SwTap);`;
     live = null; encGen++; encFlushed = null; armedAt = null; queue.length = 0;
     clearTimeout(bridge.endTimer); bridge.endTimer = null;
     if (wake) { wake.release().catch(() => {}); wake = null; }
+    if (DROID) droidOnAir(false);
     if (talk) setTalk(false);
     controls();
   }
@@ -742,12 +747,36 @@ registerProcessor("sw-tap", SwTap);`;
     const busy = !!live || !!(window.SwRecorder && SwRecorder.busy());
     if (busy !== bridge.busy) { bridge.busy = busy; APP.core.invoke("set_busy", { busy }).catch(() => {}); }
   }
+  const quitApp = () => (APP ? APP.core.invoke("quit_app") : DROID.quit());
   function askClose() {
     banner("Close the app? " + (live ? "You’re on air: the station goes back to the AutoDJ." : "Your show’s recording is still uploading; it carries on the next time you open the studio."), "end", [
-      ...(live ? [["End show and close", async () => { await endShow(); APP.core.invoke("quit_app"); }, "danger"]] : []),
-      ["Close anyway", () => APP.core.invoke("quit_app")], ["Keep going", () => banner("")],
+      ...(live ? [["End show and close", async () => { await endShow(); quitApp(); }, "danger"]] : []),
+      ["Close anyway", quitApp], ["Keep going", () => banner("")],
     ]);
   }
+
+  // ---- The Android app ------------------------------------------------------------------------
+  /** Studio ready: Do Not Disturb is the app's job here; it needs Android's OK once. */
+  async function droidReady() {
+    const d = await DROID.dndStatus().catch(() => ({ access: false }));
+    log("android: do not disturb " + (d.access ? "allowed" : "not allowed yet"));
+    if (d.access) banner("Studio ready. Load songs, check your mic, then press Go live. When you go live, the app turns on Do Not Disturb (alarms still ring) and puts it back when you end your show. Wear headphones.");
+    else banner("Studio ready. Let the app turn on Do Not Disturb while you’re on air, so calls and messages can’t sound on air: tap Allow, then switch on Stationwagon Studio and come back. Wear headphones.", "", [
+      ["Allow Do Not Disturb", () => DROID.allowDnd()], ["Not now", () => banner("")],
+    ]);
+  }
+  /** On air: Android keeps the mic, the sound and Wi-Fi going with the screen off, and turns on Do Not Disturb. */
+  function droidOnAir(on) {
+    DROID.setOnAir({ on }).then((d) => log(`android: on air ${on ? "on" : "off"}, do not disturb ${d.on ? "on" : "off"}`))
+      .catch((e) => log("android on air: " + e.message));
+  }
+  if (DROID) {
+    DROID.addListener("back", () => (live || (window.SwRecorder && SwRecorder.busy()) ? askClose() : DROID.quit()));
+    $("stDroidSet").hidden = false;
+    $("stDroidSet").onclick = () => (live ? banner("End your show before you open the app’s settings.", "end") : DROID.openSettings());
+    // back from Android's settings screen (Do Not Disturb)
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && on && !live && !$("stBanner").hidden && /tap Allow/.test($("stBannerText").textContent)) droidReady(); });
+  } else if (/Android/.test(navigator.userAgent)) $("stGetAndroid").hidden = false;
   if (APP) {
     APP.event.listen("bridge", ({ payload: e }) => {
       if (e.type === "connect") bridgeConnected(e.status);

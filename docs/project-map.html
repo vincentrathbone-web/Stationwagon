@@ -173,13 +173,14 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "23 Oct · 03:45",
-  commits: 34,
+  updated: "29 Oct · 16:00",
+  commits: 36,
   version: "0.8.0-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
     { v: "v0.4", name: "Player & studio", when: "done 22 Oct" },
     { v: "v0.6", name: "Windows studio app", when: "done 22 Oct" },
+    { v: "v0.7", name: "Android studio app", when: "done 23 Oct" },
     { v: "v0.8", name: "WordWave pilot", when: "est. Dec", state: "now" },
     { v: "v1.0", name: "Launch", when: "est. Jan–Feb" }
   ],
@@ -241,8 +242,10 @@ const MAP = {
       { text: "Signed installer with auto-update", note: "v0.6.0 released on GitHub; updates come through the Stationwagon Updates plugin", v: "v0.6", state: "done" }
     ]},
     { name: "Android app", blurb: "The studio as an installed Android app; iPhones and iPads keep the browser studio.", features: [
-      { text: "Studio as an Android app", note: "milestone not set yet", v: "later", state: "later" },
-      { text: "Do Not Disturb on air, with a warning first", note: "on at Go live, back at End show", v: "later", state: "later" }
+      { text: "Studio as an Android app (Capacitor, Android 8+)", note: "the station's own studio page, always the server's version", v: "v0.7", state: "done" },
+      { text: "Do Not Disturb on air, with a warning first", note: "alarms only; on at Go live, back at End show; yours is left alone", v: "v0.7", state: "done" },
+      { text: "The show goes on with the screen off", note: "an On air notification keeps the mic, sound and Wi-Fi awake", v: "v0.7", state: "done" },
+      { text: "In-app updates from GitHub", note: "through the Stationwagon Updates plugin; checked when the app opens", v: "v0.7", state: "done" }
     ]},
     { name: "Pilot & launch", blurb: "WordWave runs beside AzuraCast first, then switches over.", features: [
       { text: "Copy WordWave's library from AzuraCast", note: "needs your friend's OK first", v: "v0.8", state: "later" },
@@ -254,12 +257,20 @@ const MAP = {
   ],
   next: {
     title: "The WordWave pilot (v0.8)",
-    text: "Song prep now masters every upload the way your Audition chain does: matched by measuring Audition's own exports, and in your blind test you heard no difference. The library has two switches: pre-processing and loudness normalization. Next, the pilot station gets its music and runs beside AzuraCast.",
+    text: "The Android studio app is built and tested on your phone: the station's studio with Do Not Disturb on air, shows that go on with the screen off, and updates from GitHub through the plugin. Song prep already masters every upload like your Audition chain. Next, the pilot station gets its music and runs beside AzuraCast.",
     order: ["Fill the pilot station with test music", "Run it beside AzuraCast for a week", "Copy WordWave's library when its owner agrees", "Then launch (v1.0)"]
   },
   call: null,
-  feedTitle: "Changed 20–23 Oct",
+  feedTitle: "Changed 20–29 Oct",
   feed: [
+    { what: "Android app: stays signed in", to: "up to 12 hours after you last used it", at: "29 Oct" },
+    { what: "Android app: opens again after an update", to: "working (Display over other apps, and Autostart on Xiaomi)", at: "29 Oct" },
+    { what: "Android app: Back on the studio", to: "fixed (closes the app)", at: "29 Oct" },
+    { what: "Android studio app (v0.7)", to: "built; all 61 tests pass on the phone", at: "29 Oct" },
+    { what: "Do Not Disturb on air and screen-off shows", to: "working on the phone (Android 16)", at: "02:10" },
+    { what: "Stationwagon Updates plugin 1.1.0", to: "live on controll.co.za: Windows and Android", at: "01:55", kind: "info" },
+    { what: "Android app: old page left running after switching", to: "fixed (the app now closes it)", at: "01:45" },
+    { what: "Android app: signed out at every page switch", to: "fixed (the sign-in is kept)", at: "02:10" },
     { what: "Round 34 (mastering in song prep)", to: "committed and pushed", at: "03:40", kind: "info" },
     { what: "Mastering in song prep, as your Audition chain", to: "matched (blind test: no difference), on the test server", at: "03:30" },
     { what: "Library switches: pre-processing and loudness normalization", to: "on the test server, saved for every upload", at: "03:30" },
