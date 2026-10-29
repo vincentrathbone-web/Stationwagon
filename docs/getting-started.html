@@ -272,7 +272,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
     <thead><tr><th>You need</th><th>Why</th></tr></thead>
     <tbody>
       <tr><td>A WordPress site on cPanel hosting</td><td>Ordinary shared hosting works, with PHP 8.1 or newer. The station runs next to the site.</td></tr>
-      <tr><td>The Stationwagon plugin</td><td>One zip file, <code>stationwagon-1.0.0.zip</code>. It carries the whole station.</td></tr>
+      <tr><td>The Stationwagon plugin</td><td>One zip file, <code>stationwagon-wordpress.zip</code>, from <a href="https://github.com/vincentrathbone-web/stationwagon-releases/releases/latest">the releases page</a>. It carries the whole station.</td></tr>
       <tr><td>Cloudflare in front (recommended)</td><td>It caches the listener stream, so many listeners cost your host almost nothing.</td></tr>
       <tr><td>About 5 minutes</td><td>Upload, activate, answer five questions.</td></tr>
     </tbody>
@@ -284,7 +284,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
   <h3>Install the plugin <span class="role">Admin</span></h3>
   <ol class="steps">
     <li>In WordPress, go to <b>Plugins → Add New Plugin → Upload Plugin</b>.</li>
-    <li>Choose <code>stationwagon-1.0.0.zip</code> and press <b>Install Now</b>, then <b>Activate</b>.</li>
+    <li>Choose <code>stationwagon-wordpress.zip</code> (from <a href="https://github.com/vincentrathbone-web/stationwagon-releases/releases/latest">the releases page</a>) and press <b>Install Now</b>, then <b>Activate</b>.</li>
     <li>Open <b>Stationwagon</b> in the admin menu. The setup wizard is there.</li>
   </ol>
   <div class="note"><b>Good to know</b>The wizard checks the server first. Anything missing shows in red with what to change in cPanel, and the button stays off until it's fixed.</div>
@@ -322,14 +322,28 @@ ol.flow > li > a:hover { text-decoration: underline; }
 
 <section class="s" id="nowp" data-title="Without WordPress">
   <h3>Without WordPress <span class="role">Admin</span></h3>
-  <p>On a site without WordPress, install the station by hand:</p>
+  <p>On a site without WordPress, one file does the setup, much like a WordPress plugin does:</p>
   <ol class="steps">
-    <li>In cPanel → <b>MySQL Databases</b>, make a database and a user, and add the user to it with <b>All Privileges</b>.</li>
-    <li>Upload the contents of the <code>app/</code> folder into the station's folder (File Manager → Upload, then Extract), or use <code>bash tools/deploy-app.sh &lt;ssh host&gt; public_html/&lt;folder&gt;</code>, which also leaves a one-time setup key in <code>install.key</code>.</li>
-    <li>Open the station's address and follow <b>Set up your station</b>: the setup key if asked, the database, the station and timezone, and your sign-in.</li>
+    <li>Download <code>setup.php</code> from <a href="https://github.com/vincentrathbone-web/stationwagon-releases/releases/latest">the releases page</a>.</li>
+    <li>In cPanel → <b>File Manager</b>, upload it into your site's folder (usually <code>public_html</code>).</li>
+    <li>Open it in your browser, for example <code>https://example.com/setup.php</code>. It checks the server first; anything missing shows in red with what to change in cPanel.</li>
+    <li>Choose where the station lives and press <b>Download and set up</b>. It downloads the newest Stationwagon, puts it in place, removes itself and opens the station's installer.</li>
+    <li>Answer the installer's questions (below) and press <b>Set up my station</b>.</li>
   </ol>
-  <p>Background jobs run during visits here too; a cron job is optional, as above. If the host doesn't let the installer save its settings, it shows the content of <code>config.local.php</code> to save next to <code>index.php</code> yourself.</p>
-  <div class="note"><b>Coming next</b>A one-file setup for sites without WordPress: upload <code>setup.php</code>, open it, and it does the rest.</div>
+  <div class="tbl"><table>
+    <thead><tr><th>Question</th><th>Easy answer (picked)</th><th>Other choices</th></tr></thead>
+    <tbody>
+      <tr><td><b>Where should the station live?</b> (setup.php)</td><td>A subfolder, like <code>example.com/radio</code></td><td>The folder <code>setup.php</code> is in (only when it's empty), or its own subdomain like <code>radio.example.com</code>, made for you in cPanel</td></tr>
+      <tr><td><b>1 · Database</b></td><td>Make one for me: a new database with its own user, made in cPanel</td><td>One you made in cPanel → <b>MySQL Databases</b>, with <b>Test connection</b></td></tr>
+      <tr><td><b>2 · Background jobs</b></td><td>Automatically, during visits</td><td>Also a cron job, added for you in cPanel, or the line to paste yourself</td></tr>
+      <tr><td><b>3 · Your cPanel login</b></td><td>Only asked when a choice needs it</td><td>Used once for setup, never saved</td></tr>
+      <tr><td><b>4 · Station</b></td><td>Your station's name and timezone</td><td>Your name, email and a password (10 characters or more)</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><b>Good to know</b><code>setup.php</code> works for an hour after you upload it, so a forgotten copy can't be used by someone else. If it says to upload it again, just upload it again. The installer's one-time setup key is filled in for you.</div>
+  <div class="warn"><b>Chose a subdomain?</b>If your domain's DNS is kept elsewhere (for example at Cloudflare), setup shows the one <b>A record</b> to add there and a link to the installer. Keep that link: it holds your setup key. If the DNS is at your hosting, it works by itself within minutes.</div>
+  <div class="warn"><b>Your site is itself a subdomain, with Cloudflare?</b>For a name like <code>radio.blog.example.com</code>, set the record's <b>Proxy status</b> to <b>DNS only</b> (grey cloud). Cloudflare's free certificate only covers one level below your domain, so the browser can't connect otherwise. Your hosting then makes the certificate itself within a few hours.</div>
+  <p>If the host doesn't let the installer save its settings, it shows the content of <code>config.local.php</code> to save next to <code>index.php</code> yourself. Updating: upload a newer <code>stationwagon.zip</code>'s contents over the station's folder (your settings and <code>storage/</code> stay), or use <code>bash tools/deploy-app.sh</code>.</p>
 </section>
 
 <!-- ============ PART 2 ============ -->

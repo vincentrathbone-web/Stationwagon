@@ -367,6 +367,12 @@ try {
         $nonce = between(between($form['body'], 'stationwagon_check', '</form>'), 'name="_wpnonce" value="', '"');
         $chk = http('POST', "$site/wp-admin/admin-post.php", ['action' => 'stationwagon_check', '_wpnonce' => $nonce]);
         check('Check again says not yet, kindly', str_contains(text($chk['body']), 'Not yet:') && str_contains(text($chk['body']), 'One step left'));
+        check('  no Cloudflare note for a subdomain one level down', !str_contains(text($chk['body']), 'DNS at Cloudflare?'));
+        $opt = stationOption();
+        setOption(['deep' => true] + $opt);
+        $deepPage = text(http('GET', $page)['body']);
+        setOption($opt);
+        check('  a subdomain of a subdomain gets the Cloudflare note (DNS only)', str_contains($deepPage, 'DNS at Cloudflare?') && str_contains($deepPage, 'DNS only') && str_contains($deepPage, "$host is two"));
     } else {
         check('the subdomain already answers (DNS on this hosting)', true);
     }

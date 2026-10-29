@@ -207,6 +207,8 @@ final class Stationwagon_Setup
                 $dir = "$home/$rel";
                 $url = "$scheme://$host/";
                 $ip = $domains['ip'];
+                // a subdomain of a subdomain (radio.site.example.com): Cloudflare's free certificate doesn't cover it
+                $deep = (bool) array_filter($domains['all'], fn($d) => str_ends_with($root, ".$d"));
                 $exists = in_array($host, $domains['all'], true);
                 if ($exists && !is_dir($dir)) {
                     throw new RuntimeException("$host already exists. Choose another name.");
@@ -267,7 +269,7 @@ final class Stationwagon_Setup
             }
 
             $station = [
-                'dir' => $dir, 'url' => $url, 'host' => $host, 'address' => $in['address'], 'ip' => $ip,
+                'dir' => $dir, 'url' => $url, 'host' => $host, 'address' => $in['address'], 'ip' => $ip, 'deep' => $deep ?? false,
                 'version' => self::bundledVersion(), 'jobs' => $in['jobs'], 'cron' => $command,
                 'database' => $in['database'], 'installed_at' => time(),
             ];

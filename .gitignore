@@ -44,6 +44,7 @@ mobile/dist/
 
 # WordPress plugin builds (tools/build-wp-plugin.py); the app zip it carries is built too
 wordpress/dist/
+setup/dist/
 wordpress/stationwagon/app.zip
 wordpress/stationwagon/app.version
 

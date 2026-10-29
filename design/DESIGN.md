@@ -242,6 +242,21 @@ the station's address and **Open the manager**, **Open the studio**, **The stati
 record and **Check again** while a subdomain doesn't answer; cards for the shortcode, the background jobs (with the cron
 line to copy when chosen) and the details. The station's Overview gains a **Background jobs** health line.
 
+### Setup without WordPress (round 38; not in the mock-ups)
+
+`setup.php` is one self-contained light page in the station green (system font, no files of its own): the wordmark
+"stationwagon setup", a one-line lead, the server check card (every row with a dot: green, red for required, amber
+for advice, with what to change in cPanel under a failed row), then one card **Where should the station live?** with
+choice tiles like the plugin's (**A subfolder** tagged **Recommended**, its name typed into the example address;
+**This folder**; **Its own subdomain** tagged **cPanel login**), the cPanel login card only for a subdomain, and
+**Download and set up** ("Downloading and unpacking… about a minute."). When the station can't be reached yet: the
+done steps with ticks and an amber card with the A record (or, rarely, "the web server is still catching up") and
+the installer's link with its key. The station's own installer (`/install`) uses the app's look: the server check,
+the setup key ("Filled in by setup.php."), then numbered cards with the same choice tiles in the station's amber
+accent: 1 Database, 2 Background jobs, 3 Your cPanel login (only when needed; the last card's number follows),
+4 Station and your sign-in; **Set up my station**. Its done page lists the steps with ticks and, for the cron line to
+paste, a **Your cron job** card.
+
 ### Remembering the password (round 36; not in the mock-ups)
 
 The sign-in page has a **Keep me signed in on this device for 30 days** tick box under the password

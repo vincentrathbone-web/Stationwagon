@@ -4,33 +4,13 @@
 #   python tools/build-wp-plugin.py            -> wordpress/dist/stationwagon-<plugin version>.zip
 # It also leaves app.zip and app.version in wordpress/stationwagon/ (gitignored) so a copy of the
 # plugin folder linked into a test WordPress works as it is.
-import io, os, re, sys, zipfile
+import os, re, sys, zipfile
+from appzip import app_files, zip_bytes
 
 repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 app = os.path.join(repo, "app")
 plugin = os.path.join(repo, "wordpress", "stationwagon")
 dist = os.path.join(repo, "wordpress", "dist")
-
-def app_files():
-    for root, dirs, files in os.walk(app):
-        rel_root = os.path.relpath(root, app).replace("\\", "/")
-        if rel_root == ".":
-            rel_root = ""
-        dirs[:] = sorted(d for d in dirs if not (rel_root == "" and d == "tests"))
-        for f in sorted(files):
-            rel = (rel_root + "/" + f).lstrip("/")
-            if rel.startswith("storage/") and rel != "storage/.htaccess":
-                continue
-            if f.startswith("config.local.php") or f == "install.key" or f.endswith(".local.txt"):
-                continue
-            yield rel
-
-def zip_bytes(entries):
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        for rel, src in entries:
-            z.write(src, rel)
-    return buf.getvalue()
 
 version = open(os.path.join(app, "VERSION"), encoding="utf8").read().strip()
 plugin_version = re.search(r"^\s*\*\s*Version:\s*(\S+)", open(os.path.join(plugin, "stationwagon.php"), encoding="utf8").read(), re.M).group(1)

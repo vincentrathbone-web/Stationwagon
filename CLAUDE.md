@@ -18,5 +18,8 @@
 - After changes to the Stationwagon WordPress plugin (`wordpress/stationwagon/`), the installer or the app's
   setup: `python tools/build-wp-plugin.py`, then `wordpress/tests/setup_test.php` on the Laragon test WordPress
   (with the cPanel stand-in) and on the server's test WordPress (commands in HANDOVER.md).
+- After changes to `setup/setup.php`, the app's installer or `tools/appzip.py`: `python tools/build-setup.py`, then
+  `setup/tests/setup_php_test.php` on Laragon (with the cPanel stand-in) and on the server (downloading from the real
+  release); a change to the app also needs a new `stationwagon-releases` release before the server run (commands in HANDOVER.md).
 - Record test results in the test log in `docs/POC-PLAN.md`.
 - Commit and push only when the user asks.

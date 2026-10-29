@@ -15,6 +15,10 @@ final class App
         $route = trim(substr($path, strlen($base)), '/');
         if ($route === 'index.php') {
             $route = '';
+        } elseif (str_starts_with($route, 'index.php/')) {
+            // index.php/install: setup.php hands over this way, as the web server may not have
+            // noticed the new .htaccess yet
+            $route = substr($route, strlen('index.php/'));
         }
 
         if (!Config::isInstalled() && $route !== 'install') {

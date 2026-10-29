@@ -32,17 +32,34 @@ https://wordwave.controll.co.za/stationwagon-app/ (the studio is at `/studio`, f
 - For DJs: Chrome or Edge, Safari on iPhone and iPad, the Windows app (Windows 10/11) or the
   Android app (Android 8+).
 
-## Quick install (WordPress)
+## Quick install
 
-1. Build the plugin: `python tools/build-wp-plugin.py` (gives `wordpress/dist/stationwagon-1.0.0.zip`).
+The files are in the public [stationwagon-releases](https://github.com/vincentrathbone-web/stationwagon-releases/releases/latest) repo (Releases → Latest).
+
+**With WordPress**
+
+1. Download `stationwagon-wordpress.zip`.
 2. In WordPress: **Plugins → Add New Plugin → Upload Plugin**, choose the zip, **Install Now**, **Activate**.
 3. Open **Stationwagon** in the admin menu and press **Set up my station**. The easy answers are
    already picked: a folder of the site (`/radio`), the site's own database, background jobs during
    visits. A subdomain, a database of its own or a cron job can be made for you with the cPanel login.
 4. Open the manager and upload songs in **Music library**. The station plays straight away.
 
-Updating the plugin updates the station. Without WordPress, see "Without WordPress" in
-[the Getting started guide](docs/getting-started.html), which has every step with troubleshooting.
+Updating the plugin updates the station.
+
+**Without WordPress**
+
+1. Download `setup.php` and upload it to your web space (cPanel → **File Manager**), for example into `public_html`.
+2. Open it in your browser (`https://example.com/setup.php`). It checks the server, asks where the
+   station lives (a subfolder `/radio`, picked by default; that folder; or a new subdomain made
+   through cPanel), downloads the station from the releases and hands over to its installer.
+3. The installer asks the same easy questions: a database made for you through cPanel (or one you
+   made), background jobs during visits (or a cron job added for you, or the line to paste), the
+   station's name and your sign-in.
+
+`setup.php` works for an hour after it is uploaded and removes itself when done.
+To build the files yourself: `python tools/build-wp-plugin.py` and `python tools/build-setup.py`.
+[The Getting started guide](docs/getting-started.html) has every step with troubleshooting.
 
 ## How it works (short version)
 

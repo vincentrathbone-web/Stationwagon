@@ -90,7 +90,7 @@ try {
             $out = $uapi(null);
             break;
         case '/execute/DomainInfo/list_domains':
-            $out = $uapi(['main_domain' => $main, 'sub_domains' => array_keys($state['subdomains']), 'addon_domains' => [getenv('SW_STUB_SITE') ?: 'localhost'], 'parked_domains' => []]);
+            $out = $uapi(['main_domain' => $main, 'sub_domains' => array_keys($state['subdomains']), 'addon_domains' => explode(',', getenv('SW_STUB_SITE') ?: 'localhost'), 'parked_domains' => []]);
             break;
         case '/execute/DomainInfo/domains_data':
             $out = $uapi(['main_domain' => ['domain' => $main, 'ip' => '192.0.2.10', 'homedir' => getenv('SW_STUB_HOME')], 'sub_domains' => [], 'addon_domains' => [], 'parked_domains' => []]);

@@ -173,8 +173,8 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "29 Oct · 21:00",
-  commits: 40,
+  updated: "30 Oct · 00:50",
+  commits: 41,
   version: "0.8.0-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
@@ -229,6 +229,9 @@ const MAP = {
     ]},
     { name: "Streaming & hosting", blurb: "Runs on shared cPanel hosting with Cloudflare in front: PHP and Apache only.", features: [
       { text: "Timeline planned on request, with a cron", v: "v0.1", state: "done" },
+      { text: "Setup as a WordPress plugin, with a wizard", note: "a folder or a subdomain; this site's database or a new one; station updates with the plugin", v: "v0.8", state: "done" },
+      { text: "One-file setup.php for sites without WordPress", note: "downloads the station from the public releases, hands over to its installer", v: "v0.8", state: "done" },
+      { text: "Background jobs without cron", note: "they run during visits; a cron job is optional", v: "v0.8", state: "done" },
       { text: "HLS stream as byte ranges of the MP3s", v: "v0.1", state: "done" },
       { text: "Cloudflare caching (97 % from cache at 100 listeners)", note: "now playing too", v: "v0.1", state: "done" },
       { text: "Database that upgrades itself", v: "v0.4", state: "done" },
@@ -251,7 +254,7 @@ const MAP = {
       { text: "Copy WordWave's library from AzuraCast", note: "needs your friend's OK first", v: "v0.8", state: "later" },
       { text: "Run beside AzuraCast for a week", v: "v0.8", state: "later" },
       { text: "Guides for station managers and DJs", v: "v1.0", state: "later" },
-      { text: "Release package and upgrade path", v: "v1.0", state: "later" },
+      { text: "Release package and upgrade path", note: "the releases repo and setup.php are done; upgrades without WordPress still by hand", v: "v1.0", state: "later" },
       { text: "Switch WordWave over", v: "v1.0", state: "later" }
     ]}
   ],
@@ -261,12 +264,19 @@ const MAP = {
     order: ["Fill the pilot station with test music", "Run it beside AzuraCast for a week", "Copy WordWave's library when its owner agrees", "Then launch (v1.0)"]
   },
   call: null,
-  feedTitle: "Changed 20–29 Oct",
+  feedTitle: "Changed 20–30 Oct",
   feed: [
+    { what: "One-file setup without WordPress", to: "built and tested: setup.php checks the server, asks where the station lives (/radio picked), downloads it and hands over; tested on Laragon and the server", at: "30 Oct" },
+    { what: "The station's own installer", to: "the same easy choices: a database made through cPanel, jobs during visits or a cron job added for you", at: "30 Oct" },
+    { what: "Real cPanel try with you", to: "passed: a database, a cron job and a subdomain made by setup; all removed afterwards", at: "30 Oct", kind: "info" },
+    { what: "A subdomain of a subdomain behind Cloudflare failed its certificate", to: "setup now says to set it to DNS only (the plugin too)", at: "30 Oct" },
+    { what: "Public releases repo", to: "stationwagon-releases: setup.php, the WordPress plugin and the station zip", at: "30 Oct", kind: "info" },
+    { what: "Hand-over right after setup sometimes showed 'not found'", to: "fixed: the web server took a few seconds to see the new folder's settings", at: "30 Oct" },
     { what: "Setup as a WordPress plugin", to: "built and tested on Laragon: a wizard (folder or subdomain, this site's database or a new one, background jobs), station updates with the plugin, the player shortcode; tested on Laragon and the server", at: "29 Oct" },
     { what: "Background jobs without cron", to: "built: they run during visits; cron optional, with a version-free PHP path", at: "29 Oct" },
     { what: "Getting started guide and README", to: "rewritten for the plugin", at: "29 Oct", kind: "info" },
     { what: "Windows app 0.6.1 and Android app 0.7.1", to: "released; the plugin offers them to installed apps (checked live)", at: "29 Oct", kind: "info" },
+    { what: "Round 37 (WordPress plugin and jobs without cron)", to: "committed and pushed (694430b)", at: "29 Oct", kind: "info" },
     { what: "Round 36 (remember my password)", to: "committed and pushed", at: "29 Oct", kind: "info" },
     { what: "Remember my password", to: "built: Keep me signed in (30 days), and saving it in browsers, the Windows and Android apps", at: "29 Oct" },
     { what: "Android app: a wrong password showed the offline page", to: "fixed", at: "29 Oct" },

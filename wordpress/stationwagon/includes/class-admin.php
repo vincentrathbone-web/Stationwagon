@@ -172,6 +172,13 @@ final class Stationwagon_Admin
             echo '<table class="widefat striped sw-dns"><thead><tr><th>Type</th><th>Name</th><th>Points to</th></tr></thead><tbody>';
             printf('<tr><td>A</td><td><code>%s</code></td><td><code>%s</code></td></tr>', esc_html($s['host']), esc_html($s['ip'] ?: ($_SERVER['SERVER_ADDR'] ?? '')));
             echo '</tbody></table>';
+            $elsewhere = array_values(array_diff((array) @gethostbynamel($s['host']), [$s['ip']]));
+            if ($elsewhere) {
+                printf('<p>%s already leads somewhere else (%s), probably through a catch-all (*) record. This record for the name itself takes its place.</p>', esc_html($s['host']), esc_html(implode(', ', $elsewhere)));
+            }
+            if (!empty($s['deep'])) {
+                printf('<p><b>DNS at Cloudflare?</b> Cloudflare’s free certificate only covers names one level below your domain, and %s is two. Set this record’s <b>Proxy status</b> to <b>DNS only</b> (the grey cloud); this hosting then makes the certificate itself (cPanel AutoSSL), which can take a few hours.</p>', esc_html($s['host']));
+            }
             echo '<p class="description">If the DNS is at this hosting (cPanel’s Zone Editor), it’s already there and only needs a few minutes. The secure https address can take up to a day while cPanel makes its certificate.</p>';
             printf('<form method="post" action="%s"><input type="hidden" name="action" value="stationwagon_check">', esc_url(admin_url('admin-post.php')));
             wp_nonce_field('stationwagon_check');
