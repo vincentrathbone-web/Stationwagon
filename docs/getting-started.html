@@ -1,0 +1,675 @@
+<title>Stationwagon Getting Started</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="How to set up a Stationwagon station, run it, and go live from the browser, Windows or Android studio.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a fixed contents rail on the left (search on top), the guide on the right; on phones the rail folds into a bar. */
+:root {
+  --ground: #f6f8f6;       /* page */
+  --paper: #ffffff;        /* panels, code */
+  --ink: #17201a;          /* text */
+  --ink-2: #4a564d;        /* secondary text */
+  --ink-3: #7a857c;        /* captions */
+  --line: #dde4de;         /* rules, borders */
+  --green: #138a43;        /* the station's green, darkened for light ground */
+  --green-bg: #e7f4ec;     /* tinted panels */
+  --amber: #a15c00;        /* warnings */
+  --amber-bg: #fff4e2;
+  --mark: #fff0a8;         /* search highlight */
+  --f-ui: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "DM Mono", ui-monospace, Consolas, monospace;
+  --rail: 292px;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { scroll-padding-top: calc(env(safe-area-inset-top, 0px) + var(--bar, 0px) + 20px); }
+body { background: var(--ground); color: var(--ink); font: 400 16px/1.6 var(--f-ui); }
+a { color: var(--green); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 4px; }
+code, kbd { font-family: var(--f-mono); font-size: .88em; }
+code { background: var(--green-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+kbd { border: 1px solid var(--line); border-bottom-width: 2px; background: var(--paper); padding: 0 5px; border-radius: 4px; }
+pre { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; margin: 0; }
+pre code { background: none; padding: 0; font-size: 13.5px; line-height: 1.55; }
+mark, ::highlight(sw-find) { background: var(--mark); color: inherit; }
+
+/* ---- the rail ---- */
+.rail { position: fixed; top: 0; bottom: 0; left: 0; width: var(--rail); background: var(--paper); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; padding: calc(env(safe-area-inset-top, 0px) + 20px) 16px 16px max(16px, env(safe-area-inset-left, 0px)); gap: 14px; z-index: 5; }
+.brand { display: flex; align-items: baseline; gap: 8px; }
+.brand b { font-weight: 800; font-size: 20px; letter-spacing: -.01em; }
+.brand span { font: 500 11px var(--f-mono); color: var(--ink-3); text-transform: uppercase; letter-spacing: .1em; }
+.search { position: relative; }
+.search input { width: 100%; font: 500 15px var(--f-ui); color: var(--ink); background: var(--ground); border: 1px solid var(--line); border-radius: 8px; padding: 9px 36px 9px 12px; }
+.search input::placeholder { color: var(--ink-3); }
+.search input::-webkit-search-cancel-button { display: none; }
+.search kbd { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--ink-3); }
+.results { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; }
+.results a { display: block; text-decoration: none; color: var(--ink); padding: 7px 9px; border-radius: 6px; }
+.results a:hover, .results a.on { background: var(--green-bg); }
+.results .t { font-weight: 600; font-size: 14px; }
+.results .s { display: block; font-size: 13px; color: var(--ink-2); line-height: 1.4; margin-top: 2px; }
+.results .none { color: var(--ink-3); font-size: 14px; padding: 6px 9px; }
+.toc { overflow-y: auto; min-height: 0; flex: 1; margin-right: -8px; padding-right: 8px; }
+.toc ol { list-style: none; margin: 0; padding: 0; }
+.toc .part { font: 500 11px var(--f-mono); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-3); margin: 16px 0 4px; }
+.toc .part:first-child { margin-top: 0; }
+.toc a { display: block; text-decoration: none; color: var(--ink-2); font-size: 14px; padding: 4px 9px; border-radius: 6px; line-height: 1.35; }
+.toc a:hover { color: var(--ink); background: var(--ground); }
+.toc a.here { color: var(--green); background: var(--green-bg); font-weight: 600; }
+.rail .foot { font-size: 12px; color: var(--ink-3); border-top: 1px solid var(--line); padding-top: 10px; }
+
+/* ---- the guide ---- */
+main { margin-left: var(--rail); padding-block: 40px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.col { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
+header.top h1 { font-size: clamp(32px, 5vw, 46px); line-height: 1.08; font-weight: 800; letter-spacing: -.02em; margin: 0 0 12px; text-wrap: balance; }
+header.top p { margin: 0; color: var(--ink-2); font-size: 18px; max-width: 62ch; }
+.meta { font: 500 12px var(--f-mono); color: var(--ink-3); margin-top: 14px !important; font-size: 12px !important; }
+.paths { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 28px; }
+.paths a { display: flex; flex-direction: column; gap: 4px; text-decoration: none; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.paths a:hover { border-color: var(--green); }
+.paths .who { font: 500 11px var(--f-mono); text-transform: uppercase; letter-spacing: .1em; color: var(--green); }
+.paths b { font-size: 16px; }
+.paths span:last-child { font-size: 14px; color: var(--ink-2); line-height: 1.45; }
+
+.partHead { border-top: 2px solid var(--ink); padding-top: 14px; margin-bottom: -28px; }
+.partHead .n { font: 500 12px var(--f-mono); text-transform: uppercase; letter-spacing: .12em; color: var(--green); }
+.partHead h2 { margin: 2px 0 0; font-size: 28px; font-weight: 800; letter-spacing: -.01em; }
+.partHead p { margin: 6px 0 0; color: var(--ink-2); }
+
+section.s { display: flex; flex-direction: column; gap: 14px; }
+section.s > h3 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -.005em; text-wrap: balance; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.role { font: 500 11px var(--f-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+section.s p, section.s li { max-width: 68ch; }
+section.s p { margin: 0; }
+section.s ul, section.s ol.steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
+ol.steps { counter-reset: step; list-style: none; padding-left: 0 !important; }
+ol.steps > li { counter-increment: step; position: relative; padding-left: 38px; }
+ol.steps > li::before { content: counter(step); position: absolute; left: 0; top: 1px; width: 26px; height: 26px; border-radius: 50%; background: var(--green-bg); color: var(--green);
+  font: 600 13px/26px var(--f-mono); text-align: center; }
+h4 { margin: 6px 0 0; font-size: 16px; font-weight: 700; }
+.note, .warn { border-radius: 8px; padding: 12px 14px; font-size: 15px; }
+.note { background: var(--green-bg); }
+.warn { background: var(--amber-bg); }
+.note b:first-child, .warn b:first-child { display: block; font-size: 12px; font-family: var(--f-mono); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 2px; }
+.warn b:first-child { color: var(--amber); }
+.note b:first-child { color: var(--green); }
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 500 11px var(--f-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); background: var(--ground); }
+tr:last-child td { border-bottom: 0; }
+td.num, .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+dl.gl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 18px; margin: 0; }
+dl.gl dt { font-weight: 700; }
+dl.gl dd { margin: 0; color: var(--ink-2); }
+.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { from { background: var(--mark); } to { background: transparent; } }
+.mobileBar { display: none; }
+
+/* ---- phones and small tablets ---- */
+@media (max-width: 900px) {
+  .rail { position: sticky; top: env(safe-area-inset-top, 0px); width: auto; bottom: auto; border-right: 0; border-bottom: 1px solid var(--line);
+    padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); gap: 8px; max-height: 100dvh; }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--paper); }
+  .rail .foot, .brand span { display: none; }
+  .rail .row { display: flex; gap: 8px; align-items: center; }
+  .rail .row .search { flex: 1; min-width: 0; }
+  .search kbd { display: none; }
+  .mobileBar { display: inline-flex; align-items: center; gap: 6px; font: 600 14px var(--f-ui); color: var(--ink); background: var(--ground); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; cursor: pointer; }
+  .rail:not(.open) .toc { display: none; }
+  .rail.open .toc { max-height: 60dvh; }
+  .results { max-height: 50dvh; }
+  main { margin-left: 0; padding-top: 28px; }
+  .paths { grid-template-columns: minmax(0, 1fr); }
+  dl.gl { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
+  dl.gl dd { margin-bottom: 8px; }
+}
+@media (min-width: 901px) { .rail .row { display: contents; } .brand { order: 0; } }
+@media (prefers-reduced-motion: reduce) { .flash { animation: none; } html { scroll-behavior: auto; } }
+</style>
+
+<nav class="rail" id="rail" aria-label="Contents">
+  <div class="brand"><b>stationwagon</b><span>Getting started</span></div>
+  <div class="row">
+    <div class="search">
+      <label for="q" class="vh" style="position:absolute;left:-9999px">Search the guide</label>
+      <input id="q" type="search" placeholder="Search the guide" autocomplete="off" spellcheck="false">
+      <kbd>/</kbd>
+    </div>
+    <button class="mobileBar" id="menuBtn" type="button" aria-expanded="false" aria-controls="toc">Contents</button>
+  </div>
+  <div class="results" id="results" hidden></div>
+  <div class="toc" id="toc"></div>
+  <div class="foot">Matches Stationwagon 0.8 (server), Windows app 0.6.1 and Android app 0.7.1. Updated 29 Oct 2026.</div>
+</nav>
+
+<main>
+<div class="col" id="guide">
+
+<header class="top" id="top">
+  <h1>Getting started with Stationwagon</h1>
+  <p>Stationwagon is radio software for small stations. It runs on ordinary shared cPanel hosting: an AutoDJ with real crossfades, a stream for listeners, and a studio for live shows in the browser, on Windows or on Android. This guide takes you from an empty hosting account to your first live show.</p>
+  <p class="meta">Press <kbd>/</kbd> to search. Every heading is a link you can share.</p>
+  <div class="paths">
+    <a href="#before"><span class="who">Admin</span><b>Set up a station</b><span>Make the database, install, keep it playing.</span></a>
+    <a href="#signin"><span class="who">Manager</span><b>Run the station</b><span>Music, playlists, the schedule, DJs and listeners.</span></a>
+    <a href="#studios"><span class="who">DJ</span><b>Go live</b><span>Pick a studio, prepare your show and go on air.</span></a>
+  </div>
+</header>
+
+<!-- ============ PART 1 ============ -->
+<div class="partHead" data-part="Set up the station"><div class="n">Part 1 · for the admin</div><h2>Set up the station</h2><p>Once per station. About 20 minutes.</p></div>
+
+<section class="s" id="what" data-title="What Stationwagon does">
+  <h3>What Stationwagon does</h3>
+  <p>Everything runs on your web host. There's no streaming server to rent, no extra ports and no program running all day.</p>
+  <ul>
+    <li><b>The AutoDJ</b> plans which song plays when, hours ahead, from your playlists and weekly schedule. Songs crossfade like on a real station.</li>
+    <li><b>Listeners</b> open your station page (the player) or the small player you put on your own website. Everyone hears the same moment, <b>20 seconds behind</b> the station's clock. That delay is what keeps the sound smooth on any connection.</li>
+    <li><b>DJs</b> go live from the studio. Their show replaces the AutoDJ in their own time slot, and the AutoDJ takes over again when they end.</li>
+    <li><b>Every live show becomes a podcast episode</b> that the DJ can trim and publish.</li>
+  </ul>
+</section>
+
+<section class="s" id="before" data-title="What you need">
+  <h3>What you need <span class="role">Admin</span></h3>
+  <div class="tbl"><table>
+    <thead><tr><th>You need</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>A cPanel hosting account</td><td>Ordinary shared hosting works. PHP 8.1 or newer and MySQL or MariaDB.</td></tr>
+      <tr><td>A web address for the station</td><td>For example <code>radio.example.com</code>, or a folder such as <code>example.com/stationwagon-app</code>.</td></tr>
+      <tr><td>Cloudflare in front (recommended)</td><td>It caches the listener stream, so many listeners cost your host almost nothing.</td></tr>
+      <tr><td>The Stationwagon files</td><td>The <code>app/</code> folder from the repository.</td></tr>
+      <tr><td>About 20 minutes</td><td>Most of it is cPanel clicking.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><b>Good to know</b>The installer checks the server first and shows a red row for anything missing, so you'll know straight away if the host isn't suitable.</div>
+</section>
+
+<section class="s" id="database" data-title="Make the database in cPanel">
+  <h3>Make the database in cPanel <span class="role">Admin</span></h3>
+  <ol class="steps">
+    <li>In cPanel, open <b>MySQL Databases</b>.</li>
+    <li>Create a database, for example <code>wordwave</code>. cPanel puts your account name in front: <code>controllco_wordwave</code>.</li>
+    <li>Create a database user with a strong password. Keep the password: the installer asks for it once.</li>
+    <li>Under <b>Add user to database</b>, add the user to the database with <b>All Privileges</b>.</li>
+  </ol>
+  <div class="note"><b>Already have a database?</b>You can use an existing, even busy, database. Stationwagon gives its tables a prefix so they never mix with others, and the installer refuses a prefix that's already in use.</div>
+</section>
+
+<section class="s" id="upload" data-title="Put the files on the server">
+  <h3>Put the files on the server <span class="role">Admin</span></h3>
+  <p>Pick one way.</p>
+  <h4>With SSH (from a PC with the repository)</h4>
+  <pre><code>bash tools/deploy-app.sh &lt;ssh host&gt; public_html/&lt;your folder&gt;</code></pre>
+  <p>This copies the app, and leaves a one-time <b>setup key</b> in <code>install.key</code> on the server so nobody else can run your installer first. Run the same command for every later update: it replaces the code and never touches your settings or your songs.</p>
+  <h4>With cPanel's File Manager</h4>
+  <ol class="steps">
+    <li>Zip the contents of the <code>app/</code> folder on your computer.</li>
+    <li>In <b>File Manager</b>, open the folder for your station's address, upload the zip and <b>Extract</b> it there.</li>
+    <li>Open the station's address straight away and install (next step). Without an <code>install.key</code> the installer doesn't ask for a key, so don't leave it waiting.</li>
+  </ol>
+</section>
+
+<section class="s" id="install" data-title="Run the installer">
+  <h3>Run the installer <span class="role">Admin</span></h3>
+  <p>Open your station's address in a browser. You land on <b>Set up your station</b>, which first shows the <b>Server check</b>. Fix any red rows; the installer can't continue until they pass.</p>
+  <ol class="steps">
+    <li><b>Setup key.</b> If asked, copy it from <code>install.key</code> (next to <code>index.php</code>, in File Manager). It's deleted once setup is done.</li>
+    <li><b>1 · Database.</b> The database name, user and password from cPanel. The host is usually <code>localhost</code>.</li>
+    <li><b>2 · Station.</b> Your station's name and its <b>timezone</b>. The schedule and the station clock use it.</li>
+    <li><b>3 · Your sign-in.</b> Your name, email and password. You become the station's first <b>admin</b>; you add managers and DJs later.</li>
+  </ol>
+  <p>When it's done you see <b>Go to the station</b>.</p>
+  <div class="warn"><b>One more step?</b>If the host doesn't let the installer save its settings file, it shows the file's content instead. Create <code>config.local.php</code> next to <code>index.php</code> (File Manager → <b>+ File</b>) with exactly that content, then press <b>I've saved it, open the station</b>. That file holds your database password, so don't share it.</div>
+</section>
+
+<section class="s" id="cron" data-title="Keep the AutoDJ planned (cron)">
+  <h3>Keep the AutoDJ planned <span class="role">Admin</span></h3>
+  <p>Add one cron job so the timeline stays planned hours ahead, even when nobody is listening. In cPanel open <b>Cron Jobs</b>, choose <b>Every 5 minutes</b> and use this command, with your own account and folder:</p>
+  <pre><code>php /home/&lt;account&gt;/public_html/&lt;your folder&gt;/cli/plan.php &gt; /dev/null 2&gt;&amp;1</code></pre>
+  <p>The same job fetches the free location database once a month, for the <a href="#listeners">Listeners</a> screen. To fill it the first time, run <code>php cli/geo-update.php</code> once over SSH, or wait for the job to do it.</p>
+  <div class="note"><b>Why a cron job?</b>Listeners also keep the timeline planned when it runs short. The cron job makes sure it's ready before the first listener of the day arrives.</div>
+</section>
+
+<section class="s" id="updates" data-title="Updating the station">
+  <h3>Updating the station <span class="role">Admin</span></h3>
+  <p>Copy the new files over the old ones (the same deploy command, or File Manager). Your settings, songs and recordings stay. <b>The database upgrades itself</b> on the first page view after an update, so there's never a manual migration.</p>
+  <p>The Windows and Android studio apps update themselves when they open (never during a show).</p>
+</section>
+
+<!-- ============ PART 2 ============ -->
+<div class="partHead" data-part="Run the station"><div class="n">Part 2 · for managers</div><h2>Run the station</h2><p>The manager is at <code>/manage</code>. Its menu on the left takes you to each screen.</p></div>
+
+<section class="s" id="signin" data-title="Sign in and stay signed in">
+  <h3>Sign in and stay signed in <span class="role">Everyone</span></h3>
+  <p>Go to your station's address and choose <b>Sign in</b> (or open <code>/signin</code>).</p>
+  <ul>
+    <li><b>Keep me signed in on this device for 30 days</b>: tick it on your own computer or phone, and you won't need your password there for 30 days. Leave it off on a shared computer.</li>
+    <li><b>Save your password:</b> your browser, the Windows app (<b>Save your password?</b>) and the Android app (<b>Save password to sign in to Stationwagon Studio?</b>) offer to keep it in their password manager and fill it in next time.</li>
+    <li><b>Sign out</b> (top right) ends the sign-in on that device only.</li>
+    <li><b>Change your password</b> by selecting your name (top right). This signs you out on every other device.</li>
+  </ul>
+  <div class="note"><b>Forgot your password?</b>Ask the station's admin. They set a new one on the <a href="#djs">DJs</a> screen.</div>
+</section>
+
+<section class="s" id="roles" data-title="Who can do what (roles)">
+  <h3>Who can do what <span class="role">Everyone</span></h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Role</th><th>Can</th></tr></thead>
+    <tbody>
+      <tr><td><b>DJ</b></td><td>The studio, in their own live slots (from 5 minutes before). The Overview and their own podcast episodes.</td></tr>
+      <tr><td><b>Manager</b></td><td>Everything a DJ can, any time. The music library, playlists, schedule, DJs, Sound &amp; safety, Listeners and the podcast's details.</td></tr>
+      <tr><td><b>Admin</b></td><td>Everything a manager can, plus making other admins.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="s" id="djs" data-title="Add DJs and managers">
+  <h3>Add DJs and managers <span class="role">Manager</span></h3>
+  <ol class="steps">
+    <li>Open <b>DJs</b>.</li>
+    <li>Add the person's name, email, role and a first password, and give them the password in person.</li>
+    <li>They can change it on their account page after signing in.</li>
+  </ol>
+  <p>On the same screen you change someone's role, <b>set a new password</b> for someone who forgot theirs, or remove them (tick <b>Yes, remove</b> to confirm). Removing someone also signs them out everywhere.</p>
+</section>
+
+<section class="s" id="library" data-title="Add music (song prep)">
+  <h3>Add music <span class="role">Manager</span></h3>
+  <p>Open <b>Music library</b> and drag MP3s onto the drop zone (or choose them). Each song is prepared <b>in your browser</b> before it uploads, so the server does no heavy work:</p>
+  <ul>
+    <li>silence is trimmed at both ends, with short 20 ms fades;</li>
+    <li><b>Apply pre-processing</b> (on by default) masters the song: a broadcast multiband compressor, then mastering, matched to the station's Adobe Audition chain. Mastered songs get a <b>Mastered</b> tag;</li>
+    <li><b>Loudness normalization</b> (on by default) levels every song to <b>−16 LUFS</b>, so nothing jumps out louder or quieter;</li>
+    <li>it uploads a new MP3 (192 kbps unless you change it in Sound &amp; safety) with the song's own tags.</li>
+  </ul>
+  <p>Both switches sit above the drop zone and are saved for the station as soon as you change them. Keep the page open until the uploads finish: a minute of music takes about 2 seconds to master. Search, edit titles or remove songs in the list below.</p>
+  <div class="note"><b>No schedule yet?</b>The AutoDJ plays the whole library until you add playlists and a schedule, so a station with songs is on air straight away.</div>
+</section>
+
+<section class="s" id="playlists" data-title="Playlists">
+  <h3>Playlists <span class="role">Manager</span></h3>
+  <ol class="steps">
+    <li>Open <b>Playlists</b> and make one, for example "Morning worship".</li>
+    <li>Choose <b>shuffle</b> or <b>in order</b>.</li>
+    <li>Add songs from the library and drag them into order.</li>
+  </ol>
+  <p>A playlist can be switched off without deleting it. A song can be in many playlists.</p>
+</section>
+
+<section class="s" id="schedule" data-title="The weekly schedule">
+  <h3>The weekly schedule <span class="role">Manager</span></h3>
+  <p>Open <b>Schedule</b>. It's a week grid in the station's timezone. Add two kinds of block:</p>
+  <ul>
+    <li><b>Playlist blocks</b>: which playlist the AutoDJ plays on which days and hours.</li>
+    <li><b>Live blocks</b>: a show and its DJ. That DJ may go live from 5 minutes before the block starts until it ends.</li>
+  </ul>
+  <p>Changes re-plan what isn't on air yet. A live block with nobody live is filled by the AutoDJ.</p>
+</section>
+
+<section class="s" id="sound" data-title="Sound & safety">
+  <h3>Sound &amp; safety <span class="role">Manager</span></h3>
+  <p>How the station sounds and how it protects itself. The defaults suit most stations.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>Crossfade, skip fade, live cut-in fade</td><td>How long songs overlap, how fast Skip fades out, and how a live show fades in over the AutoDJ.</td></tr>
+      <tr><td>Fade shape</td><td>Equal power, linear or S-curve.</td></tr>
+      <tr><td>Songs not to repeat</td><td>How long before the same song may play again.</td></tr>
+      <tr><td>Music under the voice</td><td>How far the music dips when a DJ's mic is open (−24 to 0 dB).</td></tr>
+      <tr><td>Back to the AutoDJ</td><td>How long the station waits for a live show's sound before the AutoDJ takes over.</td></tr>
+      <tr><td>DJ rejoin window</td><td>How long after a dropped show the DJ can <a href="#trouble">Rejoin your show</a> (0–30 minutes, 10 by default).</td></tr>
+      <tr><td>Move on when a song goes quiet</td><td>Starts the next song when a song ends in a long quiet tail (off, −50, −40 or −30 dB; −40 by default).</td></tr>
+      <tr><td>Quality</td><td>Live shows and prepared songs, 96–256 kbps (192 by default), with how many MB an hour that is.</td></tr>
+    </tbody>
+  </table></div>
+  <p>The listener delay (20 seconds) is shown but can't be changed.</p>
+</section>
+
+<section class="s" id="overview" data-title="The Overview and Skip">
+  <h3>The Overview and Skip <span class="role">Manager</span></h3>
+  <p><b>Overview</b> is the manager's home: what's on air now and next, how many are listening, and a health list (timeline planned, music library, playlists and schedule). A green dot means fine.</p>
+  <p><b>Skip this song</b> fades the current song out and starts the next. It does nothing while a live show is on air or about to start.</p>
+</section>
+
+<section class="s" id="listeners" data-title="Listeners and privacy">
+  <h3>Listeners and privacy <span class="role">Manager</span></h3>
+  <p><b>Listeners</b> shows how many listen now, the most at once today, unique listeners per day and month, hours listened, and where people listen from by country, city, device, browser and app. Every chart has a table view.</p>
+  <p>Each Listen is kept for 30 days. The station's <b>Privacy</b> page (linked under the player) says what's kept and why. Set its contact address on the Listeners screen.</p>
+  <div class="note"><b>Not counted</b>Apps that play the stream's address directly (not your player or the embed) aren't counted.</div>
+</section>
+
+<section class="s" id="website" data-title="Put the player on your website">
+  <h3>Put the player on your website <span class="role">Manager</span></h3>
+  <p>On the station page, open <b>Put the player on your website</b>, choose the dark or light look and press <b>Copy</b>. Paste that code into any web page: it shows a small player that plays the station 20 seconds behind, like the station page.</p>
+  <p>Other apps and websites can read what's playing (now, the next 3 songs, the last 5) from <code>api/nowplaying.php</code>.</p>
+</section>
+
+<section class="s" id="podcastsetup" data-title="Your podcast">
+  <h3>Your podcast <span class="role">Manager</span></h3>
+  <p>Open <b>Podcast</b> and fill in its details: title, description, cover picture, language and category. Published episodes appear on the station's podcast page (<code>/podcast</code>) and in its RSS feed (<code>/podcast/feed</code>), which you can submit to podcast apps.</p>
+</section>
+
+<section class="s" id="look" data-title="Change the look (skins)">
+  <h3>Change the look <span class="role">Everyone</span></h3>
+  <p>Every screen has a <b>Look</b> menu in its top bar: <b>Green</b> (the default) or <b>Hi-fi</b> (amber on graphite). It's your own choice, kept on that device, and it changes every screen at once.</p>
+</section>
+
+<!-- ============ PART 3 ============ -->
+<div class="partHead" data-part="Go live"><div class="n">Part 3 · for DJs</div><h2>Go live</h2><p>Your show, from preparing to publishing the podcast.</p></div>
+
+<section class="s" id="studios" data-title="Pick your studio">
+  <h3>Pick your studio <span class="role">DJ</span></h3>
+  <p>All three are the same studio, always the station's latest version. Pick by where you broadcast from.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Studio</th><th>Best for</th><th>How to get it</th></tr></thead>
+    <tbody>
+      <tr><td><b>Browser</b></td><td>Any computer with Chrome or Edge.</td><td>Sign in, then <b>Studio</b> in the top bar (<code>/studio</code>).</td></tr>
+      <tr><td><b>Windows app</b></td><td>A home studio, and DJs who use <b>BUTT</b> or <b>Mixxx</b>.</td><td><b>Get the Windows app</b> in the browser studio on Windows. See <a href="#windows">the Windows app</a>.</td></tr>
+      <tr><td><b>Android app</b></td><td>A phone or tablet: Do Not Disturb on air, and the show keeps going with the screen off.</td><td><b>Get the Android app</b> in the studio in your phone's browser. See <a href="#android">the Android app</a>.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><b>iPhone or iPad?</b>Use the browser studio in Safari. There's no iPhone app.</div>
+</section>
+
+<section class="s" id="tour" data-title="The studio at a glance">
+  <h3>The studio at a glance <span class="role">DJ</span></h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Part</th><th>What it's for</th></tr></thead>
+    <tbody>
+      <tr><td>Top bar</td><td>Your show, how far into its block you are, the station clock, <b>Notes</b> and <b>Go live</b>.</td></tr>
+      <tr><td>Output strip</td><td>What goes out: the last seconds and the next ones, one colour per source. Show or hide it, and drag it taller.</td></tr>
+      <tr><td>Decks A and B</td><td>Two players with waveforms, <b>Cue</b>, Play, Stop and volume.</td></tr>
+      <tr><td>Mixer</td><td>Level meters, the crossfader, <b>Fade</b> and <b>Skip</b>, and <b>Mic on air</b> (the music dips under your voice).</td></tr>
+      <tr><td>Microphone strip</td><td>Your mic input, a preset, and six modules with switches and sliders.</td></tr>
+      <tr><td>Running order</td><td>Your show plan: songs from the library, station IDs and talk items with planned times. Load items to Deck A or B.</td></tr>
+      <tr><td>Status strip</td><td>The <b>Headphones</b> menu, how many are listening, App settings (in the apps) and messages.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="s" id="prepare" data-title="Before the show">
+  <h3>Before the show <span class="role">DJ</span></h3>
+  <ol class="steps">
+    <li><b>Wear headphones.</b> Speakers feed back into the mic.</li>
+    <li>Open the studio and press <b>Switch on the studio</b>. Allow the microphone when the browser asks.</li>
+    <li>Check your mic meter moves when you speak, and pick a preset in the microphone strip.</li>
+    <li>Pick your <b>Headphones</b> output in the status strip, if your computer has more than one.</li>
+    <li>Build your <b>running order</b>: search the library, add songs, station IDs and talk items. It's saved for your block, so you can prepare it days before.</li>
+    <li>Load the first song to <b>Deck B</b>. Deck A will pick up the AutoDJ song when you go live.</li>
+  </ol>
+  <div class="note"><b>When can I go live?</b>From 5 minutes before your live block starts, until it ends. Outside your block the banner says why not. Managers and admins can go live any time.</div>
+</section>
+
+<section class="s" id="golive" data-title="Go live and end the show">
+  <h3>Go live and end the show <span class="role">DJ</span></h3>
+  <ol class="steps">
+    <li>Press <b>Go live</b>. Deck A picks up the AutoDJ's song exactly where it is, so listeners hear no jump.</li>
+    <li>Talk with <b>Mic on air</b>, crossfade between the decks, and follow your running order. Opening the mic marks your next talk item as now (or press <b>Now</b> on it).</li>
+    <li>When you're done, press <b>Go live</b> again and choose <b>End show</b>. The AutoDJ carries on.</li>
+  </ol>
+  <p>Listeners hear you 20 seconds later. That's normal: don't wait for yourself in the station's player.</p>
+</section>
+
+<section class="s" id="notes" data-title="Notes for listeners">
+  <h3>Notes for listeners <span class="role">DJ</span></h3>
+  <p>Open <b>Notes</b> in the top bar to post <b>Bible verses</b>, <b>references</b>, <b>video links</b> or short <b>notes</b>. Listeners see each one beside the player at the moment of the show when you posted it, marked <b>New</b>.</p>
+  <ul>
+    <li>A verse keeps its version (KJV unless you choose another) and links to Bible Gateway. Paste the verse text yourself.</li>
+    <li><b>Edit</b> a posted note to fix it. It's posted again as new, and listeners see the change when they reach that moment.</li>
+  </ul>
+</section>
+
+<section class="s" id="trouble" data-title="If something goes wrong on air">
+  <h3>If something goes wrong on air <span class="role">DJ</span></h3>
+  <div class="tbl"><table>
+    <thead><tr><th>What happened</th><th>What the station does</th><th>What you do</th></tr></thead>
+    <tbody>
+      <tr><td>Your internet or computer drops</td><td>After 8 seconds without your sound the AutoDJ takes over by itself. Listeners never hear silence.</td><td>Open the studio again and press <b>Rejoin your show</b> within the rejoin window (10 minutes by default).</td></tr>
+      <tr><td>You reloaded the page</td><td>The same safety net.</td><td><b>Rejoin your show</b>. Your notes carry on.</td></tr>
+      <tr><td>Silence on air</td><td>The studio warns of <b>dead air</b> after 10 seconds.</td><td>Play something or open the mic.</td></tr>
+      <tr><td>The banner says you can't go live</td><td>You're outside your live block.</td><td>Ask a manager to check the schedule.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="s" id="windows" data-title="The Windows app (and BUTT or Mixxx)">
+  <h3>The Windows app <span class="role">DJ</span></h3>
+  <ol class="steps">
+    <li>In the browser studio on Windows, choose <b>Get the Windows app</b> and run the installer. No admin rights are needed.</li>
+    <li>The first time, Windows SmartScreen may say "unknown publisher": choose <b>More info</b>, then <b>Run anyway</b>.</li>
+    <li>Type your station's address and open the studio. Sign in; the app offers to save your password.</li>
+  </ol>
+  <h4>Broadcasting with BUTT or Mixxx</h4>
+  <p>The app has a <b>bridge</b>: BUTT or Mixxx sends to the app as if it were an Icecast server, and the app sends your show to the station. Open <b>App settings</b> in the status strip to see the port and password, then set up BUTT like this:</p>
+  <div class="tbl"><table>
+    <tbody>
+      <tr><td>Server type</td><td>Icecast</td></tr>
+      <tr><td>Address</td><td><code>127.0.0.1</code></td></tr>
+      <tr><td>Port</td><td class="num"><code>8000</code> (as shown in App settings)</td></tr>
+      <tr><td>Mount</td><td><code>/live</code></td></tr>
+      <tr><td>User</td><td><code>source</code></td></tr>
+      <tr><td>Password</td><td>The one in App settings (each computer has its own)</td></tr>
+      <tr><td>Format</td><td>MP3</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li>Press <b>Play</b> in BUTT: the studio <b>goes live by itself</b> if it's your slot, and shows BUTT's song titles.</li>
+    <li>Stop BUTT: the show ends 5 seconds later and the AutoDJ takes over. Started again within 5 seconds, the same show carries on.</li>
+    <li>Closing the app while on air asks first.</li>
+    <li>Shoutcast mode also works, at the port minus one.</li>
+  </ul>
+</section>
+
+<section class="s" id="android" data-title="The Android app">
+  <h3>The Android app <span class="role">DJ</span></h3>
+  <p>For Android 8 and newer.</p>
+  <ol class="steps">
+    <li>Sign in to the studio in your phone's browser and choose <b>Get the Android app</b>. Allow your browser to install it when Android asks.</li>
+    <li>Open <b>Stationwagon Studio</b>. On its start page, type your station's address and press <b>Save and open the studio</b>.</li>
+    <li>Sign in. Android offers to save your password; next time it offers <b>Use your saved password</b>.</li>
+    <li>When you switch on the studio, allow <b>Do Not Disturb</b>, so calls and messages can't sound on air. The app turns it on (alarms only) when you go live and puts it back when you end.</li>
+    <li>On the start page (<b>App settings</b>), allow <b>Display over other apps</b> so the app opens again by itself after an update. On a Xiaomi phone, also allow <b>Autostart</b>. In each list Android shows, find Stationwagon Studio and switch it on.</li>
+  </ol>
+  <ul>
+    <li>Your show <b>keeps going with the screen off</b>. A "You're on air" notification shows while you're live.</li>
+    <li><b>Back</b> while on air asks before closing. App settings can't open until the show ends.</li>
+    <li>If the station can't be reached, the app shows its own page with <b>Try again</b> and <b>Change the station</b>.</li>
+  </ul>
+  <div class="warn"><b>Phones and tablets</b>Wear headphones. A notification sound can reach the mic if Do Not Disturb is off.</div>
+</section>
+
+<section class="s" id="episode" data-title="After the show: your podcast episode">
+  <h3>After the show: your podcast episode <span class="role">DJ</span></h3>
+  <p>Every live show over 2 minutes becomes a <b>draft episode</b>. The studio records your show on your device (the music and your mic as separate tracks) and uploads it after <b>End show</b>, so keep the studio open until the banner says the recording is uploaded.</p>
+  <ol class="steps">
+    <li>Open <b>Podcast</b> in the manager and choose your episode.</li>
+    <li>The editor shows both tracks, split at every silence of 2 seconds or more. Click a clip and press <kbd>Delete</kbd> to cut it; <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes.</li>
+    <li>Press <b>Mixdown</b>. It mixes what you kept and shortens long gaps to 1 second.</li>
+    <li>Press <b>Publish</b>. The episode appears on the podcast page and in the feed.</li>
+  </ol>
+  <p>The raw tracks are deleted 30 days after publishing. A show with no recording from your device (BUTT, or a reload) becomes an episode from what went on air.</p>
+</section>
+
+<!-- ============ PART 4 ============ -->
+<div class="partHead" data-part="Help"><div class="n">Part 4</div><h2>Help</h2></div>
+
+<section class="s" id="faq" data-title="Common questions">
+  <h3>Common questions</h3>
+  <h4>Listeners hear me 20 seconds late. Is something wrong?</h4>
+  <p>No. Every listener is held 20 seconds behind the station clock, so the sound stays smooth and everyone hears the same moment.</p>
+  <h4>I can't press Go live.</h4>
+  <p>You can go live from 5 minutes before your live block. Check the time in the top bar and ask a manager to check the <a href="#schedule">schedule</a>.</p>
+  <h4>The AutoDJ came back in the middle of my show.</h4>
+  <p>Your sound stopped reaching the station for 8 seconds. Open the studio and press <a href="#trouble">Rejoin your show</a>.</p>
+  <h4>The station page says nothing is planned.</h4>
+  <p>Check that the library has songs and the <a href="#cron">cron job</a> runs every 5 minutes.</p>
+  <h4>A song starts too loud or too quiet.</h4>
+  <p>Upload it again with <b>Loudness normalization</b> on in the <a href="#library">Music library</a>.</p>
+  <h4>The Windows app says "unknown publisher".</h4>
+  <p>That's expected the first time. Choose <b>More info</b>, then <b>Run anyway</b>.</p>
+  <h4>The Android app didn't reopen after an update.</h4>
+  <p>Allow <b>Display over other apps</b> (and <b>Autostart</b> on Xiaomi) on the app's start page, then tap its icon this once.</p>
+  <h4>I forgot my password.</h4>
+  <p>Ask the station's admin to set a new one on the <a href="#djs">DJs</a> screen.</p>
+</section>
+
+<section class="s" id="glossary" data-title="Words used in Stationwagon">
+  <h3>Words used in Stationwagon</h3>
+  <dl class="gl">
+    <dt>AutoDJ</dt><dd>Plays the station's music by itself, from playlists and the schedule.</dd>
+    <dt>Timeline</dt><dd>The plan of which song plays when, kept hours ahead.</dd>
+    <dt>Live block</dt><dd>A time slot in the schedule when a named DJ may go live.</dd>
+    <dt>Running order</dt><dd>A DJ's plan for their show: songs, station IDs and talk items.</dd>
+    <dt>Song prep</dt><dd>What the browser does to each upload: trim, master, level and encode.</dd>
+    <dt>LUFS</dt><dd>A measure of how loud music sounds. Stationwagon levels songs to −16 LUFS.</dd>
+    <dt>Crossfade</dt><dd>One song fading out while the next fades in.</dd>
+    <dt>Ducking</dt><dd>The music dipping under the DJ's voice.</dd>
+    <dt>Rejoin</dt><dd>Carrying on your show after a drop or a reload.</dd>
+    <dt>Embed</dt><dd>The small player you put on another website.</dd>
+    <dt>Bridge</dt><dd>The part of the Windows app that takes BUTT's or Mixxx's sound and sends it to the station.</dd>
+    <dt>Episode</dt><dd>A show's podcast recording, as a draft until you publish it.</dd>
+  </dl>
+</section>
+
+</div>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const sections = [...document.querySelectorAll("section.s")];
+  const toc = $("toc"), q = $("q"), results = $("results"), rail = $("rail"), menuBtn = $("menuBtn");
+
+  // ---- the contents, built from the parts and sections ----
+  let html = "", open = false;
+  for (const el of document.querySelectorAll(".partHead, section.s")) {
+    if (el.classList.contains("partHead")) {
+      if (open) html += "</ol>";
+      html += `<div class="part">${el.dataset.part}</div><ol>`;
+      open = true;
+    } else {
+      html += `<li><a href="#${el.id}" data-id="${el.id}">${el.dataset.title}</a></li>`;
+    }
+  }
+  toc.innerHTML = html + (open ? "</ol>" : "");
+  toc.id = "toc";
+  const links = new Map([...toc.querySelectorAll("a")].map((a) => [a.dataset.id, a]));
+
+  // ---- the section in view ----
+  let current = null;
+  const mark = (id) => {
+    if (id === current) return;
+    if (current && links.get(current)) links.get(current).classList.remove("here");
+    current = id;
+    const a = links.get(id);
+    if (a) { a.classList.add("here"); if (window.innerWidth > 900) a.scrollIntoView({ block: "nearest" }); }
+  };
+  const io = new IntersectionObserver((entries) => {
+    const seen = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+    if (seen[0]) mark(seen[0].target.id);
+  }, { rootMargin: "-10% 0px -70% 0px" });
+  sections.forEach((s) => io.observe(s));
+
+  // ---- phones: the contents fold away ----
+  const setOpen = (on) => { rail.classList.toggle("open", on); menuBtn.setAttribute("aria-expanded", String(on)); };
+  // on phones the folded bar stays on top, so jumps leave room for it
+  const barRoom = () => {
+    const folded = window.innerWidth <= 900 && !rail.classList.contains("open") && results.hidden;
+    document.documentElement.style.setProperty("--bar", folded ? rail.offsetHeight + "px" : window.innerWidth <= 900 ? "76px" : "0px");
+  };
+  barRoom();
+  addEventListener("resize", barRoom);
+  menuBtn.addEventListener("click", () => setOpen(!rail.classList.contains("open")));
+  toc.addEventListener("click", (e) => { const a = e.target.closest("a"); if (a) { e.preventDefault(); go(a.dataset.id); } });
+
+  // ---- quick search ----
+  // the text of each section, with a space between elements so words from separate lines don't run together
+  const textOf = (el) => {
+    const parts = [], w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) parts.push(n.nodeValue);
+    return parts.join(" ").replace(/\s+/g, " ").replace(/ ([.,:;)])/g, "$1").trim();
+  };
+  const index = sections.map((s) => ({ id: s.id, title: s.dataset.title, text: textOf(s) }));
+  const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const fold = (t) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  let hits = [], pick = 0;
+
+  function search(term) {
+    const words = fold(term).split(/\s+/).filter(Boolean);
+    if (!words.length) { results.hidden = true; toc.hidden = false; clearHighlight(); return; }
+    hits = index.map((s) => {
+      const t = fold(s.title), x = fold(s.text);
+      if (!words.every((w) => x.includes(w) || t.includes(w))) return null;
+      const score = words.reduce((n, w) => n + (t.includes(w) ? 10 : 0) + (x.split(w).length - 1), 0);
+      const at = x.indexOf(words[0]);
+      const from = Math.max(0, at - 40);
+      let snip = s.text.slice(from, from + 130);
+      snip = (from > 0 ? "…" : "") + esc(snip) + (from + 130 < s.text.length ? "…" : "");
+      for (const w of words) snip = snip.replace(new RegExp(`(${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "ig"), "<mark>$1</mark>");
+      return { ...s, score, snip };
+    }).filter(Boolean).sort((a, b) => b.score - a.score);
+    pick = 0;
+    results.innerHTML = hits.length
+      ? hits.map((h, i) => `<a href="#${h.id}" data-i="${i}"${i === 0 ? ' class="on"' : ""}><span class="t">${esc(h.title)}</span><span class="s">${h.snip}</span></a>`).join("")
+      : `<div class="none">Nothing matches "${esc(term)}". Try another word.</div>`;
+    results.hidden = false;
+    toc.hidden = true;
+    highlight(words);
+  }
+
+  // matches lit up in the guide itself, where the browser can (CSS Custom Highlight)
+  function clearHighlight() { if (window.CSS && CSS.highlights) CSS.highlights.delete("sw-find"); }
+  function highlight(words) {
+    if (!(window.CSS && CSS.highlights && window.Highlight)) return;
+    const ranges = [];
+    const walker = document.createTreeWalker($("guide"), NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const t = fold(n.nodeValue);
+      for (const w of words) {
+        for (let i = t.indexOf(w); i >= 0 && ranges.length < 400; i = t.indexOf(w, i + w.length)) {
+          const r = new Range(); r.setStart(n, i); r.setEnd(n, i + w.length); ranges.push(r);
+        }
+      }
+    }
+    CSS.highlights.set("sw-find", new Highlight(...ranges));
+  }
+
+  function go(id) {
+    const el = $(id);
+    if (!el) return;
+    if (window.innerWidth <= 900) { results.hidden = true; toc.hidden = false; setOpen(false); q.blur(); }
+    barRoom();
+    el.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+    const h = el.querySelector("h3");
+    if (h) { h.classList.remove("flash"); void h.offsetWidth; h.classList.add("flash"); }
+    try { history.replaceState(null, "", "#" + id); } catch { /* the viewer may refuse */ }
+  }
+
+  q.addEventListener("input", () => search(q.value));
+  q.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { q.value = ""; search(""); q.blur(); return; }
+    if (!hits.length || results.hidden) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      pick = (pick + (e.key === "ArrowDown" ? 1 : hits.length - 1)) % hits.length;
+      results.querySelectorAll("a").forEach((a, i) => a.classList.toggle("on", i === pick));
+      results.querySelectorAll("a")[pick].scrollIntoView({ block: "nearest" });
+    }
+    if (e.key === "Enter") { e.preventDefault(); go(hits[pick].id); }
+  });
+  results.addEventListener("click", (e) => { const a = e.target.closest("a"); if (a) { e.preventDefault(); go(a.getAttribute("href").slice(1)); } });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "/" && document.activeElement !== q && !e.ctrlKey && !e.metaKey && !/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) {
+      e.preventDefault(); q.focus(); q.select();
+    }
+  });
+
+  // a shared link to a section opens there
+  if (location.hash && $(location.hash.slice(1))) setTimeout(() => go(location.hash.slice(1)), 50);
+})();
+</script>
