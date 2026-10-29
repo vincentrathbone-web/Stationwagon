@@ -24,6 +24,7 @@ final class App
         try {
             if ($route !== 'install' && Config::isInstalled()) {
                 Schema::ensure(Db::fromConfig(), SW_ROOT); // brings an older database up to date
+                Jobs::afterVisit(); // the background jobs, when due, once this page is out
             }
             if (preg_match('#^studio/api/([a-z-]+)$#', $route, $m) === 1) {
                 (new StudioPage())->api($m[1]);

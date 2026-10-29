@@ -1,0 +1,4 @@
+# The station files the plugin unpacks during setup are for this server only
+<FilesMatch "^app\.(zip|version)$">
+  Require all denied
+</FilesMatch>

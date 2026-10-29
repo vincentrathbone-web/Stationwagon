@@ -229,6 +229,19 @@ Back asks "Close the app?" as the Windows app's close does, and **App settings**
 until the show ends. An Android browser gets **Get the Android app** in the status strip. The launcher icon is
 the Windows icon's on-air sign on the station green (an adaptive icon); the splash is the icon on light ground.
 
+### Setup in WordPress (round 37; not in the mock-ups)
+
+The plugin's screens use WordPress's own admin look with the station green as the accent (light only). **Stationwagon**
+(microphone icon) in the admin menu. Before setup: a one-line lead, the server check (only problems shown, red for
+required and amber for advice, else "This server is ready"), then numbered cards, each a set of choice tiles (the
+picked one green, a **Recommended** or **cPanel login** tag): 1 where the station lives (with the folder or subdomain
+name typed into the example address), 2 the database, 3 background jobs, 4 the cPanel login (shown only when a choice
+needs it; the last card's number follows), 5 the station and the first admin. **Set up my station** (big primary
+button), "Setting up… this takes about a minute." After setup: the done steps with ticks, then a green-edged card with
+the station's address and **Open the manager**, **Open the studio**, **The station page**; an amber card with the DNS
+record and **Check again** while a subdomain doesn't answer; cards for the shortcode, the background jobs (with the cron
+line to copy when chosen) and the details. The station's Overview gains a **Background jobs** health line.
+
 ### Remembering the password (round 36; not in the mock-ups)
 
 The sign-in page has a **Keep me signed in on this device for 30 days** tick box under the password

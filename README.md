@@ -25,24 +25,24 @@ https://wordwave.controll.co.za/stationwagon-app/ (the studio is at `/studio`, f
 
 ## What you need
 
-- Shared hosting with cPanel, **PHP 8.1+** and **MySQL or MariaDB**.
-- A cron job every 5 minutes (`php cli/plan.php`).
+- Shared hosting with cPanel, **PHP 8.1+** and **MySQL or MariaDB**. A WordPress site makes
+  setup easiest.
+- No cron job needed: the background jobs also run during visits (a cron job is optional).
 - Cloudflare in front is recommended: it caches the listener stream.
 - For DJs: Chrome or Edge, Safari on iPhone and iPad, the Windows app (Windows 10/11) or the
   Android app (Android 8+).
 
-## Quick install
+## Quick install (WordPress)
 
-1. In cPanel, make a MySQL database and a user with All Privileges.
-2. Copy `app/` to the station's folder: `bash tools/deploy-app.sh <ssh host> public_html/<folder>`
-   (or upload and extract it with File Manager).
-3. Open the station's address and follow the installer: server check, setup key, database,
-   station and timezone, your admin sign-in.
-4. Add the cron job: `*/5 * * * * php /home/<account>/public_html/<folder>/cli/plan.php`.
-5. Upload songs in **Music library**. The station plays straight away.
+1. Build the plugin: `python tools/build-wp-plugin.py` (gives `wordpress/dist/stationwagon-1.0.0.zip`).
+2. In WordPress: **Plugins → Add New Plugin → Upload Plugin**, choose the zip, **Install Now**, **Activate**.
+3. Open **Stationwagon** in the admin menu and press **Set up my station**. The easy answers are
+   already picked: a folder of the site (`/radio`), the site's own database, background jobs during
+   visits. A subdomain, a database of its own or a cron job can be made for you with the cPanel login.
+4. Open the manager and upload songs in **Music library**. The station plays straight away.
 
-Updates: copy the new files over the old ones. The database upgrades itself.
-Step by step, with screens and troubleshooting: [the Getting started guide](docs/getting-started.html).
+Updating the plugin updates the station. Without WordPress, see "Without WordPress" in
+[the Getting started guide](docs/getting-started.html), which has every step with troubleshooting.
 
 ## How it works (short version)
 
@@ -90,7 +90,8 @@ Step by step, with screens and troubleshooting: [the Getting started guide](docs
 | [`app/cli/`](app/cli/) | Command-line jobs: `plan.php` (cron), `geo-update.php`, `install.php`, `upgrade.php`, `import.php`, `set-password.php` |
 | [`desktop/`](desktop/) | The Windows studio app (Tauri 2) and its tests |
 | [`mobile/`](mobile/) | The Android studio app (Capacitor) and its phone test |
-| [`wordpress/`](wordpress/) | The Stationwagon Updates plugin that hands out the apps' updates |
+| [`wordpress/stationwagon/`](wordpress/stationwagon/) | The Stationwagon plugin: installs a station next to a WordPress site with a setup wizard, keeps it up to date, and adds the `[stationwagon_player]` shortcode |
+| [`wordpress/stationwagon-updates/`](wordpress/stationwagon-updates/) | The Stationwagon Updates plugin that hands out the apps' updates |
 | [`tools/`](tools/) | Deploy to cPanel (`deploy-app.sh`), build the apps (`build-desktop.sh`, `build-android.sh`), screenshots (`shot.mjs`), song-change previews (`song-changes.mjs`) and the mastering fit tools |
 | [`docs/POC-PLAN.md`](docs/POC-PLAN.md) | What the proof of concept had to prove, the test log, and the build-out order |
 | [`docs/project-map.html`](docs/project-map.html) | A one-page picture of milestones, parts and the next step |

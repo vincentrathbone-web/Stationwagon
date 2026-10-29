@@ -168,7 +168,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
   </div>
   <div class="results" id="results" hidden></div>
   <div class="toc" id="toc"></div>
-  <div class="foot">Matches Stationwagon 0.8 (server), Windows app 0.6.1 and Android app 0.7.1. Updated 29 Oct 2026.</div>
+  <div class="foot">Matches Stationwagon 0.8 (server), Windows app 0.6.1 and Android app 0.7.1. Updated 29 Oct 2026, with the WordPress plugin 1.0.0.</div>
 </nav>
 
 <main>
@@ -181,7 +181,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
   <div class="paths">
     <a href="#flow-listener"><span class="who">Start here</span><b>The big picture</b><span>How a listener, a DJ and an admin each use Stationwagon.</span></a>
     <a href="#studios"><span class="who">DJ</span><b>Go live</b><span>Pick a studio, prepare your show and go on air.</span></a>
-    <a href="#before"><span class="who">Admin</span><b>Set up a station</b><span>Make the database, install, keep it playing.</span></a>
+    <a href="#before"><span class="who">Admin</span><b>Set up a station</b><span>Install the plugin and answer five questions.</span></a>
   </div>
 </header>
 
@@ -242,9 +242,8 @@ ol.flow > li > a:hover { text-decoration: underline; }
   <h3>The admin's journey <span class="role">Admin</span></h3>
   <p>The admin sets the station up once; then admin and managers keep it running.</p>
   <ol class="flow">
-    <li><b>Prepare the hosting</b><span>Make a database and user in cPanel.</span><a href="#database">Make the database</a></li>
-    <li><b>Install</b><span>Put the files on the server and follow the installer. You become the first admin.</span><a href="#install">Run the installer</a></li>
-    <li><b>Keep it planned</b><span>Add one cron job, every 5 minutes.</span><a href="#cron">The cron job</a></li>
+    <li><b>Install the plugin</b><span>Upload the Stationwagon plugin in WordPress and activate it.</span><a href="#plugin">Install the plugin</a></li>
+    <li><b>Answer the wizard</b><span>Five questions, with the easy answers already picked. You become the station's first admin.</span><a href="#wizard">The setup wizard</a></li>
     <li><b>Add music</b><span>Drag songs into the Music library. They're mastered and levelled on the way, and the station is on air straight away.</span><a href="#library">Add music</a></li>
     <li><b>Plan the week</b><span>Make playlists, then a weekly schedule of playlist blocks and live blocks for DJs.</span><a href="#schedule">The weekly schedule</a></li>
     <li><b>Add the team</b><span>Add DJs and managers, and give each their first password.</span><a href="#djs">Add DJs and managers</a></li>
@@ -254,7 +253,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
 </section>
 
 <!-- ============ PART 1 ============ -->
-<div class="partHead" data-part="Set up the station"><div class="n">Part 1 · for the admin</div><h2>Set up the station</h2><p>Once per station. About 20 minutes.</p></div>
+<div class="partHead" data-part="Set up the station"><div class="n">Part 1 · for the admin</div><h2>Set up the station</h2><p>Once per station. About 5 minutes with WordPress.</p></div>
 
 <section class="s" id="what" data-title="What Stationwagon does">
   <h3>What Stationwagon does</h3>
@@ -272,66 +271,65 @@ ol.flow > li > a:hover { text-decoration: underline; }
   <div class="tbl"><table>
     <thead><tr><th>You need</th><th>Why</th></tr></thead>
     <tbody>
-      <tr><td>A cPanel hosting account</td><td>Ordinary shared hosting works. PHP 8.1 or newer and MySQL or MariaDB.</td></tr>
-      <tr><td>A web address for the station</td><td>For example <code>radio.example.com</code>, or a folder such as <code>example.com/stationwagon-app</code>.</td></tr>
+      <tr><td>A WordPress site on cPanel hosting</td><td>Ordinary shared hosting works, with PHP 8.1 or newer. The station runs next to the site.</td></tr>
+      <tr><td>The Stationwagon plugin</td><td>One zip file, <code>stationwagon-1.0.0.zip</code>. It carries the whole station.</td></tr>
       <tr><td>Cloudflare in front (recommended)</td><td>It caches the listener stream, so many listeners cost your host almost nothing.</td></tr>
-      <tr><td>The Stationwagon files</td><td>The <code>app/</code> folder from the repository.</td></tr>
-      <tr><td>About 20 minutes</td><td>Most of it is cPanel clicking.</td></tr>
+      <tr><td>About 5 minutes</td><td>Upload, activate, answer five questions.</td></tr>
     </tbody>
   </table></div>
-  <div class="note"><b>Good to know</b>The installer checks the server first and shows a red row for anything missing, so you'll know straight away if the host isn't suitable.</div>
+  <div class="note"><b>No WordPress?</b>Stationwagon also installs on its own. See <a href="#nowp">Without WordPress</a>.</div>
 </section>
 
-<section class="s" id="database" data-title="Make the database in cPanel">
-  <h3>Make the database in cPanel <span class="role">Admin</span></h3>
+<section class="s" id="plugin" data-title="Install the plugin">
+  <h3>Install the plugin <span class="role">Admin</span></h3>
   <ol class="steps">
-    <li>In cPanel, open <b>MySQL Databases</b>.</li>
-    <li>Create a database, for example <code>wordwave</code>. cPanel puts your account name in front: <code>controllco_wordwave</code>.</li>
-    <li>Create a database user with a strong password. Keep the password: the installer asks for it once.</li>
-    <li>Under <b>Add user to database</b>, add the user to the database with <b>All Privileges</b>.</li>
+    <li>In WordPress, go to <b>Plugins → Add New Plugin → Upload Plugin</b>.</li>
+    <li>Choose <code>stationwagon-1.0.0.zip</code> and press <b>Install Now</b>, then <b>Activate</b>.</li>
+    <li>Open <b>Stationwagon</b> in the admin menu. The setup wizard is there.</li>
   </ol>
-  <div class="note"><b>Already have a database?</b>You can use an existing, even busy, database. Stationwagon gives its tables a prefix so they never mix with others, and the installer refuses a prefix that's already in use.</div>
+  <div class="note"><b>Good to know</b>The wizard checks the server first. Anything missing shows in red with what to change in cPanel, and the button stays off until it's fixed.</div>
 </section>
 
-<section class="s" id="upload" data-title="Put the files on the server">
-  <h3>Put the files on the server <span class="role">Admin</span></h3>
-  <p>Pick one way.</p>
-  <h4>With SSH (from a PC with the repository)</h4>
-  <pre><code>bash tools/deploy-app.sh &lt;ssh host&gt; public_html/&lt;your folder&gt;</code></pre>
-  <p>This copies the app, and leaves a one-time <b>setup key</b> in <code>install.key</code> on the server so nobody else can run your installer first. Run the same command for every later update: it replaces the code and never touches your settings or your songs.</p>
-  <h4>With cPanel's File Manager</h4>
-  <ol class="steps">
-    <li>Zip the contents of the <code>app/</code> folder on your computer.</li>
-    <li>In <b>File Manager</b>, open the folder for your station's address, upload the zip and <b>Extract</b> it there.</li>
-    <li>Open the station's address straight away and install (next step). Without an <code>install.key</code> the installer doesn't ask for a key, so don't leave it waiting.</li>
-  </ol>
+<section class="s" id="wizard" data-title="The setup wizard">
+  <h3>The setup wizard <span class="role">Admin</span></h3>
+  <p>Every question already has the easy answer picked. Press <b>Set up my station</b> and it's done in about a minute.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Question</th><th>Easy answer (picked)</th><th>Other choices</th></tr></thead>
+    <tbody>
+      <tr><td><b>1 · Where should the station live?</b></td><td>A folder of this site, like <code>example.com/radio</code></td><td>Its own subdomain, like <code>radio.example.com</code>, made for you in cPanel</td></tr>
+      <tr><td><b>2 · Which database?</b></td><td>This site's database (the station's tables start with <code>sw_</code>)</td><td>A new database made for you in cPanel, or one you made yourself</td></tr>
+      <tr><td><b>3 · Background jobs?</b></td><td>Automatically, during visits</td><td>Also a cron job, added for you in cPanel, or one you add yourself</td></tr>
+      <tr><td><b>4 · Your cPanel login</b></td><td>Only asked when a choice above needs it</td><td>Used once for setup, never saved</td></tr>
+      <tr><td><b>5 · Your station</b></td><td>Its name and timezone come from the site; your name and email from your WordPress account</td><td>Choose a password for the station (10 characters or more)</td></tr>
+    </tbody>
+  </table></div>
+  <p>When it's done, the Stationwagon page shows your station's address with <b>Open the manager</b> and <b>Open the studio</b>. Sign in with the email and password from step 5. The station has its own sign-in, apart from WordPress.</p>
+  <div class="warn"><b>Chose a subdomain?</b>If your domain's DNS is kept elsewhere (for example at Cloudflare), the page shows the one <b>A record</b> to add there, with a <b>Check again</b> button. If the DNS is at your hosting, it works by itself within minutes.</div>
 </section>
 
-<section class="s" id="install" data-title="Run the installer">
-  <h3>Run the installer <span class="role">Admin</span></h3>
-  <p>Open your station's address in a browser. You land on <b>Set up your station</b>, which first shows the <b>Server check</b>. Fix any red rows; the installer can't continue until they pass.</p>
-  <ol class="steps">
-    <li><b>Setup key.</b> If asked, copy it from <code>install.key</code> (next to <code>index.php</code>, in File Manager). It's deleted once setup is done.</li>
-    <li><b>1 · Database.</b> The database name, user and password from cPanel. The host is usually <code>localhost</code>.</li>
-    <li><b>2 · Station.</b> Your station's name and its <b>timezone</b>. The schedule and the station clock use it.</li>
-    <li><b>3 · Your sign-in.</b> Your name, email and password. You become the station's first <b>admin</b>; you add managers and DJs later.</li>
-  </ol>
-  <p>When it's done you see <b>Go to the station</b>.</p>
-  <div class="warn"><b>One more step?</b>If the host doesn't let the installer save its settings file, it shows the file's content instead. Create <code>config.local.php</code> next to <code>index.php</code> (File Manager → <b>+ File</b>) with exactly that content, then press <b>I've saved it, open the station</b>. That file holds your database password, so don't share it.</div>
-</section>
-
-<section class="s" id="cron" data-title="Keep the AutoDJ planned (cron)">
-  <h3>Keep the AutoDJ planned <span class="role">Admin</span></h3>
-  <p>Add one cron job so the timeline stays planned hours ahead, even when nobody is listening. In cPanel open <b>Cron Jobs</b>, choose <b>Every 5 minutes</b> and use this command, with your own account and folder:</p>
-  <pre><code>php /home/&lt;account&gt;/public_html/&lt;your folder&gt;/cli/plan.php &gt; /dev/null 2&gt;&amp;1</code></pre>
-  <p>The same job fetches the free location database once a month, for the <a href="#listeners">Listeners</a> screen. To fill it the first time, run <code>php cli/geo-update.php</code> once over SSH, or wait for the job to do it.</p>
-  <div class="note"><b>Why a cron job?</b>Listeners also keep the timeline planned when it runs short. The cron job makes sure it's ready before the first listener of the day arrives.</div>
+<section class="s" id="cron" data-title="Background jobs (no cron needed)">
+  <h3>Background jobs <span class="role">Admin</span></h3>
+  <p>The station plans its music hours ahead, turns live shows into podcast episodes, cleans up old recordings and fetches the free location database for the <a href="#listeners">Listeners</a> screen once a month. These jobs run by themselves when listeners and staff use the station, at most every 5 minutes, so <b>no cron job is needed</b>.</p>
+  <p>A cron job is still a good idea for a station with quiet hours: the wizard can add it for you, or show the exact line to paste into cPanel → <b>Cron Jobs</b> (every 5 minutes). It uses <code>/usr/local/bin/php</code>, which follows your account's PHP version, so it keeps working when the host upgrades PHP.</p>
+  <p>The manager's <a href="#overview">Overview</a> shows how the jobs run, and warns if a cron job you set up stops.</p>
 </section>
 
 <section class="s" id="updates" data-title="Updating the station">
   <h3>Updating the station <span class="role">Admin</span></h3>
-  <p>Copy the new files over the old ones (the same deploy command, or File Manager). Your settings, songs and recordings stay. <b>The database upgrades itself</b> on the first page view after an update, so there's never a manual migration.</p>
-  <p>The Windows and Android studio apps update themselves when they open (never during a show).</p>
+  <p>Update the Stationwagon plugin like any plugin (upload the newer zip). The next time you open the WordPress admin, the station's code is brought up to date too. Your settings, songs and recordings stay, and <b>the database upgrades itself</b>.</p>
+  <p>Removing the plugin leaves the station running and untouched. The Windows and Android studio apps update themselves when they open (never during a show).</p>
+</section>
+
+<section class="s" id="nowp" data-title="Without WordPress">
+  <h3>Without WordPress <span class="role">Admin</span></h3>
+  <p>On a site without WordPress, install the station by hand:</p>
+  <ol class="steps">
+    <li>In cPanel → <b>MySQL Databases</b>, make a database and a user, and add the user to it with <b>All Privileges</b>.</li>
+    <li>Upload the contents of the <code>app/</code> folder into the station's folder (File Manager → Upload, then Extract), or use <code>bash tools/deploy-app.sh &lt;ssh host&gt; public_html/&lt;folder&gt;</code>, which also leaves a one-time setup key in <code>install.key</code>.</li>
+    <li>Open the station's address and follow <b>Set up your station</b>: the setup key if asked, the database, the station and timezone, and your sign-in.</li>
+  </ol>
+  <p>Background jobs run during visits here too; a cron job is optional, as above. If the host doesn't let the installer save its settings, it shows the content of <code>config.local.php</code> to save next to <code>index.php</code> yourself.</p>
+  <div class="note"><b>Coming next</b>A one-file setup for sites without WordPress: upload <code>setup.php</code>, open it, and it does the rest.</div>
 </section>
 
 <!-- ============ PART 2 ============ -->
@@ -425,7 +423,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
 
 <section class="s" id="overview" data-title="The Overview and Skip">
   <h3>The Overview and Skip <span class="role">Manager</span></h3>
-  <p><b>Overview</b> is the manager's home: what's on air now and next, how many are listening, and a health list (timeline planned, music library, playlists and schedule). A green dot means fine.</p>
+  <p><b>Overview</b> is the manager's home: what's on air now and next, how many are listening, and a health list (timeline planned, music library, playlists and schedule, background jobs). A green dot means fine.</p>
   <p><b>Skip this song</b> fades the current song out and starts the next. It does nothing while a live show is on air or about to start.</p>
 </section>
 
@@ -600,7 +598,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
   <h4>The AutoDJ came back in the middle of my show.</h4>
   <p>Your sound stopped reaching the station for 8 seconds. Open the studio and press <a href="#trouble">Rejoin your show</a>.</p>
   <h4>The station page says nothing is planned.</h4>
-  <p>Check that the library has songs and the <a href="#cron">cron job</a> runs every 5 minutes.</p>
+  <p>Check that the library has songs. The Overview's <b>Background jobs</b> line shows if they run; see <a href="#cron">Background jobs</a>.</p>
   <h4>A song starts too loud or too quiet.</h4>
   <p>Upload it again with <b>Loudness normalization</b> on in the <a href="#library">Music library</a>.</p>
   <h4>The Windows app says "unknown publisher".</h4>

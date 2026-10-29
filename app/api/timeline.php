@@ -3,7 +3,7 @@
 // Song urls are relative to the app root.
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
-use Stationwagon\{Listeners, Config, Notes, Planner};
+use Stationwagon\{Listeners, Config, Jobs, Notes, Planner};
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -12,6 +12,7 @@ if (!Config::isInstalled()) {
     echo json_encode(['error' => 'Not set up yet.']);
     exit;
 }
+Jobs::afterVisit();
 try {
     $planner = Planner::forFirstStation();
     $now = microtime(true);

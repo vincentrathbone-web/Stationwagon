@@ -41,3 +41,11 @@ mastering-ref/
 
 # Android app builds (the release key lives in ~/.android-keys, its password in tools/deploy/)
 mobile/dist/
+
+# WordPress plugin builds (tools/build-wp-plugin.py); the app zip it carries is built too
+wordpress/dist/
+wordpress/stationwagon/app.zip
+wordpress/stationwagon/app.version
+
+# local Claude Code settings (permission rules for this PC)
+.claude/settings.local.json

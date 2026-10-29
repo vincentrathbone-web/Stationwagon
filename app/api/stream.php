@@ -4,7 +4,7 @@
 // many listeners), browsers always ask again. The Cloudflare Cache Rule matches */api/stream.php*.
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
-use Stationwagon\{Config, Planner, Stream};
+use Stationwagon\{Config, Jobs, Planner, Stream};
 
 header('Content-Type: application/vnd.apple.mpegurl');
 header('Access-Control-Allow-Origin: *');
@@ -13,6 +13,7 @@ if (!Config::isInstalled()) {
     echo "#EXTM3U\n# Not set up yet.\n";
     exit;
 }
+Jobs::afterVisit(); // the background jobs, when due, once this answer is out
 try {
     $out = Stream::playlist(Planner::forFirstStation(), microtime(true));
 } catch (Throwable $ex) {

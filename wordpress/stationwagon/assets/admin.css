@@ -1,0 +1,41 @@
+/* The Stationwagon admin screens: WordPress's own look, with the station's green as the accent. */
+.sw { --sw-green: #138a43; --sw-green-bg: #e7f4ec; --sw-amber: #a15c00; --sw-amber-bg: #fff4e2; --sw-line: #dcdcde; --sw-ink-2: #50575e; max-width: 880px; }
+.sw-title { display: flex; align-items: center; gap: 8px; }
+.sw-title .dashicons { color: var(--sw-green); font-size: 28px; width: 28px; height: 28px; }
+.sw-lead { font-size: 15px; max-width: 64ch; color: var(--sw-ink-2); }
+.sw-card { background: #fff; border: 1px solid var(--sw-line); border-radius: 8px; padding: 4px 20px 16px; margin: 16px 0; }
+.sw-card h2 { font-size: 17px; display: flex; align-items: center; gap: 10px; }
+.sw-n { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--sw-green-bg); color: var(--sw-green); font-size: 13px; font-weight: 600; }
+.sw-choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--sw-line); border-radius: 6px; margin: 8px 0; cursor: pointer; }
+.sw-choice:has(input:checked) { border-color: var(--sw-green); background: var(--sw-green-bg); }
+.sw-choice input { margin-top: 3px; }
+.sw-choice span { display: block; }
+.sw-choice small { display: block; color: var(--sw-ink-2); font-size: 13px; margin-top: 2px; line-height: 1.5; }
+.sw-tag { font-style: normal; font-size: 11px; border: 1px solid var(--sw-line); border-radius: 999px; padding: 0 7px; margin-left: 6px; color: var(--sw-ink-2); white-space: nowrap; }
+.sw-tag.sw-easy { border-color: var(--sw-green); color: var(--sw-green); }
+.sw-sub { margin: 4px 0 8px 34px; }
+.sw-sub .sw-name { width: 9em; }
+.sw-field label { display: block; font-weight: 600; margin-bottom: 3px; }
+.sw-field select { max-width: 25em; }
+.sw-error { color: #b32d2e; font-weight: 600; margin: 2px 0 8px; }
+.sw-ready { color: var(--sw-green); font-weight: 600; display: flex; gap: 6px; align-items: center; }
+.sw-checks .sw-bad { color: #b32d2e; }
+.sw-checks .sw-soft { color: var(--sw-amber); }
+.sw-go { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.sw-wait { color: var(--sw-ink-2); }
+.sw-done { background: #fff; border: 1px solid var(--sw-line); border-radius: 8px; padding: 12px 16px 12px 16px; list-style: none; margin: 16px 0; }
+.sw-done li { display: flex; gap: 6px; align-items: baseline; margin: 4px 0; }
+.sw-done .dashicons { color: var(--sw-green); }
+.sw-done small { color: var(--sw-ink-2); }
+.sw-hero { border-color: var(--sw-green); }
+.sw-kicker { text-transform: uppercase; letter-spacing: .08em; font-size: 11px; color: var(--sw-ink-2); margin-bottom: 0; }
+.sw-address { font-size: 22px; font-weight: 600; margin: 4px 0 14px; word-break: break-all; }
+.sw-address a { text-decoration: none; color: var(--sw-green); }
+.sw-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.sw-warn { border-color: var(--sw-amber); background: var(--sw-amber-bg); }
+.sw-dns { max-width: 560px; }
+.sw-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 16px; }
+.sw-facts th { text-align: left; padding: 3px 14px 3px 0; font-weight: 600; vertical-align: top; }
+.sw-facts td { word-break: break-all; }
+.sw-copy { display: block; white-space: pre-wrap; word-break: break-all; padding: 8px; }
+@media (max-width: 600px) { .sw-sub { margin-left: 0; } .sw-card { padding: 4px 14px 14px; } }

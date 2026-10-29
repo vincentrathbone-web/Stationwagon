@@ -1,5 +1,5 @@
 <?php use function Stationwagon\{h, clock, duration, megabytes}; use Stationwagon\{App, Auth};
-/** @var array $me @var array $station @var array $onAir @var float $now @var ?float $plannedUntil @var int $songs @var int $bytes @var int $playlists @var int $blocks @var ?array $block @var int $listening @var int $todayPeak */
+/** @var array $me @var array $station @var array $onAir @var float $now @var ?float $plannedUntil @var int $songs @var int $bytes @var int $playlists @var int $blocks @var ?array $block @var int $listening @var int $todayPeak @var array $jobs */
 $tz = $station['timezone'];
 $hour = (int) clock($now, $tz, 'G');
 $hello = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good evening');
@@ -44,6 +44,7 @@ $next = $onAir['next'];
       <li class="<?= $plannedUntil && $plannedUntil > $now + 1800 ? 'ok' : 'warn' ?>"><span class="dot"></span><span class="what"><b>Timeline planned</b><small>until <?= $plannedUntil ? h(clock($plannedUntil, $tz, 'H:i')) : '—' ?></small></span><span class="found"><?= $plannedUntil ? h(duration($plannedUntil - $now)) : '0:00' ?> ahead</span></li>
       <li class="<?= $songs ? 'ok' : 'warn' ?>"><span class="dot"></span><span class="what"><b>Music library</b><small><?= h(megabytes($bytes)) ?> stored</small></span><span class="found"><?= $songs ?> songs</span></li>
       <li class="ok"><span class="dot"></span><span class="what"><b>Playlists and schedule</b><small><?= $blocks ? 'The schedule picks the playlist' : 'No schedule yet: AutoDJ plays the whole library' ?></small></span><span class="found"><?= $playlists ?> / <?= $blocks ?></span></li>
+      <li class="<?= $jobs['ok'] ? 'ok' : 'warn' ?>"><span class="dot"></span><span class="what"><b>Background jobs</b><small><?= h($jobs['what']) ?></small></span><span class="found"><?= h($jobs['found']) ?></span></li>
     </ul>
   </section>
 </div>

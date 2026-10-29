@@ -173,7 +173,7 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "29 Oct · 17:30",
+  updated: "29 Oct · 21:00",
   commits: 40,
   version: "0.8.0-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
@@ -263,6 +263,9 @@ const MAP = {
   call: null,
   feedTitle: "Changed 20–29 Oct",
   feed: [
+    { what: "Setup as a WordPress plugin", to: "built and tested on Laragon: a wizard (folder or subdomain, this site's database or a new one, background jobs), station updates with the plugin, the player shortcode; tested on Laragon and the server", at: "29 Oct" },
+    { what: "Background jobs without cron", to: "built: they run during visits; cron optional, with a version-free PHP path", at: "29 Oct" },
+    { what: "Getting started guide and README", to: "rewritten for the plugin", at: "29 Oct", kind: "info" },
     { what: "Windows app 0.6.1 and Android app 0.7.1", to: "released; the plugin offers them to installed apps (checked live)", at: "29 Oct", kind: "info" },
     { what: "Round 36 (remember my password)", to: "committed and pushed", at: "29 Oct", kind: "info" },
     { what: "Remember my password", to: "built: Keep me signed in (30 days), and saving it in browsers, the Windows and Android apps", at: "29 Oct" },

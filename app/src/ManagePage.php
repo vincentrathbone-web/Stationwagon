@@ -43,6 +43,7 @@ final class ManagePage
             'block' => $this->planner->blockAt($now),
             'listening' => ($listeners = new Listeners($this->db, $this->station))->now($now),
             'todayPeak' => $listeners->daily($now, 1)[0]['peak'],
+            'jobs' => Jobs::health($now),
         ]);
     }
 

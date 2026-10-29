@@ -229,7 +229,12 @@ final class Installer
             }
         }
 
-        $config = $this->configText($db);
+        // 'cron': a cron job was set up, so the Overview warns if it stops; 'managed_by': set up by
+        // the WordPress plugin, which also brings the code up to date
+        $config = $this->configText($db, array_filter([
+            'cron' => !empty($in['cron']),
+            'managed_by' => (string) ($in['managed_by'] ?? ''),
+        ]));
         $written = $this->writeConfig($config);
         if ($written && $this->setupKeyRequired()) {
             @unlink($this->setupKeyPath()); // one use only
@@ -259,13 +264,13 @@ final class Installer
         return substr($s !== '' ? $s : 'station', 0, 64);
     }
 
-    private function configText(array $db): string
+    private function configText(array $db, array $extra = []): string
     {
         $values = [
             'db' => $db,
             'app_key' => bin2hex(random_bytes(32)),
             'installed_at' => gmdate('c'),
-        ];
+        ] + $extra;
         return "<?php\n// Written by the Stationwagon installer. Keep this file private: it holds the\n"
             . "// database password. It is never committed and the web server refuses to serve it.\n"
             . 'return ' . var_export($values, true) . ";\n";
