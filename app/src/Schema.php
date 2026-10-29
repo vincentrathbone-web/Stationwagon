@@ -27,14 +27,14 @@ namespace Stationwagon;
  */
 final class Schema
 {
-    public const VERSION = 8;
+    public const VERSION = 9;
 
     /** Table names without prefix, in creation order (foreign keys need their parents first). */
     public const TABLES = [
         'settings', 'stations', 'users', 'station_users', 'tracks', 'playlists', 'playlist_tracks',
         'schedule', 'live_shows', 'live_pieces', 'timeline', 'presenter_notes', 'running_orders',
         'listeners', 'listener_hours', 'listener_tally', 'listener_visitors',
-        'episodes', 'episode_takes', 'episode_chunks',
+        'episodes', 'episode_takes', 'episode_chunks', 'remember_tokens',
     ];
 
     /** @return array<string,string> table name => CREATE TABLE statement */
@@ -238,6 +238,7 @@ final class Schema
             'episodes' => self::episodes($p, $opts),
             'episode_takes' => self::episodeTakes($p, $opts),
             'episode_chunks' => self::episodeChunks($p, $opts),
+            'remember_tokens' => self::rememberTokens($p, $opts),
         ];
     }
 
@@ -395,6 +396,28 @@ final class Schema
             ) $opts";
     }
 
+    /**
+     * "Keep me signed in": one row per device. The browser holds selector:validator in its sw_remember
+     * cookie; only the validator's SHA-256 is kept here. pw = the end of the password hash when it was
+     * made, so a new password ends it, as it ends other sessions.
+     */
+    private static function rememberTokens(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}remember_tokens` (
+                `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `user_id` INT UNSIGNED NOT NULL,
+                `selector` CHAR(24) NOT NULL,
+                `validator_hash` CHAR(64) NOT NULL,
+                `pw` VARCHAR(12) NOT NULL,
+                `created_at` DATETIME NOT NULL,
+                `expires_at` DATETIME NOT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `{$p}remember_selector` (`selector`),
+                KEY `{$p}remember_expires` (`expires_at`),
+                CONSTRAINT `{$p}fk_remember_user` FOREIGN KEY (`user_id`) REFERENCES `{$p}users` (`id`) ON DELETE CASCADE
+            ) $opts";
+    }
+
     /** A device take's pieces: 10 s of one track each, cut on whole MP3 frames. */
     private static function episodeChunks(string $p, string $opts): string
     {
@@ -426,6 +449,7 @@ final class Schema
             6 => [self::episodes($p, $opts), self::episodeTakes($p, $opts), self::episodeChunks($p, $opts)],
             7 => ["ALTER TABLE `{$p}presenter_notes` ADD COLUMN `replaced_by` INT UNSIGNED NULL COMMENT 'the edited copy that replaces this note' AFTER `posted_at`"],
             8 => ["ALTER TABLE `{$p}tracks` ADD COLUMN `mastered` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'song prep mastered it like the station''s Audition chain' AFTER `loudness_lufs`"],
+            9 => [self::rememberTokens($p, $opts)],
         ];
     }
 

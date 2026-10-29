@@ -23,6 +23,10 @@ base64 = "0.22"
 url = "2"
 rand = "0.8"
 
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39"
+windows-core = "0.62"
+
 [profile.release]
 codegen-units = 1
 lto = true

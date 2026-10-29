@@ -6,7 +6,8 @@ namespace Stationwagon;
 /**
  * Sign-in for station staff. Roles rank dj < manager < admin; a page asks for the lowest role
  * it needs. Failed attempts are counted per email and per address in storage/cache/throttle, so
- * guessing passwords gets locked out for a while.
+ * guessing passwords gets locked out for a while. "Keep me signed in" leaves a token cookie that
+ * signs the device in again for 30 days, until the password changes or the DJ signs out there.
  */
 final class Auth
 {
@@ -14,6 +15,8 @@ final class Auth
     public const MAX_FAILS_PER_EMAIL = 5;
     public const MAX_FAILS_PER_ADDRESS = 20;
     public const LOCK_SECONDS = 900;
+    public const REMEMBER_COOKIE = 'sw_remember';
+    public const REMEMBER_DAYS = 30;
 
     private static ?self $instance = null;
     private ?array $user = null;
@@ -29,7 +32,7 @@ final class Auth
     }
 
     /** @return array{ok:bool,error?:string} */
-    public function attempt(string $email, string $password, string $address): array
+    public function attempt(string $email, string $password, string $address, bool $remember = false): array
     {
         $email = strtolower(trim($email));
         $keys = ['e:' . $email => self::MAX_FAILS_PER_EMAIL, 'a:' . $address => self::MAX_FAILS_PER_ADDRESS];
@@ -49,13 +52,16 @@ final class Auth
         }
         $this->clear('e:' . $email);
         if (password_needs_rehash($row['password_hash'], PASSWORD_DEFAULT)) {
-            $this->setPassword((int) $row['id'], $password);
+            $row['password_hash'] = $this->setPassword((int) $row['id'], $password);
         }
         $this->db->run('UPDATE ' . $this->db->table('users') . ' SET last_login_at = ? WHERE id = ?', [gmdate('Y-m-d H:i:s'), $row['id']]);
         Session::start();
         Session::regenerate();
         $_SESSION['user_id'] = (int) $row['id'];
         $_SESSION['pw'] = substr($row['password_hash'], -12); // a password change signs out other sessions
+        if ($remember) {
+            $this->remember((int) $row['id'], $row['password_hash']);
+        }
         $this->loaded = false;
         return ['ok' => true];
     }
@@ -69,6 +75,9 @@ final class Auth
         $this->loaded = true;
         $this->user = null;
         $id = (int) ($_SESSION['user_id'] ?? 0);
+        if ($id <= 0) {
+            $id = $this->fromRemember();
+        }
         if ($id > 0) {
             $row = $this->db->run('SELECT id, email, name, role, password_hash, last_login_at FROM ' . $this->db->table('users') . ' WHERE id = ?', [$id])->fetch() ?: null;
             if ($row !== null && hash_equals(substr($row['password_hash'], -12), (string) ($_SESSION['pw'] ?? ''))) {
@@ -84,9 +93,78 @@ final class Auth
 
     public function signOut(): void
     {
+        $token = $this->rememberCookie();
+        if ($token !== null) {
+            $this->db->run('DELETE FROM ' . $this->db->table('remember_tokens') . ' WHERE selector = ?', [$token[0]]);
+        }
+        if (isset($_COOKIE[self::REMEMBER_COOKIE])) {
+            $this->forget();
+        }
         unset($_SESSION['user_id'], $_SESSION['pw']);
         Session::regenerate();
         $this->loaded = false;
+    }
+
+    /** A new "Keep me signed in" token for this device (expired ones are cleared on the way). */
+    private function remember(int $userId, string $hash): void
+    {
+        $t = $this->db->table('remember_tokens');
+        $this->db->run("DELETE FROM $t WHERE expires_at < ?", [gmdate('Y-m-d H:i:s')]);
+        $selector = bin2hex(random_bytes(12));
+        $validator = bin2hex(random_bytes(32));
+        $expires = time() + self::REMEMBER_DAYS * 86400;
+        $this->db->run(
+            "INSERT INTO $t (user_id, selector, validator_hash, pw, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+            [$userId, $selector, hash('sha256', $validator), substr($hash, -12), gmdate('Y-m-d H:i:s'), gmdate('Y-m-d H:i:s', $expires)]
+        );
+        Session::cookie(self::REMEMBER_COOKIE, $selector . ':' . $validator, $expires);
+        $_COOKIE[self::REMEMBER_COOKIE] = $selector . ':' . $validator;
+    }
+
+    /** @return ?array{0:string,1:string} the device's token cookie: [selector, validator] */
+    private function rememberCookie(): ?array
+    {
+        $c = $_COOKIE[self::REMEMBER_COOKIE] ?? null;
+        return is_string($c) && preg_match('/^([0-9a-f]{24}):([0-9a-f]{64})$/', $c, $m) === 1 ? [$m[1], $m[2]] : null;
+    }
+
+    /**
+     * Signs the device in again from its token: the user's id, or 0. A token that doesn't match (a
+     * wrong validator, expired, or made before the password changed) is removed with its cookie.
+     */
+    private function fromRemember(): int
+    {
+        if (!isset($_COOKIE[self::REMEMBER_COOKIE])) {
+            return 0;
+        }
+        $token = $this->rememberCookie();
+        $t = $this->db->table('remember_tokens');
+        $row = $token === null ? null : ($this->db->run(
+            "SELECT r.id, r.user_id, r.validator_hash, r.pw, r.expires_at, u.password_hash FROM $t r JOIN " . $this->db->table('users') . ' u ON u.id = r.user_id WHERE r.selector = ?',
+            [$token[0]]
+        )->fetch() ?: null);
+        $ok = $row !== null
+            && $row['expires_at'] >= gmdate('Y-m-d H:i:s')
+            && hash_equals($row['validator_hash'], hash('sha256', $token[1]))
+            && hash_equals(substr($row['password_hash'], -12), $row['pw']);
+        if (!$ok) {
+            if ($row !== null) {
+                $this->db->run("DELETE FROM $t WHERE id = ?", [$row['id']]);
+            }
+            $this->forget();
+            return 0;
+        }
+        Session::start();
+        Session::regenerate();
+        $_SESSION['user_id'] = (int) $row['user_id'];
+        $_SESSION['pw'] = $row['pw'];
+        return (int) $row['user_id'];
+    }
+
+    private function forget(): void
+    {
+        Session::cookie(self::REMEMBER_COOKIE, '', 1);
+        unset($_COOKIE[self::REMEMBER_COOKIE]);
     }
 
     public static function allows(?array $user, string $role): bool

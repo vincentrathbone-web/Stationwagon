@@ -146,13 +146,25 @@ const closeWindow = (title) => execFileSync("powershell", ["-NoProfile", "-Comma
   ` $h = [W.U]::FindWindow([NullString]::Value, '${title}'); if ($h -ne [IntPtr]::Zero) { [W.U]::PostMessage($h, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; 'closed' } else { 'none' }`], { encoding: "utf8" }).trim();
 const alive = () => { try { execFileSync("tasklist", ["/FI", `PID eq ${app.pid}`], { encoding: "utf8" }).includes(String(app.pid)) || (() => { throw 0; })(); return true; } catch { return false; } };
 
+// the test's own WebView2 profile, so the passwords it saves don't stay in yours
+const profile = join(process.env.TEMP || here, `sw-app-test-${process.pid}`);
+const launch = () => spawn(exe, [], { env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${cdpPort} --autoplay-policy=no-user-gesture-required`,
+  WEBVIEW2_USER_DATA_FOLDER: profile, SW_UPDATE_ENDPOINT: `http://127.0.0.1:${upd.address().port}/latest?v={{current_version}}` }, stdio: "ignore" });
+/** Types into a field the way a person does (focus, then key input), so Edge's password manager sees it. */
+const typeInto = async (sel, value) => { await evaluate(`document.querySelector(${JSON.stringify(sel)}).focus()`); await call("Input.insertText", { text: value }); };
+const pressEnter = async () => { for (const type of ["keyDown", "keyUp"]) await call("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, ...(type === "keyDown" ? { text: String.fromCharCode(13) } : {}) }); };
+/** A real mouse click in the middle of an element. */
+const clickOn = async (sel) => {
+  const r = await evaluate(`(() => { const b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`);
+  for (const type of ["mousePressed", "mouseReleased"]) await call("Input.dispatchMouseEvent", { type, x: r.x, y: r.y, button: "left", clickCount: 1 });
+};
+
 let lone = null, dj = null, minBefore = null;
 const shows = [];
 try {
   minBefore = helper("podcast-min", "30").before;
   if (!existsSync(exe)) throw new Error("No app at " + exe + " (cargo build in desktop/src-tauri first)");
-  app = spawn(exe, [], { env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${cdpPort} --autoplay-policy=no-user-gesture-required`,
-    SW_UPDATE_ENDPOINT: `http://127.0.0.1:${upd.address().port}/latest?v={{current_version}}` }, stdio: "ignore" });
+  app = launch();
 
   console.log("Opening the app");
   let t = await attach((x) => /\/(studio|signin)/.test(x.url));
@@ -310,6 +322,34 @@ try {
   check("  closing it leaves the studio open", closeWindow("Stationwagon Studio: settings") === "closed" && (await sleep(800), alive()) && !(await targets()).some((x) => x.url.includes("#settings")));
   await attach((x) => x.url.startsWith(base));
 
+  console.log("Remembering the password");
+  await call("Network.clearBrowserCookies");
+  await go(`${base}/signin`);
+  await typeInto("#email", lone.email);
+  await typeInto("#password", lone.password);
+  await pressEnter();
+  for (let i = 0; i < 50 && !(await path()).endsWith("/manage"); i++) await sleep(100);
+  check("a DJ signs in by typing", (await path()).endsWith("/manage"), await path());
+  const bubble = execFileSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(here, "press-bubble.ps1"), String(app.pid)], { encoding: "utf8" }).trim();
+  check("  Edge asks \"Save your password?\", and Save keeps it (in the app's own WebView2 profile)", bubble === "pressed", bubble);
+  await call("Network.clearBrowserCookies"); // signed out: the next sign-in
+  await go(`${base}/signin`);
+  const filled = await (async () => { for (let i = 0; i < 30; i++) { if (await evaluate("document.querySelector('#password').matches(':autofill')").catch(() => false)) return true; await sleep(200); } return false; })();
+  check("the next time, the app fills in the saved email and password", filled);
+  await clickOn("main h1"); // Edge hands a filled password to the page only once the person touches it
+  check("  the filled-in email is the DJ's", (await evaluate("document.querySelector('#email').value")) === lone.email);
+  await clickOn("#remember");
+  await clickOn("main button[type=submit]");
+  for (let i = 0; i < 50 && !(await path()).endsWith("/manage"); i++) await sleep(100);
+  check("  Sign in (with Keep me signed in) signs in with it, without typing", (await path()).endsWith("/manage"), await path());
+  closeWindow("Stationwagon Studio");
+  for (let i = 0; i < 30 && alive(); i++) await sleep(200);
+  app = launch();
+  t = await attach((x) => /\/(studio|signin)/.test(x.url));
+  for (let i = 0, last = ""; i < 50; i++) { await sleep(200); const p = await path(); if (p && p === last && (await evaluate("document.readyState").catch(() => "")) === "complete") break; last = p; }
+  check("Keep me signed in: the app closed and opened again goes straight to the studio, signed in", (await path()).endsWith("/studio") && !!(await until((x) => x.slot, 10)), await path());
+  check("  the test used its own WebView2 profile (yours is left alone)", existsSync(join(profile, "EBWebView")));
+
   console.log("Closing");
   closeWindow("Stationwagon Studio");
   for (let i = 0; i < 30 && alive(); i++) await sleep(200);
@@ -321,6 +361,7 @@ try {
   try { if (ws) ws.close(); } catch { /* closed */ }
   try { if (app && alive()) execFileSync("taskkill", ["/PID", String(app.pid), "/T", "/F"], { stdio: "ignore" }); } catch { /* gone */ }
   upd.close();
+  try { rmSync(profile, { recursive: true, force: true }); } catch { /* still in use */ }
   if (saved) writeFileSync(cfgFile, saved); else rmSync(cfgFile, { force: true });
   try { if (minBefore !== null) helper("podcast-min", String(minBefore)); } catch (e) { console.log("cleanup: " + e.message); }
   try { if (dj) helper("studio-cleanup", String(dj.id), String(dj.block || 0)); } catch (e) { console.log("cleanup: " + e.message); }

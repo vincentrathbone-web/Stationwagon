@@ -5,7 +5,7 @@
 //   php app/tests/auth_test.php      (same SW_TEST_DB_* settings as install_test.php)
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
-use Stationwagon\{Auth, AuthPage, Db, Request};
+use Stationwagon\{Auth, AuthPage, Db, Request, Session};
 
 $t = test_database('auth');
 $root = temp_root('auth');
@@ -97,6 +97,55 @@ try {
     $newAuth()->attempt('dj@example.test', 'brand new password', '192.0.2.3');
     $hash = (string) $db->run("SELECT password_hash FROM $users WHERE email = 'dj@example.test'")->fetchColumn();
     check('a weak old hash is upgraded at sign-in', !password_needs_rehash($hash, PASSWORD_DEFAULT) && password_verify('brand new password', $hash));
+
+    echo "Keep me signed in\n";
+    $tokens = $db->table('remember_tokens');
+    $_SESSION = []; $_COOKIE = []; Session::$cliCookies = [];
+    $newAuth()->attempt('dj@example.test', 'brand new password', '192.0.2.4');
+    check('without the tick box: no token, no cookie', !isset(Session::$cliCookies[Auth::REMEMBER_COOKIE]) && (int) $db->run("SELECT COUNT(*) FROM $tokens")->fetchColumn() === 0);
+    $device = function () use ($newAuth): string {
+        $_SESSION = []; $_COOKIE = []; Session::$cliCookies = [];
+        $newAuth()->attempt('dj@example.test', 'brand new password', '192.0.2.4', true);
+        return Session::$cliCookies[Auth::REMEMBER_COOKIE][0] ?? '';
+    };
+    $cookie = $device();
+    [$value, $expires] = Session::$cliCookies[Auth::REMEMBER_COOKIE] ?? ['', 0];
+    check('with it: a cookie that lasts 30 days', preg_match('/^[0-9a-f]{24}:[0-9a-f]{64}$/', $value) === 1 && abs($expires - (time() + 30 * 86400)) < 60);
+    $row = $db->run("SELECT * FROM $tokens")->fetch();
+    check('the database keeps only a hash of the token', $row && $row['validator_hash'] === hash('sha256', substr($cookie, 25)) && !str_contains(json_encode($row), substr($cookie, 25)));
+    $_SESSION = []; $_COOKIE = [Auth::REMEMBER_COOKIE => $cookie];
+    $me = $newAuth()->user();
+    check('the browser closed and opened again (no session): signed in from the token', ($me['email'] ?? '') === 'dj@example.test' && ($_SESSION['user_id'] ?? 0) === $me['id']);
+    $_SESSION = []; $_COOKIE = [Auth::REMEMBER_COOKIE => substr($cookie, 0, 25) . str_repeat('0', 64)]; Session::$cliCookies = [];
+    check('a wrong token: not signed in, and its cookie removed', $newAuth()->user() === null && (Session::$cliCookies[Auth::REMEMBER_COOKIE][1] ?? 99) < time());
+    check('  and the token is ended (someone guessed at it)', (int) $db->run("SELECT COUNT(*) FROM $tokens")->fetchColumn() === 0);
+    $_SESSION = []; $_COOKIE = [Auth::REMEMBER_COOKIE => 'nonsense'];
+    check('a cookie that isn’t a token is ignored', $newAuth()->user() === null);
+    $cookie = $device();
+    $db->run("UPDATE $tokens SET expires_at = ?", [gmdate('Y-m-d H:i:s', time() - 60)]);
+    $_SESSION = []; $_COOKIE = [Auth::REMEMBER_COOKIE => $cookie];
+    check('after 30 days: signed out', $newAuth()->user() === null);
+    $phone = $device();
+    $pc = $device();
+    $_SESSION = []; $_COOKIE = [Auth::REMEMBER_COOKIE => $phone];
+    $auth = $newAuth();
+    $auth->user();
+    $auth->signOut();
+    check('signing out on one device ends its token and cookie', $auth->user() === null && (Session::$cliCookies[Auth::REMEMBER_COOKIE][1] ?? 99) < time() && !isset($_COOKIE[Auth::REMEMBER_COOKIE]));
+    $_SESSION = []; $_COOKIE = [Auth::REMEMBER_COOKIE => $phone];
+    check('  that device stays signed out', $newAuth()->user() === null);
+    $_SESSION = []; $_COOKIE = [Auth::REMEMBER_COOKIE => $pc];
+    check('  the other device stays signed in', ($newAuth()->user()['email'] ?? '') === 'dj@example.test');
+    $djId = (int) $_SESSION['user_id'];
+    check('a new password signs out the kept devices', $newAuth()->changePassword($djId, 'brand new password', 'another new password') === null && (function () use ($newAuth, $pc) {
+        $_SESSION = []; $_COOKIE = [Auth::REMEMBER_COOKIE => $pc];
+        return $newAuth()->user() === null;
+    })());
+    $_SESSION = []; $_COOKIE = []; Session::$cliCookies = [];
+    $newAuth()->attempt('dj@example.test', 'another new password', '192.0.2.5', true);
+    $db->run("DELETE FROM $users WHERE email = 'dj@example.test'");
+    check('a removed DJ’s tokens go with them', (int) $db->run("SELECT COUNT(*) FROM $tokens")->fetchColumn() === 0);
+    $_SESSION = []; $_COOKIE = [];
 
     echo "Where to go after sign-in\n";
     check('own page kept', AuthPage::safeNext('account') === 'account');

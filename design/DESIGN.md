@@ -229,6 +229,16 @@ Back asks "Close the app?" as the Windows app's close does, and **App settings**
 until the show ends. An Android browser gets **Get the Android app** in the status strip. The launcher icon is
 the Windows icon's on-air sign on the station green (an adaptive icon); the splash is the icon on light ground.
 
+### Remembering the password (round 36; not in the mock-ups)
+
+The sign-in page has a **Keep me signed in on this device for 30 days** tick box under the password
+(the manager's switch row, off at first). Saving the password is left to each place's own password
+manager, so its look is theirs: the browser's; in the Windows app Edge's **"Save your password?"** bubble
+(top right of the window) and its filled-in fields; in the Android app Google's sheets, **"Save password to
+sign in to Stationwagon Studio?"** after signing in and **"Use your saved password"** on the sign-in page,
+which fills the form in and leaves the DJ to press Sign in. A wrong password in the Android app shows the
+sign-in page's own message, not the offline page.
+
 ### Podcast (round 29; not in the mock-ups)
 
 - **Episode editor** (`/manage/podcast/<id>`, the green manager frame): a toolbar (− and + zoom, also

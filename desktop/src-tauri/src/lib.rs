@@ -210,6 +210,20 @@ async fn open_settings(app: AppHandle) -> Result<(), String> {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Lets Edge's password manager save the station's sign-in and fill it in next time (WebView2 has
+/// it off unless the app turns it on). The passwords stay in WebView2's own store, never in the app.
+#[cfg(windows)]
+fn remember_passwords(w: &tauri::WebviewWindow) {
+    let _ = w.with_webview(|wv| unsafe {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings4;
+        use windows_core::Interface;
+        if let Ok(s) = wv.controller().CoreWebView2().and_then(|c| c.Settings()).and_then(|s| s.cast::<ICoreWebView2Settings4>()) {
+            let _ = s.SetIsPasswordAutosaveEnabled(true);
+            let _ = s.SetIsGeneralAutofillEnabled(true);
+        }
+    });
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
@@ -229,6 +243,8 @@ pub fn run() {
             let state = app.state::<App>();
             state.save().ok(); // keeps the first password
             state.bridge.listen(port);
+            #[cfg(windows)]
+            if let Some(w) = app.get_webview_window("main") { remember_passwords(&w); }
             Ok(())
         })
         .on_window_event(|window, event| {

@@ -371,6 +371,21 @@ try {
         $r = $c->go('signin', ['csrf' => Browser::csrf($c->go('signin?next=account')), 'email' => strtoupper($email), 'password' => 'a new password 1', 'next' => 'account']);
         check('sign-in returns you to the page you wanted', $r['status'] === 303 && str_ends_with($location($r), '/account'), $location($r));
 
+        $k = new Browser($base);
+        $form = $k->go('signin');
+        check('the sign-in page has Keep me signed in (off at first)', preg_match('/<input id="remember" name="remember" type="checkbox" value="1">/', $form['body']) === 1);
+        check('  and tells password managers which fields are which', str_contains($form['body'], 'autocomplete="username"') && str_contains($form['body'], 'autocomplete="current-password"'));
+        $k->go('signin', ['csrf' => Browser::csrf($form), 'email' => $email, 'password' => 'a new password 1', 'remember' => '1']);
+        $rc = implode(' | ', array_filter($k->allSetCookies, fn($x) => str_starts_with($x, 'sw_remember=')));
+        check('Keep me signed in: a 30-day cookie, HttpOnly, SameSite=Lax, for this app only', stripos($rc, 'Max-Age=2592000') !== false && stripos($rc, 'HttpOnly') !== false && stripos($rc, 'SameSite=Lax') !== false && stripos($rc, 'path=' . $basePath . '/') !== false && (!$https || stripos($rc, 'secure') !== false), preg_replace('/sw_remember=[^;]+/', 'sw_remember=…', $rc));
+        unset($k->cookies['sw_session']); // the browser was closed
+        $r = $k->go('studio');
+        check('  the browser closed and opened again: the studio opens, signed in', $r['status'] === 200 && str_contains($r['body'], 'id="studio"') && isset($k->cookies['sw_session']), (string) $r['status']);
+        $r = $k->go('signout', ['csrf' => Browser::csrf($k->go('manage'))]);
+        check('  signing out there removes the cookie', $r['status'] === 303 && !isset($k->cookies['sw_remember']));
+        unset($k->cookies['sw_session']);
+        check('  and it stays signed out', $k->go('manage')['status'] === 303);
+
         echo "Station manager (throwaway manager account)\n";
         $tag = bin2hex(random_bytes(3));
         $after = fn(Browser $b, array $r) => $b->go(ltrim(substr($location($r), strlen($basePath)), '/'));

@@ -259,6 +259,18 @@ async function overlayOn() {
   }
   return "still off";
 }
+/** The texts on the phone's screen (Android's own sheets and dialogs). */
+const screenTexts = () => screenNodes().map((n) => n.text).filter(Boolean);
+/**
+ * Android's Credential Manager sheet (Google Password Manager) whose title matches: its texts once it
+ * shows (waiting up to seconds), else null. dismiss: closes it with Back (only if it showed).
+ */
+async function credentialSheet(title, seconds, dismiss = false) {
+  const t = await waitFor(() => { const x = screenTexts(); return x.some((s) => title.test(s)) && x.join(" | "); }, seconds);
+  // Back until it has gone (the sheet takes a moment to close)
+  for (let i = 0; t && dismiss && i < 3 && screenTexts().some((x) => title.test(x)); i++) { adb("input", "keyevent", "KEYCODE_BACK"); await sleep(1200); }
+  return t;
+}
 /** Back from Android's screens to the app (a page or two). */
 async function backToApp() {
   for (let i = 0; i < 3 && !/topResumedActivity.*stationwagon/.test(adb("dumpsys", "activity", "activities")); i++) { adb("input", "keyevent", "KEYCODE_BACK"); await sleep(800); }
@@ -283,6 +295,7 @@ async function installApk(file, tries = 3) {
 /** Signs the DJ in on the station's page and opens the studio. */
 async function signIn(dj) {
   await go(`${base}/signin`);
+  await credentialSheet(/^(Use your|Choose a) saved password/, 3, true);
   await evaluate(`(() => { const f = document.querySelector('main form'); f.email.value = ${JSON.stringify(dj.email)}; f.password.value = ${JSON.stringify(dj.password)}; f.submit(); })()`);
   for (let i = 0; i < 40 && !((await evaluate("location.pathname", 1000)) || "").endsWith("/manage"); i++) await sleep(250);
   await go(`${base}/studio`);
@@ -463,6 +476,37 @@ try {
   await sleep(1000);
   url = await reopen();
   check("  signed out, then closed: the studio asks to sign in again", !!url && /signin\?next=studio/.test(url), url);
+  console.log("Remembering the password");
+  const phoneDj = helper("dj", "phone");
+  await page.call("Network.clearBrowserCookies");
+  await go(`${base}/signin`);
+  await credentialSheet(/^(Use your|Choose a) saved password/, 4, true); // one saved in an earlier run: not this time
+  const send = (email, password) => evaluate(`(() => { const f = document.querySelector("main form"); f.email.value = ${JSON.stringify(email)}; f.password.value = ${JSON.stringify(password)}; f.querySelector("button[type=submit]").click(); })()`);
+  await send(phoneDj.email, "not the password");
+  const wrong = await waitFor(async () => { const t = await text(".alert"); return t && t; }, 15);
+  check("a wrong password in the app: the sign-in page says so (not the offline page), and nothing is offered for saving",
+    !!wrong && wrong.includes("don’t match") && !(await credentialSheet(/^(Save|Update) password/, 3, true)), wrong || await evaluate("location.href", 1000));
+  await credentialSheet(/^(Use your|Choose a) saved password/, 4, true);
+  await send(phoneDj.email, phoneDj.password);
+  let sheet = await credentialSheet(/^(Save|Update) password/, 15);
+  check("a DJ signs in: Android offers to save it in Google Password Manager", !!sheet && sheet.includes(phoneDj.email), sheet || "no offer");
+  const saved = sheet && tapText(/^(Continue|Save|Update)$/);
+  check("  Continue saves it", !!saved && await waitFor(() => !/(Save|Update) password/.test(screenTexts().join("|")), 10) !== null, saved || "");
+  await page.call("Network.clearBrowserCookies"); // signed out: the next sign-in
+  await go(`${base}/signin`);
+  sheet = await credentialSheet(/^(Use your|Choose a) saved password/, 15);
+  check("the next time, Android offers the saved sign-in", !!sheet && sheet.includes(phoneDj.email), sheet || "no offer");
+  tapText(/^Continue$/) || tapText({ test: (t) => t === phoneDj.email }); // one saved sign-in, or a list of them
+  const filled = await waitFor(async () => { const v = await evaluate("[document.querySelector('#email').value, document.querySelector('#password').value]"); return v && v[0] === phoneDj.email && v[1] === phoneDj.password; }, 10);
+  check("  and fills the form in with it", filled !== null);
+  await evaluate("document.getElementById('remember').click()");
+  await evaluate("document.querySelector('main button[type=submit]').click()");
+  url = await waitFor(async () => { const h = (await evaluate("location.href", 1000)) || ""; return h.endsWith("/manage") && h; }, 15);
+  check("  Sign in, with Keep me signed in, signs in with it", !!url, url || await evaluate("location.href", 1000));
+  await credentialSheet(/password/i, 4, true); // the same sign-in again: nothing new to save
+  url = await reopen(["--el", "sw_signin_age_ms", String(13 * 3600 * 1000)]);
+  check("Keep me signed in: closed over 12 hours ago, the studio still opens signed in (30 days)", !!url && STUDIO.test(url), url);
+  helper("studio-cleanup", String(phoneDj.id));
   await signIn(dj);
 
   console.log("The screen off");

@@ -18,13 +18,14 @@ final class AuthPage
             App::redirect($next);
         }
         $email = trim((string) ($_POST['email'] ?? ''));
+        $remember = !empty($_POST['remember']);
         $error = null;
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             if (!Session::checkCsrf($_POST['csrf'] ?? null)) {
                 http_response_code(400);
                 $error = 'This form had expired. Please try again.';
             } else {
-                $result = $this->auth->attempt($email, (string) ($_POST['password'] ?? ''), Request::clientAddress());
+                $result = $this->auth->attempt($email, (string) ($_POST['password'] ?? ''), Request::clientAddress(), $remember);
                 if ($result['ok']) {
                     App::redirect($next);
                 }
@@ -32,7 +33,7 @@ final class AuthPage
                 $error = $result['error'];
             }
         }
-        View::render('signin', ['title' => 'Sign in', 'email' => $email, 'error' => $error, 'next' => $next, 'csrf' => Session::csrf()]);
+        View::render('signin', ['title' => 'Sign in', 'email' => $email, 'error' => $error, 'next' => $next, 'remember' => $remember, 'csrf' => Session::csrf()]);
     }
 
     public function signOut(): void

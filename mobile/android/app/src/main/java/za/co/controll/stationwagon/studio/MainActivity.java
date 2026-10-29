@@ -7,6 +7,12 @@ import android.os.Bundle;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import androidx.activity.OnBackPressedCallback;
+import androidx.core.content.ContextCompat;
+import androidx.credentials.CreateCredentialResponse;
+import androidx.credentials.CreatePasswordRequest;
+import androidx.credentials.CredentialManager;
+import androidx.credentials.CredentialManagerCallback;
+import androidx.credentials.exceptions.CreateCredentialException;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.CapConfig;
 
@@ -22,6 +28,8 @@ public class MainActivity extends BridgeActivity {
     boolean boot;
     /** The station this start had saved (its cookies are the ones to keep over a restart). */
     private String loadedStation;
+    /** A sign-in just sent from the station's page (email, password), until the next page loads. */
+    String[] pendingSignIn;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,6 +62,7 @@ public class MainActivity extends BridgeActivity {
             @Override
             public void onPageLoaded(WebView webView) {
                 keepSignIn(loadedStation, KEEP_SIGN_IN_MS);
+                offerToSave(webView.getUrl());
             }
         });
 
@@ -62,6 +71,14 @@ public class MainActivity extends BridgeActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
         // the offline page (no bridge there): try again, or the start page
         web.addJavascriptInterface(new Offline(), "SwOffline");
+        bridge.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(bridge) {
+            @Override
+            public void onReceivedHttpError(WebView view, android.webkit.WebResourceRequest request, android.webkit.WebResourceResponse response) {
+                // the station's own answers (a wrong password's 401, 403, 404) show as they are; only a
+                // station that's down (5xx, as Cloudflare answers then) gets the offline page
+                if (response.getStatusCode() >= 500) super.onReceivedHttpError(view, request, response);
+            }
+        });
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
@@ -78,6 +95,26 @@ public class MainActivity extends BridgeActivity {
                 }
             }
         });
+    }
+
+    /** After a sign-in: past the sign-in page means it worked, so Android offers to save it; back on it, it didn't. */
+    private void offerToSave(String url) {
+        String[] s = pendingSignIn;
+        pendingSignIn = null;
+        String path = url == null ? null : Uri.parse(url).getPath();
+        // only the station's own next page (not the offline page or the start page) means it worked
+        if (s == null || path == null || path.endsWith("/signin") || loadedStation == null || !url.startsWith(loadedStation)) return;
+        CredentialManager.create(this).createCredentialAsync(this, new CreatePasswordRequest(s[0], s[1]), null, ContextCompat.getMainExecutor(this),
+            new CredentialManagerCallback<CreateCredentialResponse, CreateCredentialException>() {
+                @Override
+                public void onResult(CreateCredentialResponse r) {
+                }
+
+                @Override
+                public void onError(CreateCredentialException e) {
+                    // not saved (the DJ said no, or there's no password manager): nothing to do
+                }
+            });
     }
 
     private boolean onStudio() {

@@ -21,6 +21,8 @@ declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
 use Stationwagon\{Db, Library, Notes, Planner, Podcast, Schedule, StationSettings};
 
+const PHONE_DJ = 'stationwagon-phone-test@example.test';
+
 $db = Db::fromConfig();
 $planner = Planner::forFirstStation();
 $station = $planner->station();
@@ -85,6 +87,11 @@ if ($cmd === 'manager') {
     $tag = bin2hex(random_bytes(3));
     $email = "web-test-$tag-studio@example.test";
     $password = bin2hex(random_bytes(12));
+    if (in_array('phone', array_slice($argv, 2), true)) {
+        // the phone test's DJ, always the same, so the sign-in it saves to Google Password Manager is only ever one entry
+        $email = PHONE_DJ; // a new password each run: Google Password Manager updates its one entry
+        $db->run('DELETE FROM ' . $db->table('users') . ' WHERE email = ?', [$email]);
+    }
     $id = $db->insert('users', ['email' => $email, 'name' => 'Studio Test DJ', 'password_hash' => password_hash($password, PASSWORD_DEFAULT), 'role' => 'dj', 'created_at' => gmdate('Y-m-d H:i:s')]);
     $db->insert('station_users', ['station_id' => $station['id'], 'user_id' => $id]);
     $block = null;
@@ -122,7 +129,7 @@ if ($cmd === 'manager') {
     if ($blockId) {
         $db->run('DELETE FROM ' . $db->table('schedule') . " WHERE id = ? AND title LIKE '[test]%'", [$blockId]);
     }
-    $db->run('DELETE FROM ' . $db->table('users') . ' WHERE id = ? AND email LIKE ?', [$userId, 'web-test-%']);
+    $db->run('DELETE FROM ' . $db->table('users') . ' WHERE id = ? AND (email LIKE ? OR email = ?)', [$userId, 'web-test-%', PHONE_DJ]);
     echo json_encode(['cleaned' => true]);
 } elseif ($cmd === 'podcast-show') {
     $start = microtime(true) - 60 * (float) ($argv[3] ?? 10);

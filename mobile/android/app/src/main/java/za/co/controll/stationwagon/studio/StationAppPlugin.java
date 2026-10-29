@@ -11,6 +11,14 @@ import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 import androidx.core.content.ContextCompat;
+import androidx.credentials.Credential;
+import androidx.credentials.CredentialManager;
+import androidx.credentials.CredentialManagerCallback;
+import androidx.credentials.GetCredentialRequest;
+import androidx.credentials.GetCredentialResponse;
+import androidx.credentials.GetPasswordOption;
+import androidx.credentials.PasswordCredential;
+import androidx.credentials.exceptions.GetCredentialException;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -138,6 +146,41 @@ public class StationAppPlugin extends Plugin {
     }
 
     // ---- start page and studio ---------------------------------------------------------------
+
+    /**
+     * The station's sign-in form was sent ({ email, password }): once the next page shows it worked,
+     * Android offers to save it (Google Password Manager). Kept in memory only, until that page.
+     */
+    @PluginMethod
+    public void signingIn(PluginCall call) {
+        main().pendingSignIn = new String[] { call.getString("email", ""), call.getString("password", "") };
+        call.resolve();
+    }
+
+    /** Android's sheet with the sign-ins saved for this app: { email, password }, or {} (none, or not picked). */
+    @PluginMethod
+    public void savedSignIn(PluginCall call) {
+        GetCredentialRequest req = new GetCredentialRequest.Builder().addCredentialOption(new GetPasswordOption()).build();
+        CredentialManager.create(getContext()).getCredentialAsync(getActivity(), req, null, ContextCompat.getMainExecutor(getContext()),
+            new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
+                @Override
+                public void onResult(GetCredentialResponse r) {
+                    Credential c = r.getCredential();
+                    if (c instanceof PasswordCredential) {
+                        PasswordCredential p = (PasswordCredential) c;
+                        call.resolve(new JSObject().put("email", p.getId()).put("password", p.getPassword()));
+                    } else {
+                        call.resolve(new JSObject());
+                    }
+                }
+
+                @Override
+                public void onError(GetCredentialException e) {
+                    call.resolve(new JSObject());
+                }
+            });
+    }
+
 
     @PluginMethod
     public void openSettings(PluginCall call) {

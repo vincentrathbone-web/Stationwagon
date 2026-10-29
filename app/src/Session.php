@@ -49,10 +49,10 @@ final class Session
         $_SESSION['seen'] = time();
     }
 
-    /** Start the session only if the browser already has one (public pages). */
+    /** Start the session only if the browser already has one, or a "Keep me signed in" (public pages). */
     public static function resume(): void
     {
-        if (PHP_SAPI !== 'cli' && isset($_COOKIE['sw_session'])) {
+        if (PHP_SAPI !== 'cli' && (isset($_COOKIE['sw_session']) || isset($_COOKIE[Auth::REMEMBER_COOKIE]))) {
             self::start();
         }
     }
@@ -97,6 +97,21 @@ final class Session
         $all = $_SESSION['flash'];
         unset($_SESSION['flash']);
         return $all;
+    }
+
+    /** @var array<string, array{0:string,1:int}> cookies set from the command line (the tests): name => [value, expires] */
+    public static array $cliCookies = [];
+
+    /** A cookie for our own pages only, like the session's (an expires in the past removes it). */
+    public static function cookie(string $name, string $value, int $expires): void
+    {
+        if (PHP_SAPI === 'cli') {
+            self::$cliCookies[$name] = [$value, $expires];
+            return;
+        }
+        if (!headers_sent()) {
+            setcookie($name, $value, ['expires' => $expires, 'path' => App::base() . '/', 'secure' => self::isHttps(), 'httponly' => true, 'samesite' => 'Lax']);
+        }
     }
 
     public static function isHttps(): bool
