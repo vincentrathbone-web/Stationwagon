@@ -109,6 +109,28 @@ dl.gl dd { margin: 0; color: var(--ink-2); }
 @keyframes flash { from { background: var(--mark); } to { background: transparent; } }
 .mobileBar { display: none; }
 
+/* ---- the big picture: two chains and three journeys ---- */
+.chainName { font: 500 11px var(--f-mono); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-3); margin-top: 4px; }
+.chain { display: flex; align-items: stretch; }
+.chain .box { flex: 1 1 0; min-width: 0; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 14px; line-height: 1.4; color: var(--ink-2); }
+.chain .box b { display: block; color: var(--ink); font-size: 14.5px; margin-bottom: 2px; }
+.chain .box.live { border-color: var(--green); background: var(--green-bg); }
+.chain .arr { flex: none; width: 26px; display: grid; place-items: center; color: var(--ink-3); font-size: 16px; }
+.chain .arr::before { content: "→"; }
+ol.flow { list-style: none; margin: 0; padding: 0; counter-reset: flow; }
+ol.flow > li { counter-increment: flow; position: relative; padding: 0 0 18px 42px; max-width: none; }
+ol.flow > li::before { content: counter(flow); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--paper); border: 2px solid var(--green);
+  color: var(--green); font: 600 13px/24px var(--f-mono); text-align: center; z-index: 1; }
+ol.flow > li::after { content: ""; position: absolute; left: 13px; top: 28px; bottom: 0; width: 2px; background: var(--line); }
+ol.flow > li:last-child { padding-bottom: 0; }
+ol.flow > li:last-child::after { display: none; }
+ol.flow > li > b { display: block; font-size: 16px; line-height: 1.35; padding-top: 3px; }
+ol.flow > li > span { display: block; color: var(--ink-2); font-size: 15px; }
+ol.flow > li > a { font-size: 14px; font-weight: 600; text-decoration: none; }
+ol.flow > li > a::after { content: " →"; }
+ol.flow > li > a:hover { text-decoration: underline; }
+.who-line { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; color: var(--ink-2); font-size: 15px; }
+
 /* ---- phones and small tablets ---- */
 @media (max-width: 900px) {
   .rail { position: sticky; top: env(safe-area-inset-top, 0px); width: auto; bottom: auto; border-right: 0; border-bottom: 1px solid var(--line);
@@ -124,6 +146,9 @@ dl.gl dd { margin: 0; color: var(--ink-2); }
   .results { max-height: 50dvh; }
   main { margin-left: 0; padding-top: 28px; }
   .paths { grid-template-columns: minmax(0, 1fr); }
+  .chain { flex-direction: column; }
+  .chain .arr { width: auto; height: 22px; }
+  .chain .arr::before { content: "↓"; }
   dl.gl { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
   dl.gl dd { margin-bottom: 8px; }
 }
@@ -154,11 +179,79 @@ dl.gl dd { margin: 0; color: var(--ink-2); }
   <p>Stationwagon is radio software for small stations. It runs on ordinary shared cPanel hosting: an AutoDJ with real crossfades, a stream for listeners, and a studio for live shows in the browser, on Windows or on Android. This guide takes you from an empty hosting account to your first live show.</p>
   <p class="meta">Press <kbd>/</kbd> to search. Every heading is a link you can share.</p>
   <div class="paths">
-    <a href="#before"><span class="who">Admin</span><b>Set up a station</b><span>Make the database, install, keep it playing.</span></a>
-    <a href="#signin"><span class="who">Manager</span><b>Run the station</b><span>Music, playlists, the schedule, DJs and listeners.</span></a>
+    <a href="#flow-listener"><span class="who">Start here</span><b>The big picture</b><span>How a listener, a DJ and an admin each use Stationwagon.</span></a>
     <a href="#studios"><span class="who">DJ</span><b>Go live</b><span>Pick a studio, prepare your show and go on air.</span></a>
+    <a href="#before"><span class="who">Admin</span><b>Set up a station</b><span>Make the database, install, keep it playing.</span></a>
   </div>
 </header>
+
+<!-- ============ OVERVIEW ============ -->
+<div class="partHead" data-part="The big picture"><div class="n">Start here</div><h2>The big picture</h2><p>How the pieces fit, then the path each kind of person follows. The details come in the parts after this.</p></div>
+
+<section class="s" id="fits" data-title="How it all fits together">
+  <h3>How it all fits together</h3>
+  <p>A station always has something on air. Most of the time that's the <b>AutoDJ</b>. In a DJ's time slot it's the <b>live show</b>. Listeners hear one stream either way.</p>
+  <div class="chainName">Most of the day: the AutoDJ</div>
+  <div class="chain" role="list">
+    <div class="box" role="listitem"><b>Admin and managers</b>add music, playlists and the weekly schedule</div>
+    <div class="arr" aria-hidden="true"></div>
+    <div class="box" role="listitem"><b>The AutoDJ</b>plans which song plays when, hours ahead</div>
+    <div class="arr" aria-hidden="true"></div>
+    <div class="box" role="listitem"><b>The station stream</b>crossfaded songs, on your web host</div>
+    <div class="arr" aria-hidden="true"></div>
+    <div class="box" role="listitem"><b>Listeners</b>hear it 20 seconds later, all at the same moment</div>
+  </div>
+  <div class="chainName">In a DJ's time slot: the live show</div>
+  <div class="chain" role="list">
+    <div class="box" role="listitem"><b>The DJ</b>in the studio: browser, Windows or Android</div>
+    <div class="arr" aria-hidden="true"></div>
+    <div class="box live" role="listitem"><b>Goes live</b>the show takes over from the AutoDJ, with no jump</div>
+    <div class="arr" aria-hidden="true"></div>
+    <div class="box" role="listitem"><b>The station stream</b>the same stream, now live</div>
+    <div class="arr" aria-hidden="true"></div>
+    <div class="box" role="listitem"><b>Afterwards</b>the AutoDJ carries on, and the show becomes a podcast episode</div>
+  </div>
+</section>
+
+<section class="s" id="flow-listener" data-title="The listener's journey">
+  <h3>The listener's journey <span class="role">Listener</span></h3>
+  <p>Listeners don't sign in or install anything.</p>
+  <ol class="flow">
+    <li><b>Find the station</b><span>On the station's own page, or the small player the station put on its website.</span><a href="#website">The player on a website</a></li>
+    <li><b>Press Play</b><span>The station starts at the same moment for everyone, 20 seconds behind the station's clock, so it plays smoothly on any connection.</span></li>
+    <li><b>See what's playing</b><span>The song now and next, and during live shows the DJ's notes (Bible verses, references, video links) appear as the show reaches them.</span><a href="#notes">Notes for listeners</a></li>
+    <li><b>Listen again later</b><span>Published shows are on the station's podcast page and in podcast apps.</span><a href="#podcastsetup">The podcast</a></li>
+  </ol>
+</section>
+
+<section class="s" id="flow-dj" data-title="The DJ's journey">
+  <h3>The DJ's journey <span class="role">DJ</span></h3>
+  <p>A DJ (broadcaster) presents live shows in their own time slot.</p>
+  <ol class="flow">
+    <li><b>Get a sign-in</b><span>The admin or a manager adds you on the DJs screen and gives you a first password. Sign in and change it.</span><a href="#signin">Sign in</a></li>
+    <li><b>Pick a studio</b><span>The browser on any computer, the Windows app for a home studio, or the Android app on a phone.</span><a href="#studios">Pick your studio</a></li>
+    <li><b>Prepare the show</b><span>Days before if you like: build your running order of songs, station IDs and talk items for your slot.</span><a href="#prepare">Before the show</a></li>
+    <li><b>Go live in your slot</b><span>From 5 minutes before your live block. Your show takes over from the AutoDJ without a jump.</span><a href="#golive">Go live</a></li>
+    <li><b>Present the show</b><span>Talk, play songs, post notes for listeners. If your internet drops, the AutoDJ covers and you can rejoin.</span><a href="#trouble">If something goes wrong</a></li>
+    <li><b>End the show</b><span>The AutoDJ carries on by itself.</span></li>
+    <li><b>Publish the podcast</b><span>Your show is waiting as a draft episode: trim it, mix it down and publish.</span><a href="#episode">Your podcast episode</a></li>
+  </ol>
+</section>
+
+<section class="s" id="flow-admin" data-title="The admin's journey">
+  <h3>The admin's journey <span class="role">Admin</span></h3>
+  <p>The admin sets the station up once; then admin and managers keep it running.</p>
+  <ol class="flow">
+    <li><b>Prepare the hosting</b><span>Make a database and user in cPanel.</span><a href="#database">Make the database</a></li>
+    <li><b>Install</b><span>Put the files on the server and follow the installer. You become the first admin.</span><a href="#install">Run the installer</a></li>
+    <li><b>Keep it planned</b><span>Add one cron job, every 5 minutes.</span><a href="#cron">The cron job</a></li>
+    <li><b>Add music</b><span>Drag songs into the Music library. They're mastered and levelled on the way, and the station is on air straight away.</span><a href="#library">Add music</a></li>
+    <li><b>Plan the week</b><span>Make playlists, then a weekly schedule of playlist blocks and live blocks for DJs.</span><a href="#schedule">The weekly schedule</a></li>
+    <li><b>Add the team</b><span>Add DJs and managers, and give each their first password.</span><a href="#djs">Add DJs and managers</a></li>
+    <li><b>Share the station</b><span>Put the player on your website and fill in the podcast's details.</span><a href="#website">The player on your website</a></li>
+    <li><b>Keep an eye on it</b><span>The Overview shows what's on air and the station's health; Listeners shows who's listening.</span><a href="#overview">The Overview</a></li>
+  </ol>
+</section>
 
 <!-- ============ PART 1 ============ -->
 <div class="partHead" data-part="Set up the station"><div class="n">Part 1 · for the admin</div><h2>Set up the station</h2><p>Once per station. About 20 minutes.</p></div>
