@@ -37,7 +37,7 @@ if ($cmd === 'manager') {
     $db->insert('station_users', ['station_id' => $station['id'], 'user_id' => $id]);
     echo json_encode(['id' => $id, 'email' => $email, 'password' => $password]);
 } elseif ($cmd === 'track') {
-    $row = $db->run('SELECT id, file, sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs, mastered, preset, outro FROM ' . $db->table('tracks') .
+    $row = $db->run('SELECT id, file, sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs, source_lufs, level_gain_db, level_target, mastered, preset, preset_settings, outro FROM ' . $db->table('tracks') .
         " WHERE station_id = ? AND title = ? AND status = 'ready' ORDER BY id DESC LIMIT 1", [$station['id'], $argv[2] ?? ''])->fetch();
     echo json_encode($row ?: null);
 } elseif ($cmd === 'presets') {
@@ -58,12 +58,12 @@ if ($cmd === 'manager') {
     }
     echo json_encode(['presets' => $pp->all(), 'default' => Stationwagon\PrepPresets::defaultId($station)]);
 } elseif ($cmd === 'prep') {
-    // song prep's two switches: print them, or set them first (prep <master 0|1> <level 0|1>)
+    // song prep's two switches and loudness target: print them, or set them first (prep <master 0|1> <level 0|1> [<target LUFS>])
     if (isset($argv[3])) {
-        $station = (new StationSettings($db, $station))->savePrep($argv[2] === '1', $argv[3] === '1');
+        $station = (new StationSettings($db, $station))->savePrep($argv[2] === '1', $argv[3] === '1', isset($argv[4]) ? (float) $argv[4] : null);
     }
-    [$m, $l] = StationSettings::prep($station);
-    echo json_encode(['master' => $m, 'level' => $l]);
+    [$m, $l, $tg] = StationSettings::prep($station);
+    echo json_encode(['master' => $m, 'level' => $l, 'target' => $tg]);
 } elseif ($cmd === 'cleanup') {
     $db->run('DELETE FROM ' . $db->table('users') . ' WHERE id = ? AND email LIKE ?', [(int) ($argv[2] ?? 0), 'web-test-%']);
     $lib = new Library($db, $station, SW_ROOT);

@@ -13,6 +13,10 @@ namespace Stationwagon;
  */
 final class StationSettings
 {
+    /** The station's loudness target for song prep's normalization (LUFS): its range and default. */
+    public const TARGET_MIN = -23.0;
+    public const TARGET_MAX = -8.0;
+    public const TARGET_DEFAULT = -16.0;
     private const QUALITY = [96 => '96 kbps', 128 => '128 kbps', 160 => '160 kbps', 192 => '192 kbps', 256 => '256 kbps'];
 
     public const FIELDS = [
@@ -105,16 +109,29 @@ final class StationSettings
     public static function prep(array $station): array
     {
         $all = Planner::settings($station);
-        return [(bool) $all['prep_master'], (bool) $all['prep_level']];
+        return [(bool) $all['prep_master'], (bool) $all['prep_level'], self::target($all['prep_target'])];
     }
 
-    /** Store song prep's two switches. @return array the updated station row */
-    public function savePrep(bool $master, bool $level): array
+    /** A loudness target kept in range, in half-dB steps. */
+    public static function target(mixed $v): float
+    {
+        $v = is_numeric($v) && is_finite((float) $v) ? (float) $v : self::TARGET_DEFAULT;
+        return round(max(self::TARGET_MIN, min(self::TARGET_MAX, $v)) * 2) / 2;
+    }
+
+    /**
+     * Store song prep's two switches and the station's loudness target (LUFS; null keeps it).
+     * @return array the updated station row
+     */
+    public function savePrep(bool $master, bool $level, ?float $target = null): array
     {
         $own = json_decode((string) ($this->station['settings'] ?? ''), true);
         $own = is_array($own) ? $own : [];
         $own['prep_master'] = $master ? 1 : 0;
         $own['prep_level'] = $level ? 1 : 0;
+        if ($target !== null) {
+            $own['prep_target'] = self::target($target);
+        }
         $json = json_encode($own, JSON_UNESCAPED_SLASHES);
         $this->db->run('UPDATE ' . $this->db->table('stations') . ' SET settings = ? WHERE id = ?', [$json, $this->station['id']]);
         return ['settings' => $json] + $this->station;

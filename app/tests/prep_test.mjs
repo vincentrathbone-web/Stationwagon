@@ -89,6 +89,47 @@ check("the ID3v2 tag at the start is found whole", t.head.length === id3.length 
 check("and the ID3v1 tag at the end", t.tail.length === 128 && t.tail[0] === 0x54);
 check("a file without tags has none", core.tags(new Uint8Array(1000)).head.length === 0 && core.tags(new Uint8Array(1000)).tail.length === 0);
 
+console.log("The song's normalization in its ID3 tag (round 41)");
+// read an ID3v2 tag's frames back: [{ id, desc?, value? }]
+const frames = (h) => {
+  const ver = h[3], end = 10 + ((h[6] << 21) | (h[7] << 14) | (h[8] << 7) | h[9]), out = [];
+  for (let i = 10; i + 10 <= end && h[i] !== 0;) {
+    const n = ver === 4 ? (h[i + 4] << 21) | (h[i + 5] << 14) | (h[i + 6] << 7) | h[i + 7] : (h[i + 4] << 24) | (h[i + 5] << 16) | (h[i + 6] << 8) | h[i + 7];
+    const id = String.fromCharCode(...h.subarray(i, i + 4)), b = h.subarray(i + 10, i + 10 + n);
+    if (id === "TXXX") { const z = b.indexOf(0, 1); out.push({ id, desc: String.fromCharCode(...b.subarray(1, z)), value: String.fromCharCode(...b.subarray(z + 1)) }); } else out.push({ id });
+    i += 10 + n;
+  }
+  return out;
+};
+const lvl = { lufs_before: -10.234, gain_db: -5.766, target: -16, levelled: true };
+const ours = (f) => f.filter((x) => x.desc && x.desc.startsWith("STATIONWAGON_")).map((x) => x.desc + "=" + x.value).join(", ");
+let tagged = core.levelTags(id3, lvl), fr = frames(tagged);
+check("an ID3v2.4 tag keeps its frames and gets the three values", fr[0].id === "TIT2" && fr[1].id === "TPE1" && ours(fr) === "STATIONWAGON_SOURCE_LUFS=-10.23 LUFS, STATIONWAGON_LEVEL_GAIN=-5.77 dB, STATIONWAGON_LEVEL_TARGET=-16.0 LUFS", ours(fr));
+const again = core.levelTags(tagged, { lufs_before: -9, gain_db: -5, target: -14, levelled: true });
+check("  a second time replaces them, not adds", frames(again).length === 5 && ours(frames(again)).split(", ").length === 3 && ours(frames(again)).includes("LEVEL_TARGET=-14.0"), `${frames(again).length} frames`);
+check("  not levelled: only its loudness", ours(frames(core.levelTags(id3, { ...lvl, levelled: false, gain_db: 0, target: null }))) === "STATIONWAGON_SOURCE_LUFS=-10.23 LUFS");
+const v23 = id3.slice(); v23[3] = 3; // the same frames: their 4-byte sizes are plain in v2.3, and small enough to be equal
+fr = frames(core.levelTags(v23, lvl));
+check("an ID3v2.3 tag gets them too, with v2.3 frame sizes", core.levelTags(v23, lvl)[3] === 3 && fr[0].id === "TIT2" && ours(fr).split(", ").length === 3, ours(fr));
+const none = core.levelTags(new Uint8Array(0), { ...lvl, gain_db: 1.5 });
+check("a song without a tag gets a new ID3v2.4 one", none[3] === 4 && ours(frames(none)).includes("LEVEL_GAIN=+1.50 dB"), ours(frames(none)));
+const v22 = id3.slice(); v22[3] = 2; const unsync = id3.slice(); unsync[5] = 0x80;
+check("a v2.2 tag or one with unsynchronisation is left as it is", core.levelTags(v22, lvl) === v22 && core.levelTags(unsync, lvl) === unsync);
+const ext = new Uint8Array(id3.length + 6); ext.set(id3.subarray(0, 10)); ext[5] = 0x40; ext.set([0, 0, 0, 6, 1, 0], 10); ext.set(id3.subarray(10), 16);
+const es = 6 + id3.length - 10; ext[6] = (es >> 21) & 0x7f; ext[7] = (es >> 14) & 0x7f; ext[8] = (es >> 7) & 0x7f; ext[9] = es & 0x7f;
+const extOut = core.levelTags(ext, lvl);
+check("  an extended header is kept in front of the frames", extOut[5] === 0x40 && extOut.subarray(10, 16).every((v, i) => v === [0, 0, 0, 6, 1, 0][i]) && String.fromCharCode(...extOut.subarray(16, 20)) === "TIT2");
+
+console.log("The loudness target (round 41)");
+const quiet = tone([[null, 1], [-20, 12], [null, 1]], R, { freq: 440 });
+const at = (target) => core.prepare(quiet.map((x) => x.slice()), R, { target });
+check("a song is levelled to the station's target", near(at(-14).info.lufs, -14, 0.05) && at(-14).info.target === -14 && near(at(-20).info.lufs, -20, 0.05), `${at(-14).info.lufs} / ${at(-20).info.lufs} LUFS`);
+check("  without one, to -16 LUFS", near(core.prepare(quiet.map((x) => x.slice()), R).info.lufs, -16, 0.05) && core.prepare(quiet.map((x) => x.slice()), R).info.target === -16);
+// a song with a few loud hits (-20 dBFS with spikes near full scale): at -8 LUFS its peaks would clip
+const hits = tone([[-20, 8]], R); for (const k of [2, 4, 6]) { hits[0][R * k] = 0.5; hits[1][R * k] = 0.5; }
+const loud = core.prepare(hits, R, { target: -8 });
+check("  a target too loud for the song stops at the peak ceiling (-1 dBFS) and says so", loud.info.capped && near(loud.info.peak_db, -1, 0.01) && loud.info.lufs < -8 && loud.info.target === -8, `${loud.info.lufs} LUFS, peak ${loud.info.peak_db} dB`);
+
 const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(readFileSync(join(here, "../assets/vendor/lame.min.js"), "utf8") + "\nthis.lamejs = lamejs;", sandbox);
@@ -98,12 +139,12 @@ const chunks = core.encode(sandbox.lamejs, r.channels, R, 192, (p) => { progress
 const dir = mkdtempSync(join(tmpdir(), "sw-prep-"));
 try {
   const file = join(dir, "prepared.mp3");
-  writeFileSync(file, Buffer.concat([t.head, ...chunks, t.tail].map((c) => Buffer.from(c))));
+  writeFileSync(file, Buffer.concat([core.levelTags(t.head, r.info), ...chunks, t.tail].map((c) => Buffer.from(c))));
   const script = `require ${JSON.stringify(join(here, "../src/bootstrap.php"))}; $s = Stationwagon\\Mp3::scan($argv[1], 6.0); echo json_encode(['frames' => $s['frames'], 'duration' => $s['duration'], 'bitrate' => $s['bitrate'], 'rate' => $s['sample_rate'], 'tags' => Stationwagon\\Mp3::tags($argv[1])]);`;
   const scan = JSON.parse(execFileSync(php, ["-r", script, file], { encoding: "utf8" }));
   check("lamejs makes an MP3 the station can play", scan.frames > 0 && scan.bitrate === 192 && scan.rate === 44100, JSON.stringify({ ...scan, tags: undefined }));
   check("  as long as the trimmed song", near(scan.duration, r.info.seconds, 0.08), `${scan.duration} s vs ${r.info.seconds} s`);
-  check("  with the original title and artist", scan.tags.title === "Prep Test Hymn" && scan.tags.artist === "Test Choir", JSON.stringify(scan.tags));
+  check("  with the original title and artist (and the normalization frames after them)", scan.tags.title === "Prep Test Hymn" && scan.tags.artist === "Test Choir", JSON.stringify(scan.tags));
   check("encoding reports progress up to 100 %", progress === 1);
 } finally {
   rmSync(dir, { recursive: true, force: true });

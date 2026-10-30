@@ -2,7 +2,9 @@
 // browser first (prep.js: mastered with the station's import preset and levelled as the two
 // switches say, trimmed, re-encoded), then they go up one at a time with progress, each followed
 // by the file it was made from (kept for the Song prep screen), and the page reloads to show them.
-// The switches are the station's, saved as soon as they change. Without JavaScript the form still works.
+// The switches and the loudness target slider are the station's, saved as soon as they change; a new
+// target offers to re-level the library (relevel.js, told by an "sw:target" event). Without JavaScript
+// the form still works.
 (() => {
   const form = document.getElementById("drop");
   if (!form || !window.FormData || !window.XMLHttpRequest) return;
@@ -12,7 +14,8 @@
   const maxBytes = Number(form.dataset.max || 0);
   form.querySelector('button[type="submit"]').hidden = true; // choosing files starts the upload
   const master = document.getElementById("prepMaster"), level = document.getElementById("prepLevel");
-  const saved = document.getElementById("prepSaved");
+  const saved = document.getElementById("prepSaved"), target = document.getElementById("prepTarget");
+  const fmt = (v) => Number(v).toFixed(1).replace("-", "−");
   // the import preset (Song prep): its settings ({} is the built-in Audition chain) and its name
   let preset = {};
   try { preset = JSON.parse(form.dataset.preset || "{}") || {}; } catch (_) { /* the built-in one */ }
@@ -30,13 +33,37 @@
       data.append("action", "prep");
       if (master.checked) data.append("master", "1");
       if (level.checked) data.append("level", "1");
+      if (target) data.append("target", target.value);
       queue = queue.then(() => fetch(form.getAttribute("action"), { method: "POST", body: data, headers: { Accept: "application/json" }, credentials: "same-origin" })
-        .then((r) => r.json().then((j) => { if (!r.ok || !j.ok) throw new Error(j.error || r.status); }))
-        .then(() => { saved.textContent = "Saved for every upload"; })
+        .then((r) => r.json().then((j) => { if (!r.ok || !j.ok) throw new Error(j.error || r.status); return j; }))
+        .then((j) => {
+          saved.textContent = "Saved for every upload";
+          form.dataset.target = String(j.target);
+          document.dispatchEvent(new CustomEvent("sw:target", { detail: { target: j.target, level: j.level, songs: j.relevel || [] } }));
+        })
         .catch(() => { saved.textContent = "Couldn’t save: try again"; }));
     }, 250);
   };
   if (master && level) [master, level].forEach((el) => el.addEventListener("change", savePrep));
+  // the loudness target: snaps to the marked levels, shows its value as it moves, saved when let go
+  const SNAP = [-16, -14, -11, -9];
+  const showTarget = () => {
+    document.getElementById("prepTargetOut").textContent = fmt(target.value);
+    document.getElementById("prepTargetSw").textContent = fmt(target.value);
+  };
+  if (target) {
+    // only a drag snaps: the arrow keys step half a dB at a time, past the marks too
+    let dragging = false;
+    target.addEventListener("pointerdown", () => { dragging = true; });
+    ["pointerup", "pointercancel"].forEach((t) => target.addEventListener(t, () => { dragging = false; }));
+    target.addEventListener("input", () => {
+      const near = dragging && SNAP.find((v) => Math.abs(v - Number(target.value)) <= 0.5 && Number(target.value) !== v);
+      if (near !== undefined && near !== false) target.value = String(near);
+      showTarget();
+    });
+    target.addEventListener("change", savePrep);
+    level.addEventListener("change", () => { document.getElementById("loud").toggleAttribute("data-off", !level.checked); });
+  }
 
   const row = (name) => {
     const li = document.createElement("li");
@@ -61,6 +88,13 @@
     data.append("files[]", p.file, name);
     if (p.sourceSha1) data.append("source_sha1[]", p.sourceSha1);
     if (p.prepared && p.info.levelled) data.append("prep_lufs[]", String(p.info.lufs));
+    // the song's normalization, kept with it (round 41)
+    if (p.prepared) {
+      data.append("prep_source_lufs[]", String(p.info.lufs_before));
+      data.append("prep_gain[]", String(p.info.gain_db));
+      data.append("prep_target[]", p.info.target === null ? "" : String(p.info.target));
+      data.append("prep_settings[]", p.info.mastered ? JSON.stringify(preset) : "");
+    }
     if (p.prepared && p.info.mastered) { data.append("prep_mastered[]", "1"); data.append("prep_preset[]", presetName); }
     if (p.prepared && p.info.outro) data.append("prep_outro[]", JSON.stringify(p.info.outro)); // for silence detection
     const xhr = new XMLHttpRequest();
@@ -98,7 +132,7 @@
       if (window.SwPrep) {
         try {
           p = await window.SwPrep.prepare(files[i], (stage) => { status.textContent = stage; },
-            { master: !master || master.checked ? preset : false, level: !level || level.checked });
+            { master: !master || master.checked ? preset : false, level: !level || level.checked, target: Number(form.dataset.target) });
         } catch (ex) {
           p = { file: files[i], prepared: false, note: "prep failed: " + ex.message };
         }

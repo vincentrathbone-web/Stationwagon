@@ -256,6 +256,8 @@ final class Installer
             // song prep on upload (round 34): level to -16 LUFS; mastering like the station's Audition
             // chain is off unless chosen (round 39: it squeezed real music flat and pushed the treble)
             'prep_master' => 0, 'prep_level' => 1,
+            // the loudness songs are levelled to (round 41: set with a slider in the Music library)
+            'prep_target' => -16.0,
         ];
     }
 

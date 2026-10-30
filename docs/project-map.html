@@ -173,8 +173,8 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "30 Oct · 16:30",
-  commits: 45,
+  updated: "31 Oct · 01:30",
+  commits: 46,
   version: "0.8.0-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
@@ -227,7 +227,8 @@ const MAP = {
       { text: "Listener stats", note: "unique listeners; device, browser, app; country and city", v: "v0.4", state: "done" },
       { text: "Podcast episodes: edit, hide, feed", note: "two-track editor: zoom, cut clips, mix down, publish", v: "v0.4", state: "done" },
       { text: "Mastering in song prep, as your Audition chain", note: "Broadcast1 + Master1, matched by measuring; off by default since 30 Oct (it squeezed real music), levelling stays on", v: "v0.8", state: "done" },
-      { text: "Song prep screen: mastering presets tried on a whole song", note: "EQ curve, simple and full dynamics, original/processed A/B, meters; presets, one for new uploads; Apply to a song from its kept original", v: "v0.8", state: "done" }
+      { text: "Song prep screen: mastering presets tried on a whole song", note: "EQ curve, simple and full dynamics, original/processed A/B, meters; presets, one for new uploads; Apply to a song from its kept original", v: "v0.8", state: "done" },
+      { text: "Loudness target with a slider, and re-levelling the library", note: "−23 to −8 LUFS, the usual levels marked; each song's normalization kept with it and in its MP3 tag", v: "v0.8", state: "done" }
     ]},
     { name: "Streaming & hosting", blurb: "Runs on shared cPanel hosting with Cloudflare in front: PHP and Apache only.", features: [
       { text: "Timeline planned on request, with a cron", v: "v0.1", state: "done" },
@@ -263,12 +264,16 @@ const MAP = {
   ],
   next: {
     title: "The WordWave pilot (v0.8)",
-    text: "Song prep now has its own screen: try mastering settings on any song and hear the whole of it, original against processed, with an EQ curve, simple or full dynamics, loudness and gain-reduction meters. Save presets, pick one for new uploads, and apply one to a song from its kept original. Radio WordWave runs at /radio with 8 of your tracks, their originals now kept too. Next, the pilot station gets its music and runs beside AzuraCast.",
+    text: "The station's loudness is now yours to set: a slider in the Music library (−16 for Apple and podcasts, −14 for Spotify, −11 like FM radio, −9 very loud), and after a change it offers to re-level every song from its original, keeping each song's sound. Each song's normalization is kept with it, also in its MP3. Song prep tries mastering on a whole song, with presets. Radio WordWave runs at /radio with 8 of your tracks. Next, the pilot station gets its music and runs beside AzuraCast.",
     order: ["Try the station on your own devices", "Run it beside AzuraCast for a week", "Copy WordWave's library when its owner agrees", "Then launch (v1.0)"]
   },
   call: null,
   feedTitle: "Changed 20–30 Oct",
   feed: [
+    { what: "Loudness target", to: "a slider in the Music library with the usual levels marked; a change offers to re-level the library or only new uploads", at: "31 Oct" },
+    { what: "Each song's normalization", to: "kept with it: its loudness before levelling, the gain and the target, in the database and in its MP3's tag", at: "31 Oct" },
+    { what: "Where the sound is processed", to: "checked: never on the server; at upload in your browser, live in the DJ's studio, crossfades and volume in each listener's player", at: "31 Oct", kind: "info" },
+    { what: "Round 40 (Song prep)", to: "committed and pushed (2c15831)", at: "30 Oct", kind: "info" },
     { what: "Song prep screen", to: "built and tested: whole-song preview with A/B, EQ and dynamics, meters, presets, a default for new uploads, Apply to a song", at: "30 Oct" },
     { what: "Originals kept", to: "every prepared upload keeps the file you chose (never served); uploading an older song again adds its original", at: "30 Oct" },
     { what: "After Apply, plays could have been cut at the old file's points", to: "fixed: the planner reads songs afresh when it changes the plan", at: "30 Oct" },

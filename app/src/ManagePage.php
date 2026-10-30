@@ -92,10 +92,12 @@ final class ManagePage
                 }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Original kept.');
             } elseif ($action === 'prep') {
-                // song prep's two switches, saved as soon as they change
-                $this->station = (new StationSettings($this->db, $this->station))->savePrep(!empty($_POST['master']), !empty($_POST['level']));
+                // song prep's two switches and the loudness target, saved as soon as they change
+                $target = isset($_POST['target']) && is_numeric($_POST['target']) ? (float) $_POST['target'] : null;
+                $this->station = (new StationSettings($this->db, $this->station))->savePrep(!empty($_POST['master']), !empty($_POST['level']), $target);
                 if ($wantsJson) {
-                    $this->json(['ok' => true, 'master' => !empty($_POST['master']), 'level' => !empty($_POST['level'])]);
+                    $this->json(['ok' => true, 'master' => !empty($_POST['master']), 'level' => !empty($_POST['level']),
+                        'target' => StationSettings::prep($this->station)[2], 'relevel' => $this->relevelList($library)]);
                 }
                 Session::flash('ok', 'Song prep choices saved.');
             } elseif ($action === 'update') {
@@ -120,7 +122,52 @@ final class ManagePage
             'prepKbps' => (int) $this->planner->setting('prep_kbps'),
             'prep' => StationSettings::prep($this->station),
             'preset' => (new PrepPresets($this->db, $this->station))->forImport(),
+            'relevel' => $this->relevelList($library),
         ]);
+    }
+
+    /**
+     * The songs levelled to another loudness than the station's target now (round 41), each with
+     * what its re-level needs: whether the station has its original, and the mastering to make it
+     * with again (master: false, or the settings, {} being the built-in chain). A song made before
+     * its settings were kept uses its preset by name, or is only levelled when that preset is gone.
+     * @return list<array{id:int,title:string,target:float,original:bool,master:mixed,preset:?string}>
+     */
+    private function relevelList(Library $library): array
+    {
+        [, $level, $target] = StationSettings::prep($this->station);
+        if (!$level) {
+            return [];
+        }
+        $byName = [];
+        foreach ((new PrepPresets($this->db, $this->station))->all() as $p) {
+            $byName[mb_strtolower($p['name'])] = $p['settings'];
+        }
+        $out = [];
+        foreach ($library->tracks() as $t) {
+            if ($t['level_target'] === null || abs((float) $t['level_target'] - $target) < 0.05) {
+                continue;
+            }
+            $master = false;
+            $preset = (int) $t['mastered'] ? ($t['preset'] ?? PrepPresets::BUILT_IN) : null;
+            if ($preset !== null) {
+                $kept = $t['preset_settings'] !== null ? json_decode((string) $t['preset_settings'], true) : null;
+                $master = is_array($kept) ? (object) $kept
+                    : (mb_strtolower($preset) === mb_strtolower(PrepPresets::BUILT_IN) ? (object) [] : (isset($byName[mb_strtolower($preset)]) ? (object) $byName[mb_strtolower($preset)] : false));
+            }
+            $out[] = ['id' => (int) $t['id'], 'title' => $t['title'], 'target' => (float) $t['level_target'],
+                'original' => $library->original($t) !== null, 'master' => $master, 'preset' => $master === false ? null : $preset];
+        }
+        return $out;
+    }
+
+    /** Song prep's normalization values sent with a prepared song (field[] for uploads, $i its index). */
+    private static function levelPosted(?int $i = null): array
+    {
+        $get = fn(string $k) => $i === null ? ($_POST[$k] ?? null) : (((array) ($_POST[$k] ?? []))[$i] ?? null);
+        $settings = json_decode((string) ($get('prep_settings') ?? ''), true);
+        return ['source_lufs' => $get('prep_source_lufs'), 'gain_db' => $get('prep_gain'), 'target' => $get('prep_target'),
+            'settings' => is_array($settings) ? $settings : null];
     }
 
     // ---- Song prep (round 40): mastering presets, tried on any song of the library ------------
@@ -160,7 +207,7 @@ final class ManagePage
                 $lufs = $_POST['prep_lufs'] ?? null;
                 $outro = json_decode((string) ($_POST['prep_outro'] ?? ''), true);
                 $problem = $library->replace((int) ($_POST['id'] ?? 0), (string) $file['tmp_name'], is_numeric($lufs) ? (float) $lufs : null,
-                    is_array($outro) ? $outro : null, ($_POST['prep_mastered'] ?? '') === '1', (string) ($_POST['prep_preset'] ?? ''), $this->planner, $now);
+                    is_array($outro) ? $outro : null, ($_POST['prep_mastered'] ?? '') === '1', (string) ($_POST['prep_preset'] ?? ''), $this->planner, $now, self::levelPosted());
                 $this->json(['ok' => $problem === null, 'error' => $problem]);
             }
             $this->json(['ok' => false, 'error' => 'Unknown action.']);
@@ -236,7 +283,7 @@ final class ManagePage
                 $mastered = (string) (((array) ($_POST['prep_mastered'] ?? []))[$i] ?? '') === '1';
                 $preset = ((array) ($_POST['prep_preset'] ?? []))[$i] ?? null;
                 $r = $library->import($tmp, null, null, $name, is_string($source) ? strtolower($source) : null,
-                    is_numeric($lufs) ? (float) $lufs : null, is_array($outro) ? $outro : null, $mastered, is_string($preset) ? $preset : null);
+                    is_numeric($lufs) ? (float) $lufs : null, is_array($outro) ? $outro : null, $mastered, is_string($preset) ? $preset : null, self::levelPosted($i));
                 $added = $added || !$r['duplicate'];
                 // original: whether the station has the file the song was made from (the page sends it
                 // when not, a song uploaded again included, so older songs get theirs for Song prep)

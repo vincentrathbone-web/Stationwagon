@@ -30,11 +30,12 @@ final class Library
      * @param ?string $sourceSha1 the hash of the original file when $path is the levelled copy
      * @param ?float $lufs the levelled copy's loudness
      * @param bool $mastered song prep mastered the copy
+     * @param ?array $level song prep's normalization: source_lufs, gain_db, target, settings (see levelColumns)
      * @return array{id:int,duplicate:bool,title:string}
      */
     public function import(string $path, ?string $title = null, ?string $artist = null, ?string $name = null,
                            ?string $sourceSha1 = null, ?float $lufs = null, ?array $outro = null, bool $mastered = false,
-                           ?string $preset = null): array
+                           ?string $preset = null, ?array $level = null): array
     {
         $name = basename($name ?? $path);
         if (!is_file($path)) {
@@ -64,7 +65,8 @@ final class Library
         }
         @chmod("$dir/$file", 0644);
         $title = trim((string) ($title ?? $tags['title'] ?? '')) ?: self::titleFromFilename($name);
-        $id = $this->db->insert('tracks', [
+        $prepared = $sourceSha1 !== null;
+        $id = $this->db->insert('tracks', self::levelColumns($level, $prepared && $lufs !== null, $mastered && $prepared) + [
             'station_id' => $this->station['id'],
             'file' => $file,
             'sha1' => $sha1,
@@ -84,6 +86,26 @@ final class Library
             'created_at' => gmdate('Y-m-d H:i:s'),
         ]);
         return ['id' => $id, 'duplicate' => false, 'title' => $title];
+    }
+
+    /**
+     * A song's normalization as stored (schema 11): its loudness before levelling, the gain applied,
+     * the station target it was levelled to (only when levelled) and the mastering settings it was
+     * made with (only when mastered; {} is the built-in chain), so a re-level keeps its sound.
+     * @param ?array{source_lufs?:mixed,gain_db?:mixed,target?:mixed,settings?:mixed} $level
+     */
+    public static function levelColumns(?array $level, bool $levelled, bool $mastered): array
+    {
+        $num = fn(string $k, float $lo, float $hi, int $d) => isset($level[$k]) && is_numeric($level[$k]) && is_finite((float) $level[$k])
+            ? round(max($lo, min($hi, (float) $level[$k])), $d) : null;
+        $settings = $level['settings'] ?? null;
+        return [
+            'source_lufs' => $num('source_lufs', -70.0, 0.0, 2),
+            'level_gain_db' => $levelled ? $num('gain_db', -40.0, 40.0, 2) : null,
+            'level_target' => $levelled ? $num('target', StationSettings::TARGET_MIN, StationSettings::TARGET_MAX, 1) : null,
+            'preset_settings' => $mastered && is_array($settings) && PrepPresets::check($settings) === null
+                ? json_encode((object) $settings, JSON_UNESCAPED_SLASHES) : null,
+        ];
     }
 
     /**
@@ -111,7 +133,7 @@ final class Library
             array_push($args, $like, $like);
         }
         return $this->db->run(
-            "SELECT t.id, t.file, t.sha1, t.title, t.artist, t.album, t.duration_s, t.bitrate_kbps, t.bytes, t.loudness_lufs, t.mastered, t.preset, t.created_at,
+            "SELECT t.id, t.file, t.sha1, t.title, t.artist, t.album, t.duration_s, t.bitrate_kbps, t.bytes, t.loudness_lufs, t.source_lufs, t.level_gain_db, t.level_target, t.mastered, t.preset, t.preset_settings, t.created_at,
                     (SELECT COUNT(*) FROM $pt pt WHERE pt.track_id = t.id) AS playlists
              FROM $t t WHERE $where ORDER BY t.title, t.id",
             $args
@@ -238,7 +260,7 @@ HT);
      * song"): same song, same id, its new length and loudness. Refused while it plays or just played,
      * like removing it. Returns what's wrong, or null.
      */
-    public function replace(int $id, string $path, ?float $lufs, ?array $outro, bool $mastered, ?string $preset, Planner $planner, float $now): ?string
+    public function replace(int $id, string $path, ?float $lufs, ?array $outro, bool $mastered, ?string $preset, Planner $planner, float $now, ?array $level = null): ?string
     {
         $track = $this->get($id);
         if ($track === null) {
@@ -267,11 +289,13 @@ HT);
             return 'Couldn’t save the file in storage/media.';
         }
         @chmod("$dir/$file", 0644);
+        $cols = self::levelColumns($level, $lufs !== null, $mastered);
         $this->db->run('UPDATE ' . $this->db->table('tracks') . ' SET file = ?, duration_s = ?, bitrate_kbps = ?, sample_rate = ?, bytes = ?, pieces = ?,
-            loudness_lufs = ?, mastered = ?, preset = ?, outro = ? WHERE id = ?', [
+            loudness_lufs = ?, mastered = ?, preset = ?, outro = ?, source_lufs = ?, level_gain_db = ?, level_target = ?, preset_settings = ? WHERE id = ?', [
             $file, $scan['duration'], $scan['bitrate'], $scan['sample_rate'], filesize($path), json_encode($scan['pieces']),
             $lufs !== null && is_finite($lufs) ? round(max(-70.0, min(0.0, $lufs)), 2) : null, $mastered ? 1 : 0,
-            $mastered && $preset !== null && trim($preset) !== '' ? mb_substr(trim($preset), 0, 60) : null, self::outro($outro), $id,
+            $mastered && $preset !== null && trim($preset) !== '' ? mb_substr(trim($preset), 0, 60) : null, self::outro($outro),
+            $cols['source_lufs'], $cols['level_gain_db'], $cols['level_target'], $cols['preset_settings'], $id,
         ]);
         $planner->replan($now); // its coming plays use the new file
         if ($track['file'] !== $file) {

@@ -24,10 +24,14 @@ namespace Stationwagon;
  *       for listeners until they reach the edit
  *   v6  podcasts: episodes (one per live show, with its continuations), episode_takes (each show's
  *       recording: from the studio's device, or as aired) and episode_chunks (the device's pieces)
+ *   v8  tracks.mastered; v9 remember_tokens; v10 prep_presets and tracks.preset (the Song prep screen)
+ *   v11 a song's loudness normalization: tracks.source_lufs, level_gain_db, level_target (the station's
+ *       loudness target it was levelled to) and preset_settings (the mastering it was made with, so
+ *       re-levelling for a new target keeps its sound)
  */
 final class Schema
 {
-    public const VERSION = 10;
+    public const VERSION = 11;
 
     /** Table names without prefix, in creation order (foreign keys need their parents first). */
     public const TABLES = [
@@ -105,6 +109,10 @@ final class Schema
                 `loudness_lufs` DECIMAL(5,2) NULL,
                 `mastered` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'song prep mastered it like the station''s Audition chain',
                 `preset` VARCHAR(60) NULL COMMENT 'the name of the mastering preset song prep used',
+                `source_lufs` DECIMAL(5,2) NULL COMMENT 'its loudness before levelling (after mastering)',
+                `level_gain_db` DECIMAL(5,2) NULL COMMENT 'the gain levelling applied',
+                `level_target` DECIMAL(4,1) NULL COMMENT 'the station loudness target it was levelled to (LUFS)',
+                `preset_settings` TEXT NULL COMMENT 'JSON: the mastering settings it was made with',
                 `outro` MEDIUMTEXT NULL COMMENT 'JSON: loudness (LUFS) of each second of the last minute, from song prep',
                 `status` ENUM('processing','ready','error') NOT NULL DEFAULT 'ready',
                 `created_at` DATETIME NOT NULL,
@@ -469,6 +477,14 @@ final class Schema
             8 => ["ALTER TABLE `{$p}tracks` ADD COLUMN `mastered` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'song prep mastered it like the station''s Audition chain' AFTER `loudness_lufs`"],
             9 => [self::rememberTokens($p, $opts)],
             10 => [self::prepPresets($p, $opts), "ALTER TABLE `{$p}tracks` ADD COLUMN `preset` VARCHAR(60) NULL COMMENT 'the name of the mastering preset song prep used' AFTER `mastered`"],
+            // songs levelled before the target could be set were levelled to -16 LUFS, the only target there was
+            11 => [
+                "ALTER TABLE `{$p}tracks` ADD COLUMN `source_lufs` DECIMAL(5,2) NULL COMMENT 'its loudness before levelling (after mastering)' AFTER `loudness_lufs`",
+                "ALTER TABLE `{$p}tracks` ADD COLUMN `level_gain_db` DECIMAL(5,2) NULL COMMENT 'the gain levelling applied' AFTER `source_lufs`",
+                "ALTER TABLE `{$p}tracks` ADD COLUMN `level_target` DECIMAL(4,1) NULL COMMENT 'the station loudness target it was levelled to (LUFS)' AFTER `level_gain_db`",
+                "ALTER TABLE `{$p}tracks` ADD COLUMN `preset_settings` TEXT NULL COMMENT 'JSON: the mastering settings it was made with' AFTER `preset`",
+                "UPDATE `{$p}tracks` SET `level_target` = -16.0 WHERE `loudness_lufs` IS NOT NULL AND `level_target` IS NULL",
+            ],
         ];
     }
 

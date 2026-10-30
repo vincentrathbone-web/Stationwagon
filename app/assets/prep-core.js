@@ -5,7 +5,7 @@
   "use strict";
 
   const P = {
-    TARGET_LUFS: -16,      // every song is levelled to this
+    TARGET_LUFS: -16,      // every song is levelled to this, unless the station sets its own target (opts.target)
     PEAK_CEILING_DB: -1,   // ...unless that would push a sample peak above this (no limiter)
     MAX_GAIN_DB: 12,       // and never louder than this, so a quiet hiss isn't turned into noise
     SILENCE_DB: -50,       // quieter than this at the very start or end counts as silence
@@ -94,17 +94,19 @@
   /**
    * Measure and level. Returns { channels (stereo, trimmed, levelled, faded), info } or
    * { skip: reason } when there's nothing to level. With { level: false } the loudness is only
-   * measured: the song keeps its own level (still trimmed and faded).
+   * measured: the song keeps its own level (still trimmed and faded). opts.target: the station's
+   * loudness target in LUFS (default P.TARGET_LUFS).
    */
   function prepare(channels, rate, opts = {}) {
     const level = opts.level !== false;
+    const target = typeof opts.target === "number" && isFinite(opts.target) ? opts.target : P.TARGET_LUFS;
     // Measure only what will play: half-silent blocks at the edges would read too quiet
     const span = soundSpan(channels, rate);
     const before = span && loudness(channels.map((x) => x.subarray(span[0], span[1])), rate);
     if (before === null || span === null) return { skip: "it is silent or too short to measure" };
     const [a, b] = span;
     const peak = peakDb(channels, a, b);
-    const gainDb = level ? Math.min(P.TARGET_LUFS - before, P.PEAK_CEILING_DB - peak, P.MAX_GAIN_DB) : 0;
+    const gainDb = level ? Math.min(target - before, P.PEAK_CEILING_DB - peak, P.MAX_GAIN_DB) : 0;
     const g = Math.pow(10, gainDb / 20), len = b - a, fade = Math.min(Math.round(P.FADE_S * rate), Math.floor(len / 2));
     const src = channels.length === 1 ? [channels[0], channels[0]] : channels.slice(0, 2);
     const out = src.map((x) => {
@@ -118,7 +120,7 @@
       info: {
         lufs_before: round(before, 2), lufs: round(before + gainDb, 2), gain_db: round(gainDb, 2),
         peak_db: round(peak + gainDb, 2), trimmed_start_s: round(a / rate, 3), trimmed_end_s: round((channels[0].length - b) / rate, 3),
-        seconds: round(len / rate, 3), levelled: level, capped: level && gainDb < P.TARGET_LUFS - before - 0.01,
+        seconds: round(len / rate, 3), levelled: level, target: level ? target : null, capped: level && gainDb < target - before - 0.01,
         outro: outro(out, rate),
       },
     };
@@ -155,9 +157,57 @@
     return { head, tail };
   }
 
+  /**
+   * The ID3v2 tag at the start of a prepared song, with its normalization added as TXXX frames
+   * (round 41): STATIONWAGON_SOURCE_LUFS (its loudness before levelling), and when levelled
+   * STATIONWAGON_LEVEL_GAIN and STATIONWAGON_LEVEL_TARGET. Not REPLAYGAIN_*: players that read those
+   * would adjust the already levelled song a second time. Frames of these names already in the tag
+   * are replaced. An ID3v2.3/2.4 tag gets the frames; with no tag a v2.4 one is made; a v2.2 tag or
+   * one with unsynchronisation is left as it is (rare, and the station keeps the values anyway).
+   */
+  function levelTags(head, info) {
+    const own = [["STATIONWAGON_SOURCE_LUFS", info.lufs_before.toFixed(2) + " LUFS"]];
+    if (info.levelled) own.push(["STATIONWAGON_LEVEL_GAIN", (info.gain_db >= 0 ? "+" : "") + info.gain_db.toFixed(2) + " dB"],
+      ["STATIONWAGON_LEVEL_TARGET", Number(info.target).toFixed(1) + " LUFS"]);
+    const safe = (n) => [(n >>> 21) & 0x7f, (n >>> 14) & 0x7f, (n >>> 7) & 0x7f, n & 0x7f];
+    const unsafe = (b, i) => ((b[i] & 0x7f) << 21) | ((b[i + 1] & 0x7f) << 14) | ((b[i + 2] & 0x7f) << 7) | (b[i + 3] & 0x7f);
+    const ascii = (t) => Array.from(t, (c) => c.charCodeAt(0) & 0x7f);
+    const hasTag = head.length >= 10 && head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33;
+    const ver = hasTag ? head[3] : 4, flags = hasTag ? head[5] : 0;
+    if (hasTag && (ver < 3 || ver > 4 || flags & 0x80)) return head;
+    const frame = ([desc, value]) => {
+      const body = [0, ...ascii(desc), 0, ...ascii(value)], n = body.length;
+      return [0x54, 0x58, 0x58, 0x58, ...(ver === 4 ? safe(n) : [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff]), 0, 0, ...body];
+    };
+    // the frames already there, without our own; the extended header (if any) is kept in front
+    let start = 10, kept = [];
+    if (hasTag) {
+      const end = Math.min(head.length, 10 + unsafe(head, 6));
+      if (flags & 0x40) start += ver === 4 ? unsafe(head, 10) : 4 + ((head[10] << 24) | (head[11] << 16) | (head[12] << 8) | head[13]);
+      for (let i = start; i + 10 <= end && head[i] !== 0;) {
+        const n = ver === 4 ? unsafe(head, i + 4) : ((head[i + 4] << 24) | (head[i + 5] << 16) | (head[i + 6] << 8) | head[i + 7]) >>> 0;
+        if (n <= 0 || i + 10 + n > end) break;
+        const f = head.subarray(i, i + 10 + n);
+        let ours = false;
+        if (f[0] === 0x54 && f[1] === 0x58 && f[2] === 0x58 && f[3] === 0x58) {
+          let j = 11; while (j < f.length && f[j] !== 0) j++;
+          ours = String.fromCharCode(...f.subarray(11, j)).startsWith("STATIONWAGON_");
+        }
+        if (!ours) kept.push(...f);
+        i += 10 + n;
+      }
+    }
+    const frames = [...kept, ...own.flatMap(frame)], pad = 256;
+    const out = new Uint8Array(start + frames.length + pad);
+    out.set([0x49, 0x44, 0x33, ver, 0, flags & 0x40, ...safe(start - 10 + frames.length + pad)]);
+    if (start > 10) out.set(head.subarray(10, start), 10);
+    out.set(frames, start);
+    return out;
+  }
+
   function round(v, d) { const f = Math.pow(10, d); return Math.round(v * f) / f; }
 
-  const api = { P, kFilters, loudness, outro, peakDb, soundSpan, prepare, encode, tags };
+  const api = { P, kFilters, loudness, outro, peakDb, soundSpan, prepare, encode, tags, levelTags };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.SwPrepCore = api;
 })(typeof self !== "undefined" ? self : this);

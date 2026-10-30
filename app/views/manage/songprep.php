@@ -1,12 +1,13 @@
 <?php use function Stationwagon\h; use Stationwagon\App;
 /** @var array $tracks @var array $presets @var int $defaultId @var int $prepKbps @var array $prep @var int $song @var string $csrf */
-[, $prepLevel] = $prep;
+[, $prepLevel, $prepTarget] = $prep;
 $data = [
     'tracks' => array_map(fn($t) => ['id' => (int) $t['id'], 'title' => $t['title'], 'artist' => $t['artist'], 'file' => $t['file'], 'original' => $t['original'],
         'mastered' => (bool) $t['mastered'], 'preset' => $t['preset']], $tracks),
     'presets' => array_map(fn($p) => ['id' => $p['id'], 'name' => $p['name'], 'settings' => (object) $p['settings']], $presets),
     'defaultId' => $defaultId,
     'level' => $prepLevel,
+    'target' => $prepTarget,
     'song' => $song,
     'csrf' => $csrf,
     'postUrl' => App::url('manage/songprep'),
@@ -19,7 +20,7 @@ $data = [
   <div class="vhead">
     <div>
       <h1>Song prep</h1>
-      <p>Try mastering settings on any song and hear the whole of it, original against processed, both at the level the station plays them<?= $prepLevel ? ' (−16 LUFS)' : '' ?>. Save the settings as a preset and pick the one new uploads get.</p>
+      <p>Try mastering settings on any song and hear the whole of it, original against processed, both at the level the station plays them<?= $prepLevel ? ' (' . str_replace('-', '−', number_format($prepTarget, 1)) . ' LUFS, the station’s loudness target in the Music library)' : '' ?>. Save the settings as a preset and pick the one new uploads get.</p>
     </div>
   </div>
 

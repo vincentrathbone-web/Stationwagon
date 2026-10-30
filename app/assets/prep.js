@@ -1,8 +1,9 @@
 // Song prep before upload: decode the MP3 in the browser, then (in prep-worker.js) master it
-// (opts.master: true for the built-in Audition chain, or a preset's settings), level it to -16 LUFS (opts.level), trim silence at
-// both ends, add 20 ms fades and encode a new 192 kbps MP3 carrying the original ID3 tags. When the
+// (opts.master: true for the built-in Audition chain, or a preset's settings), level it to the station's loudness target (opts.level, opts.target in LUFS), trim silence at
+// both ends, add 20 ms fades and encode a new 192 kbps MP3 carrying the original ID3 tags, with its
+// normalization added to them (SwPrepCore.levelTags). When the
 // browser can't, the original goes up as it is, with a note why.
-//   SwPrep.prepare(file, onStage, { master, level }) -> { file, prepared, info?, note?, sourceSha1? }
+//   SwPrep.prepare(file, onStage, { master, level, target }) -> { file, prepared, info?, note?, sourceSha1? }
 (() => {
   const here = document.currentScript.src.replace(/[^/?#]*([?#].*)?$/, "");
   const workerUrl = document.currentScript.dataset.worker || here + "prep-worker.js"; // tagged by content
@@ -23,7 +24,7 @@
     };
     w.onerror = (e) => { e.preventDefault(); end(reject, new Error(e.message || "Prep failed")); };
     const master = opts.master && typeof opts.master === "object" ? opts.master : !!opts.master;
-    w.postMessage({ channels, rate: RATE, kbps: KBPS, master, level: opts.level !== false }, channels.map((c) => c.buffer));
+    w.postMessage({ channels, rate: RATE, kbps: KBPS, master, level: opts.level !== false, target: opts.target }, channels.map((c) => c.buffer));
   });
 
   async function prepare(file, onStage = () => {}, opts = {}) {
@@ -50,7 +51,7 @@
     }
     if (r.skip) return asIs(file, sourceSha1, r.skip);
     const tags = window.SwPrepCore.tags(bytes);
-    const blob = new Blob([tags.head, ...r.chunks, tags.tail], { type: "audio/mpeg" });
+    const blob = new Blob([window.SwPrepCore.levelTags(tags.head, r.info), ...r.chunks, tags.tail], { type: "audio/mpeg" });
     return { file: blob, prepared: true, info: r.info, sourceSha1 };
   }
 

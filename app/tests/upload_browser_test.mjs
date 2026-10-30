@@ -144,7 +144,7 @@ try {
   await evaluate(`(() => { for (const id of ['prepMaster', 'prepLevel']) document.getElementById(id).click(); })()`);
   let saved = "";
   for (let i = 0; i < 50 && !saved.startsWith("Saved"); i++) { await sleep(100); saved = await evaluate(`document.getElementById('prepSaved').textContent`); }
-  check("turning them off is saved straight away", saved.startsWith("Saved") && JSON.stringify(helper("prep")) === '{"master":false,"level":false}', `${saved}; ${JSON.stringify(helper("prep"))}`);
+  check("turning them off is saved straight away", saved.startsWith("Saved") && (p => p.master === false && p.level === false && typeof p.target === "number")(helper("prep")), `${saved}; ${JSON.stringify(helper("prep"))}`);
   await go(`${base}/manage/library`);
   check("  and they stay off on the next visit", JSON.stringify(await evaluate(`[document.getElementById('prepMaster').checked, document.getElementById('prepLevel').checked]`)) === "[false,false]");
   rows = await upload([plain]);
@@ -169,7 +169,7 @@ try {
   check("  without a loudness", s !== null && s.loudness_lufs === null);
   check("a file that isn't audio is still refused by the server", rows && rows[1].cls === "bad" && rows[1].text.includes("not an MP3"), rows && rows[1].text);
 } finally {
-  if (prepBefore) helper("prep", prepBefore.master ? "1" : "0", prepBefore.level ? "1" : "0");
+  if (prepBefore) helper("prep", prepBefore.master ? "1" : "0", prepBefore.level ? "1" : "0", String(prepBefore.target ?? -16));
   if (user) {
     const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle);
     console.log(`Cleanup: throwaway manager and test songs removed${r.hidden ? ` (${r.hidden} on air, hidden)` : ""}`);

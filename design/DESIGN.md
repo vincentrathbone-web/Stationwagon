@@ -206,6 +206,23 @@ Since round 40 the mastering switch names its preset (*mastering with “Warm ni
 Song prep" link), the Mastered pill's tooltip names the preset a song was made with, each row has a
 **Song prep** button, and an upload row ends "· original kept" once the file the manager chose is saved.
 
+### Loudness target (round 41; not in the mock-ups)
+
+Under the two switches in the Music library's drop zone: **Loudness target −16.0 LUFS** (the value in
+the mono face) with a plain line of help, a full-width range slider in the accent colour (−23 to −8 LUFS,
+half-dB steps) and four small coloured marks under it at the usual levels, each in an existing token that
+gets hotter as it gets louder: −16 `--cue` (Apple Music, podcasts), −14 the accent (Spotify, YouTube),
+−11 `--warn` (loud, like FM radio), −9 `--onair` (very loud), named in a legend of dots beneath. A drag
+snaps to a mark; the keys don't. The switch's label repeats the value. With normalization off the
+whole block dims to half.
+
+After a change, a raised panel: "8 songs were levelled to −16.0 LUFS; the station's target is now
+−14.0 LUFS." with **Re-level 8 songs now** (primary) and **Only new uploads**, a line on what re-levelling
+does, and the upload-row list for its progress ("Fetching the original", "Levelling", "Levelled −23.0 →
+−14.0 LUFS (+9.0 dB)", or "On air: waiting until it isn't"). Chosen "Only new uploads", a quiet line with
+a small **Re-level** button stays while any song is at another target. The Levelled pill's tooltip gives
+the target and the gain ("from −23.0 LUFS").
+
 ### Song prep screen (round 40; not in the mock-ups)
 
 **Manage → Song prep**, in the rail after Sound & safety (managers and admins). Built from the existing

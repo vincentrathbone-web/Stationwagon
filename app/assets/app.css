@@ -790,3 +790,24 @@ body.embed { height: 100%; }
 @media (min-width: 561px) { .spnums td { white-space: nowrap; } }
 @media (max-width: 560px) { .spnums { font-size: 12px; } .spnums th, .spnums td { padding: 6px 3px; } }
 .spmsg:empty { display: none; }
+
+/* ---- Loudness target (round 41): the Music library's slider and re-levelling ------------------ */
+.loud { margin-top: 14px; max-width: 640px; display: grid; gap: 6px; }
+.loud[data-off] { opacity: .5; }
+.loudhead { font-size: 14px; font-weight: 500; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.loudhead b { font-family: var(--f-mono); }
+.loudtrack { position: relative; padding: 6px 0 10px; }
+.loudtrack input { width: 100%; display: block; margin: 0; accent-color: var(--amber); }
+/* under the thumb's centre, which travels the width less one thumb (about 16 px) */
+.loudmark { position: absolute; bottom: 0; left: calc(8px + (100% - 16px) * var(--at)); width: 3px; height: 9px; margin-left: -1.5px; border-radius: var(--r-small); pointer-events: none; }
+.loudlegend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--muted); }
+.loudlegend li { display: flex; align-items: center; gap: 6px; }
+.loudlegend li i { width: 10px; height: 10px; border-radius: var(--r-small); }
+.loudlegend b { color: var(--ink); font-family: var(--f-mono); font-weight: 500; }
+.lk16 { background: var(--cue); }
+.lk14 { background: var(--amber); }
+.lk11 { background: var(--warn); }
+.lk9 { background: var(--onair); }
+.relevel { margin-top: 14px; padding: 12px 14px; border-radius: var(--r-box); background: var(--raised); display: grid; gap: 10px; max-width: 760px; }
+.relevel p { margin: 0; }
+#relevelLater { margin: 12px 0 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

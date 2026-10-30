@@ -160,13 +160,58 @@ try {
     $lib->delete($gl['id'], $p, $offAir($gl['id'], $t2));
     check('  (both kinds)', !is_file("$root/storage/originals/$chosen.mp3") && $lib->get($gl['id']) === null);
 
+    echo "The loudness target and each song's normalization (round 41)\n";
+    $ss = new StationSettings($db, $station);
+    check('the station starts at -16 LUFS', StationSettings::prep($station)[2] === -16.0);
+    $station = $ss->savePrep(false, true, -14.3);
+    check('a target is kept in half-dB steps', StationSettings::prep($station)[2] === -14.5);
+    check('  and in range (-23 to -8 LUFS)', StationSettings::target(-40) === -23.0 && StationSettings::target(0) === -8.0 && StationSettings::target('loud') === -16.0);
+    $station = (new StationSettings($db, $station))->savePrep(false, true);
+    check('  saving the switches alone keeps it', StationSettings::prep($station)[2] === -14.5);
+    $station = (new StationSettings($db, $station))->savePrep(false, true, -16.0);
+    $lib = new Library($db, $station, $root);
+    make_mp3("$root/in/chosen2", 140, ['title' => 'Kyrie'], 31);
+    make_mp3("$root/in/prepared2", 138, ['title' => 'Kyrie'], 32);
+    $warmSettings = ['ratio' => [5, 3, 3, 5], 'eqOn' => true];
+    $ky = $lib->import("$root/in/prepared2", null, null, 'Kyrie.mp3', sha1_file("$root/in/chosen2"), -14.0, null, true, 'Warm',
+        ['source_lufs' => '-9.876', 'gain_db' => '-4.124', 'target' => '-14', 'settings' => $warmSettings]);
+    $kr = $db->run('SELECT source_lufs, level_gain_db, level_target, preset_settings FROM ' . $db->table('tracks') . ' WHERE id = ?', [$ky['id']])->fetch();
+    check('an upload keeps its loudness before levelling, the gain, the target and its mastering', (float) $kr['source_lufs'] === -9.88 && (float) $kr['level_gain_db'] === -4.12
+        && (float) $kr['level_target'] === -14.0 && json_decode($kr['preset_settings'], true) === $warmSettings, json_encode($kr));
+    $cols = Library::levelColumns(['source_lufs' => 'x', 'gain_db' => 99, 'target' => -3, 'settings' => ['hack' => 1]], true, true);
+    check('  values are kept in range; a mastering setting song prep doesn’t know isn’t kept', $cols['source_lufs'] === null && $cols['level_gain_db'] === 40.0 && $cols['level_target'] === -8.0 && $cols['preset_settings'] === null, json_encode($cols));
+    $cols = Library::levelColumns(['source_lufs' => -12, 'gain_db' => -4, 'target' => -16, 'settings' => []], false, false);
+    check('  not levelled: no gain or target; not mastered: no settings', $cols['source_lufs'] === -12.0 && $cols['level_gain_db'] === null && $cols['level_target'] === null && $cols['preset_settings'] === null);
+    check('  the built-in chain is kept as {}', Library::levelColumns(['settings' => []], true, true)['preset_settings'] === '{}');
+    $lib->keepOriginal($ky['id'], "$root/in/chosen2");
+    $at = $offAir($ky['id'], $now);
+    make_mp3("$root/in/relevelled", 138, ['title' => 'Kyrie'], 33);
+    check('re-levelled (Apply): the new values replace the old', $lib->replace($ky['id'], "$root/in/relevelled", -11.0, null, true, 'Warm', $p, $at,
+        ['source_lufs' => -9.88, 'gain_db' => -1.12, 'target' => -11, 'settings' => $warmSettings]) === null);
+    $kr = $db->run('SELECT loudness_lufs, level_gain_db, level_target, preset_settings FROM ' . $db->table('tracks') . ' WHERE id = ?', [$ky['id']])->fetch();
+    check('  its loudness, gain and target, its mastering kept', (float) $kr['loudness_lufs'] === -11.0 && (float) $kr['level_gain_db'] === -1.12 && (float) $kr['level_target'] === -11.0
+        && json_decode($kr['preset_settings'], true) === $warmSettings, json_encode($kr));
+    $tk = array_values(array_filter($lib->tracks('Kyrie'), fn($x) => (int) $x['id'] === $ky['id']))[0] ?? [];
+    check('  and the library lists them', (float) ($tk['level_target'] ?? 0) === -11.0 && array_key_exists('preset_settings', $tk) && array_key_exists('source_lufs', $tk));
+    $lib->delete($ky['id'], $p, $offAir($ky['id'], $at));
+
     echo "Schema 10\n";
     $pfx = $cfg['db']['prefix'];
+    // a song levelled before version 11 (levelled to -16 LUFS, the only target there was), and one not levelled
+    make_mp3("$root/in/old-lev", 120, ['title' => 'Old levelled'], 41);
+    make_mp3("$root/in/old-plain", 120, ['title' => 'Old plain'], 42);
+    $oldLev = $lib->import("$root/in/old-lev", null, null, 'a.mp3', sha1('old levelled'), -16.0)['id'];
+    $oldPlain = $lib->import("$root/in/old-plain", null, null, 'b.mp3')['id'];
     $db->pdo->exec("DROP TABLE `{$pfx}prep_presets`");
     $db->pdo->exec("ALTER TABLE `{$pfx}tracks` DROP COLUMN preset");
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '9' WHERE name = 'schema_version'");
+    foreach (['source_lufs', 'level_gain_db', 'level_target', 'preset_settings'] as $col) {
+        $db->pdo->exec("ALTER TABLE `{$pfx}tracks` DROP COLUMN $col");
+    }
     check('a version 9 database upgrades to ' . Schema::VERSION . ' with presets', Schema::upgrade($db, $root) === range(10, Schema::VERSION) && Schema::installed($db) === Schema::VERSION
         && count($pp->all()) === 0 && array_key_exists('preset', $db->run('SELECT * FROM ' . $db->table('tracks') . ' LIMIT 1')->fetch()));
+    $tg = fn(int $id) => $db->run('SELECT level_target FROM ' . $db->table('tracks') . ' WHERE id = ?', [$id])->fetchColumn();
+    check('  (11) songs levelled before it count as levelled to -16 LUFS; others as not levelled', (float) $tg($oldLev) === -16.0 && $tg($oldPlain) === null);
 
     echo "Playlists\n";
     $lists = new Playlists($db, $station);
@@ -248,7 +293,7 @@ try {
     check('  and the show times out after the new 12 s', !$p2->needsPlan($live, $show['last_piece_at'] + 11) && $p2->needsPlan($live, $show['last_piece_at'] + 13));
     $p2->endLive($later + 20, $show['public_id']);
     check('numbers show without needless decimals', StationSettings::show(6.0) === '6' && StationSettings::show(1.5) === '1.5');
-    check('a new station levels songs but leaves mastering off', StationSettings::prep(['settings' => '{}']) === [false, true]);
+    check('a new station levels songs to -16 LUFS but leaves mastering off', StationSettings::prep(['settings' => '{}']) === [false, true, -16.0]);
 
     echo "Silence detection\n";
     $tail = array_merge(array_fill(0, 40, -14.0), array_fill(0, 20, -99.0));   // 20 silent seconds at the end

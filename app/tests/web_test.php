@@ -478,14 +478,22 @@ try {
         };
         $r = $m->go('manage/library');
         check('the library opens with a drop zone', $r['status'] === 200 && str_contains($r['body'], 'id="drop"') && str_contains($r['body'], 'upload.js?v=') && preg_match('~data-worker="[^"]*prep-worker\.js\?v=[0-9a-f]{10}"~', $r['body']));
-        // song prep's two switches: shown as stored, saved by a manager only
-        $prepRow = fn() => Stationwagon\StationSettings::prep($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch());
-        [$keepMaster, $keepLevel] = $prepRow();
+        // song prep's two switches and the loudness target: shown as stored, saved by a manager only
+        $prepAll = fn() => Stationwagon\StationSettings::prep($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch());
+        $prepRow = fn() => array_slice($prepAll(), 0, 2);
+        [$keepMaster, $keepLevel, $keepTarget] = $prepAll();
         $shown = fn(string $body, string $id) => preg_match('~<input[^>]*id="' . $id . '"[^>]*>~', $body, $mm) ? str_contains($mm[0], 'checked') : null;
         check('the drop zone has the two song prep switches, as stored', $shown($r['body'], 'prepMaster') === $keepMaster && $shown($r['body'], 'prepLevel') === $keepLevel
             && str_contains($r['body'], 'Apply pre-processing') && str_contains($r['body'], 'Loudness normalization')
             && preg_match('~data-worker="[^"]*prep-worker\.js\?v=[0-9a-f]{10}"~', $r['body']));
-        $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'prep', 'level' => '1'], ['Accept: application/json']);
+        check('  and the loudness target slider, at the stored target, with its four marked levels', preg_match('~<input type="range" id="prepTarget"[^>]*value="([^"]+)"~', $r['body'], $tm) === 1
+            && (float) $tm[1] === $keepTarget && substr_count($r['body'], 'class="loudmark') === 4 && str_contains($r['body'], 'relevel.js?v='), $tm[1] ?? '');
+        $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'prep', 'level' => '1', 'target' => '-11.2'], ['Accept: application/json']);
+        $j = json_decode($r['body'], true);
+        check('a manager saves a target (kept in half-dB steps), and hears which songs are levelled to another', is_numeric($j['target'] ?? null) && (float) $j['target'] === -11.0 && $prepAll()[2] === -11.0 && is_array($j['relevel'] ?? null), $r['body']);
+        $r = (new Browser($base))->go('manage/library', ['csrf' => 'x', 'action' => 'prep', 'level' => '1', 'target' => '-9'], ['Accept: application/json']);
+        check('  someone signed out can’t', $r['status'] !== 200 && $prepAll()[2] === -11.0, (string) $r['status']);
+        $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'prep', 'level' => '1', 'target' => (string) $keepTarget], ['Accept: application/json']);
         $j = json_decode($r['body'], true);
         check('turning pre-processing off is saved', ($j['ok'] ?? false) && $prepRow() === [false, true], $r['body']);
         $r = $m->go('manage/library');
@@ -493,7 +501,7 @@ try {
         $r = (new Browser($base))->go('manage/library', ['csrf' => 'x', 'action' => 'prep'], ['Accept: application/json']);
         check('  someone signed out can’t change them', $r['status'] !== 200 && $prepRow() === [false, true], (string) $r['status']);
         $m->go('manage/library', array_filter(['csrf' => $csrf, 'action' => 'prep', 'master' => $keepMaster ? '1' : null, 'level' => $keepLevel ? '1' : null]), ['Accept: application/json']);
-        check('  (put back as they were)', $prepRow() === [$keepMaster, $keepLevel]);
+        check('  (put back as they were)', $prepAll() === [$keepMaster, $keepLevel, $keepTarget]);
         make_mp3("$tmpDir/mastered.mp3", 20, ['title' => "Web Test Mastered " . strrev($tag)], random_int(0, 255));
         $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'upload', 'files[0]' => new CURLFile("$tmpDir/mastered.mp3", 'audio/mpeg', 'mastered.mp3'),
             'source_sha1[0]' => sha1("mastered $tag"), 'prep_lufs[0]' => '-16', 'prep_mastered[0]' => '1'], ['Accept: application/json']);

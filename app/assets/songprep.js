@@ -14,7 +14,7 @@
   const D = JSON.parse(document.getElementById("songprepData").textContent);
   const M = window.SwMaster, $ = (id) => document.getElementById(id);
   const RATE = 44100, PIECE_S = 10, METER_S = 0.01, BLOCK_S = 0.1, FINE = 220, COARSE = 4410;
-  const TARGET = window.SwPrepCore.P.TARGET_LUFS, CEIL = window.SwPrepCore.P.PEAK_CEILING_DB, MAXG = window.SwPrepCore.P.MAX_GAIN_DB;
+  const TARGET = typeof D.target === "number" ? D.target : window.SwPrepCore.P.TARGET_LUFS, CEIL = window.SwPrepCore.P.PEAK_CEILING_DB, MAXG = window.SwPrepCore.P.MAX_GAIN_DB;
   const KEYS = ["cross", "threshold", "ratio", "knee", "gain", "attackMs", "releaseMs", "mbThresh", "mbMargin", "shelfDb", "exciteDb", "sideDb", "maxGain", "ceiling", "eqOn", "compOn", "finishOn", "eq", "simple"];
   const BANDS = ["Low", "Low mid", "High mid", "High"];
   const HANDHELD = (navigator.maxTouchPoints > 0 && matchMedia("(pointer: coarse)").matches) || /Android|iPhone|iPad/.test(navigator.userAgent);
@@ -640,11 +640,12 @@
     try {
       say("Preparing the whole song…");
       const blob = await (await fetch(D.origUrl + "?id=" + song.track.id, { credentials: "same-origin" })).blob();
-      const p = await window.SwPrep.prepare(blob, (stage) => say("Preparing: " + stage), { master: saved(), level: D.level });
+      const p = await window.SwPrep.prepare(blob, (stage) => say("Preparing: " + stage), { master: saved(), level: D.level, target: TARGET });
       if (!p.prepared) throw new Error(p.note || "song prep didn’t run");
       say("Uploading…");
       const j = await post({ action: "apply", id: String(song.track.id), prep_lufs: p.info.levelled ? String(p.info.lufs) : "", prep_outro: JSON.stringify(p.info.outro || []),
-        prep_mastered: "1", prep_preset: name }, p.file);
+        prep_mastered: "1", prep_preset: name, prep_source_lufs: String(p.info.lufs_before), prep_gain: String(p.info.gain_db),
+        prep_target: p.info.target === null ? "" : String(p.info.target), prep_settings: JSON.stringify(saved()) }, p.file);
       if (!j.ok) throw new Error(j.error || "the server refused it");
       say(`“${song.track.title}” is now prepared with “${name}”. Its next plays use the new copy.`);
     } catch (ex) {
