@@ -59,6 +59,8 @@ final class App
                 'manage/schedule' => (new ManagePage())->schedule(),
                 'manage/djs' => (new ManagePage())->djs(),
                 'manage/sound' => (new ManagePage())->sound(),
+                'manage/songprep' => (new ManagePage())->songprep(),
+                'manage/songprep/original' => (new ManagePage())->songprepOriginal(),
                 'manage/listeners' => (new ManagePage())->listeners(),
                 'manage/podcast' => (new ManagePage())->podcast(),
                 'podcast' => PodcastPage::page(),

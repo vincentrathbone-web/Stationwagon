@@ -166,6 +166,42 @@ check("the widener lifts the sides by about 4.3 dB in the highs and leaves the l
   const mono = master.master([sine(440, -20)[0]], MR);
   check("a mono song comes out as stereo with both sides the same", mono.length === 2 && mono[0].every((v, i) => v === mono[1][i]));
 }
+console.log("Presets (the Song prep screen)");
+{
+  const loud = sine(1000, -12, 2);
+  const a = master.master(loud, MR), b = master.master(loud, MR, null, {});
+  check("an empty preset is the Audition chain, sample for sample", a[0].every((v, i) => v === b[0][i]) && a[1].every((v, i) => v === b[1][i]));
+  const q = master.preset({ ratio: [99, 2, "x"], ceiling: 5, cross: [5000, 200, 900], eq: { bells: [{ hz: 1e6, db: -40, q: 0 }] }, compOn: "no", junk: 1 });
+  check("a preset is kept in range: too big, wrong types and unknown keys", q.ratio[0] === 20 && q.ratio[2] === master.P.ratio[2] && q.ceiling === -0.1 && q.eq.bells[0].hz === 20000 && q.eq.bells[0].db === -15 && q.eq.bells[0].q === 0.2 && q.compOn === true && !("junk" in q),
+    JSON.stringify({ ratio: q.ratio, ceiling: q.ceiling, bell: q.eq.bells[0], compOn: q.compOn }));
+  check("  crossovers come out in order, apart and in range", q.cross.join() === "200,900,5000" && master.preset({ cross: [390, 395, 2000] }).cross.every((v, i, a) => !i || v >= a[i - 1] * 1.5), q.cross.join(" / ") + "; " + master.preset({ cross: [390, 395, 2000] }).cross.join(" / "));
+  const off = { compOn: false, finishOn: false };
+  const thru = master.master(loud, MR, null, off);
+  check("with everything off and a flat EQ the song comes through untouched", thru[0].every((v, i) => v === loud[0][i]));
+  const gainAt = (hz, eq) => { const x = sine(hz, -20, 1); return rmsDb(master.master(x, MR, null, { ...off, eq })[0], MR / 2, MR) - rmsDb(x[0], MR / 2, MR); };
+  const bell = { bells: [{ hz: 1000, db: 6, q: 1 }, { hz: 1000, db: 0, q: 1 }, { hz: 1000, db: 0, q: 1 }] };
+  check("EQ: a +6 dB bell at 1 kHz lifts 1 kHz by 6 dB", Math.abs(gainAt(1000, bell) - 6) < 0.1, gainAt(1000, bell).toFixed(2) + " dB");
+  check("  and leaves 100 Hz and 10 kHz nearly alone", Math.abs(gainAt(100, bell)) < 0.3 && Math.abs(gainAt(10000, bell)) < 0.3, `${gainAt(100, bell).toFixed(2)} / ${gainAt(10000, bell).toFixed(2)} dB`);
+  check("  a −4 dB low shelf at 150 Hz cuts 40 Hz by 4 dB", Math.abs(gainAt(40, { low: { hz: 150, db: -4 } }) + 4) < 0.3, gainAt(40, { low: { hz: 150, db: -4 } }).toFixed(2) + " dB");
+  check("  a +3 dB high shelf at 8 kHz lifts 16 kHz by 3 dB", Math.abs(gainAt(16000, { high: { hz: 8000, db: 3 } }) - 3) < 0.3, gainAt(16000, { high: { hz: 8000, db: 3 } }).toFixed(2) + " dB");
+  check("  the high-pass at 60 Hz takes 20 Hz down by over 15 dB", gainAt(20, { hp: { on: true, hz: 60 } }) < -15, gainAt(20, { hp: { on: true, hz: 60 } }).toFixed(1) + " dB");
+  const m = master.master(sine(60, -6, 2), MR, null, {}, 4410).meter;
+  const most = (x) => Math.max(...x);
+  check("meters: a loud 60 Hz tone shows reduction in the lowest band only", m && most(m.bands[0]) > 3 && most(m.bands[2]) < 0.5 && most(m.bands[3]) < 0.5, m && m.bands.map((x) => most(x).toFixed(1)).join(" / ") + " dB");
+  const lim = master.master(sine(1000, -3, 2), MR, null, {}, 4410).meter.lim;
+  check("  one value per step, and the final limiter's reduction too", m.bands[0].length === Math.ceil(2 * MR / 4410) && most(lim) > 1, `${m.bands[0].length} values, limiter ${most(lim).toFixed(1)} dB`);
+  const s0 = master.simple({});
+  check("the simple view in the middle is the Audition chain", s0.ratio.every((v, i) => v === master.P.ratio[i]) && s0.threshold.every((v, i) => v === master.P.threshold[i]) && s0.maxGain === master.P.maxGain);
+  const soft = master.simple({ amount: 0 }), hard = master.simple({ amount: 1 }), slow = master.simple({ punch: 1 });
+  check("  amount 0 lets the dynamics through (ratio 1), amount 1 squeezes harder", soft.ratio.every((v) => v === 1) && hard.ratio.every((v, i) => v > master.P.ratio[i]) && hard.threshold.every((v, i) => v < master.P.threshold[i]), `${soft.ratio} / ${hard.ratio}`);
+  check("  more punch is a slower attack and release", slow.attackMs > 20 && slow.releaseMs > master.P.releaseMs, `${slow.attackMs} / ${slow.releaseMs} ms`);
+  const music = sine(220, -10, 3);
+  for (let i = 0; i < music[0].length; i++) { const e = (i % 22050) < 2205 ? 1 : 0.15; music[0][i] *= e; music[1][i] *= e; } // a hit every 0.5 s
+  const spread = (y) => { const v = []; for (let i = 0; i + 2205 <= y[0].length; i += 2205) v.push(rmsDb(y[0], i, i + 2205)); v.sort((x, z) => x - z); return v[v.length - 1] - v[0]; };
+  const lowAmt = spread(master.master(music, MR, null, { ...master.simple({ amount: 0.1 }), finishOn: false })), highAmt = spread(master.master(music, MR, null, { ...master.simple({ amount: 0.9 }), finishOn: false }));
+  check("  a lower amount keeps more of the music's swing", lowAmt > highAmt + 3, `${lowAmt.toFixed(1)} dB against ${highAmt.toFixed(1)} dB`);
+}
+
 r = core.prepare(tone([[null, 1], [-20, 12], [null, 1]], R, { freq: 440 }), R, { level: false });
 check("loudness normalization off: the song keeps its level", r.info.gain_db === 0 && r.info.levelled === false && near(r.info.lufs, r.info.lufs_before, 0.001), `${r.info.lufs} LUFS`);
 check("  and is still trimmed", near(r.info.seconds, 12.1, 0.02), `${r.info.seconds} s`);

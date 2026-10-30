@@ -388,6 +388,11 @@ final class Planner
         return $this->locked(function () use ($now, $fn) {
             $pdo = $this->db->pdo;
             $pdo->beginTransaction();
+            // the songs as they are now: one may have changed since they were read (Song prep's
+            // Apply gives a song a new file, length and pieces just before it replans)
+            $this->tracks = null;
+            $this->blocks = null;
+            $this->pieceCache = [];
             try {
                 $result = $fn($this->entries($now - 600));
                 $this->plan($now);

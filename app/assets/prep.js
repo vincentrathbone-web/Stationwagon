@@ -1,5 +1,5 @@
-// Song prep before upload: decode the MP3 in the browser, then (in prep-worker.js) master it like
-// the station's Audition chain (opts.master), level it to -16 LUFS (opts.level), trim silence at
+// Song prep before upload: decode the MP3 in the browser, then (in prep-worker.js) master it
+// (opts.master: true for the built-in Audition chain, or a preset's settings), level it to -16 LUFS (opts.level), trim silence at
 // both ends, add 20 ms fades and encode a new 192 kbps MP3 carrying the original ID3 tags. When the
 // browser can't, the original goes up as it is, with a note why.
 //   SwPrep.prepare(file, onStage, { master, level }) -> { file, prepared, info?, note?, sourceSha1? }
@@ -22,7 +22,8 @@
       else end(reject, new Error(m.error || "Prep failed"));
     };
     w.onerror = (e) => { e.preventDefault(); end(reject, new Error(e.message || "Prep failed")); };
-    w.postMessage({ channels, rate: RATE, kbps: KBPS, master: !!opts.master, level: opts.level !== false }, channels.map((c) => c.buffer));
+    const master = opts.master && typeof opts.master === "object" ? opts.master : !!opts.master;
+    w.postMessage({ channels, rate: RATE, kbps: KBPS, master, level: opts.level !== false }, channels.map((c) => c.buffer));
   });
 
   async function prepare(file, onStage = () => {}, opts = {}) {

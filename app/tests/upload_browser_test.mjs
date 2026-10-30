@@ -5,7 +5,7 @@
 //   node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app
 // Needs SW_PHP (php.exe) unless php is on PATH. Signs in a throwaway account: not for a public server.
 import { spawn, spawnSync, execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,7 +71,7 @@ const evaluate = async (expression) => {
   if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || "page error");
   return r.result?.result?.value;
 };
-const loaded = async () => { for (let i = 0; i < 100; i++) { if ((await evaluate("document.readyState")) === "complete") return; await sleep(100); } };
+const loaded = async () => { for (let i = 0; i < 100; i++) { if ((await evaluate("document.readyState").catch(() => "")) === "complete") return; await sleep(100); } };
 const go = async (url) => { await call("Page.navigate", { url }); await sleep(300); await loaded(); };
 
 /** Choose files in the drop zone and wait for every row's final status (before the page reloads). */
@@ -82,7 +82,10 @@ async function upload(files) {
   await call("DOM.setFileInputFiles", { nodeId: input.result.nodeId, files });
   for (let i = 0; i < 600; i++) {
     const rows = await evaluate(`[...document.querySelectorAll('#uplist li')].map((li) => ({ cls: li.className, text: li.querySelector('.s').textContent }))`).catch(() => null);
-    if (rows && rows.length === files.length && rows.every((r) => r.cls === "ok" || r.cls === "bad")) return rows;
+    if (rows && rows.length === files.length && rows.every((r) => (r.cls === "ok" || r.cls === "bad") && !r.text.includes("keeping the original"))) {
+      await sleep(1500); await loaded(); // the library reloads itself 0.9 s after an upload
+      return rows;
+    }
     await sleep(100);
   }
   return null;
@@ -114,6 +117,8 @@ try {
   check("the song is mastered, levelled and added", rows && rows[0].cls === "ok" && rows[0].text.startsWith("Added, mastered, levelled"), rows && rows[0].text);
   const t = helper("track", songTitle);
   check("it's marked as mastered", t && Number(t.mastered) === 1);
+  check("  with the built-in preset, and the file the manager chose is kept as its original (round 40)", t && t.preset === "Audition chain" && rows[0].text.includes("original kept")
+    && existsSync(join(here, "..", "storage", "originals", `${songSha1}.mp3`)), t && `${t.preset}; ${rows[0].text}`);
   check("the original title tag is kept", t !== null && t.title === songTitle);
   check("it's stored at -16 LUFS", t && near(t.loudness_lufs, -16, 0.05), t && t.loudness_lufs);
   check("as a new 192 kbps file", t && Number(t.bitrate_kbps) === 192 && Number(t.sample_rate) === 44100 && t.file !== `${songSha1}.mp3`, t && `${t.bitrate_kbps} kbps`);

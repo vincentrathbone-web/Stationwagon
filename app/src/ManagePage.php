@@ -81,6 +81,16 @@ final class ManagePage
                 foreach ($results as $r) {
                     Session::flash($r['ok'] ? 'ok' : 'bad', $r['ok'] ? ($r['duplicate'] ? "Already in the library: {$r['title']}" : "Added: {$r['title']}") : "{$r['name']}: {$r['error']}");
                 }
+            } elseif ($action === 'original') {
+                // after an upload: the file the song was prepared from, kept for song prep (round 40)
+                $file = $_FILES['original'] ?? null;
+                $problem = is_array($file) && (int) $file['error'] === UPLOAD_ERR_OK && (is_uploaded_file((string) $file['tmp_name']) || PHP_SAPI === 'cli')
+                    ? $library->keepOriginal((int) ($_POST['id'] ?? 0), (string) $file['tmp_name'])
+                    : 'The original didn’t arrive.';
+                if ($wantsJson) {
+                    $this->json(['ok' => $problem === null, 'error' => $problem]);
+                }
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Original kept.');
             } elseif ($action === 'prep') {
                 // song prep's two switches, saved as soon as they change
                 $this->station = (new StationSettings($this->db, $this->station))->savePrep(!empty($_POST['master']), !empty($_POST['level']));
@@ -109,7 +119,83 @@ final class ManagePage
             'maxUpload' => self::maxUploadBytes(),
             'prepKbps' => (int) $this->planner->setting('prep_kbps'),
             'prep' => StationSettings::prep($this->station),
+            'preset' => (new PrepPresets($this->db, $this->station))->forImport(),
         ]);
+    }
+
+    // ---- Song prep (round 40): mastering presets, tried on any song of the library ------------
+
+    public function songprep(): void
+    {
+        $presets = new PrepPresets($this->db, $this->station);
+        $library = new Library($this->db, $this->station, SW_ROOT);
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+            if (empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+                $this->uploadTooBig(true);
+            }
+            $this->postAs('manager', 'manage/songprep', true);
+            $action = (string) ($_POST['action'] ?? '');
+            $now = microtime(true);
+            if ($action === 'save') {
+                [$id, $problem] = $presets->save((int) ($_POST['id'] ?? 0), (string) ($_POST['name'] ?? ''), json_decode((string) ($_POST['settings'] ?? ''), true), $now);
+                if ($problem === null && !empty($_POST['default'])) {
+                    $presets->setDefault((int) $id);
+                }
+                $this->json($problem === null ? ['ok' => true, 'id' => $id] : ['ok' => false, 'error' => $problem]);
+            }
+            if ($action === 'delete') {
+                $problem = $presets->delete((int) ($_POST['id'] ?? 0));
+                $this->json(['ok' => $problem === null, 'error' => $problem]);
+            }
+            if ($action === 'default') {
+                $station = $presets->setDefault((int) ($_POST['id'] ?? 0));
+                $this->json(['ok' => true, 'id' => PrepPresets::defaultId($station)]);
+            }
+            if ($action === 'apply') {
+                // a song prepared again in the browser, from its original, with the preset on screen
+                $file = $_FILES['file'] ?? null;
+                if (!is_array($file) || (int) $file['error'] !== UPLOAD_ERR_OK || (!is_uploaded_file((string) $file['tmp_name']) && PHP_SAPI !== 'cli')) {
+                    $this->json(['ok' => false, 'error' => 'The prepared song didn’t arrive. Try again.']);
+                }
+                $lufs = $_POST['prep_lufs'] ?? null;
+                $outro = json_decode((string) ($_POST['prep_outro'] ?? ''), true);
+                $problem = $library->replace((int) ($_POST['id'] ?? 0), (string) $file['tmp_name'], is_numeric($lufs) ? (float) $lufs : null,
+                    is_array($outro) ? $outro : null, ($_POST['prep_mastered'] ?? '') === '1', (string) ($_POST['prep_preset'] ?? ''), $this->planner, $now);
+                $this->json(['ok' => $problem === null, 'error' => $problem]);
+            }
+            $this->json(['ok' => false, 'error' => 'Unknown action.']);
+        }
+        $me = App::requireRole('manager');
+        $tracks = array_map(fn($t) => $t + ['original' => $library->original($t) !== null], $library->tracks());
+        $this->render('songprep', 'Song prep', $me, [
+            'tracks' => $tracks,
+            'presets' => $presets->all(),
+            'defaultId' => PrepPresets::defaultId($this->station),
+            'prepKbps' => (int) $this->planner->setting('prep_kbps'),
+            'prep' => StationSettings::prep($this->station),
+            'song' => (int) ($_GET['song'] ?? 0),
+        ], 'songprep');
+    }
+
+    /** A song's original, for the Song prep screen (managers only; never cached by others). */
+    public function songprepOriginal(): void
+    {
+        App::requireRole('manager');
+        $library = new Library($this->db, $this->station, SW_ROOT);
+        $track = $library->get((int) ($_GET['id'] ?? 0));
+        $path = $track ? $library->original($track) : null;
+        if ($path === null) {
+            http_response_code(404);
+            header('Content-Type: text/plain');
+            echo 'No original for that song.';
+            exit;
+        }
+        header('Content-Type: audio/mpeg');
+        header('Content-Length: ' . filesize($path));
+        header('Cache-Control: private, max-age=3600');
+        header('X-Content-Type-Options: nosniff');
+        readfile($path);
+        exit;
     }
 
     /** @return list<array{name:string,ok:bool,duplicate?:bool,title?:string,error?:string}> */
@@ -148,10 +234,15 @@ final class ManagePage
                 $lufs = ((array) ($_POST['prep_lufs'] ?? []))[$i] ?? null;
                 $outro = json_decode((string) (((array) ($_POST['prep_outro'] ?? []))[$i] ?? ''), true);
                 $mastered = (string) (((array) ($_POST['prep_mastered'] ?? []))[$i] ?? '') === '1';
+                $preset = ((array) ($_POST['prep_preset'] ?? []))[$i] ?? null;
                 $r = $library->import($tmp, null, null, $name, is_string($source) ? strtolower($source) : null,
-                    is_numeric($lufs) ? (float) $lufs : null, is_array($outro) ? $outro : null, $mastered);
+                    is_numeric($lufs) ? (float) $lufs : null, is_array($outro) ? $outro : null, $mastered, is_string($preset) ? $preset : null);
                 $added = $added || !$r['duplicate'];
-                $out[] = ['name' => $name, 'ok' => true, 'duplicate' => $r['duplicate'], 'title' => $r['title'], 'id' => $r['id']];
+                // original: whether the station has the file the song was made from (the page sends it
+                // when not, a song uploaded again included, so older songs get theirs for Song prep)
+                $track = $library->get((int) $r['id']);
+                $out[] = ['name' => $name, 'ok' => true, 'duplicate' => $r['duplicate'], 'title' => $r['title'], 'id' => $r['id'],
+                    'original' => $track !== null && $library->original($track) !== null];
             } catch (RuntimeException $ex) {
                 $out[] = ['name' => $name, 'ok' => false, 'error' => $ex->getMessage()];
             }

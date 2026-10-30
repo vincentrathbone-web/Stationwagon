@@ -1,6 +1,7 @@
 <?php use function Stationwagon\{h, duration, megabytes}; use Stationwagon\App;
-/** @var array $tracks @var string $q @var int $total @var int $bytes @var int $confirm @var int $edit @var int $maxUpload @var int $prepKbps @var array $prep @var string $csrf */
+/** @var array $tracks @var string $q @var int $total @var int $bytes @var int $confirm @var int $edit @var int $maxUpload @var int $prepKbps @var array $prep @var array $preset @var string $csrf */
 [$prepMaster, $prepLevel] = $prep;
+[$presetName, $presetSettings] = $preset;
 ?>
 <div class="vhead">
   <div>
@@ -9,12 +10,12 @@
   </div>
 </div>
 
-<form class="drop" id="drop" method="post" enctype="multipart/form-data" action="<?= h(App::url('manage/library')) ?>" data-max="<?= (int) $maxUpload ?>">
+<form class="drop" id="drop" method="post" enctype="multipart/form-data" action="<?= h(App::url('manage/library')) ?>" data-max="<?= (int) $maxUpload ?>" data-preset="<?= h(json_encode($presetSettings, JSON_UNESCAPED_SLASHES)) ?>" data-preset-name="<?= h($presetName) ?>">
   <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
   <input type="hidden" name="action" value="upload">
   <div><b>Add songs</b><br><span class="muted2">Drop MP3 files here, or choose them. Your browser first prepares each song as chosen below and trims silence at both ends. Up to <?= h(megabytes($maxUpload)) ?> per upload; the same song twice is only stored once.</span>
     <div class="prep-opts" id="prepOpts">
-      <label class="swrow" title="Mastering like the station's Adobe Audition chain: the multiband compressor Broadcast1, then Master1 (brighter, a little wider, louder)"><input class="sw" type="checkbox" name="master" value="1" id="prepMaster"<?= $prepMaster ? ' checked' : '' ?>> Apply pre-processing <span class="muted2">(mastering, as in Audition)</span></label>
+      <label class="swrow" title="EQ and compression with the import preset, tried and set on the Song prep screen"><input class="sw" type="checkbox" name="master" value="1" id="prepMaster"<?= $prepMaster ? ' checked' : '' ?>> Apply pre-processing <span class="muted2">(mastering with “<?= h($presetName) ?>”, <a href="<?= h(App::url('manage/songprep')) ?>">change in Song prep</a>)</span></label>
       <label class="swrow" title="Every song plays at the same loudness"><input class="sw" type="checkbox" name="level" value="1" id="prepLevel"<?= $prepLevel ? ' checked' : '' ?>> Loudness normalization <span class="muted2">(−16 LUFS)</span></label>
       <span class="muted2" id="prepSaved" aria-live="polite"></span>
     </div>
@@ -52,7 +53,7 @@
         </td></tr>
       <?php else: ?>
         <tr>
-          <td><b><?= h($t['title']) ?></b><?php if ((int) ($t['mastered'] ?? 0)): ?> <span class="pill auto" title="Mastered on upload, as the station's Audition chain does">Mastered</span><?php endif ?><?php if ($t['loudness_lufs'] !== null): ?> <span class="pill auto" title="Levelled to <?= h(str_replace('-', '−', number_format((float) $t['loudness_lufs'], 1))) ?> LUFS when uploaded">Levelled</span><?php endif ?><?php if ($t['album']): ?><span class="sub"><?= h($t['album']) ?></span><?php endif ?></td>
+          <td><b><?= h($t['title']) ?></b><?php if ((int) ($t['mastered'] ?? 0)): ?> <span class="pill auto" title="Mastered with “<?= h($t['preset'] ?? 'Audition chain') ?>”">Mastered</span><?php endif ?><?php if ($t['loudness_lufs'] !== null): ?> <span class="pill auto" title="Levelled to <?= h(str_replace('-', '−', number_format((float) $t['loudness_lufs'], 1))) ?> LUFS when uploaded">Levelled</span><?php endif ?><?php if ($t['album']): ?><span class="sub"><?= h($t['album']) ?></span><?php endif ?></td>
           <td><?= h($t['artist'] ?? '') ?></td>
           <td class="num"><?= h(duration((float) $t['duration_s'])) ?></td>
           <td class="num"><?= (int) $t['playlists'] ?></td>
@@ -64,6 +65,7 @@
               <a class="btn sm" href="<?= h(App::url('manage/library') . ($q !== '' ? '?q=' . rawurlencode($q) : '')) ?>">Keep</a>
             <?php else: ?>
               <a class="btn sm" href="<?= h(App::url('manage/library') . '?' . http_build_query(array_filter(['q' => $q, 'edit' => $id]))) ?>">Edit</a>
+              <a class="btn sm" href="<?= h(App::url('manage/songprep') . '?song=' . $id) ?>" title="Try mastering presets on this song">Song prep</a>
               <a class="btn sm" href="<?= h(App::url('manage/library') . '?' . http_build_query(array_filter(['q' => $q, 'confirm' => $id]))) ?>">Remove</a>
             <?php endif ?>
           </td>

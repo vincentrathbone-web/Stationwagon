@@ -61,7 +61,7 @@ try {
     const started = Date.now();
     for (let i = 0; i < 6000 && !row; i++) {
       const r = await evaluate(`(() => { const li = document.querySelector('#uplist li'); return li ? { cls: li.className, text: li.querySelector('.s').textContent } : null; })()`).catch(() => null);
-      if (r && (r.cls === "ok" || r.cls === "bad")) row = r;
+      if (r && (r.cls === "ok" || r.cls === "bad") && !r.text.includes("keeping the original")) row = r; // after the original is sent too (round 40)
       else await sleep(100);
     }
     const secs = ((Date.now() - started) / 1000).toFixed(0);

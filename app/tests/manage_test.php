@@ -1,11 +1,11 @@
 <?php
-// Command-line test of the station manager's rules: library edit/search/delete, playlists,
-// the weekly schedule, Sound & safety settings and who may do what to whom (Staff). Throwaway
+// Command-line test of the station manager's rules: library edit/search/delete, song prep's
+// presets, kept originals and Apply (round 40), playlists, the weekly schedule, Sound & safety settings and who may do what to whom (Staff). Throwaway
 // database and install.
 //   php app/tests/manage_test.php      (same SW_TEST_DB_* settings as install_test.php)
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
-use Stationwagon\{Auth, Db, DiagReports, Library, Planner, Playlists, Schedule, Staff, StationSettings};
+use Stationwagon\{Auth, Db, DiagReports, Library, Planner, Playlists, PrepPresets, Schedule, Schema, Staff, StationSettings};
 
 $t = test_database('manage');
 $root = temp_root('manage');
@@ -57,6 +57,116 @@ try {
     check('a bad fingerprint falls back to the file’s own; loudness is kept in range', !$plain['duplicate'] && $prow['sha1'] === sha1_file("$root/in/levelled-tmp2") && (float) $prow['loudness_lufs'] === 0.0);
     $lib->delete($plain['id'], $p, $now);
     $lib->delete($lev['id'], $p, $now);
+
+    echo "Song prep presets (round 40)\n";
+    $pp = new PrepPresets($db, $station);
+    check('new uploads start with the built-in Audition chain', $pp->forImport()[0] === 'Audition chain' && $pp->forImport()[1] == (object) [] && PrepPresets::defaultId($station) === 0);
+    $warm = ['ratio' => [4, 3, 3, 4], 'eqOn' => true, 'eq' => ['low' => ['hz' => 90, 'db' => 2.5], 'bells' => [['hz' => 250, 'db' => -1, 'q' => 1.2]]], 'simple' => ['amount' => 0.7]];
+    [$wid, $problem] = $pp->save(0, '  Warm   evening ', $warm, $now);
+    check('a preset is saved, its name tidied', $problem === null && $pp->get($wid)['name'] === 'Warm evening' && $pp->get($wid)['settings'] === $warm, (string) $problem);
+    check('  the same name again is refused', $pp->save(0, 'Warm evening', $warm, $now)[1] !== null);
+    check('  so are no name, a long one and the built-in one’s', $pp->save(0, ' ', $warm, $now)[1] !== null && $pp->save(0, str_repeat('n', 61), $warm, $now)[1] !== null
+        && $pp->save(0, 'audition CHAIN', $warm, $now)[1] !== null);
+    $bad = [
+        'a list, not named settings' => [1, 2],
+        'an unknown setting' => ['ratio' => [2], 'volume' => 3],
+        'text for a number' => ['ratio' => ['4']],
+        'text inside' => ['eq' => ['low' => ['hz' => '<b>']]],
+        'too deep' => ['eq' => ['a' => ['b' => ['c' => [1]]]]],
+        'too wide' => ['ratio' => range(1, 11)],
+        'too big' => ['eq' => array_fill(0, 10, array_fill(0, 10, array_fill(0, 10, 1.23456789)))],
+        'a strange key' => ['eq' => ['low<' => ['hz' => 90]]],
+        'not a set at all' => 'ratio',
+    ];
+    $let = array_keys(array_filter($bad, fn($x) => PrepPresets::check($x) === null));
+    check('  a preset with ' . implode(', ', array_keys($bad)) . ' is refused', $let === [], implode(', ', $let));
+    check('  an empty preset is the built-in chain, and allowed', PrepPresets::check([]) === null);
+    check('a preset can be changed and renamed', $pp->save($wid, 'Warm night', ['ratio' => [5, 3, 3, 5]], $now)[1] === null && $pp->get($wid)['name'] === 'Warm night'
+        && $pp->get($wid)['settings'] === ['ratio' => [5, 3, 3, 5]]);
+    check('  but not one that isn’t there', $pp->save(99999, 'Ghost', [], $now)[1] !== null);
+    for ($i = count($pp->all()); $i < PrepPresets::MAX; $i++) { $pp->save(0, "Filler $i", [], $now); }
+    check('at most ' . PrepPresets::MAX . ' presets', count($pp->all()) === PrepPresets::MAX && $pp->save(0, 'One too many', [], $now)[1] !== null);
+    $station = $pp->setDefault($wid);
+    $pp = new PrepPresets($db, $station);
+    check('one is the default for new uploads', PrepPresets::defaultId($station) === $wid && $pp->forImport() === ['Warm night', ['ratio' => [5, 3, 3, 5]]]);
+    check('  a default that isn’t a preset is the built-in one', PrepPresets::defaultId((new PrepPresets($db, $station))->setDefault(99999)) === 0);
+    $station = $pp->setDefault($wid);
+    $pp = new PrepPresets($db, $station);
+    check('removing the default goes back to the built-in one', $pp->delete($wid) === null && $pp->get($wid) === null
+        && PrepPresets::defaultId($db->run('SELECT * FROM ' . $db->table('stations'))->fetch()) === 0);
+    check('  removing it twice says so', $pp->delete($wid) !== null);
+    foreach ($pp->all() as $x) { $pp->delete($x['id']); }
+    $station = $db->run('SELECT * FROM ' . $db->table('stations'))->fetch();
+    $lib = new Library($db, $station, $root);
+
+    echo "Originals and Apply (round 40)\n";
+    // as uploaded with song prep: the station's copy differs from the file the manager chose
+    make_mp3("$root/in/chosen", 140, ['title' => 'Gloria'], 21);
+    make_mp3("$root/in/prepared", 138, ['title' => 'Gloria'], 22);
+    $chosen = sha1_file("$root/in/chosen");
+    $gl = $lib->import("$root/in/prepared", null, null, 'Gloria.mp3', $chosen, -16.0, null, true, 'Warm night');
+    $glr = $lib->get($gl['id']);
+    check('a prepared song records its preset', (int) $glr['mastered'] === 1 && $glr['preset'] === 'Warm night');
+    check('  it has no original until one is kept', $lib->original($glr) === null);
+    check('  only its own original is kept', $lib->keepOriginal($gl['id'], "$root/in/prepared") !== null && $lib->keepOriginal(99999, "$root/in/chosen") !== null);
+    check('  its original is kept', $lib->keepOriginal($gl['id'], "$root/in/chosen") === null && $lib->original($glr) === "$root/storage/originals/$chosen.mp3"
+        && sha1_file("$root/storage/originals/$chosen.mp3") === $chosen);
+    $ht = (string) file_get_contents("$root/storage/originals/.htaccess");
+    check('  where the web can’t fetch it', str_contains($ht, 'Require all denied') && str_contains($ht, '<FilesMatch ".">'));
+    // as uploaded without song prep: its media file is its original
+    make_mp3("$root/in/asis", 130, ['title' => 'Sanctus'], 23);
+    $sa = $lib->import("$root/in/asis", null, null, 'Sanctus.mp3');
+    $sar = $lib->get($sa['id']);
+    check('a song uploaded as it was is its own original', $lib->keepOriginal($sa['id'], "$root/in/asis") === null && $lib->original($sar) === "$root/storage/media/{$sar['file']}"
+        && !is_file("$root/storage/originals/{$sar['sha1']}.mp3"));
+    // the planner's rule for "on air (or just was)", and a time when a song is off air
+    $onAir = function (int $id, float $t) use ($p): bool {
+        foreach ($p->timeline($t) as $e) {
+            if ($e['type'] === 'song' && $e['track_id'] === $id && $e['start'] <= $t + 2 * (float) $p->setting('cut_lead_seconds') + 1 && $e['end'] > $t - Library::LISTENER_GRACE_SECONDS) {
+                return true;
+            }
+        }
+        return false;
+    };
+    $offAir = function (int $id, float $from) use ($onAir): float { for ($t = $from; $onAir($id, $t); $t += 10) {} return $t; };
+    $at = $offAir($gl['id'], $now);
+    make_mp3("$root/in/again", 136, ['title' => 'Gloria'], 24);
+    $oldFile = $glr['file'];
+    // the song's length its coming plays are planned with
+    $played = fn(float $at) => array_values(array_map(fn($e) => $e['full'], array_filter($p->timeline($at), fn($e) => $e['track_id'] === $gl['id'] && $e['start'] > $at + 30)));
+    $p->replan($at);
+    $before = $played($at);
+    check('Apply puts the new copy in place of the song’s file', $lib->replace($gl['id'], "$root/in/again", -15.5, null, true, 'Bright', $p, $at) === null);
+    $glr2 = $lib->get($gl['id']);
+    check('  same song, its new file, loudness and preset', $glr2['sha1'] === $chosen && $glr2['file'] === sha1_file("$root/in/again") . '.mp3' && (float) $glr2['loudness_lufs'] === -15.5
+        && $glr2['preset'] === 'Bright' && abs((float) $glr2['duration_s'] - 136) < 1);
+    check('  the old copy is gone, the original kept', !is_file("$root/storage/media/$oldFile") && is_file("$root/storage/originals/$chosen.mp3"));
+    $after = $played($at);
+    check('  and its coming plays use the new length (2 s shorter)', $before && $after && abs(($before[0] - $after[0]) - 2) < 0.1, ($before[0] ?? '-') . ' → ' . ($after[0] ?? '-') . ' s');
+    $newPieces = json_decode((string) $db->run('SELECT pieces FROM ' . $db->table('tracks') . ' WHERE id = ?', [$gl['id']])->fetchColumn(), true);
+    check('  cut at the new file’s pieces, not the old one’s', $p->pieces(['type' => 'song', 'track_id' => $gl['id'], 'piece_count' => PHP_INT_MAX]) === $newPieces);
+    check('  not a file that isn’t an MP3', $lib->replace($gl['id'], "$root/storage/originals/.htaccess", null, null, false, null, $p, $at) !== null);
+    $t2 = $offAir($sa['id'], $at);
+    check('Apply on a song uploaded as it was keeps its file as the original first', $lib->replace($sa['id'], "$root/in/again", null, null, true, 'Bright', $p, $t2) === null
+        && is_file("$root/storage/originals/{$sar['sha1']}.mp3") && !is_file("$root/storage/media/{$sar['file']}")
+        && $lib->original($lib->get($sa['id'])) === "$root/storage/originals/{$sar['sha1']}.mp3");
+    $playing = $p->nowPlaying($t2)['current'];
+    $r = $lib->replace((int) $playing['track_id'], "$root/in/again", null, null, false, null, $p, $t2);
+    check('the song on air can’t be prepared again', $r !== null && (str_contains($r, 'on air') || str_contains($r, 'original')), (string) $r);
+    $noOrig = array_values(array_filter($lib->tracks(''), fn($x) => $lib->original($lib->get((int) $x['id'])) === null));
+    check('  nor one whose original the station hasn’t got', $noOrig === [] || str_contains((string) $lib->replace((int) $noOrig[0]['id'], "$root/in/again", null, null, false, null, $p, $t2), 'original'));
+    $lib->delete($sa['id'], $p, $offAir($sa['id'], $t2));
+    check('removing a song removes its original', !is_file("$root/storage/originals/{$sar['sha1']}.mp3"));
+    $lib->delete($gl['id'], $p, $offAir($gl['id'], $t2));
+    check('  (both kinds)', !is_file("$root/storage/originals/$chosen.mp3") && $lib->get($gl['id']) === null);
+
+    echo "Schema 10\n";
+    $pfx = $cfg['db']['prefix'];
+    $db->pdo->exec("DROP TABLE `{$pfx}prep_presets`");
+    $db->pdo->exec("ALTER TABLE `{$pfx}tracks` DROP COLUMN preset");
+    $db->run('UPDATE ' . $db->table('settings') . " SET value = '9' WHERE name = 'schema_version'");
+    check('a version 9 database upgrades to ' . Schema::VERSION . ' with presets', Schema::upgrade($db, $root) === range(10, Schema::VERSION) && Schema::installed($db) === Schema::VERSION
+        && count($pp->all()) === 0 && array_key_exists('preset', $db->run('SELECT * FROM ' . $db->table('tracks') . ' LIMIT 1')->fetch()));
 
     echo "Playlists\n";
     $lists = new Playlists($db, $station);

@@ -3,7 +3,10 @@
 // signals and four songs, see tools/mastering-signals.mjs and HANDOVER.md) and fitted to it.
 // No DOM: song prep runs it in its worker, the Node tests and the fitting tool run it directly.
 // It streams through the song in blocks, so it needs little memory beyond the song and its copy.
-//   SwMaster.master(channels, rate, onProgress?) -> [left, right] (Float32Array)
+// A preset (the Song prep screen's, round 40) changes any setting; without one it is P, the
+// Audition chain. In front of it there is a five-band EQ, flat in P.
+//   SwMaster.master(channels, rate, onProgress?, preset?, meterStep?) -> [left, right] (Float32Array),
+//   with .meter (dB of reduction every meterStep samples: .bands[4], .mb, .lim) when meterStep is given
 (function (root) {
   "use strict";
 
@@ -27,7 +30,56 @@
     maxGain: 3.9,                             // dB, the loudness maximizer's gain
     ceiling: -0.87,                           // dBFS, where the maximizer stops every peak
     limAttackMs: 1.5, limReleaseMs: 4,        // the maximizer's limiter ("24 %")
+    // round 40: the EQ in front (flat here), and each section can be switched off
+    eqOn: true, compOn: true, finishOn: true,
+    eq: { hp: { on: false, hz: 30 }, low: { hz: 100, db: 0 }, bells: [{ hz: 250, db: 0, q: 1 }, { hz: 1000, db: 0, q: 1 }, { hz: 4000, db: 0, q: 1 }], high: { hz: 10000, db: 0 } },
   };
+
+  // What a preset may set, and within what: [min, max] for numbers, per band where it is a list.
+  const RANGES = {
+    cross: [[40, 400], [400, 3000], [2000, 12000]], threshold: [-60, 0], ratio: [1, 20], knee: [0, 12], gain: [-12, 12],
+    attackMs: [0.1, 100], releaseMs: [5, 2000], mbThresh: [-20, 0], mbMargin: [-6, 0],
+    shelfDb: [-12, 12], exciteDb: [-120, -20], sideDb: [-12, 12], maxGain: [0, 12], ceiling: [-6, -0.1],
+    hz: [20, 20000], db: [-15, 15], q: [0.2, 10], hpHz: [20, 300],
+  };
+  const clamp = (v, [a, b], d) => (typeof v === "number" && isFinite(v) ? Math.min(b, Math.max(a, v)) : d);
+  const yes = (v, d) => (typeof v === "boolean" ? v : d);
+  /** A preset made safe: P with whatever of `over` is known and in range. */
+  function preset(over) {
+    const o = over && typeof over === "object" ? over : {}, q = JSON.parse(JSON.stringify(P));
+    const list = (k, r) => { if (Array.isArray(o[k])) q[k] = q[k].map((d, i) => clamp(o[k][i], Array.isArray(r[0]) ? r[i] : r, d)); };
+    // crossovers: in order first, then each in its range and at least 1.5 times the one below
+    if (Array.isArray(o.cross)) {
+      const c = [0, 1, 2].map((i) => (typeof o.cross[i] === "number" && isFinite(o.cross[i]) ? o.cross[i] : P.cross[i])).sort((x, y) => x - y);
+      q.cross = c.map((v, i) => clamp(v, RANGES.cross[i], P.cross[i]));
+      for (let i = 1; i < 3; i++) q.cross[i] = Math.min(RANGES.cross[i][1], Math.max(q.cross[i], q.cross[i - 1] * 1.5));
+    }
+    list("threshold", RANGES.threshold); list("ratio", RANGES.ratio); list("gain", RANGES.gain);
+    for (const k of ["knee", "attackMs", "releaseMs", "mbThresh", "mbMargin", "shelfDb", "exciteDb", "sideDb", "maxGain", "ceiling"]) q[k] = clamp(o[k], RANGES[k], q[k]);
+    for (const k of ["eqOn", "compOn", "finishOn"]) q[k] = yes(o[k], q[k]);
+    const e = o.eq && typeof o.eq === "object" ? o.eq : {};
+    if (e.hp) { q.eq.hp.on = yes(e.hp.on, false); q.eq.hp.hz = clamp(e.hp.hz, RANGES.hpHz, 30); }
+    for (const k of ["low", "high"]) if (e[k]) { q.eq[k].hz = clamp(e[k].hz, RANGES.hz, q.eq[k].hz); q.eq[k].db = clamp(e[k].db, RANGES.db, 0); }
+    if (Array.isArray(e.bells)) q.eq.bells = q.eq.bells.map((d, i) => { const b = e.bells[i] || {}; return { hz: clamp(b.hz, RANGES.hz, d.hz), db: clamp(b.db, RANGES.db, 0), q: clamp(b.q, RANGES.q, d.q) }; });
+    return q;
+  }
+
+  /**
+   * The simple view's four controls, worked out into the full settings (from the Audition chain):
+   * amount 0..1 (0.5 is the Audition chain; 0 lets everything through, 1 squeezes hard), punch 0..1
+   * (slower attack and release let the starts of notes through), loudness (the maximizer's dB) and
+   * ceiling (dBFS).
+   */
+  function simple({ amount = 0.5, punch = 0, loudness = P.maxGain, ceiling = P.ceiling } = {}) {
+    const t = (Math.min(1, Math.max(0, amount)) - 0.5) * 2, pu = Math.min(1, Math.max(0, punch)); // t: -1..1
+    return {
+      ratio: P.ratio.map((r) => +(t >= 0 ? r + t * r * 2 : 1 + (r - 1) * (1 + t)).toFixed(2)),
+      threshold: P.threshold.map((v) => +(v - t * 8).toFixed(1)),
+      attackMs: +(P.attackMs + pu * 29.5).toFixed(1),
+      releaseMs: Math.round(P.releaseMs + pu * 80),
+      maxGain: clamp(loudness, RANGES.maxGain, P.maxGain), ceiling: clamp(ceiling, RANGES.ceiling, P.ceiling),
+    };
+  }
 
   // ---- biquads (RBJ cookbook) ----------------------------------------------------------------
   function biquad(type, f, rate, q = Math.SQRT1_2, gainDb = 0) {
@@ -35,7 +87,12 @@
     const A = Math.pow(10, gainDb / 40);
     let b0, b1, b2, a0, a1, a2;
     if (type === "hp") { b0 = (1 + c) / 2; b1 = -(1 + c); b2 = b0; a0 = 1 + al; a1 = -2 * c; a2 = 1 - al; }
-    else { // high shelf
+    else if (type === "bell") { b0 = 1 + al * A; b1 = -2 * c; b2 = 1 - al * A; a0 = 1 + al / A; a1 = -2 * c; a2 = 1 - al / A; }
+    else if (type === "low") { // low shelf
+      const sq = 2 * Math.sqrt(A) * al;
+      b0 = A * ((A + 1) - (A - 1) * c + sq); b1 = 2 * A * ((A - 1) - (A + 1) * c); b2 = A * ((A + 1) - (A - 1) * c - sq);
+      a0 = (A + 1) + (A - 1) * c + sq; a1 = -2 * ((A - 1) + (A + 1) * c); a2 = (A + 1) + (A - 1) * c - sq;
+    } else { // high shelf
       const sq = 2 * Math.sqrt(A) * al;
       b0 = A * ((A + 1) + (A - 1) * c + sq); b1 = -2 * A * ((A - 1) + (A + 1) * c); b2 = A * ((A + 1) + (A - 1) * c - sq);
       a0 = (A + 1) - (A - 1) * c + sq; a1 = 2 * ((A - 1) - (A + 1) * c); a2 = (A + 1) - (A - 1) * c - sq;
@@ -84,12 +141,12 @@
   // The bands' shapes: Linkwitz-Riley magnitudes (1 / (1 + (f/fc)^4) below each crossover), which
   // add up to exactly 1, as zero-phase FIR filters of TAPS taps, applied by FFT in blocks.
   const TAPS = 8192, BLOCK = 32768, STEP = BLOCK - TAPS;
-  function bandSpectra(rate) {
+  function bandSpectra(rate, p = P) {
     const lowOf = (f, fc) => 1 / (1 + Math.pow(f / fc, 4));
     const shapes = [
-      (f) => lowOf(f, P.cross[0]),
-      (f) => lowOf(f, P.cross[1]) - lowOf(f, P.cross[0]),
-      (f) => lowOf(f, P.cross[2]) - lowOf(f, P.cross[1]),
+      (f) => lowOf(f, p.cross[0]),
+      (f) => lowOf(f, p.cross[1]) - lowOf(f, p.cross[0]),
+      (f) => lowOf(f, p.cross[2]) - lowOf(f, p.cross[1]),
     ];
     return shapes.map((shape) => {
       // the impulse response for this shape, centred, windowed (Blackman), then its spectrum
@@ -113,8 +170,8 @@
    * sample `from`); the fourth band is what's left of the input. The filters are real, so left and
    * right go through one complex FFT together (left real, right imaginary) and come out apart.
    */
-  function splitBlocks(l, r, rate, onChunk, onProgress) {
-    const n = l.length, specs = bandSpectra(rate), half = TAPS / 2;
+  function splitBlocks(l, r, rate, onChunk, onProgress, p = P) {
+    const n = l.length, specs = bandSpectra(rate, p), half = TAPS / 2;
     const tr = specs.map(() => new Float64Array(BLOCK)), ti = specs.map(() => new Float64Array(BLOCK));
     const re = new Float64Array(BLOCK), im = new Float64Array(BLOCK), yr = new Float64Array(BLOCK), yi = new Float64Array(BLOCK);
     // each filter is centred, so a result at t[i] belongs TAPS/2 samples earlier
@@ -154,9 +211,9 @@
   const coef = (ms, rate) => Math.exp(-1 / (ms / 1000 * rate));
 
   /** One band's compressor, linked across both channels: step(l, r) gives the gain (linear) for that sample. */
-  function compressor(band, rate) {
-    const T = P.threshold[band], R = P.ratio[band], K = P.knee, mk = P.gain[band];
-    const cr = coef(P.rmsMs, rate), ca = coef(P.attackMs, rate), cl = coef(P.releaseMs, rate), peak = P.detector === "peak";
+  function compressor(band, rate, p = P) {
+    const T = p.threshold[band], R = p.ratio[band], K = p.knee, mk = p.gain[band];
+    const cr = coef(p.rmsMs, rate), ca = coef(p.attackMs, rate), cl = coef(p.releaseMs, rate), peak = p.detector === "peak";
     // below the knee with nothing to let go of, the gain is just the band's own: skip the maths
     const quiet = Math.pow(10, (T - K / 2) / 10), flat = Math.pow(10, mk / 20), LN = Math.LN10 / 20, slope = 1 - 1 / R;
     let ms = 0, gr = 0;
@@ -177,7 +234,7 @@
    * A look-ahead peak limiter, linked across both channels, in place, in one pass: each sample
    * gets the lowest gain any peak in the next attackMs needs (a running minimum), smoothed.
    */
-  function limit(l, r, ceilingDb, attackMs, releaseMs, rate) {
+  function limit(l, r, ceilingDb, attackMs, releaseMs, rate, meter = null, into = null) {
     const n = l.length, c = Math.pow(10, ceilingDb / 20), look = Math.max(1, Math.round(attackMs / 1000 * rate));
     const rel = coef(releaseMs, rate), att = coef(attackMs / 3, rate);
     const need = (j) => { const p = Math.max(Math.abs(l[j]), Math.abs(r[j])); return p > c ? c / p : 1; };
@@ -198,12 +255,31 @@
       g = w < g ? att * g + (1 - att) * w : rel * g + (1 - rel) * w;
       const v = Math.min(g, own); // never let a peak through
       l[i] *= v; r[i] *= v;
+      if (into) { const k = (i / meter.step) | 0; if (v < into[k]) into[k] = v; }
     }
+    if (into) for (let k = 0; k < into.length; k++) into[k] = -20 * Math.log10(into[k]);
+  }
+
+  /** The EQ in front, in place: high-pass, low shelf, three bells, high shelf (only what does something). */
+  function eqInPlace(l, r, rate, p) {
+    const e = p.eq, ks = [];
+    if (e.hp.on) ks.push(biquad("hp", e.hp.hz, rate));
+    if (e.low.db) ks.push(biquad("low", e.low.hz, rate, Math.SQRT1_2, e.low.db));
+    for (const b of e.bells) if (b.db) ks.push(biquad("bell", b.hz, rate, b.q, b.db));
+    if (e.high.db) ks.push(biquad("shelf", e.high.hz, rate, Math.SQRT1_2, e.high.db));
+    for (const k of ks) for (const x of [l, r]) { const f = filterOf(k); for (let i = 0; i < x.length; i++) x[i] = f(x[i]); }
+  }
+
+  /** dB-of-reduction lists for the meters: one value every `step` samples (gains while measuring). */
+  function meterFor(n, step) {
+    const k = Math.ceil(n / step), one = () => new Float32Array(k).fill(1);
+    return { step, bands: [one(), one(), one(), one()], mb: one(), lim: one() };
   }
 
   /** The Multiband Compressor step, into (outL, outR). */
-  function multibandInto(l, r, outL, outR, rate, onProgress) {
-    const comp = [0, 1, 2, 3].map((b) => compressor(b, rate));
+  function multibandInto(l, r, outL, outR, rate, onProgress, p = P, meter = null) {
+    const comp = [0, 1, 2, 3].map((b) => compressor(b, rate, p)), flat = p.gain.map((g) => Math.pow(10, g / 20));
+    const mt = meter && meter.bands;
     splitBlocks(l, r, rate, (from, count, bl, br) => {
       for (let i = 0; i < count; i++) {
         const o = from + i;
@@ -211,17 +287,22 @@
         const g0 = comp[0](bl[0][i], br[0][i]), g1 = comp[1](bl[1][i], br[1][i]), g2 = comp[2](bl[2][i], br[2][i]), g3 = comp[3](l3, r3);
         outL[o] = bl[0][i] * g0 + bl[1][i] * g1 + bl[2][i] * g2 + l3 * g3;
         outR[o] = br[0][i] * g0 + br[1][i] * g1 + br[2][i] * g2 + r3 * g3;
+        if (mt) {
+          const k = (o / meter.step) | 0, gs = [g0, g1, g2, g3];
+          for (let b = 0; b < 4; b++) { const v = gs[b] / flat[b]; if (v < mt[b][k]) mt[b][k] = v; }
+        }
       }
-    }, onProgress);
-    const lg = Math.pow(10, (P.mbMargin - P.mbThresh) / 20);
+    }, onProgress, p);
+    if (mt) for (const a of mt) for (let k = 0; k < a.length; k++) a[k] = -20 * Math.log10(a[k]);
+    const lg = Math.pow(10, (p.mbMargin - p.mbThresh) / 20);
     for (let i = 0; i < l.length; i++) { outL[i] *= lg; outR[i] *= lg; }
-    limit(outL, outR, P.mbMargin, P.mbAttackMs, P.mbReleaseMs, rate);
+    limit(outL, outR, p.mbMargin, p.mbAttackMs, p.mbReleaseMs, rate, meter, meter && meter.mb);
   }
 
   /** The Mastering step, in place: brighter, a little wider, overtones in the highs, then louder. */
-  function masterInPlace(l, r, rate) {
-    const n = l.length, mix = Math.pow(10, P.exciteDb / 20), ce = coef(10, rate);
-    const sh = biquad("shelf", P.shelfHz, rate, P.shelfQ, P.shelfDb), hp = biquad("hp", P.exciteHz, rate);
+  function masterInPlace(l, r, rate, p = P, meter = null) {
+    const n = l.length, mix = Math.pow(10, p.exciteDb / 20), ce = coef(10, rate);
+    const sh = biquad("shelf", p.shelfHz, rate, p.shelfQ, p.shelfDb), hp = biquad("hp", p.exciteHz, rate);
     for (const x of [l, r]) {
       // the high shelf, then the exciter: the highs made into overtones at a fixed level against
       // themselves (a waveshaper on the signal divided by its own level), added back
@@ -235,12 +316,12 @@
       }
     }
     // widener: the sides (left minus right) get brighter, the middle stays as it is; then the gain
-    const side = filterOf(biquad("shelf", P.sideHz, rate, P.sideQ, P.sideDb)), g = Math.pow(10, P.maxGain / 20);
+    const side = filterOf(biquad("shelf", p.sideHz, rate, p.sideQ, p.sideDb)), g = Math.pow(10, p.maxGain / 20);
     for (let i = 0; i < n; i++) {
       const m = (l[i] + r[i]) / 2, s = side((l[i] - r[i]) / 2);
       l[i] = (m + s) * g; r[i] = (m - s) * g;
     }
-    limit(l, r, P.ceiling, P.limAttackMs, P.limReleaseMs, rate);
+    limit(l, r, p.ceiling, p.limAttackMs, p.limReleaseMs, rate, meter, meter && meter.lim);
   }
 
   const stereo = (channels) => (channels.length === 1 ? [channels[0], channels[0]] : channels);
@@ -259,16 +340,34 @@
     return [l, r];
   }
 
-  /** Both steps, as in Audition. onProgress(0..1) is told how far it is. */
-  function master(channels, rate, onProgress) {
-    const [l, r] = stereo(channels), outL = new Float32Array(l.length), outR = new Float32Array(l.length);
-    multibandInto(l, r, outL, outR, rate, onProgress && ((f) => onProgress(f * 0.85)));
-    masterInPlace(outL, outR, rate);
+  /**
+   * The whole chain: the EQ, the Multiband Compressor, then the Mastering step, each as the preset
+   * says (P, the Audition chain, without one). onProgress(0..1) is told how far it is. With
+   * meterStep, the result carries .meter: each band's, the multiband limiter's and the final
+   * limiter's dB of reduction, the most in each meterStep samples (0 for a section switched off).
+   */
+  function master(channels, rate, onProgress, given, meterStep) {
+    const p = given ? preset(given) : P, [l0, r0] = stereo(channels), n = l0.length;
+    const meter = meterStep ? meterFor(n, meterStep) : null;
+    let l = l0, r = r0;
+    if (p.eqOn) { l = Float32Array.from(l0); r = Float32Array.from(r0); eqInPlace(l, r, rate, p); }
+    let outL = l, outR = r;
+    if (p.compOn) {
+      outL = new Float32Array(n); outR = new Float32Array(n);
+      multibandInto(l, r, outL, outR, rate, onProgress && ((f) => onProgress(f * 0.85)), p, meter);
+    } else if (l === l0) { outL = Float32Array.from(l0); outR = Float32Array.from(r0); }
+    if (p.finishOn) masterInPlace(outL, outR, rate, p, meter);
+    if (meter) {
+      if (!p.compOn) { for (const a of meter.bands) a.fill(0); meter.mb.fill(0); }
+      if (!p.finishOn) meter.lim.fill(0);
+    }
     if (onProgress) onProgress(1);
-    return [outL, outR];
+    const out = [outL, outR];
+    if (meter) out.meter = meter;
+    return out;
   }
 
-  const api = { P, split, multiband, mastering, master };
+  const api = { P, RANGES, preset, simple, biquad, split, multiband, mastering, master };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.SwMaster = api;
 })(typeof self !== "undefined" ? self : this);

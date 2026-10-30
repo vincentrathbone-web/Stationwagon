@@ -1,7 +1,8 @@
 // Music library uploads: drop files on the box (or choose them). Each song is prepared in the
-// browser first (prep.js: mastered and levelled as the two switches say, trimmed, re-encoded),
-// then they go up one at a time with progress, and the page reloads to show them. The switches
-// are the station's, saved as soon as they change. Without JavaScript the form still works.
+// browser first (prep.js: mastered with the station's import preset and levelled as the two
+// switches say, trimmed, re-encoded), then they go up one at a time with progress, each followed
+// by the file it was made from (kept for the Song prep screen), and the page reloads to show them.
+// The switches are the station's, saved as soon as they change. Without JavaScript the form still works.
 (() => {
   const form = document.getElementById("drop");
   if (!form || !window.FormData || !window.XMLHttpRequest) return;
@@ -12,6 +13,10 @@
   form.querySelector('button[type="submit"]').hidden = true; // choosing files starts the upload
   const master = document.getElementById("prepMaster"), level = document.getElementById("prepLevel");
   const saved = document.getElementById("prepSaved");
+  // the import preset (Song prep): its settings ({} is the built-in Audition chain) and its name
+  let preset = {};
+  try { preset = JSON.parse(form.dataset.preset || "{}") || {}; } catch (_) { /* the built-in one */ }
+  const presetName = form.dataset.presetName || "";
 
   // the switches are the station's: save them as soon as they change (one save at a time, the
   // latest state last, so two quick flips can't land out of order)
@@ -56,7 +61,7 @@
     data.append("files[]", p.file, name);
     if (p.sourceSha1) data.append("source_sha1[]", p.sourceSha1);
     if (p.prepared && p.info.levelled) data.append("prep_lufs[]", String(p.info.lufs));
-    if (p.prepared && p.info.mastered) data.append("prep_mastered[]", "1");
+    if (p.prepared && p.info.mastered) { data.append("prep_mastered[]", "1"); data.append("prep_preset[]", presetName); }
     if (p.prepared && p.info.outro) data.append("prep_outro[]", JSON.stringify(p.info.outro)); // for silence detection
     const xhr = new XMLHttpRequest();
     xhr.open("POST", form.getAttribute("action")); // not form.action: the form has a field named "action"
@@ -74,7 +79,7 @@
       const ok = res && res.ok;
       li.className = ok ? "ok" : "bad";
       li.querySelector(".s").textContent = ok ? (res.duplicate ? "Already there" : "Added, " + describe(p)) : ((res && res.error) || (r && r.error) || "Failed (" + xhr.status + ")");
-      done(ok);
+      done(ok ? res : null);
     };
     xhr.onerror = () => { li.className = "bad"; li.querySelector(".s").textContent = "Connection lost"; done(false); };
     xhr.send(data);
@@ -93,7 +98,7 @@
       if (window.SwPrep) {
         try {
           p = await window.SwPrep.prepare(files[i], (stage) => { status.textContent = stage; },
-            { master: !master || master.checked, level: !level || level.checked });
+            { master: !master || master.checked ? preset : false, level: !level || level.checked });
         } catch (ex) {
           p = { file: files[i], prepared: false, note: "prep failed: " + ex.message };
         }
@@ -101,7 +106,19 @@
       if (p.prepared && maxBytes && p.file.size > maxBytes && files[i].size <= maxBytes) {
         p = { file: files[i], prepared: false, sourceSha1: p.sourceSha1, note: "the prepared song is bigger than this server accepts" };
       }
-      ok += (await send(p, files[i].name, li)) ? 1 : 0;
+      const res = await send(p, files[i].name, li);
+      if (res) ok++;
+      // keep the file the song was made from too, so it can be prepared again (Song prep); also for
+      // a song already in the library that hasn't got its original yet (uploaded before round 40)
+      if (res && res.original === false) {
+        const status = li.querySelector(".s"), said = status.textContent;
+        status.textContent = said + " · keeping the original";
+        const data = new FormData();
+        data.append("csrf", csrf); data.append("action", "original"); data.append("id", String(res.id)); data.append("original", files[i], files[i].name);
+        const kept = await fetch(form.getAttribute("action"), { method: "POST", body: data, headers: { Accept: "application/json" }, credentials: "same-origin" })
+          .then((x) => x.json()).catch(() => ({ ok: false, error: "connection lost" }));
+        status.textContent = said + (kept.ok ? " · original kept" : " · original not kept: " + (kept.error || "failed"));
+      }
     }
     if (ok) setTimeout(() => location.reload(), 900);
   };

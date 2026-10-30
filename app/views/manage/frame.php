@@ -7,6 +7,7 @@ $rail = [
     'schedule' => ['manage/schedule', 'Schedule', 'manager'],
     'djs' => ['manage/djs', 'DJs', 'manager'],
     'sound' => ['manage/sound', 'Sound & safety', 'manager'],
+    'songprep' => ['manage/songprep', 'Song prep', 'manager'],
     'listeners' => ['manage/listeners', 'Listeners', 'manager'],
     'podcast' => ['manage/podcast', 'Podcast', 'dj'],
 ];

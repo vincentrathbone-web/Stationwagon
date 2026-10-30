@@ -202,6 +202,35 @@ pre-processing** *(mastering, as in Audition)* and **Loudness normalization** *(
 while it works and ends "Added, mastered, levelled −9.1 LUFS → −16.0 LUFS (−6.9 dB)" or "Added, kept at
 −21.1 LUFS". Mastered songs carry a **Mastered** pill next to **Levelled** in the library table.
 
+Since round 40 the mastering switch names its preset (*mastering with “Warm night”*, with a "change in
+Song prep" link), the Mastered pill's tooltip names the preset a song was made with, each row has a
+**Song prep** button, and an upload row ends "· original kept" once the file the manager chose is saved.
+
+### Song prep screen (round 40; not in the mock-ups)
+
+**Manage → Song prep**, in the rail after Sound & safety (managers and admins). Built from the existing
+tokens, cards, buttons and `.sw` switches; no new colours. Top to bottom:
+
+- **A picker card**: Song, Preset (the import default marked ★ new uploads), Name, then the buttons Save,
+  Save as new, Remove, ★ Use for new uploads and the primary **Apply to this song**. A warn-coloured "Changed,
+  not saved yet." line while the settings differ from the preset, and one line saying where the preview
+  comes from (the original, or the stored copy when its original wasn't kept, in the warn colour).
+- **A player card**: Play, an **Original / Processed** pair (the pressed one in the accent; the A key
+  switches, Space plays), the time, a quiet "Processing 40 %" while pieces render, and Volume. Under it the
+  whole song as a 72 px strip (original grey, processed in the accent where it's up to date; click to play
+  from there), then the enlarged wave around the playhead, 240 px high, 4–30 s wide, with dB lines and
+  a white playhead, both versions at the level the station plays them. A numbers table (loudness, loudness
+  range, peak, level on import; Original and Processed rows) beside six gain-reduction meters (Low, Low
+  mid, High mid, High, MB limiter, Limiter) showing the most reduction of the last 80 ms.
+- **Two cards side by side** (stacked on phones): **EQ** with its switch in the heading, the high-pass
+  switch, the curve (20 Hz–20 kHz, ±15 dB; round handles L, 1, 2, 3, H that drag, the wheel changing a
+  bell's width) and a row of number fields per band; **Dynamics** with its switch, four sliders (Amount,
+  Punch, Loudness, Ceiling, each with a line of plain help) and a closed **All the settings** with the
+  Finish switch and grouped fieldsets (crossovers, the four bands, timing, the multiband limiter, Finish).
+
+Confirmations (Remove, Apply) use the browser's own dialog. Messages land in one polite live line under
+the picker buttons, in the bad colour when something failed.
+
 ### Windows app (round 33; not in the mock-ups)
 
 The app's main window is the station's own studio page. Its own settings page (`desktop/ui/index.html`,
@@ -318,7 +347,7 @@ A scrolling picture of **what goes out** (the wet mix, never the inputs), settle
 
 - **Header:** station name and a live "on air" readout.
 - **Side rail** (becomes a scrolling tab row on phones): Overview, Music library, Playlists,
-  Schedule, DJs, Sound & safety.
+  Schedule, DJs, Sound & safety, Song prep (round 40), Listeners, Podcast.
 - **Overview:** on air now with progress and next song; listeners, next live show, "planned
   until"; **Needs attention** (hidden song titles, duplicates); **Health** (timeline planned,
   storage, live input).

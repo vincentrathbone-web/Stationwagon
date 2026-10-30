@@ -126,6 +126,9 @@ try {
     }
     $r = $b->go('manage');
     check('manager page sends you to sign in', $r['status'] === 303 && str_ends_with($location($r), '/signin?next=manage'), $location($r));
+    $r = $b->go('manage/songprep');
+    check('Song prep sends you to sign in, and so does a song’s original', $r['status'] === 303 && str_ends_with($location($r), '/signin?next=manage%2Fsongprep')
+        && $b->go('manage/songprep/original?id=1')['status'] === 303, $location($r));
     $r = $b->go('account');
     check('account page sends you to sign in, then back', $r['status'] === 303 && str_ends_with($location($r), '/signin?next=account'), $location($r));
     $r = $b->go('studio');
@@ -295,7 +298,7 @@ try {
     check('the stylesheet keeps every colour in its token blocks (green, hi-fi, light): none in the components', $blocks === 3 && $raw[0] === [], $blocks . ' blocks; ' . implode(' ', array_slice($raw[0], 0, 6)));
     preg_match_all('~border-radius: (\d+px)~', $rest, $radii);
     check('  and every corner size except the tiny ones (1–2 px) and circles', array_diff(array_unique($radii[1]), ['1px', '2px']) === [], implode(' ', array_unique($radii[1])));
-    foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/', 'storage/geo/dbip-city-lite.mmdb', 'storage/podcasts/ep-x/raw/1-music-0000.chunk', 'storage/podcasts/ep-x/episode.chunk'] as $private) {
+    foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/', 'storage/geo/dbip-city-lite.mmdb', 'storage/podcasts/ep-x/raw/1-music-0000.chunk', 'storage/podcasts/ep-x/episode.chunk', 'storage/originals/', 'storage/originals/0000000000000000000000000000000000000000.mp3'] as $private) {
         $code = (new Browser($base))->go($private)['status'];
         check("$private is not served", in_array($code, [403, 404], true), (string) $code);
     }
@@ -321,6 +324,7 @@ try {
         check('a DJ can’t open the library', $a->go('manage/library')['status'] === 403);
         check('or Sound & safety', $a->go('manage/sound')['status'] === 403);
         check('or Listeners', $a->go('manage/listeners')['status'] === 403);
+        check('or Song prep, or a song’s original', $a->go('manage/songprep')['status'] === 403 && $a->go('manage/songprep/original?id=1')['status'] === 403);
         check('a DJ has no Skip button', !str_contains($r['body'], 'Skip this song'));
         check('a DJ can’t skip by sending the form', $a->go('manage/skip', ['csrf' => Browser::csrf($r)])['status'] === 403);
         check('the header and overview link to the studio', str_contains($r['body'], 'href="' . $basePath . '/studio">Studio</a>') && str_contains($r['body'], 'Open the studio'));

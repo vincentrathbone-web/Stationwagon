@@ -3,6 +3,7 @@
 // uploaded tracks, a test live show, and the cleanup. Prints JSON.
 //   php browser_helper.php manager            -> {"id", "email", "password"}
 //   php browser_helper.php track <title>      -> the newest ready track with that title, or null
+//   php browser_helper.php presets [clear <name prefix> | default <id>]  -> {"presets", "default"}
 //   php browser_helper.php cleanup <user id> [<title> ...]
 //   php browser_helper.php live-start <title> -> {"public_id", "start"}
 //   php browser_helper.php live-piece <public id> <seq> <mp3 file> [<seconds> | auto]
@@ -36,9 +37,26 @@ if ($cmd === 'manager') {
     $db->insert('station_users', ['station_id' => $station['id'], 'user_id' => $id]);
     echo json_encode(['id' => $id, 'email' => $email, 'password' => $password]);
 } elseif ($cmd === 'track') {
-    $row = $db->run('SELECT id, file, sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs, mastered, outro FROM ' . $db->table('tracks') .
+    $row = $db->run('SELECT id, file, sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs, mastered, preset, outro FROM ' . $db->table('tracks') .
         " WHERE station_id = ? AND title = ? AND status = 'ready' ORDER BY id DESC LIMIT 1", [$station['id'], $argv[2] ?? ''])->fetch();
     echo json_encode($row ?: null);
+} elseif ($cmd === 'presets') {
+    // song prep's presets and the import default; with "clear <prefix>", first remove those named so
+    // and set the default back (default <id>) when given
+    $pp = new Stationwagon\PrepPresets($db, $station);
+    if (($argv[2] ?? '') === 'clear' && ($argv[3] ?? '') !== '') {
+        foreach ($pp->all() as $x) {
+            if (str_starts_with($x['name'], $argv[3])) {
+                $pp->delete($x['id']);
+            }
+        }
+        $station = $db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$station['id']])->fetch();
+        $pp = new Stationwagon\PrepPresets($db, $station);
+    }
+    if (($argv[2] ?? '') === 'default') {
+        $station = $pp->setDefault((int) ($argv[3] ?? 0));
+    }
+    echo json_encode(['presets' => $pp->all(), 'default' => Stationwagon\PrepPresets::defaultId($station)]);
 } elseif ($cmd === 'prep') {
     // song prep's two switches: print them, or set them first (prep <master 0|1> <level 0|1>)
     if (isset($argv[3])) {

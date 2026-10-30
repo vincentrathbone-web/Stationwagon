@@ -173,8 +173,8 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "30 Oct · 04:30",
-  commits: 42,
+  updated: "30 Oct · 16:30",
+  commits: 45,
   version: "0.8.0-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
@@ -226,7 +226,8 @@ const MAP = {
       { text: "Sound & safety: fade shape, music under the voice, silence, rejoin, quality, delay", v: "v0.4", state: "done" },
       { text: "Listener stats", note: "unique listeners; device, browser, app; country and city", v: "v0.4", state: "done" },
       { text: "Podcast episodes: edit, hide, feed", note: "two-track editor: zoom, cut clips, mix down, publish", v: "v0.4", state: "done" },
-      { text: "Mastering in song prep, as your Audition chain", note: "Broadcast1 + Master1, matched by measuring; off by default since 30 Oct (it squeezed real music), levelling stays on", v: "v0.8", state: "done" }
+      { text: "Mastering in song prep, as your Audition chain", note: "Broadcast1 + Master1, matched by measuring; off by default since 30 Oct (it squeezed real music), levelling stays on", v: "v0.8", state: "done" },
+      { text: "Song prep screen: mastering presets tried on a whole song", note: "EQ curve, simple and full dynamics, original/processed A/B, meters; presets, one for new uploads; Apply to a song from its kept original", v: "v0.8", state: "done" }
     ]},
     { name: "Streaming & hosting", blurb: "Runs on shared cPanel hosting with Cloudflare in front: PHP and Apache only.", features: [
       { text: "Timeline planned on request, with a cron", v: "v0.1", state: "done" },
@@ -262,12 +263,17 @@ const MAP = {
   ],
   next: {
     title: "The WordWave pilot (v0.8)",
-    text: "The Android studio app is built and tested on your phone: the station's studio with Do Not Disturb on air, shows that go on with the screen off, and updates from GitHub through the plugin. Radio WordWave now runs at /radio with 8 of your tracks, and the Diagnostics panel found why your phone dropped out and sounded squeezed (both fixed). Next, the pilot station gets its music and runs beside AzuraCast.",
+    text: "Song prep now has its own screen: try mastering settings on any song and hear the whole of it, original against processed, with an EQ curve, simple or full dynamics, loudness and gain-reduction meters. Save presets, pick one for new uploads, and apply one to a song from its kept original. Radio WordWave runs at /radio with 8 of your tracks, their originals now kept too. Next, the pilot station gets its music and runs beside AzuraCast.",
     order: ["Try the station on your own devices", "Run it beside AzuraCast for a week", "Copy WordWave's library when its owner agrees", "Then launch (v1.0)"]
   },
   call: null,
   feedTitle: "Changed 20–30 Oct",
   feed: [
+    { what: "Song prep screen", to: "built and tested: whole-song preview with A/B, EQ and dynamics, meters, presets, a default for new uploads, Apply to a song", at: "30 Oct" },
+    { what: "Originals kept", to: "every prepared upload keeps the file you chose (never served); uploading an older song again adds its original", at: "30 Oct" },
+    { what: "After Apply, plays could have been cut at the old file's points", to: "fixed: the planner reads songs afresh when it changes the plan", at: "30 Oct" },
+    { what: "Radio WordWave", to: "updated to the Song prep version (database 10); all tests pass on the server", at: "30 Oct", kind: "info" },
+    { what: "Round 39 (Diagnostics and phone playback)", to: "committed and pushed (eb444a0)", at: "30 Oct", kind: "info" },
     { what: "Phone tests", to: "now run in Brave, your default browser on the phone; all pass", at: "30 Oct", kind: "info" },
     { what: "Phone playback fixed", to: "no more skips or underruns on your Xiaomi (balanced sound buffers, no speed changes); joins land on time", at: "30 Oct" },
     { what: "Song prep mastering", to: "off by default (it squeezed real music flat); the 8 tracks uploaded again, levelled only", at: "30 Oct" },

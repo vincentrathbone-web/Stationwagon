@@ -1,5 +1,6 @@
-// Song prep off the main thread: master like the station's Audition chain (master-core.js, when
-// asked), measure, level (when asked), trim, fade (prep-core.js), then encode (lamejs).
+// Song prep off the main thread: master (master-core.js, when asked: master is false, true for the
+// built-in Audition chain, or a preset's settings), measure, level (when asked), trim, fade
+// (prep-core.js), then encode (lamejs).
 // In: { channels: Float32Array[], rate, kbps, master, level }. Out: progress messages, then
 // { done, chunks, info }, { skip: reason } when there's nothing to level, or { error }.
 // the worker's own ?v= tag covers prep-core.js and master-core.js too (App::asset), so new ones are fetched fresh
@@ -12,7 +13,8 @@ self.onmessage = (e) => {
     if (master) {
       self.postMessage({ stage: "Mastering", progress: 0 });
       let last = 0;
-      src = self.SwMaster.master(channels, rate, (p) => { if (p - last >= 0.05 || p === 1) { last = p; self.postMessage({ stage: "Mastering", progress: p }); } });
+      src = self.SwMaster.master(channels, rate, (p) => { if (p - last >= 0.05 || p === 1) { last = p; self.postMessage({ stage: "Mastering", progress: p }); } },
+        typeof master === "object" ? master : undefined);
     }
     self.postMessage({ stage: level ? "Levelling" : "Measuring" });
     const r = self.SwPrepCore.prepare(src, rate, { level });
@@ -20,7 +22,7 @@ self.onmessage = (e) => {
       self.postMessage({ skip: r.skip });
       return;
     }
-    r.info.mastered = master;
+    r.info.mastered = !!master;
     const chunks = self.SwPrepCore.encode(lamejs, r.channels, rate, kbps, (p) => self.postMessage({ stage: "Encoding", progress: p }));
     self.postMessage({ done: true, chunks, info: r.info }, chunks.map((c) => c.buffer));
   } catch (ex) {

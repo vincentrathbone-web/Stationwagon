@@ -27,14 +27,14 @@ namespace Stationwagon;
  */
 final class Schema
 {
-    public const VERSION = 9;
+    public const VERSION = 10;
 
     /** Table names without prefix, in creation order (foreign keys need their parents first). */
     public const TABLES = [
         'settings', 'stations', 'users', 'station_users', 'tracks', 'playlists', 'playlist_tracks',
         'schedule', 'live_shows', 'live_pieces', 'timeline', 'presenter_notes', 'running_orders',
         'listeners', 'listener_hours', 'listener_tally', 'listener_visitors',
-        'episodes', 'episode_takes', 'episode_chunks', 'remember_tokens',
+        'episodes', 'episode_takes', 'episode_chunks', 'remember_tokens', 'prep_presets',
     ];
 
     /** @return array<string,string> table name => CREATE TABLE statement */
@@ -104,6 +104,7 @@ final class Schema
                 `pieces` MEDIUMTEXT NOT NULL,
                 `loudness_lufs` DECIMAL(5,2) NULL,
                 `mastered` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'song prep mastered it like the station''s Audition chain',
+                `preset` VARCHAR(60) NULL COMMENT 'the name of the mastering preset song prep used',
                 `outro` MEDIUMTEXT NULL COMMENT 'JSON: loudness (LUFS) of each second of the last minute, from song prep',
                 `status` ENUM('processing','ready','error') NOT NULL DEFAULT 'ready',
                 `created_at` DATETIME NOT NULL,
@@ -239,6 +240,7 @@ final class Schema
             'episode_takes' => self::episodeTakes($p, $opts),
             'episode_chunks' => self::episodeChunks($p, $opts),
             'remember_tokens' => self::rememberTokens($p, $opts),
+            'prep_presets' => self::prepPresets($p, $opts),
         ];
     }
 
@@ -418,6 +420,22 @@ final class Schema
             ) $opts";
     }
 
+    /** Song prep's mastering presets (the Song prep screen): the chain's settings as JSON. */
+    private static function prepPresets(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}prep_presets` (
+                `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `station_id` INT UNSIGNED NOT NULL,
+                `name` VARCHAR(60) NOT NULL,
+                `settings` TEXT NOT NULL COMMENT 'JSON for assets/master-core.js',
+                `created_at` DATETIME NOT NULL,
+                `updated_at` DATETIME NOT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `{$p}prep_preset_name` (`station_id`, `name`),
+                CONSTRAINT `{$p}fk_prep_preset_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE
+            ) $opts";
+    }
+
     /** A device take's pieces: 10 s of one track each, cut on whole MP3 frames. */
     private static function episodeChunks(string $p, string $opts): string
     {
@@ -450,6 +468,7 @@ final class Schema
             7 => ["ALTER TABLE `{$p}presenter_notes` ADD COLUMN `replaced_by` INT UNSIGNED NULL COMMENT 'the edited copy that replaces this note' AFTER `posted_at`"],
             8 => ["ALTER TABLE `{$p}tracks` ADD COLUMN `mastered` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'song prep mastered it like the station''s Audition chain' AFTER `loudness_lufs`"],
             9 => [self::rememberTokens($p, $opts)],
+            10 => [self::prepPresets($p, $opts), "ALTER TABLE `{$p}tracks` ADD COLUMN `preset` VARCHAR(60) NULL COMMENT 'the name of the mastering preset song prep used' AFTER `mastered`"],
         ];
     }
 
