@@ -27,6 +27,18 @@ $hm = fn(string $t): string => substr($t, 0, 5);
       <p class="lp-note" id="lpNote" role="status" hidden></p>
     </section>
 
+    <details class="lp-win lp-diag" id="lpDiag">
+      <summary class="lp-titlebar"><span>Diagnostics</span><span class="lp-diag-sum" id="lpDiagSum"></span></summary>
+      <div class="lp-diag-top">
+        <p id="lpDiagVerdict">Press Listen to start measuring.</p>
+        <span class="lp-diag-btns"><button class="btn sm" id="lpDiagSend" type="button">Send report</button><button class="btn sm" id="lpDiagCopy" type="button">Copy</button></span>
+      </div>
+      <dl class="lp-diag-rows" id="lpDiagRows"></dl>
+      <h3 class="lp-diag-h">Dropouts <b id="lpDiagDropN">0</b></h3>
+      <ol class="lp-diag-drops" id="lpDiagDrops"></ol>
+      <p class="lp-diag-msg" id="lpDiagMsg" role="status"></p>
+    </details>
+
     <section class="lp-win" aria-label="Playlist">
       <div class="lp-titlebar"><span>Playlist</span></div>
       <ol class="lp-list" id="lpList"></ol>
@@ -79,6 +91,7 @@ $hm = fn(string $t): string => substr($t, 0, 5);
 <script src="<?= h(App::asset('assets/outwave.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/listeners.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/player.js')) ?>" defer></script>
+<script src="<?= h(App::asset('assets/diag.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/notes.js')) ?>" defer></script>
 <script>
 (() => {

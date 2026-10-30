@@ -9,11 +9,12 @@
 // Needs SW_PHP (php.exe) unless php is on PATH. The live part goes live on the station (through the
 // local database), so a public server gets --listen-only: joining, crossfade and stream only.
 import { spawn, spawnSync, execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { createHash } from "node:crypto";
 
 const base = (process.argv[2] || "").replace(/\/$/, "");
 const listenOnly = process.argv.includes("--listen-only");
@@ -140,13 +141,19 @@ try {
   // the test tones tick (1800 Hz) at every second and beep (1200 Hz) every 10 s, and a bar takes ~0.6 s to
   // fall back: look between the ticks, with one deck playing (a song fading out on the other lights its bands)
   const between = (d) => d.pos > 1.5 && d.pos % 1 > 0.7 && d.pos % 1 < 0.97 && d.pos % 10 > 1;
-  s = await until((x) => x.spectrum && x.spectrum.running && x.spectrum.frames > 90 && x.spectrum.level > 0.3 && toneOf(x) && x.decks.filter((d) => d.playing).length === 1
-    && between(x.decks.find((d) => d.playing)), 25);
+  // a station with real music (no "… Hz" titles) gets the music checks instead of the tone checks
+  const tones = !!toneOf(await state());
+  s = await until((x) => x.spectrum && x.spectrum.running && x.spectrum.frames > 90 && x.spectrum.level > 0.3 && (!tones || toneOf(x)) && x.decks.filter((d) => d.playing).length === 1
+    && (!tones || between(x.decks.find((d) => d.playing))), 25);
   const tone = toneOf(s);
   check("the display's spectrum moves with the music", !!s && s.spectrum.frames > 10 && (await specPx()) > 200, s && `${s.spectrum.frames} frames, level ${s.spectrum.level}`);
+  if (!tones) {
+    check("  real music lights many of the 28 bars", !!s && s.spectrum.lit >= 10, s && `${s.spectrum.lit} lit`);
+  } else {
   check("  its tallest bar is the band that holds the tone playing", !!s && Math.abs(s.spectrum.top - BAND(tone)) <= 1,
     s && `${tone} Hz → band ${BAND(tone)}; tallest ${s.spectrum.top} (${s.spectrum.topHz.join("–")} Hz)`);
   check("  a pure tone lights only a few of the 28 bars", !!s && s.spectrum.lit <= 8, s && `${s.spectrum.lit} lit` + (s.spectrum.lit > 8 ? " " + JSON.stringify(await evaluate(`({ hidden: document.hidden, bars: SwPlayer.state().spectrum.bars, decks: SwPlayer.state().decks, cur: SwPlayer.state().current && SwPlayer.state().current.title, ev: SwPlayer.state().events.slice(-5) })`)) : ""));
+  }
   const loud = s ? s.spectrum.level : 0;
   await evaluate("(() => { const v = document.getElementById('lpVol'); v.value = 0; v.dispatchEvent(new Event('input')); })()");
   await sleep(600);
@@ -157,7 +164,15 @@ try {
   console.log("Crossfade");
   const log = [];
   const first = s && s.current.key;
-  s = await until((x) => x.current && x.current.key !== first, 75, log);
+  // test tones are under a minute; a real song may have minutes left: wait for its end on the timeline
+  let wait = 75;
+  if (!tones && s && s.current) {
+    const tl = await (await fetch(`${base}/api/timeline.php`)).json();
+    const e = tl.entries.find((x) => Math.abs(x.start - s.current.start) < 0.01);
+    if (e) wait = Math.max(15, e.end - (tl.server_now - tl.settings.listener_delay_seconds) + 15);
+    console.log(`  (waiting ${Math.round(wait)} s for this song's end)`);
+  }
+  s = await until((x) => x.current && x.current.key !== first, wait, log);
   check("the next song comes at its boundary", !!s, s && s.current.title);
   const both = (await until((x) => x.decks.filter((d) => d.playing && d.gain > 0.05 && d.gain < 0.95).length === 2, 3, log)) || log.find((x) => x && x.decks.filter((d) => d.playing && d.gain > 0.05 && d.gain < 0.95).length === 2);
   check("  with both decks blending", !!both, both && both.decks.map((d) => d.gain).join(" / "));
@@ -211,6 +226,57 @@ try {
   await evaluate("window.__unfreeze()");
   s = await until((x) => x.current && x.current.type === "song" && x.status === "Playing" && audible(x).some((d) => d.key === x.current.key), 10);
   check("  and plays on time again", s && Math.abs(drift(s, audible(s).find((d) => d.key === s.current.key))) < 0.3, s && drift(s, audible(s).find((d) => d.key === s.current.key)).toFixed(3) + " s");
+
+  console.log("Diagnostics panel");
+  check("it starts closed", (await evaluate("document.getElementById('lpDiag').open")) === false);
+  await front(); // frames are only counted on a page in front
+  await evaluate("SwDiag.open()");
+  await sleep(2500);
+  const panel = await evaluate(`(() => ({ rows: [...document.querySelectorAll('#lpDiagRows dt')].map((x) => x.textContent), verdict: document.getElementById('lpDiagVerdict').textContent, m: SwDiag.measure() }))()`);
+  check("  open, it shows its five rows and a verdict", JSON.stringify(panel.rows) === '["Screen","Player","Sound","Song","Network"]' && panel.verdict.length > 10, JSON.stringify(panel.rows) + " " + panel.verdict);
+  check("  and counts the screen's frames", panel.m && panel.m.fps > 5, panel.m && String(panel.m.fps));
+  s = await state();
+  check("  the frozen engine above is in its count and dropout list", s.diag.stalls >= 1 && s.diag.dropLog.length > 0, `${s.diag.stalls} stalls, ${s.diag.dropLog.map((x) => x.cause).join(", ")}`);
+  check("  the song deck plays in step (drift under 0.3 s)", s.diag.drift !== null && Math.abs(s.diag.drift) < 0.3, String(s.diag.drift));
+  const jumpsBefore = s.diag.corrections;
+  check("  (a song made to slip 2 s)", await evaluate("SwPlayer.slip(2)"));
+  s = await until((x) => x.diag.corrections > jumpsBefore, 6);
+  check("  is put back in step and listed as a timing correction", !!s && s.diag.dropLog.some((x) => x.cause === "timing correction"), s ? "" : String((await state()).diag.drift));
+  await sleep(3000); // the correction's own settling time
+  await front(); // the check runs with the strip's drawing, which a hidden page pauses
+  const gapsBefore = (await state()).diag.gaps;
+  check("  (the output silenced for 0.6 s)", await evaluate("SwPlayer.hush(600)"));
+  s = await until((x) => x.diag.gaps > gapsBefore, 8);
+  check("  is caught as a sound gap", !!s && s.diag.dropLog.some((x) => x.cause === "sound gap"), String((await state()).diag.gaps));
+  await sleep(1200);
+  const report = await evaluate("SwDiag.report()");
+  check("  the report has the rows and the dropouts", /\[(good|warn|bad)\] Sound:/.test(report) && /timing correction \(drift/.test(report) && /sound gap \(the output/.test(report), report.split("\n").filter((l) => /^  20/.test(l)).join(" | "));
+  if (!listenOnly) for (const a of ["127.0.0.1", "::1"]) { // this copy: clear this computer's hourly count of reports
+    const f = join(here, "..", "storage", "diag", `.limit-${createHash("sha256").update(`sw-diag|${a}`).digest("hex").slice(0, 16)}.json`);
+    if (existsSync(f)) unlinkSync(f);
+  }
+  await evaluate("document.getElementById('lpDiagSend').click()");
+  let sentMsg = "";
+  for (let i = 0; i < 50 && !/^Sent|Couldn|plenty/.test(sentMsg); i++) { await sleep(100); sentMsg = await evaluate("document.getElementById('lpDiagMsg').textContent"); }
+  const sentId = (sentMsg.match(/Report (\d{8}-\d{6}-[0-9a-f]{6})/) || [])[1];
+  check("  Send report stores it and gives its number", !!sentId, sentMsg);
+  if (sentId && !listenOnly) {
+    const f = join(here, "..", "storage", "diag", `${sentId}.txt`);
+    check("  (the file is on the station)", existsSync(f) && readFileSync(f, "utf8").includes("sound gap"));
+    if (existsSync(f)) unlinkSync(f);
+  }
+  // left open, it opens and measures straight away on the next visit
+  await evaluate("SwPlayer.stop()"); await sleep(1500); // off the listener count first (its last ping; the count is checked later)
+  await go(`${base}/`);
+  await front();
+  for (let i = 0; i < 50 && !(await evaluate("typeof SwPlayer === 'object' && document.querySelectorAll('#lpDiagRows dt').length === 5")); i++) await sleep(100);
+  const reopened = await evaluate(`({ open: document.getElementById('lpDiag').open, rows: document.querySelectorAll('#lpDiagRows dt').length })`);
+  check("  left open, it is open and measuring on the next visit", reopened.open === true && reopened.rows === 5, JSON.stringify(reopened));
+  await evaluate("(() => { const b = document.getElementById('lpDiag'); b.open = false; })()");
+  await sleep(300);
+  await evaluate("SwPlayer.start()");
+  s = await until((x) => x.status === "Playing" && x.current && audible(x).length > 0, 15);
+  check("  (playing again for the rest)", !!s);
 
   console.log(listenOnly ? "Live show: skipped (--listen-only)" : "Live show");
   // made beforehand and sent on a fixed beat, like the studio: piece n arrives 6 s × (n + 1) after

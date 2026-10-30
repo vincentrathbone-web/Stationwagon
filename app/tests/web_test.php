@@ -98,6 +98,23 @@ try {
     check('station page links to sign in', str_contains($r['body'], 'href="' . $basePath . '/signin"'));
     check('station page is the listener player', str_contains($r['body'], 'id="player"') && str_contains($r['body'], 'data-delay="20"') && str_contains($r['body'], 'assets/player.js'));
     check('with today’s schedule', str_contains($r['body'], '<h2>Today · '));
+    check('and a Diagnostics panel, closed', (bool) preg_match('~<details class="lp-win lp-diag" id="lpDiag">~', $r['body']) && str_contains($r['body'], 'assets/diag.js'));
+    echo "Diagnostics reports\n";
+    $d = new Browser($base);
+    if (!$public) { // this copy: clear this computer's hourly count, so test runs don't run into it
+        foreach (['127.0.0.1', '::1'] as $a) { @unlink(SW_ROOT . '/storage/diag/.limit-' . substr(hash('sha256', 'sw-diag|' . $a), 0, 16) . '.json'); }
+    }
+    check('reports are only sent, never read back', $d->go('api/diag.php')['status'] === 405);
+    $dr = $d->go('api/diag.php', '{"report": ""}', ['Content-Type: application/json']);
+    check('an empty report is refused', $dr['status'] === 400, (string) $dr['status']);
+    $dr = $d->go('api/diag.php', json_encode(['report' => "web_test report\nAll good"]), ['Content-Type: application/json']);
+    $diagId = (string) (json_decode($dr['body'], true)['id'] ?? '');
+    check('a report is kept and answered with its number', $dr['status'] === 200 && preg_match('~^\d{8}-\d{6}-[0-9a-f]{6}$~', $diagId), $dr['status'] . ' ' . $dr['body']);
+    check('  and nobody can open it from the web', $diagId !== '' && $d->go("storage/diag/$diagId.txt")['status'] === 403);
+    check('listeners get no cookie from it', $d->setCookies === []);
+    if (!$public && $diagId !== '' && is_file(SW_ROOT . "/storage/diag/$diagId.txt")) {
+        unlink(SW_ROOT . "/storage/diag/$diagId.txt"); // the test's own report
+    }
     // scripts and styles are tagged by content, so a phone never keeps an old copy (the host says a week)
     preg_match('~assets/player\.js\?v=([0-9a-f]{10})"~', $r['body'], $pm);
     preg_match('~assets/app\.css\?v=([0-9a-f]{10})"~', $r['body'], $cm);

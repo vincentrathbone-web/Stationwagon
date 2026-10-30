@@ -10,6 +10,10 @@
   const root = document.getElementById("player");
   if (!root) return;
   const BASE = new URL(root.dataset.base, location.href).href; // the app's full address, ending in "/"
+  const SEEK_FROM = 1.2; // song deck drift (s) beyond which the deck seeks back into step
+  // Android's Chrome skips bits of a song (5 jumps in 40 s on a Xiaomi) when a media element plays
+  // through a "playback" (big buffer) AudioContext, and "interactive" gives underruns; "balanced" plays clean.
+  const HANDHELD = (navigator.maxTouchPoints > 0 && matchMedia("(pointer: coarse)").matches) || /Android|iPhone|iPad/.test(navigator.userAgent);
   const DELAY = Number(root.dataset.delay) || 20;      // seconds behind the server clock
   const $ = (id) => document.getElementById(id);
   const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -26,14 +30,14 @@
 
   // ---- Server clock: the round trip with the shortest time wins (from the POC) ---------------
   const clock = {
-    offsetMs: 0, samples: [], last: null, lastOk: 0,
+    offsetMs: 0, samples: [], last: null, lastOk: 0, fails: 0,
     local: () => performance.timeOrigin + performance.now(),
     now() { return (this.local() + this.offsetMs) / 1000; },
     async fetch() {
       const t0 = this.local();
-      const res = await fetch(BASE + "api/timeline.php?t=" + Math.round(t0), { cache: "no-store" });
+      const res = await fetch(BASE + "api/timeline.php?t=" + Math.round(t0), { cache: "no-store" }).catch((e) => { this.fails++; throw e; });
       const t1 = this.local();
-      if (!res.ok) throw new Error("HTTP " + res.status);
+      if (!res.ok) { this.fails++; throw new Error("HTTP " + res.status); }
       const json = await res.json();
       this.samples = [...this.samples, { rtt: t1 - t0, offset: json.server_now * 1000 - (t0 + t1) / 2 }].slice(-10);
       this.offsetMs = this.samples.reduce((a, b) => (b.rtt < a.rtt ? b : a)).offset;
@@ -54,9 +58,15 @@
       this.el = new Audio(); this.el.preload = "auto";
       this.gainNode = ctx.createGain(); this.gainNode.gain.value = 0;
       ctx.createMediaElementSource(this.el).connect(this.gainNode).connect(out);
-      this.key = null; this.entry = null; this.busyUntil = 0; this.correcting = false; this.joinedAt = 0;
+      this.key = null; this.entry = null; this.busyUntil = 0; this.correcting = false; this.joinedAt = 0; this.seekedAt = 0;
       // a stall after the first seconds is a dropout; waiting while a song loads is not
-      this.el.addEventListener("waiting", () => { if (this.key && performance.now() - this.joinedAt > 3000) { player.log(`${name} waiting`); player.dropout(); } });
+      this.el.addEventListener("waiting", () => { if (this.key && performance.now() - this.joinedAt > 3000 && performance.now() - this.seekedAt > 2000) { player.log(`${name} waiting`); player.waits++; player.dropout("waiting for data", `deck ${name}, ${this.bufferedAhead().toFixed(1)} s buffered`); } });
+    }
+    /** Seconds of this song the browser holds ahead of where it plays. */
+    bufferedAhead() {
+      const b = this.el.buffered, t = this.el.currentTime;
+      for (let i = 0; i < b.length; i++) if (b.start(i) <= t + 0.1 && t <= b.end(i)) return b.end(i) - t;
+      return 0;
     }
     load(entry) {
       if (this.key === key(entry)) return;
@@ -70,11 +80,23 @@
     }
     get playing() { return !this.el.paused; }
     get gain() { return this.gainNode.gain.value; }
-    /** Seek to where() seconds (worked out once the file is ready) and play. */
-    async playFrom(where) {
+    /** Seek to where() seconds (worked out once the file is ready) and play. catchUp: where() is
+     * where the song should be at each moment (a join), so a late start is made up before it fades in. */
+    async playFrom(where, catchUp = false) {
       if (this.el.readyState < 1) await new Promise((r) => this.el.addEventListener("loadedmetadata", r, { once: true }));
+      this.seekedAt = performance.now();
       this.el.currentTime = Math.max(0, where());
       await this.el.play();
+      // starting takes a moment (the song came out 0.25 to 0.4 s late on a PC), so while it is still
+      // silent (it fades in after this) hop forward by what it is late, at most twice
+      for (let i = 0; catchUp && i < 2; i++) {
+        await new Promise((r) => setTimeout(r, 250));
+        const late = where() - this.el.currentTime;
+        if (Math.abs(late) < 0.08 || this.el.paused) break;
+        player.log(`${this.name} started ${late.toFixed(2)} s late: catching up`);
+        this.el.currentTime += late;
+        await new Promise((r) => { this.el.addEventListener("seeked", r, { once: true }); setTimeout(r, 2000); });
+      }
     }
     ramp(to, seconds, at = this.ctx.currentTime) {
       const g = this.gainNode.gain, from = g.value;
@@ -93,7 +115,7 @@
         this.gainNode = ctx.createGain(); this.gainNode.gain.value = 0;
         ctx.createMediaElementSource(this.el).connect(this.gainNode).connect(out);
       }
-      this.el.addEventListener("waiting", () => { if (this.active && this.gain > 0) player.dropout(); });
+      this.el.addEventListener("waiting", () => { if (this.active && this.gain > 0) { player.waits++; player.dropout("waiting for data", "the stream"); } });
     }
     get gain() { return this.gainNode ? this.gainNode.gain.value : this.vol; }
     async start() {
@@ -116,7 +138,7 @@
         }
         this.hls = new Hls({ liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 6, lowLatencyMode: false, fLoader: Keep });
         this.hls.on(Hls.Events.ERROR, (_, d) => {
-          if (d.details === "bufferStalledError") player.dropout();
+          if (d.details === "bufferStalledError") player.dropout("stream buffer ran empty");
           if (d.fatal) (d.type === Hls.ErrorTypes.MEDIA_ERROR ? this.hls.recoverMediaError() : this.hls.startLoad());
         });
         this.hls.loadSource(url);
@@ -176,6 +198,8 @@
   // ---- The player ----------------------------------------------------------------------------
   const player = {
     on: false, ctx: null, mix: null, master: null, analyser: null, wave: null, decks: [], stream: null, started: new Set(), tries: new Map(),
+    // for the Diagnostics panel (diag.js): what each dropout was, and what the page costs
+    dropLog: [], corrections: 0, stalls: 0, waits: 0, drift: null, cost: { strip: 0, spectrum: 0, mix: 0 },
     drops: 0, lastDrop: 0, listeners: null, ping: null, engineAt: null, nudges: 0, nudging: false, volume: 0.8, timers: [], status: "Ready", lastKey: null, events: [],
     /** The last 40 things the player did, with the heard time (for tests and support). */
     log(what) { this.events = [...this.events, ((clock.last ? this.heard() : 0) % 1000).toFixed(1) + " " + what].slice(-40); },
@@ -186,7 +210,7 @@
       this.on = true; this.started.clear(); this.tries.clear(); this.lastKey = null; this.engineAt = null; this.nudges = 0;
       this.setStatus("Connecting");
       if (!STREAM_ONLY) {
-        this.ctx = new Ctx({ latencyHint: "playback" }); // bigger buffers: a radio needs no low latency
+        this.ctx = new Ctx({ latencyHint: HANDHELD ? "balanced" : "playback" }); // bigger buffers on a PC; a phone skips with them
         // a locked phone never settles resume(): give it 2 s, then go on (play() then says it's blocked)
         if (this.ctx.state === "suspended") await Promise.race([this.ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
         this.master = this.ctx.createGain(); this.master.gain.value = this.volume;
@@ -269,24 +293,30 @@
       if (now - this.engineAt.since < 300) return;
       this.engineAt = null;
       if (this.nudges < 2) {
+        if (!this.nudges) this.stalls++;
         this.nudges++; this.nudging = true;
         this.log(`sound engine stuck at ${c.currentTime.toFixed(2)}${document.hidden ? " (page hidden)" : ""}: nudge ${this.nudges}`);
         c.suspend().then(() => c.resume()).catch(() => {}).finally(() => { this.nudging = false; });
       } else {
-        this.log("sound engine still stuck: starting again"); this.dropout();
+        this.log("sound engine still stuck: starting again"); this.dropout("sound engine stalled", "started again");
         this.stop(); this.start(); // keeps the event log and the dropout count
       }
     },
 
-    dropout() { const t = performance.now(); if (t - this.lastDrop > 3000) { this.drops++; this.lastDrop = t; } },
+    /** Something interrupted the sound: count it (once in 3 s) and keep what it was. */
+    dropout(cause = "unknown", detail = "") {
+      const t = performance.now();
+      this.dropLog = [...this.dropLog, { at: Date.now(), cause, detail }].slice(-20);
+      if (t - this.lastDrop > 3000) { this.drops++; this.lastDrop = t; }
+    },
     /** A deck couldn't start: the browser blocked sound (say so), or the file failed (a dropout). */
     playFailed(e) {
       this.log("play failed: " + (e && (e.name + " " + e.message)));
       if (e && e.name === "NotAllowedError") { this.setStatus("Blocked"); this.say("The browser blocked the sound. Tap Listen again."); this.stop(); this.setStatus("Blocked"); }
-      else this.dropout();
+      else this.dropout("a song couldn’t start", e ? e.name : "");
     },
     online() { if (this.on && this.status !== "Playing") this.setStatus("Playing"); },
-    offline() { if (this.on) { this.setStatus("Reconnecting"); this.dropout(); } },
+    offline() { if (this.on) { this.setStatus("Reconnecting"); this.dropout("no answer from the station"); } },
     setStatus(s) { this.status = s; $("lpConn").textContent = s; },
     setListeners(n) { this.listeners = n; $("lpListeners").textContent = String(n); },
     say(text) { $("lpNote").textContent = text; $("lpNote").hidden = !text; },
@@ -300,6 +330,8 @@
     deckFor(e) { return this.decks.find((d) => d.key === key(e)) || null; },
     freeDeck(except, h) { return this.decks.find((d) => d !== except && d.busyUntil <= h && !d.correcting) || null; },
     heard() { return clock.now() - DELAY; },
+    /** No sound-gap checks for the next seconds (a deck starting or seeking). */
+    settle(seconds) { if (this.ctx) ahead.quietUntil = Math.max(ahead.quietUntil, this.ctx.currentTime + seconds); },
 
     tick() {
       this.watchEngine();
@@ -324,9 +356,9 @@
         if ((!d || !d.playing) && due && cur.end - h > 1) {
           this.started.add(key(cur)); this.tries.set(key(cur), performance.now());
           d = d || this.freeDeck(null, h) || this.decks[0];
-          d.load(cur); d.joinedAt = performance.now(); this.log(`join ${cur.title} on ${d.name}`);
+          d.load(cur); d.joinedAt = performance.now(); this.log(`join ${cur.title} on ${d.name}`); this.settle(3);
           d.busyUntil = cur.end + cur.fade_out;
-          d.playFrom(() => this.heard() - cur.start + 0.05).then(() => d.ramp(1, 0.4)).catch((e) => this.playFailed(e));
+          d.playFrom(() => this.heard() - cur.start + 0.05, true).then(() => d.ramp(1, 0.4)).catch((e) => this.playFailed(e));
           this.decks.forEach((o) => { if (o !== d && o.playing && o.busyUntil <= h) o.unload(); });
           if (this.stream.active && this.stream.gain > 0.01) { this.stream.ramp(0, 0.4); setTimeout(() => this.stream && this.stream.stop(), 600); }
         }
@@ -366,7 +398,7 @@
           setTimeout(() => {
             if (!this.on) return;
             const late = Math.max(0, this.heard() - next.start);
-            nd.joinedAt = performance.now();
+            nd.joinedAt = performance.now(); this.settle(fade + 1.5);
             nd.gainNode.gain.value = 0;
             nd.playFrom(() => late).catch((e) => this.playFailed(e));
             nd.ramp(1, fade);
@@ -390,12 +422,17 @@
         }
       }
 
-      // 3. Keep the song deck on time (not during a handover): a short dip and a seek
+      // 3. Keep the song deck on time (not during a handover). A phone's song position can read a
+      // few tenths of a second ahead of what is heard, so small drift is left alone (changing the
+      // speed to ease it away made the sound worse); only a real slip of over 1.2 s gets a dip and a seek.
       const d = cur.type === "song" ? this.deckFor(cur) : null;
       if (d && d.playing && !d.correcting && ahead > 1 && h - cur.start > 1.5) {
         const drift = d.el.currentTime - (h - cur.start);
-        if (Math.abs(drift) > 0.3) {
-          d.correcting = true; d.ramp(0, 0.15);
+        this.drift = drift;
+        if (Math.abs(drift) > SEEK_FROM) {
+          this.corrections++; this.log(`timing correction on ${d.name}: drift ${drift.toFixed(2)} s`);
+          this.dropout("timing correction", `drift ${drift > 0 ? "+" : ""}${drift.toFixed(2)} s`);
+          this.settle(2); d.correcting = true; d.seekedAt = performance.now(); d.ramp(0, 0.15);
           setTimeout(() => { d.el.currentTime = this.heard() - cur.start + 0.05; d.ramp(1, 0.3); setTimeout(() => (d.correcting = false), 1500); }, 160);
         }
       }
@@ -410,6 +447,14 @@
         current: cur ? { key: key(cur), type: cur.type, title: cur.title, start: cur.start } : null,
         decks: this.decks.map((d) => ({ name: d.name, key: d.key, playing: d.playing, gain: +d.gain.toFixed(3), pos: d.el.currentTime, title: d.entry && d.entry.title })),
         events: this.events, hidden: document.hidden,
+        diag: {
+          dropLog: this.dropLog, corrections: this.corrections, stalls: this.stalls, waits: this.waits, gaps: ahead.gaps,
+          drift: this.drift, cost: { ...this.cost }, fails: clock.fails, rtt: clock.samples.length ? Math.round(clock.samples[clock.samples.length - 1].rtt) : null,
+          buffered: this.decks.map((d) => (d.playing ? +d.bufferedAhead().toFixed(1) : null)),
+          sound: this.ctx ? { rate: this.ctx.sampleRate, out: this.ctx.outputLatency || null, base: this.ctx.baseLatency || null,
+            stats: (() => { const st = this.ctx.playbackStats || this.ctx.playoutStats; if (!st) return null; const o = {}; for (const k in st) if (typeof st[k] === "number") o[k] = st[k]; return o; })() } : null,
+          readBytes: ahead.bytes,
+        },
         engine: this.ctx ? { state: this.ctx.state, time: +this.ctx.currentTime.toFixed(2) } : null,
         stream: this.stream ? { active: this.stream.active, locked: this.stream.locked, gain: +this.stream.gain.toFixed(3), lag: this.stream.lag, native: this.stream.native } : null,
         spectrum: spectrum.state(),
@@ -430,8 +475,28 @@
   const AHEAD = 20;
   const fadeOf = (e) => (e.type === "song" ? Math.max(0.3, Math.min(e.fade_out, (e.full || e.play) - e.play + 0.001)) : 0.5);
   const ahead = {
-    pieces: new Map(), loading: 0, plan: null, dirty: true, renderedAt: 0, bytes: 0,
-    reset() { this.pieces.clear(); this.plan = null; this.dirty = true; },
+    pieces: new Map(), loading: 0, plan: null, dirty: true, renderedAt: 0, bytes: 0, checked: 0, gaps: 0, quietUntil: 0,
+    reset() { this.pieces.clear(); this.plan = null; this.dirty = true; this.checked = 0; this.quietUntil = 0; }, // a new sound engine counts from 0
+    /**
+     * A sound gap: the measured output went silent (below -60 dB) for 80 ms or more while the mix
+     * planned for that moment says music should be heard (above -30 dB). This catches dropouts
+     * that no browser event reports, such as a starved song deck. Not checked just after a deck
+     * starts or corrects its timing, when the plan and the sound may be a moment apart.
+     */
+    checkGaps() {
+      const p = this.plan, m = player.wave && player.wave.cols, c = player.ctx;
+      if (!p || !m || !c || player.wave.kind !== "sample-exact") return;
+      const STEP = SwOutWave.STEP, end = Math.min(Math.floor((outNow() - 0.15) / STEP), p.i0 + p.n);
+      let i = Math.max(this.checked, p.i0), run = 0;
+      for (; i < end; i++) {
+        const want = p.get(i, p.k - 1), got = m.get(i, m.k - 1);
+        if (want === null || got === null || i * STEP < this.quietUntil) { run = 0; continue; }
+        if (want > 0.03 && got < 0.001) {
+          if (++run === 8) { this.gaps++; player.log("sound gap: the output went silent"); player.dropout("sound gap", "the output went silent while music should play"); }
+        } else run = 0;
+      }
+      this.checked = i;
+    },
     /** The gain entry i of the list will have at timeline time t: tick()'s handover curves. */
     gain(list, i, t) {
       const e = list[i], prev = list[i - 1], next = list[i + 1];
@@ -473,7 +538,12 @@
             .catch(() => this.pieces.delete(id)).finally(() => this.loading--);
         }
       }
-      if (this.dirty || performance.now() - this.renderedAt > 2000) this.render();
+      this.checkGaps(); // against the plan the strip shows, before a new one replaces it
+      if (this.dirty || performance.now() - this.renderedAt > 2000) {
+        const t0 = performance.now();
+        this.render();
+        player.cost.mix += performance.now() - t0;
+      }
     },
     /** A deck holds this song and isn't downloading it now (done, or paused by the browser on a long song). */
     downloaded(e) {
@@ -544,12 +614,14 @@
   const COLORS = [], colours = () => COLORS.splice(0, 4, tok("--src-a"), tok("--src-b"), tok("--src-live"), tok("--src-out"));
   colours();
   window.addEventListener("sw:skin", colours); // the viewer changed the look
+  window.addEventListener("sw:skin", () => { spectrum.ink = null; });
   const strip = waveCv && window.SwOutWave && !STREAM_ONLY ? SwOutWave.strip(waveCv, {
     colors: COLORS,
     measured: () => (player.wave ? player.wave.cols : null),
     plan: () => ahead.plan,
     now: outNow,
     span: () => 10,
+    cost: (ms) => { player.cost.strip += ms; },
     // where each entry starts (a handover), in its colour
     marks: () => {
       const c = player.ctx, tl = clock.last;
@@ -601,7 +673,7 @@
   // With "reduce motion" set on the device it redraws once a second, without peak marks.
   const spectrum = {
     BANDS: 28, LOW: 40, HIGH: 16000,
-    bars: new Float32Array(28), peaks: new Float32Array(28), held: new Float32Array(28), last: 0, running: false, frames: 0,
+    bars: new Float32Array(28), peaks: new Float32Array(28), held: new Float32Array(28), last: 0, running: false, frames: 0, odd: false, ink: null,
     calm: matchMedia("(prefers-reduced-motion: reduce)").matches,
     /** The band (0–27) a frequency falls in. */
     band(f) { return Math.max(0, Math.min(this.BANDS - 1, Math.floor(Math.log(f / this.LOW) / Math.log(this.HIGH / this.LOW) * this.BANDS))); },
@@ -624,7 +696,10 @@
     frame(t) {
       const dt = Math.min(0.1, (t - this.last) / 1000);
       if (this.calm && t - this.last < 1000 && player.on) { requestAnimationFrame((x) => this.frame(x)); return; }
+      // 30 frames a second is plenty for bars, and halves the work on a phone
+      if (!this.calm && (this.odd = !this.odd) && player.on) { requestAnimationFrame((x) => this.frame(x)); return; }
       this.last = t;
+      const c0 = performance.now();
       const now = this.read();
       let any = false;
       for (let b = 0; b < this.BANDS; b++) {
@@ -634,6 +709,7 @@
         if (this.bars[b] > 0.005 || this.peaks[b] > 0.005) any = true;
       }
       this.draw();
+      player.cost.spectrum += performance.now() - c0;
       this.frames++;
       if (player.on || any) requestAnimationFrame((x) => this.frame(x));
       else { this.running = false; this.bars.fill(0); this.peaks.fill(0); this.draw(); }
@@ -644,14 +720,22 @@
       const dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
       if (!w || !h) return;
       if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
-      const g = c.getContext("2d"), tok = (n) => getComputedStyle(root).getPropertyValue(n).trim();
-      const hi = tok("--spec-hi"), mid = tok("--spec-mid"), lo = tok("--spec-lo"), pk = tok("--spec-peak");
+      // the colours, read from the look once (reading styles every frame makes the browser work them out again)
+      if (!this.ink) { const tok = (n) => getComputedStyle(root).getPropertyValue(n).trim(); this.ink = { hi: tok("--spec-hi"), mid: tok("--spec-mid"), lo: tok("--spec-lo"), pk: tok("--spec-peak") }; }
+      const g = c.getContext("2d"), { hi, mid, lo, pk } = this.ink;
       g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
       const n = this.BANDS, gap = 2, bw = (w - (n - 1) * gap) / n;
-      for (let b = 0; b < n; b++) {
-        const x = b * (bw + gap), top = h - this.bars[b] * h;
-        for (let y = h; y > top + 0.5; y -= 3) { g.fillStyle = y < h * 0.3 ? hi : y < h * 0.6 ? mid : lo; g.fillRect(x, y - 2, bw, 2); } // 2 px segments
-        if (!this.calm && this.peaks[b] > 0.02) { g.fillStyle = pk; g.fillRect(x, h - this.peaks[b] * h - 2, bw, 1.5); }
+      // 2 px segments, drawn one colour (one height zone) at a time
+      for (const [ink, from, to] of [[lo, h * 0.6, h + 1], [mid, h * 0.3, h * 0.6], [hi, -1, h * 0.3]]) {
+        g.fillStyle = ink;
+        for (let b = 0; b < n; b++) {
+          const x = b * (bw + gap), top = h - this.bars[b] * h;
+          for (let y = h; y > top + 0.5; y -= 3) if (y >= from && y < to) g.fillRect(x, y - 2, bw, 2);
+        }
+      }
+      if (!this.calm) {
+        g.fillStyle = pk;
+        for (let b = 0; b < n; b++) if (this.peaks[b] > 0.02) g.fillRect(b * (bw + gap), h - this.peaks[b] * h - 2, bw, 1.5);
       }
     },
     /** For tests: the loudest band and its range, how many bars show, frames drawn. */
@@ -682,6 +766,10 @@
   setInterval(() => { if (!player.on) clock.fetch().catch(() => {}); }, 10000);
   window.SwPlayer = {
     start: () => player.start(), stop: () => player.stop(), state: () => player.state(), serverNow: () => (clock.last ? clock.now() : null),
+    timeline: () => clock.last, // the Diagnostics panel reads the current song's pieces
+    // for tests of the Diagnostics panel: the song on air slips s seconds; the output goes silent for ms
+    slip: (s) => { const d = player.decks.find((x) => x.playing && x.gain > 0.5); if (d) d.el.currentTime += s; return !!d; },
+    hush: (ms) => { if (!player.mix) return false; player.mix.gain.value = 0; setTimeout(() => { if (player.mix) player.mix.gain.value = 1; }, ms); return true; },
     // the output strip, for tests: context time now, and the highest peaks (A, B, live, output)
     // measured or planned between two context times
     wave: {

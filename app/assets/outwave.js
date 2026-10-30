@@ -154,9 +154,10 @@
       c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, w, h);
       const k = opts.colors.length, ns = k - 1, mid = h / 2, half = h / 2 - 1;
       const meas = opts.measured(), plan = opts.plan ? opts.plan() : null, now = opts.now(), span = opts.span();
-      const t0 = now - span / 2, pps = w / span, cw = 1 / d, line = [], vals = new Float32Array(k);
+      // one column per CSS pixel: on a phone's 2.75x screen that is a third of the work, and looks the same
+      const t0 = now - span / 2, pps = w / span, cw = 1, line = [], vals = new Float32Array(k);
       if (meas || plan) {
-        for (let xd = 0, nx = Math.round(w * d); xd < nx; xd++) {
+        for (let xd = 0, nx = Math.round(w); xd < nx; xd++) {
           const x = xd * cw, ta = t0 + x / pps, ia = Math.floor(ta / STEP), ib = Math.max(ia, Math.floor((ta + cw / pps) / STEP));
           let measured = false, planned = false;
           vals.fill(0);
@@ -208,7 +209,11 @@
       raf = 0;
       if (!running) return;
       odd = !odd;
-      if (odd && !document.hidden && canvas.offsetParent !== null) draw();
+      if (odd && !document.hidden && canvas.offsetParent !== null) {
+        const t0 = performance.now();
+        draw();
+        if (opts.cost) opts.cost(performance.now() - t0);
+      }
       raf = requestAnimationFrame(loop);
     }
     return {

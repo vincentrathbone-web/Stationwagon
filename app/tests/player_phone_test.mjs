@@ -12,6 +12,8 @@ import { execFileSync } from "node:child_process";
 const base = (process.argv[2] || "").replace(/\/$/, "");
 if (!base) { console.error("Usage: node app/tests/player_phone_test.mjs <base url>"); process.exit(1); }
 const adbPath = process.env.SW_ADB || "D:/Android/platform-tools/adb.exe";
+// the phone's browser: Brave (the user's default, 2026-10-30); SW_PHONE_BROWSER=com.android.chrome for Chrome
+const BROWSER = process.env.SW_PHONE_BROWSER || "com.brave.browser";
 const adb = (...args) => execFileSync(adbPath, ["shell", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
 let failed = 0, passed = 0;
 const check = (label, ok, detail = "") => {
@@ -21,26 +23,28 @@ const check = (label, ok, detail = "") => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 if (adb("dumpsys", "window").includes("isKeyguardShowing=true")) {
-  console.log("The phone is locked: unlock it, open Chrome, and run this again.");
+  console.log("The phone is locked: unlock it and run this again.");
   process.exit(2);
 }
-adb("monkey", "-p", "com.android.chrome", "-c", "android.intent.category.LAUNCHER", "1"); // Chrome in front
+adb("monkey", "-p", BROWSER, "-c", "android.intent.category.LAUNCHER", "1"); // the browser in front
 await new Promise((r) => setTimeout(r, 2000));
-// Port 9222 to Chrome itself: other Chromium browsers on the phone (Brave) may hold the plain
-// chrome_devtools_remote socket, so use Chrome's own (chrome_devtools_remote_<pid>) when it has one
+// Port 9222 to that browser: Chrome has its own socket (chrome_devtools_remote_<pid>) next to the plain
+// chrome_devtools_remote one, which another Chromium browser (Brave) may hold; Brave only has the plain one
 {
-  const pid = adb("pidof", "com.android.chrome").trim().split(/\s+/)[0];
+  const pid = adb("pidof", BROWSER).trim().split(/\s+/)[0];
   const own = pid && adb("cat", "/proc/net/unix").includes(`@chrome_devtools_remote_${pid}`) ? `chrome_devtools_remote_${pid}` : "chrome_devtools_remote";
   execFileSync(adbPath, ["forward", "tcp:9222", `localabstract:${own}`], { stdio: "ignore" });
+  const held = await fetch("http://localhost:9222/json/version").then((r) => r.json()).catch(() => ({}));
+  if (held["Android-Package"] !== BROWSER) { console.log(`Port 9222 leads to ${held["Android-Package"] || "nothing"}, not ${BROWSER}: open ${BROWSER} on the phone and run this again.`); process.exit(2); }
 }
 await sleep(2000);
 
-// a tab to work in: Chrome may have none open, and on Android DevTools can't open one, so ask Android to
+// a tab to work in: the browser may have none open, and on Android DevTools can't open one, so ask Android to
 async function aTab(url) {
   const find = async () => (await (await fetch("http://localhost:9222/json")).json()).find((p) => p.type === "page");
   let p = await find();
   if (!p) {
-    adb("am", "start", "-a", "android.intent.action.VIEW", "-d", url, "-p", "com.android.chrome");
+    adb("am", "start", "-a", "android.intent.action.VIEW", "-d", url, "-p", BROWSER);
     for (let i = 0; i < 20 && !p; i++) { await sleep(500); p = await find(); }
   }
   return p;
@@ -100,11 +104,18 @@ try {
   const BAND = (f) => Math.max(0, Math.min(27, Math.floor(Math.log(f / 40) / Math.log(16000 / 40) * 28)));
   const toneOf = (x) => { const m = x && x.current && /(\d{3,4})\s*Hz/.exec(x.current.title || ""); return m ? Number(m[1]) : null; };
   let sp = null;
-  // the test tones tick at every second and beep every 10 s, and a bar takes ~0.6 s to fall: look between the ticks
-  const between = (d) => d.pos > 1.5 && d.pos % 1 > 0.7 && d.pos % 1 < 0.97 && d.pos % 10 > 1;
-  for (let i = 0; i < 100 && !(sp && sp.spectrum && sp.spectrum.level > 0.3 && toneOf(sp) && sp.decks.filter((d) => d.playing).length === 1 && between(sp.decks.find((d) => d.playing))); i++) { await sleep(150); sp = await state(); }
-  check("the display's spectrum shows the tone playing", !!sp && !!toneOf(sp) && sp.spectrum.running && Math.abs(sp.spectrum.top - BAND(toneOf(sp))) <= 1,
-    sp && sp.spectrum ? `${toneOf(sp)} Hz → band ${BAND(toneOf(sp))}; tallest ${sp.spectrum.top}, ${sp.spectrum.frames} frames` : "no state");
+  // a station with real music (no "… Hz" titles) gets a music check instead of the tone check
+  const tones = !!toneOf(s);
+  if (tones) {
+    // the test tones tick at every second and beep every 10 s, and a bar takes ~0.6 s to fall: look between the ticks
+    const between = (d) => d.pos > 1.5 && d.pos % 1 > 0.7 && d.pos % 1 < 0.97 && d.pos % 10 > 1;
+    for (let i = 0; i < 100 && !(sp && sp.spectrum && sp.spectrum.level > 0.3 && toneOf(sp) && sp.decks.filter((d) => d.playing).length === 1 && between(sp.decks.find((d) => d.playing))); i++) { await sleep(150); sp = await state(); }
+    check("the display's spectrum shows the tone playing", !!sp && !!toneOf(sp) && sp.spectrum.running && Math.abs(sp.spectrum.top - BAND(toneOf(sp))) <= 1,
+      sp && sp.spectrum ? `${toneOf(sp)} Hz → band ${BAND(toneOf(sp))}; tallest ${sp.spectrum.top}, ${sp.spectrum.frames} frames` : "no state");
+  } else {
+    for (let i = 0; i < 60 && !(sp && sp.spectrum && sp.spectrum.lit >= 10); i++) { await sleep(150); sp = await state(); }
+    check("the display's spectrum: real music lights many of the 28 bars", !!sp && sp.spectrum.running && sp.spectrum.lit >= 10, sp && sp.spectrum ? `${sp.spectrum.lit} lit, ${sp.spectrum.frames} frames` : "no state");
+  }
 
   // the look: switching to Hi-fi while it plays changes the page and the spectrum's colours at once
   priorSkin = await evaluate("localStorage.getItem('sw.skin')");
@@ -117,8 +128,15 @@ try {
 
   console.log("Crossfade (screen on)");
   const first = s && s.current && s.current.key;
-  let blend = null;
-  for (let i = 0; i < 700 && !(blend && s.current.key !== first); i++) {
+  let blend = null, looks = 700;
+  // test tones are under a minute; a real song may have minutes left: wait for its end on the timeline
+  if (!tones && s && s.current) {
+    const tl = await (await fetch(`${base}/api/timeline.php`)).json();
+    const e = tl.entries.find((x) => Math.abs(x.start - s.current.start) < 0.01);
+    if (e) looks = Math.max(150, Math.round((e.end - (tl.server_now - tl.settings.listener_delay_seconds) + 15) * 10));
+    console.log(`  (waiting ${Math.round(looks / 10)} s for this song's end)`);
+  }
+  for (let i = 0; i < looks && !(blend && s.current.key !== first); i++) {
     s = await state();
     if (s && !blend && blending(s)) blend = s;
     if (i % 80 === 0) adb("input", "keyevent", "KEYCODE_WAKEUP"); // keeps the screen from timing out
@@ -159,8 +177,10 @@ try {
   check("the page keeps answering behind the lock screen", samples.length >= 36, `${samples.length} of 40`);
   const shownAt = samples.filter((p) => !p.x.hidden);
   check("  and says it's hidden", !shownAt.length, shownAt.map((p) => `${Math.round((p.at - t0) / 1000)} s: screen ${p.screen}`).join(", "));
-  check("  Android shows Chrome's media session as playing", /package=com\.android\.chrome[\s\S]*?state=PlaybackState \{state=PLAYING/.test(media));
-  check("  songs change while locked", songs.size >= 3, `${songs.size} songs`);
+  check("  Android shows the browser's media session as playing", new RegExp(`package=${BROWSER.replace(/\./g, "\\.")}[\\s\\S]*?state=PlaybackState \\{state=PLAYING`).test(media));
+  // test tones last 20 to 40 s; real songs run minutes, so with them it is the song playing on throughout
+  if (tones) check("  songs change while locked", songs.size >= 3, `${songs.size} songs`);
+  else check("  the song plays on while locked", lastS && firstS && onCurrent(lastS.x) && (songs.size > 1 || onCurrent(lastS.x).pos - onCurrent(firstS.x).pos > 100), `${songs.size} songs` + (lastS && onCurrent(lastS.x) && firstS && onCurrent(firstS.x) ? `, ${(onCurrent(lastS.x).pos - onCurrent(firstS.x).pos).toFixed(0)} s on` : ""));
   const ran = lastS && firstS ? (lastS.x.engine.time - firstS.x.engine.time) / ((lastS.at - firstS.at) / 1000) : 0;
   check("  the sound engine's clock keeps up (at least 98 % of real time)", ran >= 0.98, (ran * 100).toFixed(1) + " %");
   const late = samples.filter((p) => onCurrent(p.x) && Math.abs(drift(p.x, onCurrent(p.x))) > 0.3).length;

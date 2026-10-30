@@ -18,6 +18,8 @@ if (!base.startsWith("http://localhost:")) { console.error("Usage: node app/test
 const here = dirname(fileURLToPath(import.meta.url));
 const helper = (...args) => JSON.parse(execFileSync(process.env.SW_PHP || "php", [join(here, "browser_helper.php"), ...args], { encoding: "utf8" }));
 const adbPath = process.env.SW_ADB || "D:/Android/platform-tools/adb.exe";
+// the phone's browser: Brave (the user's default, 2026-10-30); SW_PHONE_BROWSER=com.android.chrome for Chrome
+const BROWSER = process.env.SW_PHONE_BROWSER || "com.brave.browser";
 const adb = (...args) => execFileSync(adbPath, ["shell", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
 let failed = 0, passed = 0;
 const check = (label, ok, detail = "") => {
@@ -27,19 +29,21 @@ const check = (label, ok, detail = "") => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 if (adb("dumpsys", "window").includes("isKeyguardShowing=true")) {
-  console.log("The phone is locked: unlock it, open Chrome, and run this again.");
+  console.log("The phone is locked: unlock it and run this again.");
   process.exit(2);
 }
 execFileSync(adbPath, ["reverse", "tcp:8080", "tcp:8080"], { stdio: "ignore" });
-adb("monkey", "-p", "com.android.chrome", "-c", "android.intent.category.LAUNCHER", "1");
+adb("monkey", "-p", BROWSER, "-c", "android.intent.category.LAUNCHER", "1");
 await sleep(2000);
 
-// Port 9222 to Chrome itself: other Chromium browsers on the phone (Brave) may hold the plain
-// chrome_devtools_remote socket, so use Chrome's own (chrome_devtools_remote_<pid>) when it has one
+// Port 9222 to that browser: Chrome has its own socket (chrome_devtools_remote_<pid>) next to the plain
+// chrome_devtools_remote one, which another Chromium browser (Brave) may hold; Brave only has the plain one
 {
-  const pid = adb("pidof", "com.android.chrome").trim().split(/\s+/)[0];
+  const pid = adb("pidof", BROWSER).trim().split(/\s+/)[0];
   const own = pid && adb("cat", "/proc/net/unix").includes(`@chrome_devtools_remote_${pid}`) ? `chrome_devtools_remote_${pid}` : "chrome_devtools_remote";
   execFileSync(adbPath, ["forward", "tcp:9222", `localabstract:${own}`], { stdio: "ignore" });
+  const held = await fetch("http://localhost:9222/json/version").then((r) => r.json()).catch(() => ({}));
+  if (held["Android-Package"] !== BROWSER) { console.log(`Port 9222 leads to ${held["Android-Package"] || "nothing"}, not ${BROWSER}: open ${BROWSER} on the phone and run this again.`); process.exit(2); }
 }
 
 // the browser connection grants the mic; the page connection drives the studio
@@ -55,12 +59,12 @@ const connect = async (url) => {
   return { ws, call };
 };
 const browser = await connect((await (await fetch("http://localhost:9222/json/version")).json()).webSocketDebuggerUrl);
-// a tab to work in: Chrome may have none open, and on Android DevTools can't open one, so ask Android to
+// a tab to work in: the browser may have none open, and on Android DevTools can't open one, so ask Android to
 async function aTab(url) {
   const find = async () => (await (await fetch("http://localhost:9222/json")).json()).find((p) => p.type === "page");
   let p = await find();
   if (!p) {
-    adb("am", "start", "-a", "android.intent.action.VIEW", "-d", url, "-p", "com.android.chrome");
+    adb("am", "start", "-a", "android.intent.action.VIEW", "-d", url, "-p", BROWSER);
     for (let i = 0; i < 20 && !p; i++) { await sleep(500); p = await find(); }
   }
   return p;

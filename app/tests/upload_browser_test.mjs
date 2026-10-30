@@ -91,7 +91,7 @@ async function upload(files) {
 let user = null, prepBefore = null;
 try {
   prepBefore = helper("prep");
-  helper("prep", "1", "1"); // start from the defaults: both on
+  helper("prep", "1", "1"); // both on (a new station has mastering off; this tries it on)
   for (let i = 0; i < 50; i++) { await sleep(200); try { await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; } catch { /* starting */ } }
   const target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === "page");
   ws = new WebSocket(target.webSocketDebuggerUrl);

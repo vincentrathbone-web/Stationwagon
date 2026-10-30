@@ -173,8 +173,8 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "30 Oct · 00:50",
-  commits: 41,
+  updated: "30 Oct · 04:30",
+  commits: 42,
   version: "0.8.0-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
@@ -198,6 +198,7 @@ const MAP = {
       { text: "Listeners now, on the health line and in the studio", note: "a ping a minute, no cookies", v: "v0.4", state: "done" },
       { text: "Privacy page, linked under the player and in the embed", v: "v0.4", state: "done" },
       { text: "Spectrum in the display", note: "28 bars of what goes out, peak marks", v: "v0.4", state: "done" },
+      { text: "Diagnostics panel under the player", note: "screen, player, sound, song and network, the likely cause of dropouts; Send report or Copy", v: "v0.8", state: "done" },
       { text: "Podcast page of past shows", v: "v0.4", state: "done" },
       { text: "Skins: Green or Hi-fi, picked per device", note: "every screen follows; the embed has its own Look button", v: "v0.4", state: "done" }
     ]},
@@ -225,7 +226,7 @@ const MAP = {
       { text: "Sound & safety: fade shape, music under the voice, silence, rejoin, quality, delay", v: "v0.4", state: "done" },
       { text: "Listener stats", note: "unique listeners; device, browser, app; country and city", v: "v0.4", state: "done" },
       { text: "Podcast episodes: edit, hide, feed", note: "two-track editor: zoom, cut clips, mix down, publish", v: "v0.4", state: "done" },
-      { text: "Mastering in song prep, as your Audition chain", note: "Broadcast1 + Master1, matched by measuring; two switches in the library", v: "v0.8", state: "done" }
+      { text: "Mastering in song prep, as your Audition chain", note: "Broadcast1 + Master1, matched by measuring; off by default since 30 Oct (it squeezed real music), levelling stays on", v: "v0.8", state: "done" }
     ]},
     { name: "Streaming & hosting", blurb: "Runs on shared cPanel hosting with Cloudflare in front: PHP and Apache only.", features: [
       { text: "Timeline planned on request, with a cron", v: "v0.1", state: "done" },
@@ -251,6 +252,7 @@ const MAP = {
       { text: "In-app updates from GitHub", note: "through the Stationwagon Updates plugin; checked when the app opens", v: "v0.7", state: "done" }
     ]},
     { name: "Pilot & launch", blurb: "WordWave runs beside AzuraCast first, then switches over.", features: [
+      { text: "The pilot station, installed for real", note: "wordwave.controll.co.za/radio with 8 Alruin tracks; your devices next", v: "v0.8", state: "progress" },
       { text: "Copy WordWave's library from AzuraCast", note: "needs your friend's OK first", v: "v0.8", state: "later" },
       { text: "Run beside AzuraCast for a week", v: "v0.8", state: "later" },
       { text: "Guides for station managers and DJs", v: "v1.0", state: "later" },
@@ -260,12 +262,19 @@ const MAP = {
   ],
   next: {
     title: "The WordWave pilot (v0.8)",
-    text: "The Android studio app is built and tested on your phone: the station's studio with Do Not Disturb on air, shows that go on with the screen off, and updates from GitHub through the plugin. Song prep already masters every upload like your Audition chain. Next, the pilot station gets its music and runs beside AzuraCast.",
-    order: ["Fill the pilot station with test music", "Run it beside AzuraCast for a week", "Copy WordWave's library when its owner agrees", "Then launch (v1.0)"]
+    text: "The Android studio app is built and tested on your phone: the station's studio with Do Not Disturb on air, shows that go on with the screen off, and updates from GitHub through the plugin. Radio WordWave now runs at /radio with 8 of your tracks, and the Diagnostics panel found why your phone dropped out and sounded squeezed (both fixed). Next, the pilot station gets its music and runs beside AzuraCast.",
+    order: ["Try the station on your own devices", "Run it beside AzuraCast for a week", "Copy WordWave's library when its owner agrees", "Then launch (v1.0)"]
   },
   call: null,
   feedTitle: "Changed 20–30 Oct",
   feed: [
+    { what: "Phone tests", to: "now run in Brave, your default browser on the phone; all pass", at: "30 Oct", kind: "info" },
+    { what: "Phone playback fixed", to: "no more skips or underruns on your Xiaomi (balanced sound buffers, no speed changes); joins land on time", at: "30 Oct" },
+    { what: "Song prep mastering", to: "off by default (it squeezed real music flat); the 8 tracks uploaded again, levelled only", at: "30 Oct" },
+    { what: "Diagnostics panel", to: "under the player: what the device, sound, song and network are doing, with Send report", at: "30 Oct" },
+    { what: "Radio WordWave, a real installation", to: "live at wordwave.controll.co.za/radio, installed with setup.php, 8 of your Alruin tracks; plays in browsers and VLC", at: "30 Oct" },
+    { what: "Old test installs on the server", to: "wiped: test station, prototype, test WordPress, their databases and logins", at: "30 Oct", kind: "info" },
+    { what: "Round 38 (setup.php)", to: "committed and pushed (fd6c7a9)", at: "30 Oct", kind: "info" },
     { what: "One-file setup without WordPress", to: "built and tested: setup.php checks the server, asks where the station lives (/radio picked), downloads it and hands over; tested on Laragon and the server", at: "30 Oct" },
     { what: "The station's own installer", to: "the same easy choices: a database made through cPanel, jobs during visits or a cron job added for you", at: "30 Oct" },
     { what: "Real cPanel try with you", to: "passed: a database, a cron job and a subdomain made by setup; all removed afterwards", at: "30 Oct", kind: "info" },

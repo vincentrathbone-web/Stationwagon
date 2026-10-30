@@ -5,7 +5,7 @@
 //   php app/tests/manage_test.php      (same SW_TEST_DB_* settings as install_test.php)
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
-use Stationwagon\{Auth, Db, Library, Planner, Playlists, Schedule, Staff, StationSettings};
+use Stationwagon\{Auth, Db, DiagReports, Library, Planner, Playlists, Schedule, Staff, StationSettings};
 
 $t = test_database('manage');
 $root = temp_root('manage');
@@ -138,6 +138,7 @@ try {
     check('  and the show times out after the new 12 s', !$p2->needsPlan($live, $show['last_piece_at'] + 11) && $p2->needsPlan($live, $show['last_piece_at'] + 13));
     $p2->endLive($later + 20, $show['public_id']);
     check('numbers show without needless decimals', StationSettings::show(6.0) === '6' && StationSettings::show(1.5) === '1.5');
+    check('a new station levels songs but leaves mastering off', StationSettings::prep(['settings' => '{}']) === [false, true]);
 
     echo "Silence detection\n";
     $tail = array_merge(array_fill(0, 40, -14.0), array_fill(0, 20, -99.0));   // 20 silent seconds at the end
@@ -207,6 +208,25 @@ try {
     check('a manager removes a DJ, who then can’t sign in', $staff2->remove($someMgr, $djId) === null && $staff2->get($djId) === null);
     $_SESSION = [];
     check('  (sign-in refused)', !$auth->attempt('dan@example.test', 'brand new pass', '192.0.2.10')['ok']);
+
+    echo "Diagnostics reports\n";
+    $reports = new DiagReports("$root/storage/diag");
+    $now = 1_800_000_000.0;
+    $id = $reports->save("Phone: test\r\nAll good", '192.0.2.20', $now);
+    $kept = (string) file_get_contents("$root/storage/diag/$id.txt");
+    check('a report is kept with when it came in', str_starts_with($kept, 'Received: ') && str_contains($kept, "Phone: test\nAll good"));
+    $refused = 0;
+    foreach (['', str_repeat('x', DiagReports::MAX_BYTES + 1), "bad \xC3("] as $bad) {
+        try { $reports->save($bad, '192.0.2.20', $now); } catch (InvalidArgumentException) { $refused++; }
+    }
+    check('  empty, too big or broken text is refused', $refused === 3);
+    for ($i = 1; $i < DiagReports::PER_HOUR; $i++) { $reports->save("report $i", '192.0.2.20', $now + $i); }
+    try { $reports->save('one too many', '192.0.2.20', $now + 30); $over = false; } catch (OverflowException) { $over = true; }
+    check('  20 an hour from one address, then no more', $over && count($reports->ids()) === DiagReports::PER_HOUR);
+    check('  another address may still send', $reports->save('other', '192.0.2.21', $now + 31) !== '');
+    check('  and an hour later the first may again', $reports->save('later', '192.0.2.20', $now + 3700) !== '');
+    for ($i = 0; $i < DiagReports::KEEP + 5; $i++) { $reports->save("fill $i", "198.51.100." . intdiv($i, 20), $now + 4000 + $i); }
+    check('  only the newest 200 are kept', count(glob("$root/storage/diag/*.txt")) === DiagReports::KEEP, (string) count(glob("$root/storage/diag/*.txt")));
 } finally {
     drop_test_database($t);
     remove_tree($root);

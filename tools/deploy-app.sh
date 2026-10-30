@@ -2,7 +2,7 @@
 # Upload the app (app/) to a cPanel account over SSH.
 #   tools/deploy-app.sh <ssh-host> <remote-dir>
 # Example:
-#   tools/deploy-app.sh controll public_html/wordwave.controll.co.za/stationwagon-app
+#   tools/deploy-app.sh controll public_html/wordwave.controll.co.za/radio
 #
 # - Replaces the code but keeps the server's config.local.php (written by the installer) and
 #   storage/ (songs, live pieces), so re-deploys never touch a running station.
@@ -14,9 +14,13 @@ host="${1:?ssh host alias, e.g. controll}"
 dir="${2:?remote folder relative to the home dir}"
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 app="$repo/app"
+# The folder gets emptied on deploy (apart from storage/ and the settings), so it must be new, empty,
+# named for Stationwagon, or already hold a Stationwagon station (its VERSION and src/Installer.php)
 case "$dir" in
   *stationwagon*) ;;
-  *) echo "Refusing: the remote folder must have 'stationwagon' in its name (it gets emptied on deploy)"; exit 1 ;;
+  *) if ! ssh "$host" "[ ! -e '$dir' ] || [ -z \"\$(ls -A '$dir')\" ] || { [ -f '$dir/VERSION' ] && [ -f '$dir/src/Installer.php' ]; }"; then
+       echo "Refusing: ~/$dir holds something other than a Stationwagon station (it gets emptied on deploy)"; exit 1
+     fi ;;
 esac
 keyfile="$repo/tools/deploy/$host.install-key.local.txt"
 mkdir -p "$repo/tools/deploy"
