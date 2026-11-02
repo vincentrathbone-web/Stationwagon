@@ -94,7 +94,7 @@ final class Planner
         $tr = $this->db->table('tracks');
         $ls = $this->db->table('live_shows');
         $rows = $this->db->run(
-            "SELECT tl.*, tr.file, tr.title AS track_title, tr.artist, tr.duration_s,
+            "SELECT tl.*, tr.file, tr.title AS track_title, tr.artist, tr.album, tr.art, tr.rights, tr.duration_s,
                     ls.public_id, ls.`open`, ls.last_piece_at, ls.closed_reason, ls.title AS live_title
              FROM $tl tl LEFT JOIN $tr tr ON tr.id = tl.track_id LEFT JOIN $ls ls ON ls.id = tl.live_show_id
              WHERE tl.station_id = ? AND (tl.start_at + tl.play_s >= ? OR ls.`open` = 1
@@ -121,7 +121,8 @@ final class Planner
         $e['end'] = $e['start'] + $e['play'];
         if ($r['type'] === 'song') {
             $e += ['track_id' => (int) $r['track_id'], 'file' => $r['file'], 'title' => $r['track_title'] ?? 'Removed song',
-                   'artist' => $r['artist'], 'full' => (float) $r['full_s']];
+                   'artist' => $r['artist'], 'album' => $r['album'], 'art' => Library::artPath($r['art']),
+                   'rights' => Rights::forListeners($r['rights']), 'full' => (float) $r['full_s']];
         } else {
             $e += ['live_show_id' => (int) $r['live_show_id'], 'public_id' => $r['public_id'], 'open' => (bool) $r['open'],
                    'last_piece_at' => (float) $r['last_piece_at'], 'closed_reason' => $r['closed_reason'], 'title' => (string) $r['live_title']];

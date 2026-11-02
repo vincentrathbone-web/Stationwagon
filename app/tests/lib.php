@@ -97,11 +97,16 @@ function make_mp3(string $path, float $seconds, array $tags = [], int $salt = 0)
 {
     $frame = "\xFF\xFB\x90\x00" . str_repeat("\0", 413); // 417 bytes, 1152 samples
     $id3 = '';
-    foreach (['TIT2' => $tags['title'] ?? null, 'TPE1' => $tags['artist'] ?? null] as $id => $text) {
+    foreach (['TIT2' => $tags['title'] ?? null, 'TPE1' => $tags['artist'] ?? null, 'TCOP' => $tags['copyright'] ?? null,
+              'TPUB' => $tags['publisher'] ?? null, 'TCOM' => $tags['writers'] ?? null, 'TYER' => $tags['year'] ?? null] as $id => $text) {
         if ($text !== null) {
             $body = "\x03" . $text; // UTF-8
             $id3 .= $id . pack('N', strlen($body)) . "\0\0" . $body;
         }
+    }
+    if (isset($tags['art'])) { // an attached front cover (PNG or JPEG bytes)
+        $body = "\x00" . (str_starts_with($tags['art'], "\x89PNG") ? 'image/png' : 'image/jpeg') . "\0\x03\0" . $tags['art'];
+        $id3 .= 'APIC' . pack('N', strlen($body)) . "\0\0" . $body;
     }
     if ($id3 !== '') {
         $n = strlen($id3);

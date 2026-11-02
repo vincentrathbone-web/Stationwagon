@@ -30,10 +30,14 @@ namespace Stationwagon;
  *       re-levelling for a new target keeps its sound)
  *   v12 users.blocked_at (and per-person ticks, gone again in v13)
  *   v13 roles: the station's roles and what each may do; users.role holds a role's key
+ *   v14 tracks.art (album art) and tracks.rights (copyright details)
  */
 final class Schema
 {
-    public const VERSION = 13;
+    public const VERSION = 14;
+
+    /** Where the station's storage is, for upgrade steps that read files (the app's folder unless a test says otherwise). */
+    private static ?string $root = null;
 
     /** Table names without prefix, in creation order (foreign keys need their parents first). */
     public const TABLES = [
@@ -116,6 +120,8 @@ final class Schema
                 `level_gain_db` DECIMAL(5,2) NULL COMMENT 'the gain levelling applied',
                 `level_target` DECIMAL(4,1) NULL COMMENT 'the station loudness target it was levelled to (LUFS)',
                 `preset_settings` TEXT NULL COMMENT 'JSON: the mastering settings it was made with',
+                `art` VARCHAR(40) NULL COMMENT 'album art file under storage/art',
+                `rights` TEXT NULL COMMENT 'JSON: copyright details (Rights)',
                 `outro` MEDIUMTEXT NULL COMMENT 'JSON: loudness (LUFS) of each second of the last minute, from song prep',
                 `status` ENUM('processing','ready','error') NOT NULL DEFAULT 'ready',
                 `created_at` DATETIME NOT NULL,
@@ -516,6 +522,15 @@ final class Schema
                 fn(Db $db) => Roles::migrateTicks($db),
                 fn(Db $db) => $db->run('SHOW COLUMNS FROM ' . $db->table('users') . " LIKE 'permissions'")->fetch() ? $db->pdo->exec("ALTER TABLE `{$p}users` DROP COLUMN `permissions`") : null,
             ],
+            // album art and copyright details per song
+            14 => [
+                fn(Db $db) => $db->run("SHOW COLUMNS FROM `{$p}tracks` LIKE 'art'")->fetch() ? null
+                    : $db->pdo->exec("ALTER TABLE `{$p}tracks` ADD COLUMN `art` VARCHAR(40) NULL COMMENT 'album art file under storage/art' AFTER `preset_settings`"),
+                fn(Db $db) => $db->run("SHOW COLUMNS FROM `{$p}tracks` LIKE 'rights'")->fetch() ? null
+                    : $db->pdo->exec("ALTER TABLE `{$p}tracks` ADD COLUMN `rights` TEXT NULL COMMENT 'JSON: copyright details (Rights)' AFTER `art`"),
+                // songs already in the library: take the art and copyright details from their tags
+                fn(Db $db) => Library::backfillTags($db, self::$root ?? SW_ROOT),
+            ],
         ];
     }
 
@@ -534,8 +549,9 @@ final class Schema
      * requests never run the same step. Each step only adds (CREATE TABLE IF NOT EXISTS and the
      * like), so a step cut short can simply run again. @return list<int> the versions applied
      */
-    public static function upgrade(Db $db): array
+    public static function upgrade(Db $db, ?string $root = null): array
     {
+        self::$root = $root;
         $lock = 'sw.schema.' . substr(sha1((string) $db->pdo->query('SELECT DATABASE()')->fetchColumn() . '|' . $db->prefix), 0, 24);
         if ((int) $db->run('SELECT GET_LOCK(?, 10)', [$lock])->fetchColumn() !== 1) {
             throw new \RuntimeException('Another request is upgrading the database. Try again.');

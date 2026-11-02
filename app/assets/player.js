@@ -639,6 +639,23 @@
 
   // ---- Screen ----------------------------------------------------------------------------------
   let shownKey = null;
+  /** The copyright line under the song's title (round 45); a click opens the full details. */
+  let rightsOf = null;
+  function showRights(song) {
+    rightsOf = song && song.rights ? song : null;
+    const b = $("lpRights");
+    b.hidden = !rightsOf;
+    b.textContent = rightsOf ? rightsOf.rights.line : "";
+    b.title = rightsOf ? "Copyright details" : "";
+  }
+  $("lpRights").addEventListener("click", () => {
+    const dlg = $("lpRDlg");
+    if (!rightsOf || !dlg || typeof dlg.showModal !== "function" || !window.SwRights) return;
+    $("lpRSong").textContent = label(rightsOf);
+    $("lpRBody").replaceChildren(SwRights.details(rightsOf.rights));
+    dlg.showModal();
+  });
+  $("lpRClose").addEventListener("click", () => $("lpRDlg").close());
   function show(cur, next, h, list) {
     $("lpBehind").textContent = DELAY + " s behind live";
     $("lpDrops").textContent = player.drops;
@@ -658,8 +675,10 @@
     if (key(cur) !== shownKey) {
       shownKey = key(cur);
       $("lpTitle").textContent = label(cur);
+      showRights(live ? null : cur);
       if ("mediaSession" in navigator && window.MediaMetadata) {
-        navigator.mediaSession.metadata = new MediaMetadata({ title: live ? "LIVE · " + cur.title : cur.title, artist: live ? root.dataset.station : (cur.artist || root.dataset.station), album: root.dataset.station });
+        navigator.mediaSession.metadata = new MediaMetadata({ title: live ? "LIVE · " + cur.title : cur.title, artist: live ? root.dataset.station : (cur.artist || root.dataset.station), album: (!live && cur.album) || root.dataset.station,
+          artwork: !live && cur.art ? [{ src: new URL(cur.art, BASE).href }] : [] });
       }
     }
     const around = list.filter((e) => e.end > h - 600).slice(0, 8);

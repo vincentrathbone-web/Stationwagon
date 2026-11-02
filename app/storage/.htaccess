@@ -1,9 +1,12 @@
-# Uploaded songs, live pieces and published podcast episodes are served as files, and so is the
-# podcast's cover; everything else in storage stays private (a podcast's raw tracks and drafts are .chunk)
+# Uploaded songs, live pieces and published podcast episodes are served as files, and so are the
+# podcast's cover and the songs' album art; everything else in storage stays private (a podcast's raw tracks and drafts are .chunk)
 Require all denied
 <FilesMatch "\.mp3$">
   Require all granted
 </FilesMatch>
 <FilesMatch "^cover-[0-9a-f]{12}\.(jpg|png)$">
+  Require all granted
+</FilesMatch>
+<FilesMatch "^art-[0-9a-f]{12}\.(jpg|png)$">
   Require all granted
 </FilesMatch>

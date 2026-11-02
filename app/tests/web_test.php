@@ -239,7 +239,7 @@ try {
     $sorted = $starts;
     rsort($sorted);
     check('  recent songs are newest first and already over', count($starts) <= 5 && $starts === $sorted && !array_filter($starts, fn($t) => $t >= $np['on_air']['started']), implode(' ', $starts));
-    check('  no file addresses in it', !str_contains($r['body'], '.mp3') && !str_contains($r['body'], 'storage/'));
+    check('  no file addresses in it', !str_contains($r['body'], '.mp3') && !str_contains(str_replace('storage\/art\/', '', $r['body']), 'storage/') && !str_contains(str_replace('storage/art/', '', $r['body']), 'storage/'));
     $e = new Browser($base);
     $r = $e->go('embed');
     check('the embed page opens', $r['status'] === 200 && str_contains($r['body'], 'id="embed"') && preg_match('~assets/embed\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1, (string) $r['status']);
@@ -557,7 +557,7 @@ try {
         $file = $db->run('SELECT file FROM ' . $db->table('tracks') . ' WHERE id = ?', [$trackId])->fetchColumn();
         check('the song is served from storage', (new Browser($base))->go("storage/media/$file", null, ['Range: bytes=0-1'])['status'] === 206);
         $r = $m->go('manage/library?q=' . rawurlencode($tag));
-        check('search finds it', substr_count($r['body'], '<td><b>') === 1 && str_contains($r['body'], htmlspecialchars($title)));
+        check('search finds it', substr_count($r['body'], '<b class="tt">') === 1 && str_contains($r['body'], htmlspecialchars($title)));
         $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'update', 'id' => $trackId, 'title' => "$title (edited)", 'artist' => 'Test Choir']);
         check('its title can be changed', $flashed($p = $after($m, $r), 'Saved.') && str_contains($p['body'], 'edited'));
 

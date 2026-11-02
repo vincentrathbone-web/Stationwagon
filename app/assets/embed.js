@@ -63,8 +63,35 @@
       : on.title + (on.artist ? ` · ${on.artist}` : "");
     const next = np && np.next && np.next[0];
     $("emNext").textContent = next && !live ? `Next: ${next.title}` : "";
+    songLook(on && !live ? on : null);
     tick();
   }
+
+  /** The song's album art in place of the CD, and its copyright line under the title (round 45); a click opens the details. */
+  let rightsOf = null, artShown = null;
+  function songLook(song) {
+    const art = song && song.art ? BASE + song.art : null;
+    if (art !== artShown) {
+      artShown = art;
+      const img = $("emArtImg");
+      img.hidden = !art;
+      if (art) img.src = art; else img.removeAttribute("src");
+      $("emArt").classList.toggle("has-art", !!art);
+    }
+    rightsOf = song && song.rights ? song : null;
+    const b = $("emRights");
+    b.hidden = !rightsOf;
+    b.textContent = rightsOf ? rightsOf.rights.line : "";
+    if (!rightsOf) $("emRDlg").hidden = true;
+  }
+  $("emRights").addEventListener("click", () => {
+    if (!rightsOf || !window.SwRights) return;
+    $("emRSong").textContent = rightsOf.title + (rightsOf.artist ? ` · ${rightsOf.artist}` : "");
+    $("emRBody").replaceChildren(SwRights.details(rightsOf.rights));
+    $("emRDlg").hidden = false;
+    $("emRClose").focus();
+  });
+  $("emRClose").addEventListener("click", () => { $("emRDlg").hidden = true; $("emRights").focus(); });
 
   /** Stream time being heard, from the pieces' PROGRAM-DATE-TIME; null before it plays. */
   function playingDate() {

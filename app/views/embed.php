@@ -16,7 +16,8 @@ $name = $station['name'] ?? 'Stationwagon';
 <body class="embed">
 <div class="em" id="embed" data-base="<?= h(App::url('')) ?>" data-meter="<?= h(App::asset('assets/outwave-meter.js')) ?>">
   <?php /* shown when the frame is tall enough (280 px and up, app.css): the album art, the copyright line, the spectrum and the output strip */ ?>
-  <div class="em-art" id="emArt" role="img" aria-label="Album art (placeholder: a CD in its case)">
+  <div class="em-art" id="emArt" role="img" aria-label="Album art (a CD in its case when the song has none)">
+    <img id="emArtImg" alt="" hidden>
     <svg viewBox="0 0 120 120" aria-hidden="true">
       <rect class="cd-case" x="3" y="3" width="114" height="114" rx="5"/>
       <rect class="cd-hinge" x="3" y="3" width="12" height="114" rx="3"/>
@@ -36,13 +37,18 @@ $name = $station['name'] ?? 'Stationwagon';
   <div class="em-body">
     <p class="em-top"><span class="em-lamp" id="emLamp"><i></i><span id="emMode">AutoDJ</span></span><a class="em-name" href="<?= h(App::url('')) ?>" target="_blank" rel="noopener"><?= h($name) ?></a></p>
     <p class="em-title" id="emTitle" aria-live="polite">Loading…</p>
-    <p class="em-rights" id="emRights">© Copyright owner · placeholder</p>
+    <button class="em-rights" id="emRights" type="button" hidden aria-haspopup="dialog"></button>
     <canvas class="em-spec" id="emSpec" aria-hidden="true"></canvas>
   </div>
   <canvas class="em-wave" id="emWave" role="img" aria-label="What you hear: the sound scrolling past the white line (now), the coming seconds dimmed on the right"></canvas>
   <div class="em-prog">
     <div class="em-bar" aria-hidden="true"><div id="emFill"></div></div>
     <p class="em-meta"><span id="emState">Press play to listen</span><span id="emNext"></span></p>
+  </div>
+  <div class="em-rdlg" id="emRDlg" role="dialog" aria-label="Copyright details" hidden>
+    <p class="em-rsong" id="emRSong"></p>
+    <div id="emRBody"></div>
+    <button class="btn sm" type="button" id="emRClose">Close</button>
   </div>
   <div class="em-side">
     <a class="em-open" href="<?= h(App::url('')) ?>" target="_blank" rel="noopener">Open the player <span aria-hidden="true">↗</span></a>
@@ -53,6 +59,7 @@ $name = $station['name'] ?? 'Stationwagon';
 <script src="<?= h(App::asset('assets/listeners.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/outwave.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/spectrum.js')) ?>" defer></script>
+<script src="<?= h(App::asset('assets/rights.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/embed.js')) ?>" defer></script>
 </body>
 </html>

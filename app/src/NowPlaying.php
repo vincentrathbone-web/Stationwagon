@@ -6,7 +6,7 @@ namespace Stationwagon;
 /**
  * What listeners hear right now, for `api/nowplaying.php` (other websites, apps, the embed): the
  * station's own player is the listener delay behind "now", so everything here is told at that
- * moment. Titles and times only; no file addresses.
+ * moment. Titles and times only (and a song's album art address and copyright details); no audio file addresses.
  */
 final class NowPlaying
 {
@@ -70,6 +70,7 @@ final class NowPlaying
 
     private static function song(array $e): array
     {
-        return ['title' => (string) $e['title'], 'artist' => $e['artist'] === null || $e['artist'] === '' ? null : (string) $e['artist']];
+        return ['title' => (string) $e['title'], 'artist' => $e['artist'] === null || $e['artist'] === '' ? null : (string) $e['artist'],
+                'art' => $e['art'] ?? null, 'rights' => $e['rights'] ?? null];
     }
 }

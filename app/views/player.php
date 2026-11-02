@@ -12,6 +12,7 @@ $hm = fn(string $t): string => substr($t, 0, 5);
       <div class="lp-lcd">
         <span class="lp-time" id="lpTime">0:00</span>
         <div class="lp-marquee" aria-live="polite"><span id="lpTitle"><?= h($onAir['current']['title'] ?? 'Loading…') ?></span></div>
+        <button class="lp-rights" id="lpRights" type="button" hidden aria-haspopup="dialog"></button>
         <canvas id="lpSpec" aria-hidden="true"></canvas>
         <div class="lp-mode"><span id="lpNext"></span><span id="lpBehind"><?= (int) $delay ?> s behind live</span></div>
       </div>
@@ -77,10 +78,17 @@ $hm = fn(string $t): string => substr($t, 0, 5);
 </div>
 <p class="lp-foot"><a href="<?= h(App::url('podcast')) ?>">Podcast: past shows</a> · Listening sets no cookies. The station counts its listeners for 30 days by internet address and browser: <a href="<?= h(App::url('privacy')) ?>">Privacy</a></p>
 <div class="lp-toast" id="lpToast" role="status" hidden></div>
+<dialog class="rightsdlg" id="lpRDlg" aria-labelledby="lpRTitle">
+  <h2 id="lpRTitle">Copyright</h2>
+  <p class="muted2" id="lpRSong"></p>
+  <div id="lpRBody"></div>
+  <div class="dlgbtns"><button class="btn primary" type="button" id="lpRClose">Close</button></div>
+</dialog>
 <script src="<?= h(App::asset('assets/fades.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/outwave.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/spectrum.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/listeners.js')) ?>" defer></script>
+<script src="<?= h(App::asset('assets/rights.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/player.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/diag.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/notes.js')) ?>" defer></script>

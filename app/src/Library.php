@@ -82,6 +82,8 @@ final class Library
             'mastered' => $mastered && $sourceSha1 !== null ? 1 : 0,
             'preset' => $mastered && $sourceSha1 !== null && $preset !== null && trim($preset) !== '' ? mb_substr(trim($preset), 0, 60) : null,
             'outro' => self::outro($outro),
+            'art' => isset($tags['art']) ? $this->storeArt($tags['art']['data']) : null,
+            'rights' => Rights::encode(Rights::normalize(self::rightsFromTags($tags))),
             'status' => 'ready',
             'created_at' => gmdate('Y-m-d H:i:s'),
         ]);
@@ -133,7 +135,7 @@ final class Library
             array_push($args, $like, $like);
         }
         return $this->db->run(
-            "SELECT t.id, t.file, t.sha1, t.title, t.artist, t.album, t.duration_s, t.bitrate_kbps, t.bytes, t.loudness_lufs, t.source_lufs, t.level_gain_db, t.level_target, t.mastered, t.preset, t.preset_settings, t.created_at,
+            "SELECT t.id, t.file, t.sha1, t.title, t.artist, t.album, t.duration_s, t.bitrate_kbps, t.bytes, t.loudness_lufs, t.source_lufs, t.level_gain_db, t.level_target, t.mastered, t.preset, t.preset_settings, t.art, t.rights, t.created_at,
                     (SELECT COUNT(*) FROM $pt pt WHERE pt.track_id = t.id) AS playlists
              FROM $t t WHERE $where ORDER BY t.title, t.id",
             $args
@@ -146,8 +148,8 @@ final class Library
         return $row ?: null;
     }
 
-    /** Change the title and artist people see. Returns what's wrong, or null. */
-    public function update(int $id, string $title, string $artist): ?string
+    /** Change the title, artist and album people see. Returns what's wrong, or null. */
+    public function update(int $id, string $title, string $artist, ?string $album = null): ?string
     {
         $title = trim($title);
         if ($title === '') {
@@ -156,9 +158,131 @@ final class Library
         if ($this->get($id) === null) {
             return 'That song isn’t in this library.';
         }
-        $this->db->run('UPDATE ' . $this->db->table('tracks') . ' SET title = ?, artist = ? WHERE id = ?',
-            [mb_substr($title, 0, 255), trim($artist) !== '' ? mb_substr(trim($artist), 0, 255) : null, $id]);
+        $this->db->run('UPDATE ' . $this->db->table('tracks') . ' SET title = ?, artist = ?' . ($album !== null ? ', album = ?' : '') . ' WHERE id = ?',
+            array_merge([mb_substr($title, 0, 255), trim($artist) !== '' ? mb_substr(trim($artist), 0, 255) : null],
+                $album !== null ? [trim($album) !== '' ? mb_substr(trim($album), 0, 255) : null] : [], [$id]));
         return null;
+    }
+
+    /** Copyright details from a file's tags: the © text without its © and year, the year, publisher and composers. */
+    public static function rightsFromTags(array $tags): array
+    {
+        $c = trim((string) ($tags['copyright'] ?? ''));
+        $owner = trim((string) preg_replace('/^(?:©|\(c\))?\s*\d{4}\s*/iu', '', (string) preg_replace('/^\s*(?:©|\(c\)|copyright)\s*/iu', '', $c)));
+        return ['owner' => $owner, 'year' => $tags['year'] ?? (preg_match('/\d{4}/', $c, $y) ? $y[0] : ''),
+                'publisher' => $tags['publisher'] ?? '', 'writers' => $tags['writers'] ?? ''];
+    }
+
+    /** Schema 14: read every song's tags once for its album art and copyright details (where it has none). */
+    public static function backfillTags(Db $db, string $root): void
+    {
+        $t = $db->table('tracks');
+        $lib = new self($db, ['id' => 0], $root);
+        foreach ($db->run("SELECT id, file FROM $t WHERE art IS NULL AND rights IS NULL")->fetchAll() as $r) {
+            $path = $root . '/storage/media/' . basename((string) $r['file']);
+            if (!is_file($path)) {
+                continue;
+            }
+            $tags = Mp3::tags($path);
+            $art = isset($tags['art']) ? $lib->storeArt($tags['art']['data']) : null;
+            $rights = Rights::encode(Rights::normalize(self::rightsFromTags($tags)));
+            if ($art !== null || $rights !== null) {
+                $db->run("UPDATE $t SET art = ?, rights = ? WHERE id = ?", [$art, $rights, $r['id']]);
+            }
+        }
+    }
+
+    /** The folder album art is kept in (storage/art; its files are served, see storage/.htaccess). */
+    private function artDir(): string
+    {
+        return $this->root . '/storage/art';
+    }
+
+    /**
+     * Keep a picture as album art: a JPEG or PNG of up to 3 MB, made no bigger than 800 px where
+     * the server can (GD). Returns the file's name, or null when it isn't a usable picture.
+     */
+    public function storeArt(string $bytes): ?string
+    {
+        if ($bytes === '' || strlen($bytes) > 3 * 1024 * 1024) {
+            return null;
+        }
+        $info = @getimagesizefromstring($bytes);
+        if (!$info || !in_array($info[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG], true) || $info[0] < 16 || $info[1] < 16 || $info[0] > 6000 || $info[1] > 6000) {
+            return null;
+        }
+        $png = $info[2] === IMAGETYPE_PNG;
+        if (max($info[0], $info[1]) > 800 && function_exists('imagecreatefromstring') && ($img = @imagecreatefromstring($bytes)) !== false) {
+            $wide = $info[0] >= $info[1];
+            $small = imagescale($img, $wide ? 800 : (int) round(800 * $info[0] / $info[1]), $wide ? (int) round(800 * $info[1] / $info[0]) : 800);
+            if ($small !== false) {
+                ob_start();
+                $png ? imagepng($small, null, 7) : imagejpeg($small, null, 86);
+                $bytes = (string) ob_get_clean();
+            }
+        }
+        $name = 'art-' . substr(sha1($bytes), 0, 12) . ($png ? '.png' : '.jpg');
+        $dir = $this->artDir();
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            return null;
+        }
+        if (!is_file("$dir/$name") && file_put_contents("$dir/$name", $bytes) === false) {
+            return null;
+        }
+        @chmod("$dir/$name", 0644);
+        return $name;
+    }
+
+    /** Put a picture on a song as its album art, or take the art off with null. Returns what's wrong, or null. */
+    public function setArt(int $id, ?string $bytes): ?string
+    {
+        $track = $this->get($id);
+        if ($track === null) {
+            return 'That song isn’t in this library.';
+        }
+        $name = null;
+        if ($bytes !== null) {
+            $name = $this->storeArt($bytes);
+            if ($name === null) {
+                return 'The album art must be a JPEG or PNG picture of up to 3 MB.';
+            }
+        }
+        $this->db->run('UPDATE ' . $this->db->table('tracks') . ' SET art = ? WHERE id = ?', [$name, $id]);
+        $this->dropUnusedArt($track['art']);
+        return null;
+    }
+
+    private function dropUnusedArt(?string $art): void
+    {
+        if (self::artPath($art) === null) {
+            return;
+        }
+        if ((int) $this->db->run('SELECT COUNT(*) FROM ' . $this->db->table('tracks') . ' WHERE art = ?', [$art])->fetchColumn() === 0) {
+            @unlink($this->artDir() . '/' . $art);
+        }
+    }
+
+    /** Save a song's copyright details (see Rights); nothing set clears them. Returns what's wrong, or null. */
+    public function setRights(int $id, array $in): ?string
+    {
+        if ($this->get($id) === null) {
+            return 'That song isn’t in this library.';
+        }
+        $this->db->run('UPDATE ' . $this->db->table('tracks') . ' SET rights = ? WHERE id = ?', [Rights::encode(Rights::normalize($in)), $id]);
+        return null;
+    }
+
+    /** The address of a song's album art, relative to the app, or null. */
+    public static function artPath(?string $art): ?string
+    {
+        return $art !== null && preg_match('/^art-[0-9a-f]{12}\.(jpg|png)$/', $art) ? 'storage/art/' . $art : null;
+    }
+
+    /** A song as the library screen's script wants it (edit row, copyright window), after any change. */
+    public static function row(array $t): array
+    {
+        return ['id' => (int) $t['id'], 'title' => $t['title'], 'artist' => $t['artist'] ?? '', 'album' => $t['album'] ?? '',
+                'art' => self::artPath($t['art'] ?? null), 'rights' => Rights::decode($t['rights'] ?? null) ?? new \stdClass()];
     }
 
     /**
@@ -180,6 +304,7 @@ final class Library
         $this->db->run('DELETE FROM ' . $this->db->table('tracks') . ' WHERE id = ?', [$id]);
         $planner->replan($now); // drops planned plays of the song
         $this->dropUnused($track['file']);
+        $this->dropUnusedArt($track['art']);
         $kept = (int) $this->db->run('SELECT COUNT(*) FROM ' . $this->db->table('tracks') . ' WHERE sha1 = ?', [$track['sha1']])->fetchColumn();
         if ($kept === 0) {
             @unlink($this->originalsDir() . '/' . $track['sha1'] . '.mp3');

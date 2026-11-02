@@ -100,11 +100,31 @@ final class ManagePage
                         'target' => StationSettings::prep($this->station)[2], 'relevel' => $this->relevelList($library)]);
                 }
                 Session::flash('ok', 'Song prep choices saved.');
-            } elseif ($action === 'update') {
-                $problem = $library->update((int) ($_POST['id'] ?? 0), (string) ($_POST['title'] ?? ''), (string) ($_POST['artist'] ?? ''));
-                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Saved. Listeners see the new title from the next time it plays.');
+            } elseif (in_array($action, ['update', 'art', 'art_remove', 'rights'], true)) {
+                // saved without leaving the page (library.js asks for JSON and updates the row); the forms still work without it
+                $id = (int) ($_POST['id'] ?? 0);
+                if ($action === 'update') {
+                    $problem = $library->update($id, (string) ($_POST['title'] ?? ''), (string) ($_POST['artist'] ?? ''), isset($_POST['album']) ? (string) $_POST['album'] : null);
+                } elseif ($action === 'art') {
+                    $file = $_FILES['art'] ?? null;
+                    $ok = is_array($file) && (int) $file['error'] === UPLOAD_ERR_OK && (is_uploaded_file((string) $file['tmp_name']) || PHP_SAPI === 'cli');
+                    $problem = $ok ? $library->setArt($id, (string) file_get_contents((string) $file['tmp_name'])) : 'The picture didn’t arrive. Try a smaller one (up to 3 MB).';
+                } elseif ($action === 'art_remove') {
+                    $problem = $library->setArt($id, null);
+                } else {
+                    $problem = $library->setRights($id, $_POST);
+                }
+                $track = $problem === null ? $library->get($id) : null;
+                if ($wantsJson) {
+                    $this->json($track !== null ? ['ok' => true, 'track' => Library::row($track), 'line' => Rights::line(Rights::decode($track['rights']))]
+                        : ['ok' => false, 'error' => $problem ?? 'That song isn’t in this library.']);
+                }
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? ($action === 'update' ? 'Saved. Listeners see the new title from the next time it plays.' : 'Saved.'));
             } elseif ($action === 'delete') {
                 $problem = $library->delete((int) ($_POST['id'] ?? 0), $this->planner, microtime(true));
+                if ($wantsJson) {
+                    $this->json(['ok' => $problem === null, 'error' => $problem, 'summary' => count($library->tracks()) . ' songs · ' . megabytes($library->bytes())]);
+                }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Song removed from the library.');
             }
             App::redirect('manage/library' . (isset($_POST['q']) && $_POST['q'] !== '' ? '?q=' . rawurlencode((string) $_POST['q']) : ''));

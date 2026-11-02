@@ -5,6 +5,9 @@
 //   php browser_helper.php track <title>      -> the newest ready track with that title, or null
 //   php browser_helper.php presets [clear <name prefix> | default <id>]  -> {"presets", "default"}
 //   php browser_helper.php cleanup <user id> [<title> ...]
+//   php browser_helper.php lib-songs <n>    -> n throwaway songs "Web Test Lib NN" and one tagged with a cover and copyright: {"ids", "tagged"}
+//   php browser_helper.php lib-info <id>    -> the song's title, art file and rights
+//   php browser_helper.php lib-clean        (every "Web Test Lib" song, and their art)
 //   php browser_helper.php live-start <title> -> {"public_id", "start"}
 //   php browser_helper.php live-piece <public id> <seq> <mp3 file> [<seconds> | auto]
 //   php browser_helper.php live-end <public id>
@@ -64,6 +67,60 @@ if ($cmd === 'manager') {
     }
     [$m, $l, $tg] = StationSettings::prep($station);
     echo json_encode(['master' => $m, 'level' => $l, 'target' => $tg]);
+} elseif ($cmd === 'lib-songs') {
+    $dir = sys_get_temp_dir() . '/sw-lib-test-' . bin2hex(random_bytes(3));
+    mkdir($dir);
+    $lib = new Library($db, $station, SW_ROOT);
+    $frame = "\xFF\xFB\x90\x00" . str_repeat("\0", 413);
+    $mp3 = function (string $path, int $salt, array $tags = []) use ($frame): void {
+        $id3 = '';
+        foreach (['TIT2' => $tags['title'] ?? null, 'TPE1' => $tags['artist'] ?? null, 'TCOP' => $tags['copyright'] ?? null, 'TPUB' => $tags['publisher'] ?? null, 'TCOM' => $tags['writers'] ?? null] as $fid => $text) {
+            if ($text !== null) {
+                $body = "\x03" . $text;
+                $id3 .= $fid . pack('N', strlen($body)) . "\0\0" . $body;
+            }
+        }
+        if (isset($tags['art'])) {
+            $body = "\x00image/png\0\x03\0" . $tags['art'];
+            $id3 .= 'APIC' . pack('N', strlen($body)) . "\0\0" . $body;
+        }
+        if ($id3 !== '') {
+            $n = strlen($id3);
+            $id3 = "ID3\x03\x00\x00" . chr(($n >> 21) & 0x7f) . chr(($n >> 14) & 0x7f) . chr(($n >> 7) & 0x7f) . chr($n & 0x7f) . $id3;
+        }
+        file_put_contents($path, $id3 . str_repeat($frame, 100) . substr_replace($frame, chr($salt & 0xff) . chr(($salt >> 8) & 0xff), 100, 2));
+    };
+    $ids = [];
+    for ($i = 1; $i <= (int) ($argv[2] ?? 30); $i++) {
+        $mp3("$dir/s$i.mp3", $i + random_int(0, 60000));
+        $ids[] = $lib->import("$dir/s$i.mp3", sprintf('Web Test Lib %02d', $i), 'Web Tester', "s$i.mp3")['id'];
+    }
+    $im = imagecreatetruecolor(400, 400);
+    imagefill($im, 0, 0, imagecolorallocate($im, 30, 120, 200));
+    ob_start();
+    imagepng($im);
+    $png = (string) ob_get_clean();
+    $mp3("$dir/tagged.mp3", random_int(0, 60000), ['title' => 'Web Test Lib Tagged', 'artist' => 'Web Tester', 'copyright' => '© 2021 Test Owner', 'publisher' => 'Test Press', 'writers' => 'T. Writer', 'art' => $png]);
+    $tagged = $lib->import("$dir/tagged.mp3", null, null, 'tagged.mp3')['id'];
+    array_map('unlink', glob("$dir/*.mp3") ?: []);
+    @rmdir($dir);
+    echo json_encode(['ids' => $ids, 'tagged' => $tagged]);
+} elseif ($cmd === 'lib-info') {
+    $r = (new Library($db, $station, SW_ROOT))->get((int) ($argv[2] ?? 0));
+    echo json_encode($r ? ['title' => $r['title'], 'artist' => $r['artist'], 'album' => $r['album'], 'art' => $r['art'], 'rights' => $r['rights'] === null ? null : json_decode($r['rights'], true)] : null);
+} elseif ($cmd === 'lib-clean') {
+    $lib = new Library($db, $station, SW_ROOT);
+    $n = 0;
+    foreach ($db->run('SELECT id FROM ' . $db->table('tracks') . ' WHERE station_id = ? AND title LIKE ?', [$station['id'], 'Web Test Lib%'])->fetchAll(PDO::FETCH_COLUMN) as $id) {
+        if ($lib->delete((int) $id, $planner, microtime(true)) !== null) {
+            $db->run('UPDATE ' . $db->table('tracks') . " SET status = 'error', title = CONCAT('[test] ', title) WHERE id = ?", [$id]); // on air now: hidden, removed by the next run
+        }
+        $n++;
+    }
+    foreach ($db->run('SELECT id FROM ' . $db->table('tracks') . ' WHERE station_id = ? AND title LIKE ?', [$station['id'], '[test] Web Test Lib%'])->fetchAll(PDO::FETCH_COLUMN) as $id) {
+        $lib->delete((int) $id, $planner, microtime(true));
+    }
+    echo json_encode(['cleaned' => $n]);
 } elseif ($cmd === 'cleanup') {
     $db->run('DELETE FROM ' . $db->table('users') . ' WHERE id = ? AND email LIKE ?', [(int) ($argv[2] ?? 0), 'web-test-%']);
     $lib = new Library($db, $station, SW_ROOT);

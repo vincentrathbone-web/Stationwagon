@@ -223,6 +223,51 @@ td.cando { font-size: 13px; color: var(--muted); max-width: 260px; }
   table.people.roles td:nth-child(3) { display: none; }
   table.people.roles td.acts { display: block; grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 }
+/* music library: album art, the © badge, saving in place, the copyright window (round 45) */
+td.c-title .tx { display: block; min-width: 0; }
+td.c-title { display: flex; gap: 10px; align-items: center; }
+td.c-title .arts { flex: none; width: 40px; height: 40px; border-radius: var(--r-small); background: var(--raised); overflow: hidden; display: block; }
+td.c-title .arts img { width: 40px; height: 40px; object-fit: cover; display: block; }
+td .sub.alb:empty { display: none; }
+.pill.rights { color: var(--cue); background: var(--raised); letter-spacing: .04em; text-transform: none; font-size: 11px; border: 0; cursor: pointer; }
+.pill.rights:hover { background: var(--raised-hover); }
+tr.saved td { animation: rowSaved 1.2s ease-out; }
+@keyframes rowSaved { from { background: var(--accent-bg); } to { background: transparent; } }
+.libedit .artbox { flex: 1 1 100%; display: flex; gap: 14px; align-items: center; }
+.libedit .artpic { width: 96px; height: 96px; border-radius: var(--r-box); background: var(--panel); border: 1px dashed var(--edge); overflow: hidden; display: grid; place-items: center; color: var(--faint); font-size: 12px; text-align: center; }
+.libedit .artpic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.libedit .artbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+.libedit .editbtns { flex: 1 1 100%; display: flex; gap: 8px; flex-wrap: wrap; }
+.libedit .editmsg { flex: 1 1 100%; margin: 0; min-height: 1.3em; }
+.libedit .editmsg.bad { color: var(--onair); font-weight: 600; }
+dialog.rightsdlg { background: var(--panel); color: var(--ink); border: 1px solid var(--edge); border-radius: var(--r-card); padding: 22px; width: min(640px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; }
+dialog.rightsdlg::backdrop { background: color-mix(in srgb, var(--ground) 75%, transparent); }
+dialog.rightsdlg h2 { margin: 0 0 4px; }
+.rgrid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; margin: 14px 0; }
+.rgrid .wide { grid-column: 1 / -1; }
+.rgrid input, .rtlink input { background: var(--raised); color: var(--ink); border: 1px solid transparent; border-radius: var(--r-field); font: 500 15px var(--f-ui); padding: 10px 12px; width: 100%; }
+.rtbar, .rtlink { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.rtlink input { flex: 1 1 240px; width: auto; }
+.rtedit { min-height: 140px; max-height: 40vh; overflow: auto; background: var(--raised); border-radius: var(--r-field); padding: 10px 12px; font: 500 15px/1.5 var(--f-ui); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rtedit:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.rtedit a, .rights-notes a { color: var(--cue); text-decoration: underline; }
+.dlgbtns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+@media (max-width: 700px) {
+  .rgrid { grid-template-columns: minmax(0, 1fr); }
+  dialog.rightsdlg { padding: 16px; }
+}
+/* the copyright line under a song's title in the player and the embed, and its details (round 45) */
+.lp-rights { grid-column: 2; appearance: none; border: 0; background: none; padding: 0; margin: 0; text-align: left; cursor: pointer; font: 500 12px var(--f-body); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.lp-rights:hover { color: var(--ink); text-decoration: underline; }
+.lp-rights[hidden], .em-rights[hidden], .em-rdlg[hidden] { display: none; }
+.rights-list { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin: 10px 0; }
+.rights-list dt { color: var(--muted); font-size: 13px; font-weight: 600; }
+.rights-list dd { margin: 0; overflow-wrap: anywhere; }
+.rights-notes { margin: 10px 0; overflow-wrap: anywhere; line-height: 1.5; }
+.em-art img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: var(--r-small); }
+.em-art.has-art svg { display: none; }
+.em-rdlg { position: absolute; inset: 0; z-index: 3; background: var(--panel); border-radius: var(--r-card); padding: 14px 16px; overflow: auto; }
+.em-rdlg .em-rsong { margin: 0 0 4px; font-weight: 700; }
 .permform .hint, .formrow > .hint { font-size: 12px; color: var(--faint); margin: 0; }
 .formrow > .hint.grow { flex: 1 1 260px; margin-top: 25px; font-size: 13px; color: var(--muted); }
 .muted2 { color: var(--muted); font-size: 14px; }
@@ -694,7 +739,8 @@ body.embed { height: 100%; }
   .em-art { display: block; grid-area: art; width: 112px; height: 112px; }
   .em-art svg { display: block; width: 100%; height: 100%; }
   .em-body { align-self: stretch; display: flex; flex-direction: column; }
-  .em-rights { display: block; font-size: 12px; color: var(--faint); margin-top: 2px !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .em-rights { display: block; appearance: none; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; font: inherit; font-size: 12px; color: var(--faint); margin-top: 2px !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .em-rights:hover { color: var(--ink); text-decoration: underline; }
   .em-spec { display: block; width: 100%; height: 0; flex: 1 1 0; min-height: 36px; margin-top: 8px; } /* height 0: a canvas is 150 px tall by itself */
   .em-wave { display: block; grid-area: wave; width: 100%; height: 56px; border-radius: var(--r-chip); background: var(--lcd); box-shadow: var(--well-shadow); }
   .em-play { align-self: center; }

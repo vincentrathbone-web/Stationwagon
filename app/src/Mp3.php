@@ -97,10 +97,14 @@ final class Mp3
         ];
     }
 
-    /** Title, artist and album from an ID3v2.3/2.4 tag, when there is one. */
+    /**
+     * Title, artist and album from an ID3v2.3/2.4 tag, when there is one; also its copyright text
+     * (`copyright`), publisher, composers (`writers`), year, and the attached picture (`art`: mime
+     * and bytes of the front cover, or the first picture). The picture may be up to 3 MB.
+     */
     public static function tags(string $path): array
     {
-        $head = (string) file_get_contents($path, false, null, 0, 256 * 1024);
+        $head = (string) file_get_contents($path, false, null, 0, 3 * 1024 * 1024 + 256 * 1024);
         $out = [];
         if (strlen($head) < 10 || substr($head, 0, 3) !== 'ID3' || !in_array(ord($head[3]), [3, 4], true)) {
             return $out;
@@ -108,7 +112,9 @@ final class Mp3
         $v4 = ord($head[3]) === 4;
         $end = min(strlen($head), self::id3Size($head));
         $pos = 10;
-        $names = ['TIT2' => 'title', 'TPE1' => 'artist', 'TALB' => 'album'];
+        $names = ['TIT2' => 'title', 'TPE1' => 'artist', 'TALB' => 'album', 'TCOP' => 'copyright', 'TPUB' => 'publisher',
+                  'TCOM' => 'writers', 'TYER' => 'year', 'TDRC' => 'year'];
+        $pictures = [];
         while ($pos + 10 <= $end) {
             $id = substr($head, $pos, 4);
             if (!preg_match('/^[A-Z0-9]{4}$/', $id)) {
@@ -123,9 +129,50 @@ final class Mp3
                     $out[$names[$id]] = $text;
                 }
             }
+            if ($id === 'APIC' && $size > 20 && $size <= 3 * 1024 * 1024 && ($pic = self::picture($body)) !== null) {
+                $pictures[$pic['type']] = $pic;
+            }
             $pos += 10 + $size;
         }
+        if ($pictures) {
+            $pic = $pictures[3] ?? reset($pictures); // 3: front cover
+            $out['art'] = ['mime' => $pic['mime'], 'data' => $pic['data']];
+        }
+        if (isset($out['year']) && preg_match('/\d{4}/', $out['year'], $m)) {
+            $out['year'] = $m[0];
+        }
         return $out;
+    }
+
+    /** An APIC frame's body: text encoding, mime type, picture type, description, then the image. */
+    private static function picture(string $body): ?array
+    {
+        $enc = ord($body[0]);
+        $end = strpos($body, "\0", 1);
+        if ($end === false) {
+            return null;
+        }
+        $type = ord($body[$end + 1] ?? "\0");
+        $p = $end + 2;
+        if ($enc === 1 || $enc === 2) { // a UTF-16 description ends in two zero bytes, on an even offset
+            while ($p + 1 < strlen($body) && ($body[$p] !== "\0" || $body[$p + 1] !== "\0")) {
+                $p += 2;
+            }
+            $p += 2;
+        } else {
+            $z = strpos($body, "\0", $p);
+            $p = $z === false ? strlen($body) : $z + 1;
+        }
+        $data = substr($body, $p);
+        // go by the bytes, not the mime type that tags often get wrong
+        if (str_starts_with($data, "\xFF\xD8\xFF")) {
+            $mime = 'image/jpeg';
+        } elseif (str_starts_with($data, "\x89PNG\r\n\x1a\n")) {
+            $mime = 'image/png';
+        } else {
+            return null;
+        }
+        return ['mime' => $mime, 'type' => $type, 'data' => $data];
     }
 
     /** Where the audio starts: after an ID3v2 tag, if any. */

@@ -410,7 +410,7 @@ try {
     $o3 = $mk('Old Full', 'manager', json_encode(['onair', 'library', 'playlists', 'schedule', 'podcast', 'listeners', 'sound', 'people']));
     $o4 = $mk('Old Plain', 'manager', null);
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '12' WHERE name = 'schema_version'");
-    check('the upgrade runs', Schema::upgrade($db) === [13]);
+    check('the upgrade runs', Schema::upgrade($db) === [13, 14]);
     $role = fn(int $id) => (string) $db->run("SELECT role FROM $u WHERE id = ?", [$id])->fetchColumn();
     $custom = $roles->get($role($o1));
     check('  "On air" becomes Go live any time and Run the on-air desk, in a new role', $custom !== null && str_starts_with($custom['name'], 'Custom role') && $custom['permissions'] === ['anytime', 'desk', 'schedule'], json_encode($custom));
@@ -452,6 +452,54 @@ try {
     check('  but one of two admins can', $staff2->block($boss, $adm3, $p) === null);
     check('  and then the other is the last one', $staff2->block(['id' => 0, 'role' => 'admin'], (int) $boss['id'], $p) !== null && $staff2->remove(['id' => 0, 'role' => 'admin'], (int) $boss['id']) !== null);
     check('the WordPress page’s actor (an admin with no account here) may manage anyone', $staff2->canManage(['id' => 0, 'role' => 'admin'], $boss));
+
+    echo "Album art and copyright (round 45)\n";
+    $png = (function () { $im = imagecreatetruecolor(1200, 900); imagefill($im, 0, 0, imagecolorallocate($im, 200, 60, 40)); ob_start(); imagepng($im); return (string) ob_get_clean(); })();
+    make_mp3("$root/in/tagged", 120, ['title' => 'Tagged Song', 'artist' => 'The Band', 'copyright' => '© 2019 Alruin Music', 'publisher' => 'Grace Publishing',
+        'writers' => 'A. Smith; B. Jones', 'year' => '2019', 'art' => $png], 31);
+    $tg = Stationwagon\Mp3::tags("$root/in/tagged");
+    check('the reader finds the cover and the copyright tags', ($tg['art']['mime'] ?? '') === 'image/png' && $tg['art']['data'] === $png && $tg['copyright'] === '© 2019 Alruin Music' && $tg['publisher'] === 'Grace Publishing' && $tg['writers'] === 'A. Smith; B. Jones' && $tg['year'] === '2019');
+    $tid = $lib->import("$root/in/tagged", null, null, 'tagged.mp3')['id'];
+    $tr = $lib->get($tid);
+    check('an upload keeps its own album art (made 800 px at most)', $tr['art'] !== null && is_file("$root/storage/art/{$tr['art']}") && getimagesize("$root/storage/art/{$tr['art']}")[0] === 800);
+    $rt = Stationwagon\Rights::decode($tr['rights']);
+    check('  and its copyright tags: owner without the ©, year, publisher, writers', $rt !== null && $rt['owner'] === 'Alruin Music' && $rt['year'] === '2019' && $rt['publisher'] === 'Grace Publishing' && $rt['writers'] === 'A. Smith; B. Jones', json_encode($rt));
+    check('  the © badge’s line', Stationwagon\Rights::line($rt) === '© 2019 Alruin Music · Written by A. Smith; B. Jones');
+    check('a song without tags has neither', $lib->get((int) reset($ids))['art'] === null);
+    $seen = null;
+    foreach ($p->entries($now - 100000) as $e) {
+        if ($e['type'] === 'song' && $e['track_id'] === $tid) { $seen = $e; break; }
+    }
+    check('the plan tells listeners the art and the copyright details', $seen === null || (str_starts_with((string) $seen['art'], 'storage/art/art-') && ($seen['rights']['line'] ?? '') !== ''));
+    check('the album can be changed with title and artist', $lib->update($tid, 'Tagged Song', 'The Band', 'The Album') === null && $lib->get($tid)['album'] === 'The Album');
+    check('  and is left alone when not sent', $lib->update($tid, 'Tagged Song', 'The Band') === null && $lib->get($tid)['album'] === 'The Album');
+    $jpg = (function () { $im = imagecreatetruecolor(300, 300); ob_start(); imagejpeg($im); return (string) ob_get_clean(); })();
+    $old = $lib->get($tid)['art'];
+    check('album art can be replaced by a JPEG', $lib->setArt($tid, $jpg) === null && $lib->get($tid)['art'] !== $old && str_ends_with((string) $lib->get($tid)['art'], '.jpg'));
+    check('  and the old picture’s file is removed', !is_file("$root/storage/art/$old"));
+    $art = $lib->get($tid)['art'];
+    check('a text file is not album art, nor is a 4 MB one', $lib->setArt($tid, 'hello, I am not a picture') !== null && $lib->setArt($tid, str_repeat('x', 4 * 1024 * 1024)) !== null);
+    check('  and the song keeps what it had', $lib->get($tid)['art'] === $art && is_file("$root/storage/art/$art"));
+    $dirty = '<p style="font-family:Comic Sans;font-size:40px">Watch <b>this</b>:</p><script>alert(1)</script><div>https://youtu.be/abc</div>'
+        . '<a href="https://example.com/artist" onclick="x()" style="color:red">the artist</a> <a href="javascript:alert(1)">bad</a> <a href="mailto:a@b.co">mail</a>'
+        . '<font face="Arial" size="7">big</font><br><br><br><br><br>end';
+    $clean = Stationwagon\Rights::cleanHtml($dirty);
+    check('rich text keeps only text, line breaks and http, https or mailto links', !preg_match('/<(?!\/?(a|br)\b)/i', $clean) && !str_contains($clean, 'script') && !str_contains($clean, 'alert') && !str_contains($clean, 'style=') && !str_contains($clean, 'onclick')
+        && str_contains($clean, '<a href="https://example.com/artist" target="_blank" rel="noopener noreferrer">the artist</a>') && str_contains($clean, '<a href="mailto:a@b.co"') && !str_contains($clean, 'javascript:') && str_contains($clean, 'bad'), $clean);
+    check('  fonts and sizes go but their words stay; runs of line breaks are cut to one blank line', str_contains($clean, 'Watch this:') && str_contains($clean, 'big') && !str_contains($clean, '<br><br><br>') && str_ends_with($clean, 'end'), $clean);
+    check('  nothing set is nothing', Stationwagon\Rights::cleanHtml('  <p> </p> ') === '' && Stationwagon\Rights::normalize(['owner' => ' ', 'notes' => '<b></b>']) === null);
+    check('copyright details are saved with the notes cleaned', $lib->setRights($tid, ['owner' => '  Alruin   Music ', 'year' => '2024', 'licence' => 'CC BY 4.0', 'publisher' => 'P', 'writers' => 'W', 'notes' => $dirty]) === null
+        && ($r2 = Stationwagon\Rights::decode($lib->get($tid)['rights'])) !== null && $r2['owner'] === 'Alruin Music' && $r2['notes'] === $clean && $r2['licence'] === 'CC BY 4.0');
+    check('  the line puts the owner, year, writers and licence together', Stationwagon\Rights::line($r2) === '© 2024 Alruin Music · Written by W · CC BY 4.0');
+    check('  a song with only a publisher or a licence still has a line', Stationwagon\Rights::line(Stationwagon\Rights::normalize(['publisher' => 'Grace'])) === '© Grace' && Stationwagon\Rights::line(Stationwagon\Rights::normalize(['licence' => 'CC0'])) === 'CC0');
+    check('  clearing them takes the © away', $lib->setRights($tid, []) === null && $lib->get($tid)['rights'] === null);
+    check('a song that isn’t here is refused', $lib->setRights(999999, ['owner' => 'x']) !== null && $lib->setArt(999999, $jpg) !== null);
+    $db->pdo->exec('ALTER TABLE ' . $db->table('tracks') . ' DROP COLUMN art, DROP COLUMN rights');
+    $db->run('UPDATE ' . $db->table('settings') . " SET value = '13' WHERE name = 'schema_version'");
+    check('the upgrade to 14 adds the columns', Schema::upgrade($db, $root) === [14] && $db->run('SHOW COLUMNS FROM ' . $db->table('tracks') . " LIKE 'rights'")->fetch() !== false);
+    check('  and reads the songs already in the library for their art and copyright', $lib->get($tid)['art'] !== null && Stationwagon\Rights::decode($lib->get($tid)['rights'])['owner'] === 'Alruin Music');
+    $art = $lib->get($tid)['art'];
+    check('removing a song removes its art file too', $lib->delete($tid, $p, $now) === null && !is_file("$root/storage/art/$art"));
 
     echo "Diagnostics reports\n";
     $reports = new DiagReports("$root/storage/diag");

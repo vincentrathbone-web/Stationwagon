@@ -179,10 +179,10 @@ try {
     check('hiding takes it off the feed', ($pod->setHidden($epA, true)['ok'] ?? false) && $pod->published() === [] && !str_contains($pod->feed('https://radio.test/'), '<item>'));
     check('  showing it brings it back', ($pod->setHidden($pod->episodeById((int) $epA['id']), false)['ok'] ?? false) && count($pod->published()) === 1);
     check('a draft can’t be hidden', $pod->setHidden($pod->episodeById((int) $epShort['id']), true)['status'] === 409);
-    check('storage serves published MP3s and the cover, not raw tracks or drafts (storage/.htaccess)', (function () {
+    check('storage serves published MP3s, the cover and the songs’ album art, not raw tracks or drafts (storage/.htaccess)', (function () {
         $h = (string) file_get_contents(__DIR__ . '/../storage/.htaccess');
         preg_match_all('/<FilesMatch "([^"]+)">/', $h, $m);
-        return str_contains($h, 'Require all denied') && $m[1] === ['\.mp3$', '^cover-[0-9a-f]{12}\.(jpg|png)$'];
+        return str_contains($h, 'Require all denied') && $m[1] === ['\.mp3$', '^cover-[0-9a-f]{12}\.(jpg|png)$', '^art-[0-9a-f]{12}\.(jpg|png)$'];
     })());
 
     echo "The podcast’s details\n";

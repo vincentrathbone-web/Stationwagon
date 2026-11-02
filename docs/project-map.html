@@ -175,7 +175,7 @@ details.built summary:hover{background:var(--ground)}
 const MAP = {
   updated: "2 Nov · 19:30",
   commits: 46,
-  version: "0.9.1-dev",
+  version: "0.9.2-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
     { v: "v0.4", name: "Player & studio", when: "done 22 Oct" },
@@ -220,6 +220,7 @@ const MAP = {
     { name: "Station manager", blurb: "Library, playlists, schedule, people, sound and safety, for the station's staff.", features: [
       { text: "Installer, sign-in and roles", v: "v0.1", state: "done" },
       { text: "People: add, block, passwords and roles", note: "blocking signs them out and ends their live show; also in WordPress → Stationwagon → People", v: "v0.8", state: "done" },
+      { text: "Library: album art, copyright, saving in place", note: "art from the MP3 or added in the library; © badge and a window for owner, licence, publisher, writers and notes with links; the player shows the line; no page jumping", v: "v0.8", state: "done" },
       { text: "Roles set centrally, with your own roles", note: "each role's ticks apply to all its people; Go live any time vs only in their own block", v: "v0.8", state: "done" },
       { text: "Staff sign-in in the website's header", note: "the station's own accounts, not WordPress users; shows the name with Studio, Manage and Sign out", v: "v0.8", state: "done" },
       { text: "Music library with song prep on upload", v: "v0.1", state: "done" },
@@ -273,6 +274,9 @@ const MAP = {
   call: null,
   feedTitle: "Changed 20 Oct – 2 Nov",
   feed: [
+    { what: "Music library", to: "edits, album art and copyright save in place: the page no longer jumps to the top", at: "2 Nov" },
+    { what: "Copyright", to: "a © badge on songs with details; the player and embed show the line and, on a click, the owner, licence, publisher, writers and links", at: "2 Nov" },
+    { what: "Album art", to: "read from the MP3's tags, or added in the library; shown in the embed and on the phone's lock screen", at: "2 Nov" },
     { what: "Roles", to: "set once under Manage → Roles (and in WordPress): change what a role may do, add your own; people just get a role", at: "2 Nov" },
     { what: "Going live", to: "two ticks: Go live any time, or only in their own scheduled block; and Run the on-air desk (skip, run anyone's show)", at: "2 Nov" },
     { what: "Per-person ticks", to: "removed: anyone who had their own moves to a matching role", at: "2 Nov", kind: "info" },
