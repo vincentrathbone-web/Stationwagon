@@ -398,7 +398,7 @@ try {
     body: Buffer.from(`<!doctype html><title>Church</title><iframe src="${base}/embed" width="470" height="124" allow="autoplay"></iframe>`).toString("base64") });
   await call("Fetch.enable", { patterns: [{ urlPattern: host + "*" }] });
   await call("Page.navigate", { url: host });
-  let framed = null;
+  let framed = null, smallHides = null;
   for (let i = 0; i < 50 && !framed; i++) {
     await sleep(200);
     // a frame from another site runs as a target of its own
@@ -407,12 +407,19 @@ try {
     const { sessionId } = (await call("Target.attachToTarget", { targetId: t.targetId, flatten: true })).result;
     for (let j = 0; j < 25 && !framed; j++) {
       framed = (await call("Runtime.evaluate", { expression: "!!document.getElementById('embed') && location.href", returnByValue: true }, sessionId)).result?.result?.value || null;
+      // a 124 px frame keeps the small layout: no art, copyright line, spectrum or strip
+      // (once the frame's stylesheet has loaded: over the internet the page can be there before it)
+      for (let k = 0; framed && k < 25 && smallHides !== true; k++) {
+        smallHides = (await call("Runtime.evaluate", { expression: "document.readyState === 'complete' && ['emArt', 'emRights', 'emSpec', 'emWave'].every((id) => getComputedStyle(document.getElementById(id)).display === 'none')", returnByValue: true }, sessionId)).result?.result?.value;
+        if (smallHides !== true) await sleep(200);
+      }
       if (!framed) await sleep(200);
     }
     if (!framed) framed = (await call("Runtime.evaluate", { expression: "'no player: ' + location.href", returnByValue: true }, sessionId)).result?.result?.value;
   }
   await call("Fetch.disable");
   check("a church website can frame the embed", typeof framed === "string" && !framed.startsWith("no player"), framed || "no frame");
+  check("  its small (124 px) frame keeps the small layout: no art, copyright line, spectrum or strip", smallHides === true, String(smallHides));
   await go(`${base}/embed`);
   const np = await waitFor("window.swEmbed && swEmbed.np", 10);
   const shown = await evaluate("document.getElementById('emTitle').textContent");
@@ -446,6 +453,12 @@ try {
   check("  an old (cached) now-playing answer doesn't move its clock", Math.abs(off1 - off0) < 0.05 && Math.abs(lagNow - 20) < 0.9, `${(off1 - off0).toFixed(3)} s, lag ${lagNow.toFixed(2)} s`);
   const rates = await evaluate("clearInterval(__rateTimer); [...__rates]");
   check("  and it never played faster or slower", rates.length === 1 && rates[0] === 1, JSON.stringify(rates));
+  // a tall frame (the website's Listen page; this test's whole window) shows the album art, the copyright line,
+  // the spectrum and the output strip; the sound itself still plays from the element, not through Web Audio
+  const parts = await evaluate("['emArt', 'emRights', 'emSpec', 'emWave'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return r.width > 0 && r.height > 0; })");
+  check("  a tall frame shows the album art (a CD in its case), the copyright line, the spectrum and the strip", parts.every(Boolean) && (await evaluate("document.getElementById('emRights').textContent")).startsWith("©") && (await evaluate("!!document.querySelector('#emArt .cd-disc')")), JSON.stringify(parts));
+  const vis = await waitFor("(() => { const v = swEmbed.vis; return v.attached && v.spectrum && v.spectrum.lit > 0 && v.measured && v.measured[1] > 0.01 && v.planned && v.planned[1] > 0.01 && v; })()", 15);
+  check("  the spectrum lights and the strip shows the measured sound and the coming seconds", !!vis, JSON.stringify(await evaluate("swEmbed.vis")));
   const pingBefore = await evaluate("swEmbed.ping");
   await evaluate("swEmbed.pauseFromOutside()");
   const again = await waitFor("swEmbed.events.some((e) => e.includes('starting again: paused from outside')) && swEmbed.playing && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);

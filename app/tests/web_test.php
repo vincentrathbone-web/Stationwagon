@@ -241,8 +241,10 @@ try {
     check('  without the site header, and no cookie', !str_contains($r['body'], 'class="brand"') && $e->setCookies === []);
     check('  any website may frame it', !isset($r['headers']['x-frame-options']) && str_contains(implode(',', $r['headers']['content-security-policy'] ?? []), 'frame-ancestors *'),
         implode(',', $r['headers']['x-frame-options'] ?? []) . ' | ' . implode(',', $r['headers']['content-security-policy'] ?? []));
+    check('  with the full layout’s parts for a tall frame: album art, the copyright line, the spectrum and the strip', str_contains($r['body'], 'id="emArt"') && str_contains($r['body'], 'class="cd-disc"') && str_contains($r['body'], 'id="emRights"') && str_contains($r['body'], 'id="emSpec"') && str_contains($r['body'], 'id="emWave"')
+        && preg_match('~assets/spectrum\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1 && preg_match('~assets/outwave\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1);
     check('  ?look=light gives the light look', str_contains($e->go('embed?look=light')['body'], '<html lang="en" class="light">') && !str_contains($r['body'], 'class="light"'));
-    check('the station page offers the embed code with Copy', str_contains($page, 'id="lpEmbed"') && str_contains($page, 'id="lpEmbedCopy"') && str_contains($page, 'data-path="' . $basePath . '/embed"'));
+    check('the station page no longer has the embed-code card (the user, 2026-11-02)', !str_contains($page, 'id="lpEmbed"') && !str_contains($page, 'Put the player on your website'));
     echo "Listener count\n";
     $json = ['Content-Type: application/json'];
     $sid = bin2hex(random_bytes(8));

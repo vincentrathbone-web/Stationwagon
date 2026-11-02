@@ -122,10 +122,85 @@
 
   document.addEventListener("visibilitychange", () => log(document.hidden ? "page hidden" : "page shown"));
 
+  // ---- The spectrum and the output strip, in a frame tall enough to show them (app.css) ------------
+  // The sound itself never goes through Web Audio (the element plays it, as before: a phone that freezes its
+  // sound engine behind the lock screen can't stop the music). The visuals read a copy (captureStream) for
+  // the spectrum and the measured, left half of the strip; the right half is the stream's own coming pieces,
+  // kept as hls.js loads them (about 20 s before they are heard) and placed by their PROGRAM-DATE-TIME.
+  // Browsers without captureStream on media (Safari; Firefox's mozCaptureStream would silence the element)
+  // show the art and the line but not these.
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  const vis = {
+    ctx: null, bus: null, an: null, meter: null, src: null, el: null, pieces: [], plan: null, timer: 0, strip: null, spec: null,
+    wanted: () => matchMedia("(min-height: 280px)").matches,
+    able: () => !!Ctx && typeof HTMLMediaElement.prototype.captureStream === "function",
+    /** In Listen's click (browsers start a sound engine only on a tap). */
+    async open() {
+      if (!this.wanted() || !this.able()) return;
+      if (!this.ctx) {
+        this.ctx = new Ctx();
+        this.bus = this.ctx.createGain();
+        const quiet = this.ctx.createGain(); quiet.gain.value = 0; quiet.connect(this.ctx.destination); // keeps the engine pulling
+        this.an = SwSpectrum.analyser(this.ctx, this.bus); this.an.connect(quiet);
+        this.meter = await SwOutWave.meter(this.ctx, [this.bus, this.bus], root.dataset.meter);
+        this.spec = SwSpectrum.create({ canvas: $("emSpec"), analyser: () => this.an, on: () => !!audio && !audio.paused });
+        const tok = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+        const colors = [], colours = () => colors.splice(0, 2, tok("--src-a"), tok("--src-out"));
+        colours(); window.addEventListener("sw:skin", colours);
+        this.strip = SwOutWave.strip($("emWave"), { colors, measured: () => (this.meter ? this.meter.cols : null), plan: () => this.plan, now: () => this.now(), span: () => 10 });
+      }
+      if (this.ctx.state === "suspended") await Promise.race([this.ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
+      clearInterval(this.timer); this.timer = setInterval(() => this.ahead(), 500);
+      this.strip.start(); this.spec.run();
+    },
+    /** The context time being heard now. */
+    now() {
+      const c = this.ctx;
+      if (!c) return 0;
+      const ts = c.getOutputTimestamp ? c.getOutputTimestamp() : null;
+      return ts && ts.contextTime > 0 ? ts.contextTime : c.currentTime;
+    },
+    /** A new element is playing: read its sound (once it has some: a stream without a track can't be read). */
+    attach(el) {
+      if (!this.ctx || this.el === el) return;
+      const tracks = el.captureStream().getAudioTracks();
+      if (!tracks.length) return;
+      if (this.src) { try { this.src.disconnect(); } catch (_) { /* gone */ } }
+      this.src = this.ctx.createMediaStreamSource(new MediaStream(tracks)); this.src.connect(this.bus);
+      this.el = el;
+    },
+    /** hls.js loaded a piece (its copy). */
+    keep(frag, payload) {
+      if (!this.ctx || !frag.programDateTime) return;
+      this.pieces.push({ at: frag.programDateTime / 1000, dur: frag.duration, payload, ch: null, rate: 0 });
+      if (this.pieces.length > 12) this.pieces.shift();
+    },
+    /** The coming seconds, from the pieces placed at the time they will be heard. */
+    async ahead() {
+      const pd = playingDate();
+      if (!this.ctx || !audio || audio.paused || pd === null) { this.plan = null; return; }
+      const near = this.pieces.filter((p) => p.at + p.dur > pd - 1 && p.at < pd + 8);
+      for (const p of near) {
+        if (p.ch || p.decoding) continue;
+        p.decoding = true;
+        try { const b = await this.ctx.decodeAudioData(p.payload.slice(0)); p.ch = [b.getChannelData(0), b.numberOfChannels > 1 ? b.getChannelData(1) : b.getChannelData(0)]; p.rate = b.sampleRate; }
+        catch (_) { p.ch = null; }
+      }
+      const cNow = this.now(), ready = near.filter((p) => p.ch && p.rate === this.ctx.sampleRate);
+      this.plan = SwOutWave.render(ready.map((p) => ({ slot: 0, ch: p.ch, rate: p.rate, start: cNow + (p.at - pd), gain: () => 1 })), cNow, cNow + 6, 2);
+    },
+    close() {
+      clearInterval(this.timer); this.timer = 0; this.plan = null; this.pieces = []; this.el = null;
+      if (this.src) { try { this.src.disconnect(); } catch (_) { /* gone */ } this.src = null; }
+      if (this.strip) this.strip.stop();
+    },
+  };
+
   async function listen() {
     $("emPlay").setAttribute("aria-pressed", "true"); $("emPlay").setAttribute("aria-label", "Stop");
     root.classList.add("playing");
     state("Connecting…");
+    vis.open().catch(() => null); // in the tap: browsers start a sound engine only then
     // two more clock samples while the stream starts, so the shortest round trip has some to pick from
     (async () => { for (let i = 0; i < 2; i++) await sampleClock().catch(() => null); })();
     try {
@@ -147,7 +222,17 @@
     // themselves but then can't; Safari on an iPhone has no hls.js support and plays it itself
     await loadHls().catch(() => null);
     if (window.Hls && Hls.isSupported()) {
-      const h = hls = new Hls({ liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 6 });
+      // hls.js's own loader, keeping a copy of each piece for the output strip's coming seconds (as the player does)
+      const Base = Hls.DefaultConfig.loader;
+      class Keep extends Base {
+        load(context, config, callbacks) {
+          super.load(context, config, { ...callbacks, onSuccess: (res, stats, ctx, net) => {
+            if (ctx.frag && res.data instanceof ArrayBuffer && vis.ctx) vis.keep(ctx.frag, res.data.slice(0));
+            callbacks.onSuccess(res, stats, ctx, net);
+          } });
+        }
+      }
+      const h = hls = new Hls({ liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 6, fLoader: Keep });
       h.on(Hls.Events.ERROR, (_, d) => {
         log(`stream ${d.fatal ? "fatal " : ""}${d.details}`);
         if (!d.fatal || h !== hls) return;
@@ -164,6 +249,7 @@
     }
     el.addEventListener("waiting", () => { log("waiting"); if (settled && el === audio) state("Buffering…"); });
     for (const e of ["play", "playing", "stalled", "suspend", "ended", "error"]) el.addEventListener(e, () => log(e === "error" && el.error ? `error ${el.error.code}` : e));
+    el.addEventListener("playing", () => { if (el === audio) { try { vis.attach(el); } catch (ex) { log(`no visuals: ${ex && ex.name}`); } } });
     // paused, but not by Stop (which drops the element first): something outside did it
     el.addEventListener("pause", () => { log("pause"); if (el === audio) setTimeout(() => { if (el === audio && el.paused) restart("paused from outside"); }, 1000); });
     await el.play();
@@ -197,6 +283,7 @@
   function stop() {
     if (ping) { ping.stop(); ping = null; }
     drop();
+    vis.close();
     $("emPlay").setAttribute("aria-pressed", "false"); $("emPlay").setAttribute("aria-label", "Listen");
     root.classList.remove("playing");
     state("Press play to listen");
@@ -216,6 +303,12 @@
     get offset() { return offset; },
     slip(s) { if (audio) audio.currentTime += s; }, // the sound slips s seconds
     poll: () => poll(),
+    // the visuals: whether they run, the spectrum's state, how much of the strip is measured and planned
+    get vis() {
+      const m = vis.meter && vis.meter.cols, p = vis.plan, now = vis.now();
+      return { on: !!vis.ctx, attached: !!vis.src, kind: vis.meter ? vis.meter.kind : null, spectrum: vis.spec ? vis.spec.state() : null,
+        measured: m ? SwOutWave.range(m, now - 4, now) : null, planned: p ? SwOutWave.range(p, now + 0.5, now + 4) : null, pieces: vis.pieces.length };
+    },
   };
   poll();
 })();

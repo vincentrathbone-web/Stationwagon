@@ -615,8 +615,13 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
 body.embed { padding: 0; background: transparent; }
 html:has(body.embed) { background: transparent; height: 100%; }
 body.embed { height: 100%; }
-.em { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 14px; align-items: center;
+.em { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; grid-template-areas: "play body side" "play prog side"; column-gap: 14px; row-gap: 0; align-items: center;
   background: var(--panel); border: var(--card-edge); box-shadow: var(--card-shadow); border-radius: var(--r-card); padding: 14px 16px; min-height: 96px; height: 100%; }
+.em-play { grid-area: play; }
+.em-body { grid-area: body; align-self: end; }
+.em-prog { grid-area: prog; align-self: start; min-width: 0; }
+.em-side { grid-area: side; }
+.em-art, .em-rights, .em-spec, .em-wave { display: none; } /* the full layout's parts, below */
 .em-play { appearance: none; border: 0; width: 52px; height: 52px; border-radius: 50%; background: var(--amber); color: var(--on-accent);
   display: grid; place-items: center; cursor: pointer; }
 .em-play:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
@@ -624,7 +629,7 @@ body.embed { height: 100%; }
 .em-play .i-stop, .em.playing .em-play .i-play { display: none; }
 .em.playing .em-play .i-stop { display: block; }
 .em-body { min-width: 0; }
-.em-body p { margin: 0; }
+.em-body p, .em-prog p { margin: 0; }
 .em-top { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 12px; }
 .em-lamp { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: var(--muted); white-space: nowrap; }
 .em-lamp i { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
@@ -645,19 +650,44 @@ body.embed { height: 100%; }
 .em-priv { font-size: 11px; color: var(--faint); text-decoration: none; }
 .em-foot { display: flex; gap: 10px; align-items: baseline; }
 @media (max-width: 380px) {
-  .em { grid-template-columns: 52px minmax(0, 1fr); }
+  .em { grid-template-columns: 52px minmax(0, 1fr); grid-template-areas: "play body" "play prog"; }
   .em-open { display: none; } /* the station name links to the player instead */
   .em-side { position: absolute; top: 12px; right: 14px; }
   .em-top { padding-right: 46px; }
   #emNext { display: none; }
 }
+/* The full embed, for a frame 280 px or taller (300 is a good height) (the website's Listen page): album art (a placeholder CD in
+   its case for now), the copyright line, the spectrum and the output strip, then Listen and the progress */
+@media (min-height: 280px) {
+  .em { grid-template-columns: 112px minmax(0, 1fr) auto; grid-template-areas: "art body side" "wave wave wave" "play prog prog";
+    row-gap: 12px; align-items: stretch; align-content: start; }
+  .em-art { display: block; grid-area: art; width: 112px; height: 112px; }
+  .em-art svg { display: block; width: 100%; height: 100%; }
+  .em-body { align-self: stretch; display: flex; flex-direction: column; }
+  .em-rights { display: block; font-size: 12px; color: var(--faint); margin-top: 2px !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .em-spec { display: block; width: 100%; height: 0; flex: 1 1 0; min-height: 36px; margin-top: 8px; } /* height 0: a canvas is 150 px tall by itself */
+  .em-wave { display: block; grid-area: wave; width: 100%; height: 56px; border-radius: var(--r-chip); background: var(--lcd); box-shadow: var(--well-shadow); }
+  .em-play { align-self: center; }
+  .em-prog { align-self: center; }
+  .em-prog .em-bar { margin-top: 0; }
+  .em-side { justify-content: flex-start; }
+}
+@media (min-height: 280px) and (max-width: 380px) {
+  /* Look and Privacy get a short row of their own at the top (in the corner they would cover the lamp) */
+  .em { grid-template-columns: 88px minmax(0, 1fr); grid-template-areas: "side side" "art body" "wave wave" "play prog"; row-gap: 10px; }
+  .em-side { position: static; flex-direction: row; justify-content: flex-end; }
+  .em-top { padding-right: 0; }
+  .em-art { width: 88px; height: 88px; }
+}
+.cd-case { fill: var(--raised); stroke: var(--edge); stroke-width: 2; }
+.cd-hinge { fill: var(--edge); }
+.cd-groove { stroke: var(--panel); stroke-width: 1.5; }
+.cd-disc { fill: var(--muted); fill-opacity: .5; }
+.cd-track { fill: none; stroke: var(--ink); stroke-opacity: .14; }
+.cd-hub { fill: var(--panel); stroke: var(--edge); }
+.cd-hole { fill: var(--raised); }
+.cd-shine { fill: var(--ink); fill-opacity: .06; }
 
-/* the "Embed on your website" card in the player's side column */
-.lp-embed pre { margin: 0 0 10px; background: var(--raised); padding: 10px 12px; border-radius: var(--r-box); font-size: 12px; line-height: 1.5;
-  color: var(--muted); white-space: pre-wrap; word-break: break-all; }
-.lp-embed .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
-.lp-embed small { color: var(--faint); font-size: 12px; }
-.lp-embed small a { color: var(--muted); }
 .lp-embed .check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
 .lp-embed .check input { accent-color: var(--amber); margin: 0; }
 
