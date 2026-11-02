@@ -196,9 +196,20 @@ registerProcessor("sw-rec", SwRec);`;
     })();
     return uploading;
   }
+  /**
+   * Audio for an upload: raw MP3 bytes, or under 16 KB as base64 in JSON (Request::audio on the server),
+   * since some hosts' firewalls refuse a small binary body outright (406; wordwave.co.za's under about 10 KB).
+   */
+  async function audioBody(body) {
+    const u8 = body instanceof Blob ? new Uint8Array(await body.arrayBuffer()) : body instanceof ArrayBuffer ? new Uint8Array(body) : body;
+    if (u8.byteLength >= 16384) return { body: u8, type: "audio/mpeg" };
+    let s = ""; for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, i + 8192));
+    return { body: JSON.stringify({ b64: btoa(s) }), type: "application/json" };
+  }
   async function post(base, csrf, path, body, raw) {
     try {
-      const r = await fetch(base + path, { method: "POST", cache: "no-store", body, headers: { "X-CSRF": csrf, "Content-Type": raw ? "audio/mpeg" : "application/json" } });
+      const sent = raw ? await audioBody(body) : { body, type: "application/json" };
+      const r = await fetch(base + path, { method: "POST", cache: "no-store", body: sent.body, headers: { "X-CSRF": csrf, "Content-Type": sent.type } });
       return { status: r.status, json: await r.json().catch(() => ({})) };
     } catch (e) { return { status: 0, json: { error: "no connection" } }; }
   }

@@ -135,8 +135,12 @@ try {
     check('the studio sends you to sign in', $r['status'] === 303 && str_ends_with($location($r), '/signin?next=studio'), $location($r));
     $r = $b->go('studio/api/state');
     check('  and its feed answers 401, as JSON', $r['status'] === 401 && isset(json_decode($r['body'], true)['error']), (string) $r['status']);
-    $r = $b->go('studio/api/piece?live=x&seq=0&dur=6', "\xFF\xFB\x90\x00", ['Content-Type: audio/mpeg']);
-    check('  nobody signed out can send audio', $r['status'] === 401, (string) $r['status']);
+    // as the studio sends it: a full piece raw, a short one as base64 in JSON (a small binary body gets 406 from
+    // some hosts' firewalls before PHP, as on wordwave.co.za)
+    $frame = "\xFF\xFB\x90\x00" . str_repeat("\0", 413);
+    $r = $b->go('studio/api/piece?live=x&seq=0&dur=6', str_repeat($frame, 60), ['Content-Type: audio/mpeg']);
+    $r2 = $b->go('studio/api/piece?live=x&seq=0&dur=0.03', json_encode(['b64' => base64_encode($frame)]), ['Content-Type: application/json']);
+    check('  nobody signed out can send audio (a piece raw, a short one as base64)', $r['status'] === 401 && $r2['status'] === 401, $r['status'] . ', ' . $r2['status']);
     $r = $b->go('signin');
     $csrf = Browser::csrf($r);
     check('sign-in page opens with a form key', $r['status'] === 200 && strlen($csrf) === 64);

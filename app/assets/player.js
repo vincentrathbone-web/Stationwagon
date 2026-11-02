@@ -162,16 +162,23 @@
       if (this.el.getStartDate) { const d = this.el.getStartDate(); if (d && !isNaN(d.getTime())) return d.getTime() / 1000 + this.el.currentTime; }
       return null;
     }
-    /** Hold DELAY behind: seek until first on time, while silent or when far off; else play up to 3 % faster or slower. */
+    /**
+     * Hold DELAY behind: seek until first on time, and while silent. Never faster or slower (as the song
+     * decks: the time-stretch is audible); once heard, only a slip of over SEEK_FROM is seeked back.
+     */
     lock() {
       const pd = this.playingDate();
       if (!this.active || pd === null || this.el.paused) { this.lag = null; return; }
+      if (this.el.playbackRate !== 1) this.el.playbackRate = 1;
       const err = clock.now() - pd - DELAY; // positive: too far behind
       this.lag = DELAY + err;
       if (Math.abs(err) < 0.25) this.settled = true;
-      if (Math.abs(err) > 2 || ((!this.settled || this.gain < 0.01) && Math.abs(err) > 0.25)) { this.el.currentTime += err; this.el.playbackRate = 1; player.log(`stream seek ${err.toFixed(2)} s`); }
-      else if (Math.abs(err) > 0.03) this.el.playbackRate = 1 + Math.max(-0.03, Math.min(0.03, err * 0.1));
-      else this.el.playbackRate = 1;
+      const silent = !this.settled || this.gain < 0.01;
+      if ((silent && Math.abs(err) > 0.25) || (Math.abs(err) > SEEK_FROM && performance.now() - (this.seekedAt || 0) > 3000)) {
+        this.seekedAt = performance.now();
+        this.el.currentTime += err;
+        player.log(`stream seek ${err.toFixed(2)} s`);
+      }
       this.locked = Math.abs(err) < 0.5;
     }
     setGain(to, seconds) {
@@ -456,7 +463,7 @@
           readBytes: ahead.bytes,
         },
         engine: this.ctx ? { state: this.ctx.state, time: +this.ctx.currentTime.toFixed(2) } : null,
-        stream: this.stream ? { active: this.stream.active, locked: this.stream.locked, gain: +this.stream.gain.toFixed(3), lag: this.stream.lag, native: this.stream.native } : null,
+        stream: this.stream ? { active: this.stream.active, locked: this.stream.locked, gain: +this.stream.gain.toFixed(3), lag: this.stream.lag, native: this.stream.native, rate: this.stream.el.playbackRate } : null,
         spectrum: spectrum.state(),
         wave: this.ctx ? {
           meter: this.wave ? this.wave.kind : null,

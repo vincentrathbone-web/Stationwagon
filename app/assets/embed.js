@@ -9,7 +9,10 @@
   const BASE = root.dataset.base;
   const $ = (id) => document.getElementById(id);
   const POLL_MS = 15000;
+  const CLOCK_MS = 300000; // a fresh clock sample this often while it plays (the first ones at Listen)
+  const SEEK_FROM = 1.2; // once on time, drift (s) beyond which it jumps back into step, as the player's decks do
   let np = null, offset = 0, audio = null, hls = null, settled = false, timer = 0, polledAt = 0, ping = null, restartedAt = 0;
+  let clockSamples = [], clockAt = 0, seekedAt = 0;
   let moved = { pos: -1, at: 0 }; // where the sound last moved on, for the watchdog
   // what happened to the sound, for the tests (the last 40 events, seconds since the page loaded)
   const events = [], t0 = Date.now();
@@ -20,14 +23,30 @@
   const now = () => Date.now() / 1000 + offset; // the server's clock
   const delay = () => (np ? np.delay : 20);
 
+  /**
+   * The server's clock: now playing asked past Cloudflare's cache (a cached answer's time can be 2 s old),
+   * halfway through the request, and of the last few the round trip with the shortest time wins.
+   */
+  async function sampleClock() {
+    clockAt = Date.now();
+    const sent = Date.now() / 1000;
+    const r = await fetch(BASE + "api/nowplaying.php?clock=" + Math.random().toString(36).slice(2), { cache: "no-store" });
+    if (!r.ok) throw new Error(String(r.status));
+    const j = await r.json(), back = Date.now() / 1000;
+    clockSamples = [...clockSamples, { rtt: back - sent, offset: j.server_now - (sent + back) / 2 }].slice(-5);
+    offset = clockSamples.reduce((a, b) => (b.rtt < a.rtt ? b : a)).offset;
+    return j;
+  }
+
   async function poll() {
     clearTimeout(timer); polledAt = Date.now();
     try {
-      const sent = Date.now() / 1000;
-      const r = await fetch(BASE + "api/nowplaying.php", { cache: "no-store" });
-      if (!r.ok) throw new Error(String(r.status));
-      np = await r.json();
-      offset = np.server_now - (sent + Date.now() / 1000) / 2; // halfway through the request
+      if (!clockSamples.length || (audio && Date.now() - clockAt > CLOCK_MS)) np = await sampleClock();
+      else {
+        const r = await fetch(BASE + "api/nowplaying.php", { cache: "no-store" }); // the shared, cached answer
+        if (!r.ok) throw new Error(String(r.status));
+        np = await r.json();
+      }
       show();
     } catch (_) {
       if (!np) $("emTitle").textContent = "The station can’t be reached just now";
@@ -54,15 +73,28 @@
     return null;
   }
 
-  /** Hold the listener delay: silent and seeking until on time, then up to 3 % faster or slower. */
+  /**
+   * Hold the listener delay: silent and seeking until on time. After that it never plays faster or slower
+   * (the browser's time-stretch is audible: a squeezed, low-quality sound); small drift is left alone, and
+   * only a slip of over SEEK_FROM is put back, with the sound dipped for the jump.
+   */
   function lock() {
     const pd = playingDate();
     if (!audio || audio.paused || pd === null) return;
+    if (audio.playbackRate !== 1) audio.playbackRate = 1;
     const err = now() - pd - delay(); // positive: too far behind
-    if (Math.abs(err) < 0.25 && !settled) { settled = true; audio.volume = 1; state("Listening"); }
-    if (Math.abs(err) > 2 || (!settled && Math.abs(err) > 0.25)) { if (settled) log(`seek ${err.toFixed(2)} s`); audio.currentTime += err; audio.playbackRate = 1; }
-    else if (Math.abs(err) > 0.03) audio.playbackRate = 1 + Math.max(-0.03, Math.min(0.03, err * 0.1));
-    else audio.playbackRate = 1;
+    if (!settled) {
+      if (Math.abs(err) < 0.25) { settled = true; audio.volume = 1; state("Listening"); }
+      else audio.currentTime += err;
+      return;
+    }
+    if (Math.abs(err) <= SEEK_FROM || Date.now() - seekedAt < 3000) return;
+    seekedAt = Date.now();
+    log(`seek ${err.toFixed(2)} s`);
+    const el = audio;
+    el.volume = 0;
+    el.currentTime += err;
+    el.addEventListener("seeked", () => setTimeout(() => { if (el === audio) el.volume = 1; }, 100), { once: true });
   }
 
   // the bar and time move between polls on the server's clock, at the listener delay
@@ -94,6 +126,8 @@
     $("emPlay").setAttribute("aria-pressed", "true"); $("emPlay").setAttribute("aria-label", "Stop");
     root.classList.add("playing");
     state("Connecting…");
+    // two more clock samples while the stream starts, so the shortest round trip has some to pick from
+    (async () => { for (let i = 0; i < 2; i++) await sampleClock().catch(() => null); })();
     try {
       await start();
       if (window.SwListeners) ping = SwListeners.start(BASE, "embed"); // counted as listening while it plays
@@ -179,6 +213,9 @@
     get events() { return events.slice(); },
     pauseFromOutside() { if (audio) audio.pause(); }, // as a phone's power manager does
     get media() { return audio; },
+    get offset() { return offset; },
+    slip(s) { if (audio) audio.currentTime += s; }, // the sound slips s seconds
+    poll: () => poll(),
   };
   poll();
 })();

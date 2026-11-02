@@ -18,8 +18,19 @@
   const NAMES = { music: "Music", mic: "Mic", aired: "As aired" };
 
   const fmt = (s) => { s = Math.max(0, Math.round(s || 0)); return s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+  /**
+   * Audio for an upload: raw MP3 bytes, or under 16 KB as base64 in JSON (Request::audio on the server),
+   * since some hosts' firewalls refuse a small binary body outright (406; wordwave.co.za's under about 10 KB).
+   */
+  async function audioBody(body) {
+    const u8 = body instanceof Blob ? new Uint8Array(await body.arrayBuffer()) : body instanceof ArrayBuffer ? new Uint8Array(body) : body;
+    if (u8.byteLength >= 16384) return { body: u8, type: "audio/mpeg" };
+    let s = ""; for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, i + 8192));
+    return { body: JSON.stringify({ b64: btoa(s) }), type: "application/json" };
+  }
   async function api(action, { body, query = "", raw = false } = {}) {
-    const opts = body === undefined ? { cache: "no-store" } : { method: "POST", cache: "no-store", body: raw ? body : JSON.stringify(body), headers: { "X-CSRF": CSRF, "Content-Type": raw ? "audio/mpeg" : "application/json" } };
+    const sent = body === undefined ? null : raw ? await audioBody(body) : { body: JSON.stringify(body), type: "application/json" };
+    const opts = !sent ? { cache: "no-store" } : { method: "POST", cache: "no-store", body: sent.body, headers: { "X-CSRF": CSRF, "Content-Type": sent.type } };
     const res = await fetch(BASE + "podcast/api/" + action + query, opts);
     const json = await res.json().catch(() => ({}));
     json.httpStatus = res.status;

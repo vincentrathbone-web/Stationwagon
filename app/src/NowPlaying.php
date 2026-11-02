@@ -45,7 +45,7 @@ final class NowPlaying
         return [
             'station' => ['name' => $station['name'], 'timezone' => $station['timezone']],
             'heard_at' => round($heard, 1),
-            'server_now' => round($now, 1),
+            'server_now' => round($now, 3), // the embed sets its clock from it
             'delay' => $delay,
             'listeners' => (new Listeners($this->planner->db(), $station))->now($now),
             'on_air' => $current === null ? null : $this->describe($current, $heard),

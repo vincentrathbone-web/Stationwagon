@@ -41,7 +41,7 @@ final class PodcastPage
             $raw = in_array($action, ['rec-chunk', 'mix-chunk'], true);
             $in = $post && !$raw ? (json_decode((string) file_get_contents('php://input'), true) ?: []) : [];
             if ($action === 'rec-chunk' && $post) {
-                $this->result($podcast->addChunk($me, (string) ($_GET['show'] ?? ''), (string) ($_GET['track'] ?? ''), (int) ($_GET['n'] ?? -1), (int) ($_GET['samples'] ?? 0), (string) file_get_contents('php://input')));
+                $this->result($podcast->addChunk($me, (string) ($_GET['show'] ?? ''), (string) ($_GET['track'] ?? ''), (int) ($_GET['n'] ?? -1), (int) ($_GET['samples'] ?? 0), Request::audio()));
             }
             if ($action === 'rec-done' && $post) {
                 $this->result($podcast->finishDevice($me, (string) ($in['show'] ?? ''), is_array($in['counts'] ?? null) ? $in['counts'] : [], $in['analysis'] ?? null));
@@ -60,7 +60,7 @@ final class PodcastPage
                 !$post && $action === 'audio' => $this->file($podcast->audioPath($ep)),
                 $post && $action === 'analysis' => $podcast->saveAnalysis($ep, (int) ($in['take'] ?? 0), $in['analysis'] ?? null),
                 $post && $action === 'edits' => $podcast->saveEdits($ep, $in['deleted'] ?? null),
-                $post && $action === 'mix-chunk' => $podcast->addMixPart($ep, (int) ($_GET['n'] ?? -1), (string) file_get_contents('php://input')),
+                $post && $action === 'mix-chunk' => $podcast->addMixPart($ep, (int) ($_GET['n'] ?? -1), Request::audio()),
                 $post && $action === 'mix-done' => $podcast->finishMix($ep, (int) ($in['parts'] ?? 0), (float) ($in['seconds'] ?? 0), $in['deleted'] ?? []),
                 $post && $action === 'publish' => $podcast->publish($ep, (string) ($in['title'] ?? ''), (string) ($in['description'] ?? ''), !empty($in['publish'])),
                 $post && $action === 'hide' => $podcast->setHidden($ep, !empty($in['hidden'])),

@@ -313,12 +313,21 @@ try {
     s ? `${s.sent} sent, ${s.errors} errors` : JSON.stringify((await state()).events.slice(-4)));
 
   console.log("Ending the show");
+  // just after a piece goes out, so the last one is short: under 16 KB it goes as base64 in JSON (some hosts'
+  // firewalls refuse a small binary upload; wordwave.co.za's under about 10 KB)
+  const sentBefore = (await state()).sent;
+  await until((x) => x.sent > sentBefore, 10);
   await click("#stGo");
   check("pressing On air asks before ending, in the page", (await text("#stBannerText")).startsWith("End the show?"));
+  const endAt = Date.now();
   await clickText("#stBannerActs button", "End show");
   s = await until((x) => !x.live, 20);
+  const endTook = (Date.now() - endAt) / 1000;
   info = helper("live-info", liveId);
   check("End show sends the last audio and ends the show", !!s && !info.open && info.closed_reason === "ended by DJ", `${info.closed_reason}, ${info.pieces.length} pieces`);
+  const last = info.pieces[info.pieces.length - 1];
+  check("  its short last piece (sent as base64) arrives whole, and End show doesn't wait", !!last && last.bytes < 16384 && last.bytes > 0 && last.scanned !== null && Math.abs(last.scanned - last.duration) < 0.05 && endTook < 6 && (await state()).errors === 0,
+    last ? `${last.bytes} bytes, ${last.duration} s (${last.scanned} s scanned), ended in ${endTook.toFixed(1)} s` : "no pieces");
   check("  the banner says the AutoDJ is back", (await text("#stBannerText")).startsWith("Handed back to the AutoDJ") || (await text("#stBannerText")).startsWith("Uploading your show"), await text("#stBannerText"));
   let up = "";
   for (let i = 0; i < 120 && !up.startsWith("Your show’s recording is uploaded"); i++) { await sleep(250); up = await text("#stBannerText"); }

@@ -380,6 +380,9 @@ try {
   await evaluate("SwPlayer.start()");
   s = await until((x) => x.stream && x.stream.active && x.stream.lag !== null && Math.abs(x.stream.lag - 20) < 0.6, 30);
   check("?mode=stream plays the stream at the same 20 s delay", !!s && s.mode === "stream", s && String(s.stream.lag.toFixed(2)));
+  const streamRates = new Set();
+  for (let i = 0; i < 40; i++) { const x = await state(); if (x && x.stream && x.stream.active) streamRates.add(x.stream.rate); await sleep(100); }
+  check("  and never plays it faster or slower (the time-stretch is audible)", streamRates.size === 1 && streamRates.has(1), JSON.stringify([...streamRates]));
   check("  without Web Audio there is no spectrum (an empty display, nothing drawing)", !!s && !s.spectrum.running && s.spectrum.frames === 0 && (await specPx()) === 0, s && JSON.stringify(s.spectrum));
   await evaluate("SwPlayer.stop()");
 
@@ -420,6 +423,29 @@ try {
   check("  and it counts itself as listening too", /^[0-9a-f]{16}$/.test((await evaluate("swEmbed.ping")) || ""), String(await evaluate("swEmbed.ping")));
   const meta = await waitFor("/^\\d+:\\d\\d \\/ \\d+:\\d\\d$|^Live for /.test(document.getElementById('emState').textContent) && document.getElementById('emState').textContent", 3);
   check("  with the time in the song", !!meta, meta || await evaluate("document.getElementById('emState').textContent"));
+  // never faster or slower: the browser's time-stretch was heard as a squeezed, "64 kbps" sound on wordwave.co.za
+  await evaluate("window.__rates = new Set(); window.__rateTimer = setInterval(() => swEmbed.media && __rates.add(swEmbed.media.playbackRate), 100); 1");
+  await evaluate("swEmbed.slip(-0.6)");
+  await sleep(4000);
+  check("  a small slip (0.6 s) is left alone: no jump", !(await evaluate("swEmbed.events.some((e) => / seek /.test(e))")), JSON.stringify(await evaluate("swEmbed.events.slice(-4)")));
+  await evaluate("swEmbed.slip(-2)");
+  const back = await waitFor("swEmbed.events.some((e) => / seek /.test(e)) && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.9 && swEmbed.lag", 6);
+  check("  a real slip (2 s) is put back with one jump", !!back && (await evaluate("swEmbed.events.filter((e) => / seek /.test(e)).length")) === 1, back ? back.toFixed(2) + " s" : JSON.stringify(await evaluate("swEmbed.events.slice(-4)")));
+  // the shared now-playing answer is cached at Cloudflare for 2 s, so its server time can be up to 2 s old: made 2 s old here
+  onPaused = async (p) => {
+    const b = (await call("Fetch.getResponseBody", { requestId: p.requestId })).result;
+    const j = JSON.parse(b.base64Encoded ? Buffer.from(b.body, "base64").toString() : b.body);
+    j.server_now -= 2;
+    call("Fetch.fulfillRequest", { requestId: p.requestId, responseCode: 200, responseHeaders: [{ name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify(j)).toString("base64") });
+  };
+  await call("Fetch.enable", { patterns: [{ urlPattern: "*/api/nowplaying.php", requestStage: "Response" }] });
+  const off0 = await evaluate("swEmbed.offset");
+  await evaluate("swEmbed.poll()"); await sleep(1000); await evaluate("swEmbed.poll()"); await sleep(1500);
+  const off1 = await evaluate("swEmbed.offset"), lagNow = await evaluate("swEmbed.lag");
+  await call("Fetch.disable");
+  check("  an old (cached) now-playing answer doesn't move its clock", Math.abs(off1 - off0) < 0.05 && Math.abs(lagNow - 20) < 0.9, `${(off1 - off0).toFixed(3)} s, lag ${lagNow.toFixed(2)} s`);
+  const rates = await evaluate("clearInterval(__rateTimer); [...__rates]");
+  check("  and it never played faster or slower", rates.length === 1 && rates[0] === 1, JSON.stringify(rates));
   const pingBefore = await evaluate("swEmbed.ping");
   await evaluate("swEmbed.pauseFromOutside()");
   const again = await waitFor("swEmbed.events.some((e) => e.includes('starting again: paused from outside')) && swEmbed.playing && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);

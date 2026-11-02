@@ -27,6 +27,22 @@ final class Request
         return $remote;
     }
 
+    /**
+     * The audio a studio, recorder or mixdown sent: the raw bytes, or, for a small upload, the bytes as
+     * base64 in JSON ({"b64": "…"}). Some hosts' firewalls refuse a small binary body outright (406 before
+     * PHP; wordwave.co.za's host under about 10 KB), and a show's last piece can be that small.
+     */
+    public static function audio(): string
+    {
+        $body = (string) file_get_contents('php://input');
+        if (str_starts_with(strtolower((string) ($_SERVER['CONTENT_TYPE'] ?? '')), 'application/json')) {
+            $in = json_decode($body, true);
+            $bytes = is_array($in) && is_string($in['b64'] ?? null) ? base64_decode($in['b64'], true) : false;
+            return $bytes === false ? '' : $bytes;
+        }
+        return $body;
+    }
+
     public static function inRanges(string $ip, array $ranges): bool
     {
         $bin = @inet_pton($ip);

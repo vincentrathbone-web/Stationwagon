@@ -26,8 +26,7 @@ final class Stream
                 $out[] = '#EXT-X-DISCONTINUITY';
                 $dsn = $s['dsn'];
             }
-            $ms = sprintf('%03d', (int) round(fmod($s['start'], 1) * 1000) % 1000);
-            $out[] = '#EXT-X-PROGRAM-DATE-TIME:' . gmdate('Y-m-d\TH:i:s', (int) floor($s['start'])) . ".{$ms}Z";
+            $out[] = '#EXT-X-PROGRAM-DATE-TIME:' . self::date($s['start']);
             $out[] = sprintf('#EXTINF:%.3f,%s', $s['dur'], str_replace([',', "\n", "\r"], ' ', $s['title']));
             if ($s['range'] !== null) {
                 $out[] = '#EXT-X-BYTERANGE:' . $s['range'];
@@ -35,5 +34,15 @@ final class Stream
             $out[] = $prefix . $s['uri'];
         }
         return ['status' => 200, 'body' => implode("\n", $out) . "\n"];
+    }
+
+    /**
+     * A PROGRAM-DATE-TIME to the millisecond. Whole milliseconds first, so a start just short of a
+     * second (….9996) becomes the next second's .000, not this second's (a second early).
+     */
+    public static function date(float $t): string
+    {
+        $ms = (int) round($t * 1000);
+        return gmdate('Y-m-d\TH:i:s', intdiv($ms, 1000)) . sprintf('.%03dZ', $ms % 1000);
     }
 }

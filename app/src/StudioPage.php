@@ -60,7 +60,7 @@ final class StudioPage
                 !$post && $action === 'songs' => ['songs' => $studio->songs((string) ($_GET['q'] ?? ''))],
                 $post && $action === 'golive' => $studio->goLive($me, $now),
                 $post && $action === 'rejoin' => $studio->rejoin($me, $now),
-                $post && $action === 'piece' => $studio->addPiece($me, (string) ($_GET['live'] ?? ''), (int) ($_GET['seq'] ?? -1), (float) ($_GET['dur'] ?? 0), (string) file_get_contents('php://input'), $now),
+                $post && $action === 'piece' => $studio->addPiece($me, (string) ($_GET['live'] ?? ''), (int) ($_GET['seq'] ?? -1), (float) ($_GET['dur'] ?? 0), Request::audio(), $now),
                 $post && $action === 'end' => $studio->endLive($me, (string) ($in['live'] ?? ''), $now),
                 $post && $action === 'note' => $studio->postNote($me, (string) ($in['live'] ?? ''), (string) ($in['kind'] ?? ''), is_array($in['fields'] ?? null) ? $in['fields'] : [], $now),
                 $post && $action === 'note-edit' => $studio->editNote($me, (string) ($in['live'] ?? ''), (int) ($in['id'] ?? 0), is_array($in['fields'] ?? null) ? $in['fields'] : [], $now),

@@ -95,6 +95,8 @@ try {
     check('the window slides forward', $pb['msn'] > $pa['msn']);
     check('songs are byte ranges of the stored file', count($pa['ranges']) === 5 && str_starts_with($pa['ranges'][0], '../storage/media/') && str_ends_with($pa['ranges'][0], '.mp3'));
     check('each piece has a millisecond date-time', count($pa['pdt']) === 5 && preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/', $pa['pdt'][0]) === 1);
+    $d = [Stream::date(1793576354.9996), Stream::date(1793576354.0004), Stream::date(1793576354.5)];
+    check('  a start just short of a second is the next second, not one early', $d === ['2026-11-01T23:39:15.000Z', '2026-11-01T23:39:14.000Z', '2026-11-01T23:39:14.500Z'], implode(' ', $d));
     $second = $p->timeline($t0)[1];
     $c = $parse(Stream::playlist($p, $second['start'] + 3)['body']);
     check('a song change is marked as a discontinuity', $c['disc'] === 1);

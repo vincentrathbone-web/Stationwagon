@@ -173,7 +173,7 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "31 Oct · 01:30",
+  updated: "2 Nov · 12:00",
   commits: 46,
   version: "0.8.0-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
@@ -254,7 +254,7 @@ const MAP = {
       { text: "In-app updates from GitHub", note: "through the Stationwagon Updates plugin; checked when the app opens", v: "v0.7", state: "done" }
     ]},
     { name: "Pilot & launch", blurb: "WordWave runs beside AzuraCast first, then switches over.", features: [
-      { text: "The pilot station, installed for real", note: "wordwave.controll.co.za/radio with 8 Alruin tracks; your devices next", v: "v0.8", state: "progress" },
+      { text: "The pilot station, installed for real", note: "live at wordwave.co.za/radio; the website plays it through the embed", v: "v0.8", state: "progress" },
       { text: "Copy WordWave's library from AzuraCast", note: "needs your friend's OK first", v: "v0.8", state: "later" },
       { text: "Run beside AzuraCast for a week", v: "v0.8", state: "later" },
       { text: "Guides for station managers and DJs", v: "v1.0", state: "later" },
@@ -264,12 +264,18 @@ const MAP = {
   ],
   next: {
     title: "The WordWave pilot (v0.8)",
-    text: "The station's loudness is now yours to set: a slider in the Music library (−16 for Apple and podcasts, −14 for Spotify, −11 like FM radio, −9 very loud), and after a change it offers to re-level every song from its original, keeping each song's sound. Each song's normalization is kept with it, also in its MP3. Song prep tries mastering on a whole song, with presets. Radio WordWave runs at /radio with 8 of your tracks. Next, the pilot station gets its music and runs beside AzuraCast.",
+    text: "The website's player (the embed) no longer plays faster or slower to keep time, which made songs sound squeezed and skip; its clock no longer jumps with Cloudflare's cache. The station's loudness is yours to set: a slider in the Music library (−16 for Apple and podcasts, −14 for Spotify, −11 like FM radio, −9 very loud), and after a change it offers to re-level every song from its original, keeping each song's sound. Each song's normalization is kept with it, also in its MP3. Song prep tries mastering on a whole song, with presets. Radio WordWave runs at wordwave.co.za/radio. Next, the pilot station gets its music and runs beside AzuraCast.",
     order: ["Try the station on your own devices", "Run it beside AzuraCast for a week", "Copy WordWave's library when its owner agrees", "Then launch (v1.0)"]
   },
   call: null,
-  feedTitle: "Changed 20–30 Oct",
+  feedTitle: "Changed 20 Oct – 2 Nov",
   feed: [
+    { what: "The website's player sounded squeezed, then skipped", to: "fixed: the embed never plays faster or slower, and takes its clock only from uncached answers (live on wordwave.co.za: steady at 20.18 s for 3 minutes)", at: "2 Nov" },
+    { what: "Live shows in the station's player", to: "the same fix for its stream deck (and stream-only mode)", at: "2 Nov" },
+    { what: "A stream time just short of a second", to: "fixed: it was written a second early", at: "2 Nov" },
+    { what: "End show could wait 15 s on the new host", to: "fixed: its firewall refused a show's tiny last piece; short audio now goes as text (base64), checked on the live host", at: "2 Nov" },
+    { what: "Unfinished multi-station Windows app work", to: "dropped at your request; back to round 41", at: "2 Nov", kind: "info" },
+    { what: "Round 41 (loudness target)", to: "committed (d6ecdab)", at: "31 Oct", kind: "info" },
     { what: "Loudness target", to: "a slider in the Music library with the usual levels marked; a change offers to re-level the library or only new uploads", at: "31 Oct" },
     { what: "Each song's normalization", to: "kept with it: its loudness before levelling, the gain and the target, in the database and in its MP3's tag", at: "31 Oct" },
     { what: "Where the sound is processed", to: "checked: never on the server; at upload in your browser, live in the DJ's studio, crossfades and volume in each listener's player", at: "31 Oct", kind: "info" },
