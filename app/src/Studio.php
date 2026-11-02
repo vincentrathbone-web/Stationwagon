@@ -42,7 +42,9 @@ final class Studio
      */
     public function slot(array $user, float $now): array
     {
-        $manager = Auth::allows($user, 'onair');
+        // "Go live any time": outside their own block; "Run the on-air desk": also inside someone else's
+        $anytime = Auth::allows($user, 'anytime');
+        $desk = Auth::allows($user, 'desk');
         $current = $mine = $next = null;
         foreach ($this->liveBlocks() as $b) {
             foreach ($this->occurrences($b, $now) as $o) {
@@ -60,9 +62,9 @@ final class Studio
                 }
             }
         }
-        $block = $mine ?? ($manager ? $current : null);
+        $block = $mine ?? ($desk ? $current : null);
         $out = [
-            'may' => $manager || $mine !== null,
+            'may' => $anytime || $mine !== null,
             'reason' => null,
             'block' => $block,
             'next' => $mine ? null : $next,
@@ -209,7 +211,7 @@ final class Studio
 
     public function canControl(array $user, array $show): bool
     {
-        return (int) ($show['dj_user_id'] ?? 0) === (int) $user['id'] || Auth::allows($user, 'onair');
+        return (int) ($show['dj_user_id'] ?? 0) === (int) $user['id'] || Auth::allows($user, 'desk');
     }
 
     // ---- Notes from the studio -------------------------------------------------------------
@@ -253,7 +255,7 @@ final class Studio
     /** May this person change the running order with this scope? Their own block or their own list; managers any. */
     public function mayEditOrder(array $user, string $scope): bool
     {
-        if (Auth::allows($user, 'onair')) {
+        if (Auth::allows($user, 'desk')) {
             return preg_match('/^(block|user):\d+$/', $scope) === 1;
         }
         if ($scope === 'user:' . $user['id']) {

@@ -4,23 +4,23 @@ declare(strict_types=1);
 namespace Stationwagon;
 
 /**
- * The people who work on a station. Someone with the "people" permission adds and looks after DJs
- * and managers; only an admin can make or change an admin. Nobody can change, block or remove
- * themselves, and the station always keeps one admin who isn't blocked. Each person's permissions
- * (Permissions) start from their role; whoever looks after them can tick or untick each one, but
- * can't hand out a permission they haven't got. Blocking signs them out at once (Auth checks on
- * every request), ends their "Keep me signed in" devices and ends any live show they are on.
- * Passwords are typed by whoever sets them and never shown again.
+ * The people who work on a station. Each gets exactly what their role allows (Roles). Someone
+ * with the "people" permission adds and looks after people whose role can do no more than they
+ * can, and hands out only such roles; only an admin makes or changes an admin. Nobody can change,
+ * block or remove themselves, and the station always keeps one admin who isn't blocked. Blocking
+ * signs them out at once (Auth checks on every request), ends their "Keep me signed in" devices
+ * and ends any live show they are on. Passwords are typed by whoever sets them and never shown again.
  *
  * Used by the station's People screen and by the WordPress plugin's People page, which acts as an
  * admin of the station (a WordPress administrator already controls the station's files).
  */
 final class Staff
 {
-    public const ROLE_NAMES = ['dj' => 'DJ', 'manager' => 'Manager', 'admin' => 'Admin'];
+    private readonly Roles $roles;
 
     public function __construct(private readonly Db $db, private readonly array $station)
     {
+        $this->roles = new Roles($db, $station);
     }
 
     public function all(): array
@@ -29,10 +29,10 @@ final class Staff
         $su = $this->db->table('station_users');
         $ls = $this->db->table('live_shows');
         return $this->db->run(
-            "SELECT u.id, u.email, u.name, u.role, u.created_at, u.last_login_at, u.blocked_at, u.permissions,
+            "SELECT u.id, u.email, u.name, u.role, u.created_at, u.last_login_at, u.blocked_at, " . Auth::roleColumns($this->db) . ",
                     (SELECT MAX(l.start_at) FROM $ls l WHERE l.dj_user_id = u.id) AS last_live
              FROM $us u JOIN $su su ON su.user_id = u.id AND su.station_id = ?
-             ORDER BY u.blocked_at IS NOT NULL, FIELD(u.role, 'admin', 'manager', 'dj'), u.name",
+             ORDER BY u.blocked_at IS NOT NULL, FIELD(u.role, 'dj', 'manager', 'admin') DESC, u.name",
             [$this->station['id']]
         )->fetchAll();
     }
@@ -41,54 +41,47 @@ final class Staff
     {
         $us = $this->db->table('users');
         $su = $this->db->table('station_users');
-        $row = $this->db->run("SELECT u.id, u.email, u.name, u.role, u.blocked_at, u.permissions FROM $us u JOIN $su su ON su.user_id = u.id AND su.station_id = ? WHERE u.id = ?", [$this->station['id'], $id])->fetch();
+        $row = $this->db->run("SELECT u.id, u.email, u.name, u.role, u.blocked_at, " . Auth::roleColumns($this->db) . " FROM $us u JOIN $su su ON su.user_id = u.id AND su.station_id = ? WHERE u.id = ?", [$this->station['id'], $id])->fetch();
         return $row ?: null;
     }
 
-    /** Roles $actor may hand out. */
-    public static function grantable(array $actor): array
+    /** Keys of the roles $actor may hand out: any for an admin; with "people", those that can do no more than they can. */
+    public function grantable(array $actor): array
     {
-        if (($actor['role'] ?? '') === 'admin') {
-            return ['dj', 'manager', 'admin'];
+        if (!Auth::allows($actor, 'people')) {
+            return [];
         }
-        return Auth::allows($actor, 'people') ? ['dj', 'manager'] : [];
+        $mine = Permissions::of($actor);
+        $out = [];
+        foreach ($this->roles->all() as $r) {
+            if (($actor['role'] ?? '') === 'admin' || ($r['key'] !== 'admin' && !array_diff($r['permissions'], $mine))) {
+                $out[] = $r['key'];
+            }
+        }
+        return $out;
     }
 
-    /** Permissions $actor may tick or untick for others: the ones they have themselves. */
-    public static function grantablePermissions(array $actor): array
+    /** May $actor change, block or remove $target? Not themselves; only someone whose role they could give. */
+    public function canManage(array $actor, array $target): bool
     {
-        return Auth::allows($actor, 'people') ? Permissions::of($actor) : [];
+        return (int) $actor['id'] !== (int) $target['id'] && in_array($target['role'], $this->grantable($actor), true);
     }
 
-    /** May $actor change, block or remove $target? */
-    public static function canManage(array $actor, array $target): bool
-    {
-        return (int) $actor['id'] !== (int) $target['id'] && in_array($target['role'], self::grantable($actor), true);
-    }
-
-    /**
-     * @param ?list<string> $permissions null: the role's defaults
-     * @return array{0:?int,1:array<string,string>} [new id, field => problem]
-     */
-    public function add(array $actor, string $name, string $email, string $role, string $password, ?array $permissions = null): array
+    /** @return array{0:?int,1:array<string,string>} [new id, field => problem] */
+    public function add(array $actor, string $name, string $email, string $role, string $password): array
     {
         $e = $this->checkDetails($name, $email, null);
-        if (!in_array($role, self::grantable($actor), true)) {
+        if (!in_array($role, $this->grantable($actor), true)) {
             $e['role'] = 'You can’t give that role.';
         }
         if (($p = Auth::passwordProblem($password, strtolower(trim($email)))) !== null) {
             $e['password'] = $p;
         }
-        $stored = null;
-        if (!$e && $role !== 'admin') {
-            // The role's usual, or the ticks given, but never more than the actor has themselves
-            [$stored] = $this->permissionsFor($actor, $role, $permissions ?? Permissions::defaults($role), []);
-        }
         if ($e) {
             return [null, $e];
         }
         $id = $this->db->insert('users', ['email' => strtolower(trim($email)), 'name' => mb_substr(trim($name), 0, 190), 'password_hash' => password_hash($password, PASSWORD_DEFAULT),
-            'role' => $role, 'created_at' => gmdate('Y-m-d H:i:s'), 'permissions' => $stored]);
+            'role' => $role, 'created_at' => gmdate('Y-m-d H:i:s')]);
         $this->db->insert('station_users', ['station_id' => $this->station['id'], 'user_id' => $id]);
         return [$id, []];
     }
@@ -97,7 +90,7 @@ final class Staff
     public function edit(array $actor, int $id, string $name, string $email): array
     {
         $target = $this->get($id);
-        if ($target === null || !self::canManage($actor, $target)) {
+        if ($target === null || !$this->canManage($actor, $target)) {
             return ['name' => 'You can’t change that person.'];
         }
         $e = $this->checkDetails($name, $email, $id);
@@ -107,40 +100,20 @@ final class Staff
         return $e;
     }
 
-    /** A new role; what they may do goes back to the new role's usual. */
+    /** A new role: from now on they may do what it allows. */
     public function setRole(array $actor, int $id, string $role): ?string
     {
         $target = $this->get($id);
-        if ($target === null || !self::canManage($actor, $target)) {
+        if ($target === null || !$this->canManage($actor, $target)) {
             return 'You can’t change that person’s role.';
         }
-        if (!in_array($role, self::grantable($actor), true)) {
+        if (!in_array($role, $this->grantable($actor), true)) {
             return 'You can’t give that role.';
         }
         if ($target['role'] === 'admin' && $role !== 'admin' && $this->admins() <= 1) {
             return 'The station needs at least one admin.';
         }
-        // Back to the new role's usual, except what the actor hasn't got themselves (that stays as it was)
-        $stored = $role === 'admin' ? null : $this->permissionsFor($actor, $role, Permissions::defaults($role), Permissions::of($target))[0];
-        $this->db->run('UPDATE ' . $this->db->table('users') . ' SET role = ?, permissions = ? WHERE id = ?', [$role, $stored, $id]);
-        return null;
-    }
-
-    /** @param list<string> $keys what they may do from now on */
-    public function setPermissions(array $actor, int $id, array $keys): ?string
-    {
-        $target = $this->get($id);
-        if ($target === null || !self::canManage($actor, $target)) {
-            return 'You can’t change what that person may do.';
-        }
-        if ($target['role'] === 'admin') {
-            return 'Admins may always do everything.';
-        }
-        [$stored, $problem] = $this->permissionsFor($actor, $target['role'], $keys, Permissions::of($target));
-        if ($problem !== null) {
-            return $problem;
-        }
-        $this->db->run('UPDATE ' . $this->db->table('users') . ' SET permissions = ? WHERE id = ?', [$stored, $id]);
+        $this->db->run('UPDATE ' . $this->db->table('users') . ' SET role = ? WHERE id = ?', [$role, $id]);
         return null;
     }
 
@@ -148,7 +121,7 @@ final class Staff
     public function resetPassword(array $actor, int $id, string $password, Auth $auth): ?string
     {
         $target = $this->get($id);
-        if ($target === null || !self::canManage($actor, $target)) {
+        if ($target === null || !$this->canManage($actor, $target)) {
             return 'You can’t set that person’s password. (Change your own on Your account.)';
         }
         if (($p = Auth::passwordProblem($password, $target['email'])) !== null) {
@@ -165,7 +138,7 @@ final class Staff
     public function block(array $actor, int $id, ?Planner $planner = null, ?float $now = null): ?string
     {
         $target = $this->get($id);
-        if ($target === null || !self::canManage($actor, $target)) {
+        if ($target === null || !$this->canManage($actor, $target)) {
             return 'You can’t block that person.';
         }
         if ($target['role'] === 'admin' && $this->admins() <= 1) {
@@ -185,7 +158,7 @@ final class Staff
     public function unblock(array $actor, int $id): ?string
     {
         $target = $this->get($id);
-        if ($target === null || !self::canManage($actor, $target)) {
+        if ($target === null || !$this->canManage($actor, $target)) {
             return 'You can’t unblock that person.';
         }
         $this->db->run('UPDATE ' . $this->db->table('users') . ' SET blocked_at = NULL WHERE id = ?', [$id]);
@@ -195,7 +168,7 @@ final class Staff
     public function remove(array $actor, int $id): ?string
     {
         $target = $this->get($id);
-        if ($target === null || !self::canManage($actor, $target)) {
+        if ($target === null || !$this->canManage($actor, $target)) {
             return 'You can’t remove that person.';
         }
         if ($target['role'] === 'admin' && $this->admins() <= 1) {
@@ -220,26 +193,6 @@ final class Staff
             $e['email'] = 'Someone already signs in with that email.';
         }
         return $e;
-    }
-
-    /**
-     * What to store for $keys on someone with $role, given what they have now ($current): $actor may
-     * only change the ticks for permissions they have themselves; the others stay as they are.
-     * @return array{0:?string,1:?string} [stored, problem]
-     */
-    private function permissionsFor(array $actor, string $role, array $keys, array $current): array
-    {
-        $mine = self::grantablePermissions($actor);
-        if (!$mine) {
-            return [null, 'You can’t change what people may do.'];
-        }
-        $out = [];
-        foreach (array_keys(Permissions::ALL) as $k) {
-            if (in_array($k, $mine, true) ? in_array($k, $keys, true) : in_array($k, $current, true)) {
-                $out[] = $k;
-            }
-        }
-        return [Permissions::store($role, $out), null];
     }
 
     /** Admins who can sign in. */

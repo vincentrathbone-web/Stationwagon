@@ -240,29 +240,35 @@ try {
     $peoplePage = "$site/wp-admin/admin.php?page=stationwagon-people";
     $pp = http('GET', $peoplePage);
     check('Stationwagon → People lists the station’s own accounts', $pp['code'] === 200 && str_contains($pp['body'], 'admin.php?page=stationwagon-people') && str_contains($pp['body'], $admin['email'])
-        && str_contains($pp['body'], 'not WordPress users') && substr_count($pp['body'], 'name="perm[]"') === 8, (string) $pp['code']);
+        && str_contains($pp['body'], 'not WordPress users') && str_contains($pp['body'], 'id="roles"') && substr_count($pp['body'], 'name="perm[]"') === 9, (string) $pp['code']);
     $people = function (string $do, array $fields) use ($peoplePage): array {
         $form = http('GET', $peoplePage . (isset($fields['id']) ? '&person=' . $fields['id'] : ''));
         $nonce = between($form['body'], 'name="_wpnonce" value="', '"');
         return http('POST', preg_replace('#admin\.php\?page=.*$#', 'admin-post.php', $peoplePage), $fields + ['action' => 'stationwagon_people', 'sw_action' => $do, '_wpnonce' => $nonce]);
     };
-    $djMail = "$run-dj@example.test";
-    $r = $people('add', ['name' => 'WP Added DJ', 'email' => $djMail, 'role' => 'dj', 'password' => 'wp dj pass 123', 'perms' => '1', 'perm' => ['schedule']]);
     $sw = pdo($wpDb);
-    $djRow = $sw->query('SELECT id, permissions, blocked_at FROM sw_users WHERE email = ' . $sw->quote($djMail))->fetch(PDO::FETCH_ASSOC);
-    check('an administrator adds a DJ with a tick', str_contains($r['body'], 'Added.') && str_contains($r['body'], 'WP Added DJ') && ($djRow['permissions'] ?? '') === '["schedule"]', text(between($r['body'], 'notice', '</div>')));
+    $r = $people('role_add', ['name' => 'WP Scheduler', 'perm' => ['schedule']]);
+    check('an administrator adds a role with a tick', str_contains($r['body'], 'Role added.') && str_contains($r['body'], 'WP Scheduler')
+        && $sw->query("SELECT permissions FROM sw_roles WHERE `key` = 'wp-scheduler'")->fetchColumn() === '["schedule"]', text(between($r['body'], 'notice', '</div>')));
+    $djMail = "$run-dj@example.test";
+    $r = $people('add', ['name' => 'WP Added DJ', 'email' => $djMail, 'role' => 'wp-scheduler', 'password' => 'wp dj pass 123']);
+    $djRow = $sw->query('SELECT id, role, blocked_at FROM sw_users WHERE email = ' . $sw->quote($djMail))->fetch(PDO::FETCH_ASSOC);
+    check('  and someone with that role', str_contains($r['body'], 'Added.') && str_contains($r['body'], 'WP Added DJ') && ($djRow['role'] ?? '') === 'wp-scheduler', text(between($r['body'], 'notice', '</div>')));
     $djId = (int) ($djRow['id'] ?? 0);
     $djJar = tempnam(sys_get_temp_dir(), 'swdj');
     $asDj = fn(string $m, string $u, array $p = []) => http($m, $u, $p, [CURLOPT_COOKIEJAR => $djJar, CURLOPT_COOKIEFILE => $djJar]);
     $f = $asDj('GET', $url . 'signin');
     $in = $asDj('POST', $url . 'signin', ['csrf' => between($f['body'], 'name="csrf" value="', '"'), 'email' => $djMail, 'password' => 'wp dj pass 123', 'remember' => '1']);
     check('  who signs in to the station and gets the Schedule', str_contains($in['url'], '/manage') && str_contains($in['body'], '>Schedule</a>') && !str_contains($in['body'], '>People</a>'), $in['url']);
-    $r = $people('permissions', ['id' => $djId, 'perms' => '1', 'perm' => ['onair', 'podcast']]);
-    check('ticks are changed', str_contains($r['body'], 'Saved what they may do.') && $sw->query("SELECT permissions FROM sw_users WHERE id = $djId")->fetchColumn() === '["onair","podcast"]');
+    $r = $people('role_save', ['key' => 'wp-scheduler', 'name' => 'WP Scheduler', 'perm' => ['library', 'podcast']]);
+    $in = $asDj('GET', $url . 'manage');
+    check('the role’s ticks are changed, for its people at once', str_contains($r['body'], 'Saved. Everyone with this role') && str_contains($in['body'], '>Music library</a>') && !str_contains($in['body'], '>Schedule</a>'));
     $r = $people('details', ['id' => $djId, 'name' => 'WP Renamed DJ', 'email' => $djMail]);
     check('the name is changed', str_contains($r['body'], 'Name and email saved.') && str_contains($r['body'], 'WP Renamed DJ'));
     $r = $people('role', ['id' => $djId, 'role' => 'manager']);
-    check('the role is changed (to that role’s usual ticks)', str_contains($r['body'], 'Role changed.') && $sw->query("SELECT CONCAT(role, '/', COALESCE(permissions, 'usual')) FROM sw_users WHERE id = $djId")->fetchColumn() === 'manager/usual');
+    check('the person’s role is changed', str_contains($r['body'], 'Role changed.') && $sw->query("SELECT role FROM sw_users WHERE id = $djId")->fetchColumn() === 'manager');
+    $r = $people('role_delete', ['key' => 'manager']);
+    check('a built-in role can’t be deleted', str_contains($r['body'], 'can’t be deleted'));
     $r = $people('password', ['id' => $djId, 'password' => 'short']);
     check('a short password is refused', str_contains($r['body'], 'at least 10 characters'));
     $r = $people('block', ['id' => $djId]);
@@ -282,6 +288,8 @@ try {
     check('the station’s only admin can’t be blocked', str_contains($r['body'], 'at least one admin') && $sw->query("SELECT blocked_at IS NULL FROM sw_users WHERE id = $adminId")->fetchColumn() == 1);
     $r = $people('remove', ['id' => $djId]);
     check('a person is removed', str_contains($r['body'], 'Removed.') && !str_contains($r['body'], 'WP Renamed DJ'));
+    $r = $people('role_delete', ['key' => 'wp-scheduler']);
+    check('a role nobody has is deleted', str_contains($r['body'], 'Role deleted.') && !$sw->query("SELECT COUNT(*) FROM sw_roles WHERE `key` = 'wp-scheduler'")->fetchColumn());
     $forged = http('POST', "$site/wp-admin/admin-post.php", ['action' => 'stationwagon_people', 'sw_action' => 'remove', 'id' => $adminId, '_wpnonce' => 'bad']);
     check('a forged form is refused', $forged['code'] >= 400 && $sw->query("SELECT COUNT(*) FROM sw_users WHERE id = $adminId")->fetchColumn() == 1, (string) $forged['code']);
     @unlink($djJar);

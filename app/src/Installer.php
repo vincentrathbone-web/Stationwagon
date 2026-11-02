@@ -221,6 +221,7 @@ final class Installer
             'created_at' => $now,
         ]);
         $conn->insert('station_users', ['station_id' => $stationId, 'user_id' => $userId]);
+        Roles::ensureDefaults($conn, $stationId);
         $conn->pdo->commit();
 
         foreach (['storage/media', 'storage/live', 'storage/cache'] as $dir) {

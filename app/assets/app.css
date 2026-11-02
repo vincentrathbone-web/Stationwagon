@@ -201,6 +201,10 @@ td.cando { font-size: 13px; color: var(--muted); max-width: 260px; }
 .permform { display: grid; gap: 8px; justify-items: start; }
 .permform .lbl { font-weight: 600; font-size: 13px; color: var(--muted); }
 .newform .permform { margin: 14px 0; }
+.permform > .field { width: min(100%, 420px); }
+.permform > .field input { background: var(--raised); color: var(--ink); border: 1px solid transparent; border-radius: var(--r-field); font: 500 15px var(--f-ui); padding: 10px 12px; width: 100%; }
+.permform.newform h2 { margin-bottom: 4px; }
+.newform > p.hint { margin: 12px 0 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
 .perms { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; width: 100%; }
 .perm { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; background: var(--raised); border-radius: var(--r-field); padding: 9px 12px; cursor: pointer; }
 .perm input { accent-color: var(--amber); margin: 3px 0 0; }
@@ -216,6 +220,8 @@ td.cando { font-size: 13px; color: var(--muted); max-width: 260px; }
   table.people td.cando { grid-column: 1; max-width: none; }
   table.people td.acts { grid-column: 2; grid-row: 2; }
   table.people tr.editing td { display: block; grid-column: 1 / -1; }
+  table.people.roles td:nth-child(3) { display: none; }
+  table.people.roles td.acts { display: block; grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 }
 .permform .hint, .formrow > .hint { font-size: 12px; color: var(--faint); margin: 0; }
 .formrow > .hint.grow { flex: 1 1 260px; margin-top: 25px; font-size: 13px; color: var(--muted); }

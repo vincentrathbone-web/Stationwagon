@@ -38,8 +38,8 @@ final class Stationwagon_Admin
             return;
         }
         $base = plugins_url('assets/', dirname(__DIR__) . '/stationwagon.php');
-        wp_enqueue_style('stationwagon-admin', $base . 'admin.css', [], '1.1.0');
-        wp_enqueue_script('stationwagon-admin', $base . 'admin.js', [], '1.1.0', true);
+        wp_enqueue_style('stationwagon-admin', $base . 'admin.css', [], '1.2.0');
+        wp_enqueue_script('stationwagon-admin', $base . 'admin.js', [], '1.2.0', true);
     }
 
     /** After the plugin is updated, bring the station's code along (on the next admin page). */

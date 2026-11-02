@@ -56,3 +56,5 @@
 .sw-perm small { display: block; color: var(--sw-ink-2); }
 .button.sw-danger { color: #b32d2e; border-color: #b32d2e; }
 @media (max-width: 782px) { .sw-ptable th:nth-child(3), .sw-ptable td:nth-child(3), .sw-ptable th:nth-child(4), .sw-ptable td:nth-child(4) { display: none; } }
+.sw-h2 { margin-top: 32px; }
+.sw-roles .sw-tag { margin-left: 4px; }

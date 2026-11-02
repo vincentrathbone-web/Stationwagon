@@ -4,27 +4,27 @@ declare(strict_types=1);
 namespace Stationwagon;
 
 /**
- * What a person may do beyond going live in their own block, keeping their own running order and
- * looking after their own podcast episodes (which every DJ may). A role gives its defaults; an admin
- * or a manager with "people" may tick or untick each one for someone they look after (users.permissions,
- * a JSON list; NULL means the role's defaults). Admins always have everything, so a station can't
- * lock itself out.
+ * What a person may do beyond going live in their own scheduled block, keeping their own running
+ * order and looking after their own podcast episodes (which everyone who signs in may). Each person
+ * gets exactly what their role allows; the roles and their ticks are set under Manage → Roles
+ * (Roles). Admins always have everything, so a station can't lock itself out.
  */
 final class Permissions
 {
     /** key => [label, what it allows] */
     public const ALL = [
-        'onair' => ['On air', 'Skip songs, go live any time and run anyone’s show'],
+        'anytime' => ['Go live any time', 'Live shows, events and podcast recordings outside their own scheduled block'],
+        'desk' => ['Run the on-air desk', 'Skip songs, and run, change or end anyone’s live show'],
         'library' => ['Music library', 'Upload, edit and remove songs; song prep and re-levelling'],
         'playlists' => ['Playlists', 'Make and change playlists'],
         'schedule' => ['Schedule', 'Plan the week, including DJs’ live blocks'],
-        'podcast' => ['Podcast', 'Every episode and the podcast’s details (DJs always have their own episodes)'],
+        'podcast' => ['Podcast', 'Every episode and the podcast’s details (everyone keeps their own episodes)'],
         'listeners' => ['Listeners', 'Listener numbers and where they listen from'],
         'sound' => ['Sound & safety', 'Crossfades, fades, quality and the other station sound settings'],
-        'people' => ['People', 'Add, change, block and remove people (up to their own role)'],
+        'people' => ['People', 'Add, change, block and remove people, giving roles that can do no more than they can'],
     ];
 
-    /** @return list<string> the role's defaults */
+    /** @return list<string> what a built-in role starts with */
     public static function defaults(string $role): array
     {
         return match ($role) {
@@ -33,16 +33,17 @@ final class Permissions
         };
     }
 
-    /** @return list<string> what this person may do */
+    /** @return list<string> what this person may do: their role's ticks (role_permissions, from Roles) */
     public static function of(array $user): array
     {
         if (($user['role'] ?? '') === 'admin') {
             return array_keys(self::ALL);
         }
-        $set = isset($user['permissions']) && $user['permissions'] !== null && $user['permissions'] !== ''
-            ? self::clean(is_array($user['permissions']) ? $user['permissions'] : (json_decode((string) $user['permissions'], true) ?: []))
-            : self::defaults((string) ($user['role'] ?? ''));
-        return $set;
+        $set = $user['role_permissions'] ?? null;
+        if ($set === null || $set === '') {
+            return self::defaults((string) ($user['role'] ?? ''));
+        }
+        return self::clean(is_array($set) ? $set : (json_decode((string) $set, true) ?: []));
     }
 
     public static function has(array $user, string $key): bool
@@ -56,10 +57,13 @@ final class Permissions
         return array_values(array_filter(array_keys(self::ALL), fn($k) => in_array($k, $keys, true)));
     }
 
-    /** What to store for $keys on someone with $role: NULL when it is just the role's defaults. */
-    public static function store(string $role, array $keys): ?string
+    /** "Everything", "Their own shows" or the labels, for lists. */
+    public static function summary(array $keys): string
     {
         $keys = self::clean($keys);
-        return $keys === self::defaults($role) ? null : json_encode($keys);
+        if (count($keys) === count(self::ALL)) {
+            return 'Everything';
+        }
+        return $keys ? implode(', ', array_map(fn($k) => self::ALL[$k][0], $keys)) : 'Their own shows, in their own blocks';
     }
 }

@@ -202,9 +202,13 @@ try {
 
     $sched->delete($open);
     check('a DJ with no block at all is told to ask a manager', !$studio->slot($pieter, $now)['may'] && str_contains((string) $studio->slot($pieter, $now)['reason'], 'Ask a manager'));
-    check('  but with the "On air" tick they may go live any time', $studio->slot($pieter + ['permissions' => '["onair"]'], $now)['may']);
-    check('a manager without "On air" can’t go live outside a block', !$studio->slot($mgr + ['permissions' => '["schedule"]'], $now)['may']
-        && !$studio->mayEditOrder($mgr + ['permissions' => '[]'], 'user:' . $anna['id']));
+    $anytime = $pieter + ['role_permissions' => '["anytime"]'];
+    check('  but a role with "Go live any time" may, in a show of their own', $studio->slot($anytime, $now)['may'] && $studio->slot($anytime, $now)['scope'] === 'user:' . $pieter['id']);
+    check('  that alone doesn’t run anyone else’s show or running order', !$studio->mayEditOrder($anytime, 'user:' . $anna['id']) && !$studio->mayEditOrder($anytime, "block:$evening"));
+    $desk = $pieter + ['role_permissions' => '["desk"]'];
+    check('a role with "Run the on-air desk" plans anyone’s show, but goes live only in their own block', $studio->mayEditOrder($desk, "block:$evening") && $studio->mayEditOrder($desk, 'user:' . $anna['id']) && !$studio->slot($desk, $now)['may']);
+    check('a manager role without either can’t go live outside a block', !$studio->slot($mgr + ['role_permissions' => '["schedule"]'], $now)['may']
+        && !$studio->mayEditOrder($mgr + ['role_permissions' => '[]'], 'user:' . $anna['id']));
     check('a blocked manager may do nothing here', !$studio->slot($mgr + ['blocked_at' => '2027-01-01 00:00:00'], $now)['may']);
 
     echo "Library search\n";

@@ -79,8 +79,8 @@ try {
     check('the list: a manager sees the drafts, a DJ only their own, nobody the skipped', count($pod->list($mgr)) === 1 && count($pod->list($sidney)) === 1 && count($pod->list($anna)) === 0);
     check('  with the raw length and where it came from', abs($pod->list($mgr)[0]['raw_seconds'] - 210) < 0.01 && $pod->list($mgr)[0]['source'] === 'aired');
     check('who may edit: the show’s DJ and managers', $pod->mayEdit($sidney, $epA) && $pod->mayEdit($mgr, $epA) && !$pod->mayEdit($anna, $epA));
-    check('  a DJ with the "Podcast" tick sees and edits every episode; a manager without it only their own', $pod->mayEdit($anna + ['permissions' => '["podcast"]'], $epA) && count($pod->list($anna + ['permissions' => '["podcast"]'])) === 1
-        && !$pod->mayEdit($mgr + ['permissions' => '["schedule"]'], $epA) && count($pod->list($mgr + ['permissions' => '[]'])) === 0);
+    check('  a DJ with the "Podcast" tick sees and edits every episode; a manager without it only their own', $pod->mayEdit($anna + ['role_permissions' => '["podcast"]'], $epA) && count($pod->list($anna + ['role_permissions' => '["podcast"]'])) === 1
+        && !$pod->mayEdit($mgr + ['role_permissions' => '["schedule"]'], $epA) && count($pod->list($mgr + ['role_permissions' => '[]'])) === 0);
 
     echo "The studio’s own recording\n";
     $chunk = str_repeat($frame, 100); // stands for a minute of audio (the server takes the count the studio gives)

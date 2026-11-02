@@ -6,6 +6,7 @@ $rail = [
     'playlists' => ['manage/playlists', 'Playlists', 'playlists'],
     'schedule' => ['manage/schedule', 'Schedule', 'schedule'],
     'people' => ['manage/people', 'People', 'people'],
+    'roles' => ['manage/roles', 'Roles', 'admin'],
     'sound' => ['manage/sound', 'Sound & safety', 'sound'],
     'songprep' => ['manage/songprep', 'Song prep', 'library'],
     'listeners' => ['manage/listeners', 'Listeners', 'listeners'],

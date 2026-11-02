@@ -49,7 +49,7 @@ final class ManagePage
 
     public function skip(): void
     {
-        $me = $this->postAs('onair', 'manage');
+        $me = $this->postAs('desk', 'manage');
         $now = microtime(true);
         $r = $this->planner->skip($now)['result'];
         if ($r['cut_at'] === null) {
@@ -420,7 +420,7 @@ final class ManagePage
 
     // ---- People --------------------------------------------------------------------------
 
-    /** Everyone who can sign in: add, change details, role and ticks, block, set a password, remove. */
+    /** Everyone who can sign in: add, change details and role, block, set a password, remove. */
     public function people(): void
     {
         $staff = new Staff($this->db, $this->station);
@@ -429,9 +429,8 @@ final class ManagePage
             $id = (int) ($_POST['id'] ?? 0);
             $action = (string) ($_POST['action'] ?? '');
             $back = 'manage/people';
-            $ticks = isset($_POST['perms']) ? array_map('strval', (array) ($_POST['perm'] ?? [])) : null;
             if ($action === 'add') {
-                [$newId, $errors] = $staff->add($me, (string) ($_POST['name'] ?? ''), (string) ($_POST['email'] ?? ''), (string) ($_POST['role'] ?? 'dj'), (string) ($_POST['password'] ?? ''), $ticks);
+                [$newId, $errors] = $staff->add($me, (string) ($_POST['name'] ?? ''), (string) ($_POST['email'] ?? ''), (string) ($_POST['role'] ?? 'dj'), (string) ($_POST['password'] ?? ''));
                 if ($errors) {
                     $_SESSION['people_form'] = ['in' => array_diff_key($_POST, ['password' => 1, 'csrf' => 1]), 'errors' => $errors];
                     Session::flash('bad', 'Not added: ' . implode(' ', $errors));
@@ -443,7 +442,6 @@ final class ManagePage
                 $problem = match ($action) {
                     'details' => implode(' ', $staff->edit($me, $id, (string) ($_POST['name'] ?? ''), (string) ($_POST['email'] ?? ''))) ?: null,
                     'role' => $staff->setRole($me, $id, (string) ($_POST['role'] ?? '')),
-                    'permissions' => $staff->setPermissions($me, $id, $ticks ?? []),
                     'password' => $staff->resetPassword($me, $id, (string) ($_POST['password'] ?? ''), Auth::fromConfig()),
                     'block' => $staff->block($me, $id, $this->planner),
                     'unblock' => $staff->unblock($me, $id),
@@ -455,8 +453,7 @@ final class ManagePage
                 }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? match ($action) {
                     'details' => 'Name and email saved.',
-                    'role' => 'Role changed. What they may do is back to that role’s usual.',
-                    'permissions' => 'Saved what they may do.',
+                    'role' => 'Role changed. They may now do what that role allows.',
                     'password' => 'New password set. Their other sessions are signed out.',
                     'block' => 'Blocked. They are signed out everywhere, and if they were live the AutoDJ has taken over.',
                     'unblock' => 'Unblocked. They can sign in again.',
@@ -470,11 +467,40 @@ final class ManagePage
         unset($_SESSION['people_form']);
         $this->render('people', 'People', $me, [
             'people' => $staff->all(),
-            'grantable' => Staff::grantable($me),
-            'mayTick' => Staff::grantablePermissions($me),
+            'staff' => $staff,
+            'roles' => (new Roles($this->db, $this->station))->all(),
+            'grantable' => $staff->grantable($me),
             'form' => $form,
             'open' => (int) ($_GET['person'] ?? 0),
         ]);
+    }
+
+    /** The station's roles and what each may do; admins only. */
+    public function roles(): void
+    {
+        $roles = new Roles($this->db, $this->station);
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+            $me = $this->postAs('admin', 'manage/roles');
+            $key = (string) ($_POST['key'] ?? '');
+            $ticks = array_map('strval', (array) ($_POST['perm'] ?? []));
+            $action = (string) ($_POST['action'] ?? '');
+            $back = 'manage/roles';
+            if ($action === 'add') {
+                [$newKey, $problem] = $roles->add($me, (string) ($_POST['name'] ?? ''), $ticks);
+                $back .= $newKey ? '?role=' . rawurlencode($newKey) : '';
+            } else {
+                $problem = match ($action) {
+                    'save' => $roles->update($me, $key, (string) ($_POST['name'] ?? ''), $ticks),
+                    'delete' => $roles->delete($me, $key),
+                    default => 'Unknown action.',
+                };
+                $back .= $action === 'save' ? '?role=' . rawurlencode($key) : '';
+            }
+            Session::flash($problem ? 'bad' : 'ok', $problem ?? ['add' => 'Role added.', 'save' => 'Saved. Everyone with this role may now do what it allows.', 'delete' => 'Role deleted.'][$action]);
+            App::redirect($back);
+        }
+        $me = App::requireRole('admin');
+        $this->render('roles', 'Roles', $me, ['roles' => $roles->all(), 'open' => (string) ($_GET['role'] ?? '')]);
     }
 
     // ---- Sound & safety ------------------------------------------------------------------

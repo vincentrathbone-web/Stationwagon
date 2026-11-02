@@ -28,17 +28,19 @@ namespace Stationwagon;
  *   v11 a song's loudness normalization: tracks.source_lufs, level_gain_db, level_target (the station's
  *       loudness target it was levelled to) and preset_settings (the mastering it was made with, so
  *       re-levelling for a new target keeps its sound)
+ *   v12 users.blocked_at (and per-person ticks, gone again in v13)
+ *   v13 roles: the station's roles and what each may do; users.role holds a role's key
  */
 final class Schema
 {
-    public const VERSION = 12;
+    public const VERSION = 13;
 
     /** Table names without prefix, in creation order (foreign keys need their parents first). */
     public const TABLES = [
         'settings', 'stations', 'users', 'station_users', 'tracks', 'playlists', 'playlist_tracks',
         'schedule', 'live_shows', 'live_pieces', 'timeline', 'presenter_notes', 'running_orders',
         'listeners', 'listener_hours', 'listener_tally', 'listener_visitors',
-        'episodes', 'episode_takes', 'episode_chunks', 'remember_tokens', 'prep_presets',
+        'episodes', 'episode_takes', 'episode_chunks', 'remember_tokens', 'prep_presets', 'roles',
     ];
 
     /** @return array<string,string> table name => CREATE TABLE statement */
@@ -75,11 +77,10 @@ final class Schema
                 `email` VARCHAR(190) NOT NULL,
                 `name` VARCHAR(190) NOT NULL,
                 `password_hash` VARCHAR(255) NOT NULL,
-                `role` ENUM('admin','manager','dj') NOT NULL DEFAULT 'dj',
+                `role` VARCHAR(40) NOT NULL DEFAULT 'dj' COMMENT 'the key of their role (roles)',
                 `created_at` DATETIME NOT NULL,
                 `last_login_at` DATETIME NULL,
                 `blocked_at` DATETIME NULL COMMENT 'set while the person may not sign in',
-                `permissions` TEXT NULL COMMENT 'JSON list of what they may do; NULL: their role''s defaults (Permissions)',
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `{$p}users_email` (`email`)
             ) $opts",
@@ -250,6 +251,7 @@ final class Schema
             'episode_takes' => self::episodeTakes($p, $opts),
             'episode_chunks' => self::episodeChunks($p, $opts),
             'remember_tokens' => self::rememberTokens($p, $opts),
+            'roles' => self::roles($p, $opts),
             'prep_presets' => self::prepPresets($p, $opts),
         ];
     }
@@ -413,6 +415,21 @@ final class Schema
      * cookie; only the validator's SHA-256 is kept here. pw = the end of the password hash when it was
      * made, so a new password ends it, as it ends other sessions.
      */
+    private static function roles(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}roles` (
+                `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `station_id` INT UNSIGNED NOT NULL,
+                `key` VARCHAR(40) NOT NULL COMMENT 'users.role holds this',
+                `name` VARCHAR(60) NOT NULL,
+                `permissions` TEXT NOT NULL COMMENT 'JSON list of what the role may do (Permissions)',
+                `built_in` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Admin, Manager and DJ: never deleted',
+                `created_at` DATETIME NOT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `{$p}roles_key` (`station_id`, `key`)
+            ) $opts";
+    }
+
     private static function rememberTokens(string $p, string $opts): string
     {
         return "CREATE TABLE IF NOT EXISTS `{$p}remember_tokens` (
@@ -492,6 +509,13 @@ final class Schema
                 "ALTER TABLE `{$p}users` ADD COLUMN `blocked_at` DATETIME NULL COMMENT 'set while the person may not sign in' AFTER `last_login_at`",
                 "ALTER TABLE `{$p}users` ADD COLUMN `permissions` TEXT NULL COMMENT 'JSON list of what they may do; NULL: their role''s defaults (Permissions)' AFTER `blocked_at`",
             ],
+            // roles of the station's own, with their ticks; people get exactly their role's (12's own ticks move to a role)
+            13 => [
+                self::roles($p, $opts),
+                "ALTER TABLE `{$p}users` MODIFY `role` VARCHAR(40) NOT NULL DEFAULT 'dj' COMMENT 'the key of their role (roles)'",
+                fn(Db $db) => Roles::migrateTicks($db),
+                fn(Db $db) => $db->run('SHOW COLUMNS FROM ' . $db->table('users') . " LIKE 'permissions'")->fetch() ? $db->pdo->exec("ALTER TABLE `{$p}users` DROP COLUMN `permissions`") : null,
+            ],
         ];
     }
 
@@ -524,6 +548,10 @@ final class Schema
                     continue;
                 }
                 foreach ($statements as $sql) {
+                    if ($sql instanceof \Closure) {
+                        $sql($db); // a step that needs PHP; written so it can run again
+                        continue;
+                    }
                     try {
                         $db->pdo->exec($sql);
                     } catch (\PDOException $e) {

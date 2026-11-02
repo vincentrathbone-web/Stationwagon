@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Stationwagon
  * Description: Sets up a Stationwagon radio station next to this site in a few clicks: an AutoDJ with real crossfades, a listener stream, and a studio for live shows in the browser, on Windows or on Android. Adds a [stationwagon_player] shortcode for the player.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Controll
  * Requires at least: 6.0
  * Requires PHP: 8.1

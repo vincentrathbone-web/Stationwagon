@@ -5,7 +5,7 @@
 //   php app/tests/manage_test.php      (same SW_TEST_DB_* settings as install_test.php)
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
-use Stationwagon\{Auth, Db, DiagReports, Library, Permissions, Planner, Playlists, PrepPresets, Schedule, Schema, Staff, StationSettings};
+use Stationwagon\{Auth, Db, DiagReports, Library, Permissions, Planner, Playlists, PrepPresets, Roles, Schedule, Schema, Staff, StationSettings};
 
 $t = test_database('manage');
 $root = temp_root('manage');
@@ -342,7 +342,7 @@ try {
     [, $e] = $staff->add($mgr, '', 'bad', 'dj', 'short');
     check('name, email and password are checked', isset($e['name'], $e['email'], $e['password']));
     $dj = $staff->get($djId);
-    check('a DJ can manage nobody', Staff::grantable($dj) === [] && !Staff::canManage($dj, $mgr));
+    check('a DJ can manage nobody', $staff->grantable($dj) === [] && !$staff->canManage($dj, $mgr));
     check('a manager can’t touch the admin', $staff->setRole($mgr, (int) $admin['id'], 'dj') !== null && $staff->remove($mgr, (int) $admin['id']) !== null);
     check('nobody changes their own role here', $staff->setRole($admin, (int) $admin['id'], 'dj') !== null);
     check('a manager promotes a DJ to manager', $staff->setRole($mgr, $djId, 'manager') === null && $staff->get($djId)['role'] === 'manager');
@@ -364,33 +364,64 @@ try {
     $_SESSION = [];
     check('  (sign-in refused)', !$auth->attempt('dan@example.test', 'brand new pass', '192.0.2.10')['ok']);
 
-    echo "Permissions and blocking\n";
+    echo "Roles\n";
     $boss = $lastAdmin;
-    [$pmId] = $staff2->add($boss, 'Pat Partial', 'pat@example.test', 'manager', 'pat password 1', ['people', 'schedule']);
+    $roles = new Roles($db, $station);
+    check('Admin, Manager and DJ come built in, with their usual ticks', array_column($roles->all(), 'key') === ['admin', 'manager', 'dj']
+        && $roles->get('manager')['permissions'] === array_keys(Permissions::ALL) && $roles->get('dj')['permissions'] === []);
+    [$pk, $pr] = $roles->add($boss, 'Scheduler', ['schedule', 'people', 'nonsense']);
+    check('an admin adds a role with some ticks (unknown ones dropped)', $pk === 'scheduler' && $pr === null && $roles->get('scheduler')['permissions'] === ['schedule', 'people']);
+    check('  a name already used is refused, whatever its case', $roles->add($boss, 'SCHEDULER', [])[1] !== null && $roles->add($boss, '  ', [])[1] !== null);
+    $mia = $staff2->get($mgrId);
+    check('  only admins add, change or delete roles', $roles->add($mia, 'Mine', [])[1] !== null && $roles->update($mia, 'dj', 'DJ', ['library']) !== null && $roles->delete($mia, 'scheduler') !== null);
+    [$pmId] = $staff2->add($boss, 'Pat Partial', 'pat@example.test', 'scheduler', 'pat password 1');
     $pm = $staff2->get($pmId);
-    check('a manager can be given only some ticks', Permissions::of($pm) === ['schedule', 'people'] && Auth::allows($pm, 'schedule') && !Auth::allows($pm, 'library'));
-    check('  and still counts as a manager by role', Auth::allows($pm, 'manager'));
+    check('a person gets exactly their role’s ticks', Permissions::of($pm) === ['schedule', 'people'] && Auth::allows($pm, 'schedule') && !Auth::allows($pm, 'library') && $pm['role_name'] === 'Scheduler');
+    check('  and counts as staff, like a DJ', Auth::allows($pm, 'dj') && !Auth::allows($pm, 'manager'));
+    check('with People, only roles that can do no more than you can are yours to give', $staff2->grantable($pm) === ['scheduler', 'dj'], json_encode($staff2->grantable($pm)));
+    [$djId2] = $staff2->add($pm, 'Sam DJ', 'sam@example.test', 'dj', 'sam password 1');
+    check('  so Pat adds a DJ', $djId2 !== null);
+    check('  but not a manager', isset($staff2->add($pm, 'Max', 'max@example.test', 'manager', 'max password 1')[1]['role']));
     [$fullId] = $staff2->add($boss, 'Full Manager', 'full@example.test', 'manager', 'full password 1');
-    check('a manager with no ticks given has every one', Permissions::of($staff2->get($fullId)) === array_keys(Permissions::ALL) && $staff2->get($fullId)['permissions'] === null);
-    [$djId2] = $staff2->add($pm, 'Sam DJ', 'sam@example.test', 'dj', 'sam password 1', ['schedule', 'library']);
-    check('a manager can’t hand out a tick they haven’t got', Permissions::of($staff2->get($djId2)) === ['schedule']);
-    [$mgr2] = $staff2->add($pm, 'Max Manager', 'max@example.test', 'manager', 'max password 1');
-    check('  nor through a role’s usual ticks', Permissions::of($staff2->get($mgr2)) === ['schedule', 'people']);
-    check('  nor by changing someone’s role', $staff2->setRole($pm, $djId2, 'manager') === null && Permissions::of($staff2->get($djId2)) === ['schedule', 'people']);
-    $staff2->setRole($boss, $djId2, 'dj');
-    check('a role change goes back to the new role’s usual', Permissions::of($staff2->get($djId2)) === [] && $staff2->get($djId2)['permissions'] === null);
-    check('ticks can be changed', $staff2->setPermissions($boss, $djId2, ['onair', 'podcast']) === null && Permissions::of($staff2->get($djId2)) === ['onair', 'podcast']);
-    check('  a DJ with "On air" may run anyone’s show', Auth::allows($staff2->get($djId2), 'onair') && !Auth::allows($staff2->get($djId2), 'manager'));
-    check('  a manager keeps the ticks they can’t change', $staff2->setPermissions($pm, $djId2, []) === null && Permissions::of($staff2->get($djId2)) === ['onair', 'podcast']);
-    check('  unknown ticks are dropped', $staff2->setPermissions($boss, $djId2, ['onair', 'root', 'x']) === null && Permissions::of($staff2->get($djId2)) === ['onair']);
-    check('an admin’s ticks can’t be changed (they have everything)', $staff2->setPermissions($boss, $mgr2, []) === null && $staff2->setRole($boss, $mgr2, 'admin') === null
-        && $staff2->setPermissions($boss, $mgr2, []) !== null && Permissions::of($staff2->get($mgr2)) === array_keys(Permissions::ALL));
-    check('without "People" a manager manages nobody', Staff::grantable($staff2->get($fullId)) !== [] && Staff::grantable($staff2->get($djId2)) === []
-        && $staff2->setPermissions($boss, $fullId, ['library']) === null && Staff::grantable($staff2->get($fullId)) === []);
+    check('  and can’t change a manager', !$staff2->canManage($pm, $staff2->get($fullId)) && $staff2->setRole($pm, $fullId, 'dj') !== null);
+    check('a DJ manages nobody', $staff2->grantable($staff2->get($djId2)) === [] && !$staff2->canManage($staff2->get($djId2), $pm));
+    check('changing a role’s ticks applies to its people at once', $roles->update($boss, 'dj', 'DJ', ['anytime', 'podcast']) === null && Permissions::of($staff2->get($djId2)) === ['anytime', 'podcast']);
+    check('  Pat can then no longer give the DJ role (it can do more than Pat)', !in_array('dj', $staff2->grantable($pm), true) && !$staff2->canManage($pm, $staff2->get($djId2)));
+    check('a role can be renamed', $roles->update($boss, 'dj', 'Presenter', ['anytime']) === null && $staff2->get($djId2)['role_name'] === 'Presenter' && $roles->get('dj')['permissions'] === ['anytime']);
+    check('the Admin role can’t be changed; built-in roles can’t be deleted', $roles->update($boss, 'admin', 'Boss', []) !== null && $roles->delete($boss, 'manager') !== null && $roles->delete($boss, 'dj') !== null);
+    check('a role that people have can’t be deleted', $roles->delete($boss, 'scheduler') !== null);
+    check('a person’s role is changed, and with it what they may do', $staff2->setRole($boss, $pmId, 'manager') === null && Permissions::of($staff2->get($pmId)) === array_keys(Permissions::ALL));
+    check('  then the empty role can be deleted', $roles->delete($boss, 'scheduler') === null && $roles->get('scheduler') === null);
+    $roles->update($boss, 'dj', 'DJ', []);
     check('name and email can be changed', $staff2->edit($boss, $djId2, 'Samuel DJ', 'Samuel@Example.test') === [] && $staff2->get($djId2)['email'] === 'samuel@example.test');
     check('  a taken email is refused', isset($staff2->edit($boss, $djId2, 'Samuel DJ', 'pat@example.test')['email']));
     check('  nobody edits themselves here', $staff2->edit($boss, (int) $boss['id'], 'X', 'x@example.test') !== []);
 
+    echo "Schema 13: each person's own ticks move to a role\n";
+    $u = $db->table('users');
+    $db->pdo->exec("ALTER TABLE $u ADD COLUMN `permissions` TEXT NULL");
+    $mk = function (string $name, string $role, ?string $perms) use ($db, $station): int {
+        $id = $db->insert('users', ['email' => strtolower(str_replace(' ', '.', $name)) . '@old.test', 'name' => $name, 'password_hash' => 'x', 'role' => $role, 'created_at' => gmdate('Y-m-d H:i:s'), 'permissions' => $perms]);
+        $db->insert('station_users', ['station_id' => $station['id'], 'user_id' => $id]);
+        return $id;
+    };
+    $o1 = $mk('Old Onair', 'dj', '["onair","schedule"]');
+    $o2 = $mk('Old Twin', 'manager', '["schedule","onair"]');
+    $o3 = $mk('Old Full', 'manager', json_encode(['onair', 'library', 'playlists', 'schedule', 'podcast', 'listeners', 'sound', 'people']));
+    $o4 = $mk('Old Plain', 'manager', null);
+    $db->run('UPDATE ' . $db->table('settings') . " SET value = '12' WHERE name = 'schema_version'");
+    check('the upgrade runs', Schema::upgrade($db) === [13]);
+    $role = fn(int $id) => (string) $db->run("SELECT role FROM $u WHERE id = ?", [$id])->fetchColumn();
+    $custom = $roles->get($role($o1));
+    check('  "On air" becomes Go live any time and Run the on-air desk, in a new role', $custom !== null && str_starts_with($custom['name'], 'Custom role') && $custom['permissions'] === ['anytime', 'desk', 'schedule'], json_encode($custom));
+    check('  the same ticks share that role', $role($o2) === $role($o1));
+    check('  a manager with every tick is simply a Manager; one without own ticks stays one', $role($o3) === 'manager' && $role($o4) === 'manager');
+    check('  the per-person column is gone', !$db->run("SHOW COLUMNS FROM $u LIKE 'permissions'")->fetch());
+    check('  and a second run changes nothing', Schema::upgrade($db) === []);
+    foreach ([$o1, $o2, $o3, $o4] as $id) { $db->run("DELETE FROM $u WHERE id = ?", [$id]); }
+    $roles->delete($boss, $custom['key']);
+
+    echo "Blocking\n";
     $_SESSION = [];
     $auth2 = new Auth($db, "$root/storage/cache/throttle");
     check('Samuel signs in', $auth2->attempt('samuel@example.test', 'sam password 1', '192.0.2.30', true)['ok'] && $auth2->user() !== null);
@@ -400,7 +431,7 @@ try {
     $p->replan($at);
     $live = $p->goLive($at, 'Samuel live', $djId2)['result'] ?? [];
     check('  and goes live', isset($live['live']['public_id']), json_encode($live));
-    check('a manager without "People" can’t block', $staff2->block($staff2->get($fullId), $djId2, $p, $at + 30) !== null);
+    check('a DJ can’t block', $staff2->block($staff2->get($djId2), $fullId, $p, $at + 30) !== null);
     check('blocking works', $staff2->block($boss, $djId2, $p, $at + 30) === null && $staff2->get($djId2)['blocked_at'] !== null);
     $show = $db->run('SELECT `open`, closed_reason FROM ' . $db->table('live_shows') . ' WHERE public_id = ?', [$live['live']['public_id']])->fetch();
     check('  their live show ends at once', (int) $show['open'] === 0 && $show['closed_reason'] === 'DJ blocked', json_encode($show));
@@ -412,16 +443,15 @@ try {
     $_SESSION = [];
     $try = $auth3->attempt('samuel@example.test', 'sam password 1', '192.0.2.31');
     check('  and they can’t sign in', !$try['ok'] && str_contains((string) ($try['error'] ?? ''), 'blocked'), json_encode($try));
-    check('  a blocked person may do nothing', !Auth::allows($staff2->get($djId2), 'dj') && !Auth::allows($staff2->get($djId2), 'onair'));
+    check('  a blocked person may do nothing', !Auth::allows($staff2->get($djId2), 'dj') && !Auth::allows($staff2->get($djId2), 'anytime'));
     check('blocking twice keeps the first time', $staff2->block($boss, $djId2, $p, $at + 90) === null);
     check('unblocking lets them sign in again', $staff2->unblock($boss, $djId2) === null && (new Auth($db, "$root/storage/cache/throttle"))->attempt('samuel@example.test', 'sam password 1', '192.0.2.32')['ok']);
     check('nobody blocks themselves', $staff2->block($boss, (int) $boss['id'], $p) !== null);
-    $staff2->setRole($boss, $mgr2, 'manager');
     check('the last admin who can sign in can’t be blocked', $staff2->block(['id' => 0, 'role' => 'admin'], (int) $boss['id'], $p) !== null);
     [$adm3] = $staff2->add($boss, 'Third Admin', 'adm3@example.test', 'admin', 'adm3 password 1');
     check('  but one of two admins can', $staff2->block($boss, $adm3, $p) === null);
     check('  and then the other is the last one', $staff2->block(['id' => 0, 'role' => 'admin'], (int) $boss['id'], $p) !== null && $staff2->remove(['id' => 0, 'role' => 'admin'], (int) $boss['id']) !== null);
-    check('the WordPress page’s actor (an admin with no account here) may manage anyone', Staff::canManage(['id' => 0, 'role' => 'admin'], $boss));
+    check('the WordPress page’s actor (an admin with no account here) may manage anyone', $staff2->canManage(['id' => 0, 'role' => 'admin'], $boss));
 
     echo "Diagnostics reports\n";
     $reports = new DiagReports("$root/storage/diag");

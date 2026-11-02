@@ -58,6 +58,7 @@ final class App
                 'manage/playlists' => (new ManagePage())->playlists(),
                 'manage/schedule' => (new ManagePage())->schedule(),
                 'manage/people' => (new ManagePage())->people(),
+                'manage/roles' => (new ManagePage())->roles(),
                 'manage/djs' => App::redirect('manage/people'),
                 'manage/sound' => (new ManagePage())->sound(),
                 'manage/songprep' => (new ManagePage())->songprep(),
@@ -131,7 +132,7 @@ final class App
         if ($me === null) {
             Session::staffHint(false);
         } else {
-            $out = ['signedIn' => true, 'name' => $me['name'], 'role' => Staff::ROLE_NAMES[$me['role']] ?? $me['role'],
+            $out = ['signedIn' => true, 'name' => $me['name'], 'role' => $me['role_name'] ?? $me['role'],
                 'studio' => self::url('studio'), 'manage' => self::url('manage'), 'account' => self::url('account'),
                 'signout' => self::url('signout'), 'csrf' => Session::csrf()];
         }

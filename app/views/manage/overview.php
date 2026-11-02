@@ -9,7 +9,7 @@ $next = $onAir['next'];
 <div class="vhead vhead-row">
   <div>
     <h1><?= h($hello) ?>, <?= h(explode(' ', $me['name'])[0]) ?></h1>
-    <p><?= h(\Stationwagon\Staff::ROLE_NAMES[$me['role']]) ?> · station clock <?= h(clock($now, $tz, 'H:i')) ?> (<?= h($tz) ?>)</p>
+    <p><?= h($me['role_name'] ?? $me['role']) ?> · station clock <?= h(clock($now, $tz, 'H:i')) ?> (<?= h($tz) ?>)</p>
   </div>
   <a class="btn primary" href="<?= h(App::url('studio')) ?>">Open the studio</a>
 </div>
@@ -32,7 +32,7 @@ $next = $onAir['next'];
         <div class="mstat"><b><?= (int) $todayPeak ?></b><span>Most at once today</span></div>
       </div>
       <?php if (Auth::allows($me, 'listeners')): ?><p class="muted" style="margin:8px 0 0"><a href="<?= h(App::url('manage/listeners')) ?>">Listeners by hour and day</a></p><?php endif ?>
-      <?php if (Auth::allows($me, 'onair') && $cur['type'] === 'song'): ?>
+      <?php if (Auth::allows($me, 'desk') && $cur['type'] === 'song'): ?>
         <div class="row-actions"><?= $post('manage/skip', 'Skip this song', [], 'btn') ?><span class="hint2">The song fades out over 2 s at the next piece boundary.</span></div>
       <?php endif ?>
     <?php endif ?>

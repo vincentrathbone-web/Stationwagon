@@ -588,12 +588,18 @@ try {
         check('the old DJs address goes to People', $r['status'] === 303 && str_ends_with($location($r), '/manage/people'), $location($r));
         $r = $m->go('manage/people');
         check('People lists everyone, you marked, with what each may do', $r['status'] === 200 && str_contains($r['body'], 'Web Test Manager</b> <span class="pill">You</span>') && str_contains($r['body'], '<th>May do</th>'));
-        check('  and the Add form has a tick for each permission', substr_count(substr($r['body'], (int) strpos($r['body'], 'id="addPerson"')), 'name="perm[]"') === 8);
+        check('  and the Add form picks a role, no ticks', !str_contains($r['body'], 'name="perm[]"') && str_contains($r['body'], '<option value="dj"'));
+        check('  a manager doesn’t see Roles, nor open it', !str_contains($r['body'], '>Roles</a>') && $m->go('manage/roles')['status'] === 403);
+        // a role of the station's own, made the way an admin's Roles screen does (no admin account here)
+        $roleKey = "web-test-$tag";
+        $db->insert('roles', ['station_id' => $stationId, 'key' => $roleKey, 'name' => "Web Test Scheduler $tag", 'permissions' => '["schedule"]', 'built_in' => 0, 'created_at' => gmdate('Y-m-d H:i:s')]);
+        $r = $m->go('manage/people');
+        check('  the station’s own roles are offered, with what they may do', str_contains($r['body'], "<option value=\"$roleKey\">Web Test Scheduler $tag</option>") && str_contains($r['body'], "<b>Web Test Scheduler $tag</b> Schedule."));
         $djEmail = "web-test-$tag-dj@example.test";
-        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'add', 'name' => 'Web Test New DJ', 'email' => $djEmail, 'role' => 'dj', 'password' => 'first pass 123', 'perms' => '1', 'perm' => ['schedule']]);
-        check('a manager adds a DJ with the Schedule tick', $flashed($after($m, $r), 'Added.'));
+        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'add', 'name' => 'Web Test New DJ', 'email' => $djEmail, 'role' => $roleKey, 'password' => 'first pass 123']);
+        check('a manager adds someone with that role', $flashed($after($m, $r), 'Added.'));
         $users[] = $newDj = (int) $db->run('SELECT id FROM ' . $db->table('users') . ' WHERE email = ?', [$djEmail])->fetchColumn();
-        check('  stored', $db->run('SELECT permissions FROM ' . $db->table('users') . ' WHERE id = ?', [$newDj])->fetchColumn() === '["schedule"]');
+        check('  stored', $db->run('SELECT role FROM ' . $db->table('users') . ' WHERE id = ?', [$newDj])->fetchColumn() === $roleKey);
         $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'add', 'name' => 'Web Test Boss', 'email' => "web-test-$tag-boss@example.test", 'role' => 'admin', 'password' => 'first pass 123']);
         check('a manager can’t add an admin', $flashed($after($m, $r), 'Not added'));
         $d = new Browser($base);
@@ -601,14 +607,13 @@ try {
         $dm = $d->go('manage');
         check('the new DJ signs in and sees Schedule, but not the library or People', $dm['status'] === 200 && str_contains($dm['body'], '>Schedule</a>') && !str_contains($dm['body'], '>Music library</a>') && !str_contains($dm['body'], '>People</a>'));
         check('  Schedule opens for them; People doesn’t', $d->go('manage/schedule')['status'] === 200 && $d->go('manage/people')['status'] === 403);
-        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'permissions', 'id' => $newDj, 'perms' => '1', 'perm' => ['library', 'listeners']]);
-        check('a manager changes their ticks', $flashed($after($m, $r), 'Saved what they may do.'));
+        $db->run('UPDATE ' . $db->table('roles') . ' SET permissions = ? WHERE `key` = ?', ['["library","listeners"]', $roleKey]);
         $dm = $d->go('manage');
-        check('  which applies at once', str_contains($dm['body'], '>Music library</a>') && str_contains($dm['body'], '>Listeners</a>') && !str_contains($dm['body'], '>Schedule</a>') && $d->go('manage/schedule')['status'] === 403);
+        check('when the role’s ticks change, it applies to them at once', str_contains($dm['body'], '>Music library</a>') && str_contains($dm['body'], '>Listeners</a>') && !str_contains($dm['body'], '>Schedule</a>') && $d->go('manage/schedule')['status'] === 403);
         $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'details', 'id' => $newDj, 'name' => 'Web Test Renamed DJ', 'email' => $djEmail]);
         $p = $after($m, $r);
         check('a manager renames them', $flashed($p, 'Name and email saved.') && str_contains($p['body'], 'Web Test Renamed DJ'));
-        check('  with their forms open after the change', str_contains($p['body'], 'Save what they may do') && str_contains($p['body'], 'Yes, block Web Test Renamed DJ'));
+        check('  with their forms open after the change', str_contains($p['body'], '>Change role</button>') && str_contains($p['body'], 'Yes, block Web Test Renamed DJ'));
         $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'password', 'id' => $newDj, 'password' => 'second pass 123']);
         check('a manager sets a new password', $flashed($after($m, $r), 'New password set.'));
         check('which signs the DJ out', $d->go('manage')['status'] === 303);
@@ -639,6 +644,30 @@ try {
         $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'block', 'id' => $mgrId]);
         check('or blocks themselves', $flashed($after($m, $r), 'You can’t block'));
         check('a DJ can’t send the People form', $c->go('manage/people', ['csrf' => Browser::csrf($c->go('manage')), 'action' => 'block', 'id' => $mgrId])['status'] === 403);
+
+        // Roles (a throwaway admin)
+        $aEmail = "web-test-$tag-admin@example.test";
+        $aPass = bin2hex(random_bytes(12));
+        $users[] = $admId = $db->insert('users', ['email' => $aEmail, 'name' => 'Web Test Admin', 'password_hash' => password_hash($aPass, PASSWORD_DEFAULT), 'role' => 'admin', 'created_at' => gmdate('Y-m-d H:i:s')]);
+        $db->insert('station_users', ['station_id' => $stationId, 'user_id' => $admId]);
+        $ad = new Browser($base);
+        $ad->go('signin', ['csrf' => Browser::csrf($ad->go('signin')), 'email' => $aEmail, 'password' => $aPass]);
+        $rr = $ad->go('manage/roles');
+        check('an admin opens Roles from the menu: Admin, Manager and DJ with what each may do', $rr['status'] === 200 && str_contains($rr['body'], '>Roles</a>')
+            && str_contains($rr['body'], 'data-role="admin"') && str_contains($rr['body'], 'data-role="manager"') && str_contains($rr['body'], 'data-role="dj"') && str_contains($rr['body'], 'Their own shows, in their own blocks'), (string) $rr['status']);
+        check('  the Add form has a tick for each permission, the live ones split in two', substr_count(substr($rr['body'], (int) strpos($rr['body'], 'id="addRole"')), 'name="perm[]"') === 9
+            && str_contains($rr['body'], 'Go live any time') && str_contains($rr['body'], 'Run the on-air desk'));
+        $acsrf = Browser::csrf($rr);
+        $r = $ad->go('manage/roles', ['csrf' => $acsrf, 'action' => 'add', 'name' => "Web Test Guest $tag", 'perm' => ['anytime']]);
+        $guestKey = (string) $db->run('SELECT `key` FROM ' . $db->table('roles') . ' WHERE name = ?', ["Web Test Guest $tag"])->fetchColumn();
+        check('an admin adds a role', $flashed($p = $after($ad, $r), 'Role added.') && str_contains($p['body'], 'value="' . $guestKey . '"') && str_contains($p['body'], 'Save</button>'));
+        $r = $ad->go('manage/roles', ['csrf' => $acsrf, 'action' => 'save', 'key' => $guestKey, 'name' => "Web Test Guest $tag", 'perm' => ['anytime', 'podcast']]);
+        check('  changes its ticks', $flashed($after($ad, $r), 'Saved.') && $db->run('SELECT permissions FROM ' . $db->table('roles') . ' WHERE `key` = ?', [$guestKey])->fetchColumn() === '["anytime","podcast"]');
+        $r = $ad->go('manage/roles', ['csrf' => $acsrf, 'action' => 'save', 'key' => 'admin', 'name' => 'Boss', 'perm' => []]);
+        check('  can’t change Admin', $flashed($after($ad, $r), 'The Admin role always has everything.'));
+        $r = $ad->go('manage/roles', ['csrf' => $acsrf, 'action' => 'delete', 'key' => $guestKey]);
+        check('  and deletes it', $flashed($after($ad, $r), 'Role deleted.') && !$db->run('SELECT COUNT(*) FROM ' . $db->table('roles') . ' WHERE `key` = ?', [$guestKey])->fetchColumn());
+        check('a manager can’t send the Roles form', $m->go('manage/roles', ['csrf' => $csrf, 'action' => 'add', 'name' => 'Sneaky', 'perm' => ['people']])['status'] === 403);
 
         // Sound & safety (the station's own values are put back in the cleanup)
         $origSettings = $db->run('SELECT settings FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetchColumn();
@@ -671,6 +700,7 @@ try {
             $db->run('DELETE FROM ' . $db->table('running_orders') . ' WHERE scope = ?', ["user:$id"]);
         }
         $db->run('DELETE FROM ' . $db->table('playlists') . " WHERE name LIKE 'Web test list %'");
+        $db->run('DELETE FROM ' . $db->table('roles') . " WHERE `key` LIKE 'web-test-%' OR name LIKE 'Web Test %'");
         if (isset($origSettings) && $origSettings !== false) {
             $db->run('UPDATE ' . $db->table('stations') . ' SET settings = ? WHERE id = ?', [$origSettings, $stationId]);
         }

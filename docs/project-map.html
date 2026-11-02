@@ -175,7 +175,7 @@ details.built summary:hover{background:var(--ground)}
 const MAP = {
   updated: "2 Nov · 19:30",
   commits: 46,
-  version: "0.9.0-dev",
+  version: "0.9.1-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
     { v: "v0.4", name: "Player & studio", when: "done 22 Oct" },
@@ -219,7 +219,8 @@ const MAP = {
     ]},
     { name: "Station manager", blurb: "Library, playlists, schedule, people, sound and safety, for the station's staff.", features: [
       { text: "Installer, sign-in and roles", v: "v0.1", state: "done" },
-      { text: "People: add, block, passwords, roles and ticks", note: "what each person may do, ticked one by one; blocking signs them out and ends their live show; also in WordPress → Stationwagon → People", v: "v0.8", state: "done" },
+      { text: "People: add, block, passwords and roles", note: "blocking signs them out and ends their live show; also in WordPress → Stationwagon → People", v: "v0.8", state: "done" },
+      { text: "Roles set centrally, with your own roles", note: "each role's ticks apply to all its people; Go live any time vs only in their own block", v: "v0.8", state: "done" },
       { text: "Staff sign-in in the website's header", note: "the station's own accounts, not WordPress users; shows the name with Studio, Manage and Sign out", v: "v0.8", state: "done" },
       { text: "Music library with song prep on upload", v: "v0.1", state: "done" },
       { text: "Playlists, schedule and DJs", v: "v0.1", state: "done" },
@@ -272,6 +273,9 @@ const MAP = {
   call: null,
   feedTitle: "Changed 20 Oct – 2 Nov",
   feed: [
+    { what: "Roles", to: "set once under Manage → Roles (and in WordPress): change what a role may do, add your own; people just get a role", at: "2 Nov" },
+    { what: "Going live", to: "two ticks: Go live any time, or only in their own scheduled block; and Run the on-air desk (skip, run anyone's show)", at: "2 Nov" },
+    { what: "Per-person ticks", to: "removed: anyone who had their own moves to a matching role", at: "2 Nov", kind: "info" },
     { what: "People and permissions", to: "the DJs screen is now People: change name and email, role, what each person may do (8 ticks), set a password, block and unblock, remove", at: "2 Nov" },
     { what: "Blocking someone", to: "signs them out everywhere at once, forgets their Keep me signed in, and ends their live show (the AutoDJ takes over)", at: "2 Nov" },
     { what: "People in WordPress", to: "Stationwagon → People in the WordPress admin, the same list and actions", at: "2 Nov" },

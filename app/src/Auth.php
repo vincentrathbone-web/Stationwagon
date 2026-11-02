@@ -82,7 +82,7 @@ final class Auth
             $id = $this->fromRemember();
         }
         if ($id > 0) {
-            $row = $this->db->run('SELECT id, email, name, role, password_hash, last_login_at, blocked_at, permissions FROM ' . $this->db->table('users') . ' WHERE id = ?', [$id])->fetch() ?: null;
+            $row = $this->db->run('SELECT id, email, name, role, password_hash, last_login_at, blocked_at, ' . self::roleColumns($this->db) . ' FROM ' . $this->db->table('users') . ' u WHERE id = ?', [$id])->fetch() ?: null;
             // a blocked person is signed out on their next request
             if ($row !== null && empty($row['blocked_at']) && hash_equals(substr($row['password_hash'], -12), (string) ($_SESSION['pw'] ?? ''))) {
                 unset($row['password_hash']);
@@ -172,13 +172,22 @@ final class Auth
     }
 
     /** Has $user the role $need (dj < manager < admin) or, for a Permissions key, that permission? */
+    /** SQL for a users row aliased "u": its role's name and ticks (role_name, role_permissions; Permissions::of reads them). */
+    public static function roleColumns(Db $db): string
+    {
+        $r = $db->table('roles');
+        return "(SELECT r.name FROM $r r WHERE r.`key` = u.role ORDER BY r.station_id LIMIT 1) AS role_name, "
+            . "(SELECT r.permissions FROM $r r WHERE r.`key` = u.role ORDER BY r.station_id LIMIT 1) AS role_permissions";
+    }
+
     public static function allows(?array $user, string $need): bool
     {
         if ($user === null || !empty($user['blocked_at'])) {
             return false;
         }
         if (isset(self::ROLES[$need])) {
-            return (self::ROLES[$user['role']] ?? 0) >= self::ROLES[$need];
+            // a station's own roles count as DJ here: what they may do beyond that is their ticks
+            return (self::ROLES[$user['role']] ?? 1) >= self::ROLES[$need];
         }
         return isset(Permissions::ALL[$need]) && Permissions::has($user, $need);
     }
