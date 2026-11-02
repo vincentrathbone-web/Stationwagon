@@ -36,3 +36,16 @@
     form.querySelector(".sw-wait").hidden = false;
   });
 })();
+
+// People → Add someone: the ticks follow the role picked (its usual); admins have everything
+(() => {
+  const form = document.querySelector(".sw-addperson form");
+  const role = form?.querySelector("select[name=role]");
+  if (!role || !window.swUsual) return;
+  role.addEventListener("change", () => {
+    for (const box of form.querySelectorAll(".sw-perm input")) {
+      box.checked = role.value === "admin" || window.swUsual[role.value].includes(box.value);
+      box.disabled = role.value === "admin";
+    }
+  });
+})();

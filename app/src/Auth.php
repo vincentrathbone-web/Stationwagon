@@ -51,6 +51,9 @@ final class Auth
             return ['ok' => false, 'error' => 'That email and password don’t match.'];
         }
         $this->clear('e:' . $email);
+        if (!empty($row['blocked_at'])) {
+            return ['ok' => false, 'error' => 'This account is blocked. Ask the station’s admin.'];
+        }
         if (password_needs_rehash($row['password_hash'], PASSWORD_DEFAULT)) {
             $row['password_hash'] = $this->setPassword((int) $row['id'], $password);
         }
@@ -79,8 +82,9 @@ final class Auth
             $id = $this->fromRemember();
         }
         if ($id > 0) {
-            $row = $this->db->run('SELECT id, email, name, role, password_hash, last_login_at FROM ' . $this->db->table('users') . ' WHERE id = ?', [$id])->fetch() ?: null;
-            if ($row !== null && hash_equals(substr($row['password_hash'], -12), (string) ($_SESSION['pw'] ?? ''))) {
+            $row = $this->db->run('SELECT id, email, name, role, password_hash, last_login_at, blocked_at, permissions FROM ' . $this->db->table('users') . ' WHERE id = ?', [$id])->fetch() ?: null;
+            // a blocked person is signed out on their next request
+            if ($row !== null && empty($row['blocked_at']) && hash_equals(substr($row['password_hash'], -12), (string) ($_SESSION['pw'] ?? ''))) {
                 unset($row['password_hash']);
                 $row['id'] = (int) $row['id']; // MariaDB hands ids back as strings
                 $this->user = $row;
@@ -167,9 +171,16 @@ final class Auth
         unset($_COOKIE[self::REMEMBER_COOKIE]);
     }
 
-    public static function allows(?array $user, string $role): bool
+    /** Has $user the role $need (dj < manager < admin) or, for a Permissions key, that permission? */
+    public static function allows(?array $user, string $need): bool
     {
-        return $user !== null && (self::ROLES[$user['role']] ?? 0) >= (self::ROLES[$role] ?? PHP_INT_MAX);
+        if ($user === null || !empty($user['blocked_at'])) {
+            return false;
+        }
+        if (isset(self::ROLES[$need])) {
+            return (self::ROLES[$user['role']] ?? 0) >= self::ROLES[$need];
+        }
+        return isset(Permissions::ALL[$need]) && Permissions::has($user, $need);
     }
 
     /** Returns null when changed, or what's wrong. Keeps this session signed in. */

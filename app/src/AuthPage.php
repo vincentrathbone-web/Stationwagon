@@ -27,6 +27,7 @@ final class AuthPage
             } else {
                 $result = $this->auth->attempt($email, (string) ($_POST['password'] ?? ''), Request::clientAddress(), $remember);
                 if ($result['ok']) {
+                    Session::staffHint(true, $remember ? time() + Auth::REMEMBER_DAYS * 86400 : 0);
                     App::redirect($next);
                 }
                 http_response_code(401);
@@ -41,6 +42,12 @@ final class AuthPage
         Session::start();
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && Session::checkCsrf($_POST['csrf'] ?? null)) {
             $this->auth->signOut();
+            Session::staffHint(false);
+        }
+        $back = self::backTo((string) ($_POST['back'] ?? ''));
+        if ($back !== null) {
+            header('Location: ' . $back, true, 303);
+            exit;
         }
         App::redirect('signin');
     }
@@ -65,6 +72,12 @@ final class AuthPage
             }
         }
         View::render('account', ['title' => 'Your account', 'me' => $me, 'error' => $error, 'notice' => $notice, 'csrf' => Session::csrf()]);
+    }
+
+    /** Where to go after signing out from the website's header: a page of the same site only, never //other.example. */
+    public static function backTo(string $path): ?string
+    {
+        return preg_match('#^/(?!/)[A-Za-z0-9/_.~%?=&-]{0,200}$#D', $path) === 1 ? $path : null;
     }
 
     /** Only our own pages, never another site (//evil.example) */

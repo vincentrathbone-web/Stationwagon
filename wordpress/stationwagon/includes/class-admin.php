@@ -34,12 +34,12 @@ final class Stationwagon_Admin
 
     public static function assets(string $hook): void
     {
-        if ($hook !== 'toplevel_page_' . self::SLUG) {
+        if ($hook !== 'toplevel_page_' . self::SLUG && $hook !== self::SLUG . '_page_' . Stationwagon_People::SLUG) {
             return;
         }
         $base = plugins_url('assets/', dirname(__DIR__) . '/stationwagon.php');
-        wp_enqueue_style('stationwagon-admin', $base . 'admin.css', [], '1.0.0');
-        wp_enqueue_script('stationwagon-admin', $base . 'admin.js', [], '1.0.0', true);
+        wp_enqueue_style('stationwagon-admin', $base . 'admin.css', [], '1.1.0');
+        wp_enqueue_script('stationwagon-admin', $base . 'admin.js', [], '1.1.0', true);
     }
 
     /** After the plugin is updated, bring the station's code along (on the next admin page). */
@@ -164,7 +164,7 @@ final class Stationwagon_Admin
         printf('<a class="button button-primary button-hero" href="%s" target="_blank" rel="noopener">Open the manager</a> ', esc_url($url . 'manage'));
         printf('<a class="button button-hero" href="%s" target="_blank" rel="noopener">Open the studio</a> ', esc_url($url . 'studio'));
         printf('<a class="button button-hero" href="%s" target="_blank" rel="noopener">The station page</a>', esc_url($url));
-        echo '</p><p class="description">Sign in with the email and password you chose during setup. Add DJs and managers in the manager, under DJs.</p></div>';
+        echo '</p><p class="description">Sign in with the email and password you chose during setup. Add DJs and managers, block them or set their passwords under Stationwagon → <a href="' . esc_url(admin_url('admin.php?page=' . Stationwagon_People::SLUG)) . '">People</a> (or in the manager, under People).</p></div>';
 
         if (empty($s['reachable']) && $s['address'] === 'subdomain') {
             echo '<div class="sw-card sw-warn"><h2>One step left: point the subdomain at this server</h2>';

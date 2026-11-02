@@ -62,7 +62,7 @@ $chosenDays = array_map('intval', (array) ($in['days'] ?? array_keys(Schedule::D
         <?php foreach ($playlists as $p): ?><option value="<?= (int) $p['id'] ?>"<?= (int) ($in['playlist_id'] ?? 0) === (int) $p['id'] ? ' selected' : '' ?>><?= h($p['name']) ?></option><?php endforeach ?></select></label>
     <label class="field<?= isset($err['dj_user_id']) ? ' bad' : '' ?>" data-kind="live"><span class="lbl">DJ</span>
       <select name="dj_user_id"><option value="">Any DJ</option>
-        <?php foreach ($djs as $d): ?><option value="<?= (int) $d['id'] ?>"<?= (int) ($in['dj_user_id'] ?? 0) === (int) $d['id'] ? ' selected' : '' ?>><?= h($d['name']) ?></option><?php endforeach ?></select></label>
+        <?php foreach ($djs as $d): ?><option value="<?= (int) $d['id'] ?>"<?= (int) ($in['dj_user_id'] ?? 0) === (int) $d['id'] ? ' selected' : '' ?>><?= h($d['name']) ?><?= !empty($d['blocked_at']) ? ' (blocked)' : '' ?></option><?php endforeach ?></select></label>
     <label class="field<?= isset($err['title']) ? ' bad' : '' ?>"><span class="lbl">Name</span><input name="title" value="<?= h($in['title'] ?? '') ?>" placeholder="Optional for playlists"></label>
   </div>
   <fieldset class="days<?= isset($err['days']) ? ' bad' : '' ?>"><legend class="lbl">Days</legend>

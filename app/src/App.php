@@ -57,7 +57,8 @@ final class App
                 'manage/library' => (new ManagePage())->library(),
                 'manage/playlists' => (new ManagePage())->playlists(),
                 'manage/schedule' => (new ManagePage())->schedule(),
-                'manage/djs' => (new ManagePage())->djs(),
+                'manage/people' => (new ManagePage())->people(),
+                'manage/djs' => App::redirect('manage/people'),
                 'manage/sound' => (new ManagePage())->sound(),
                 'manage/songprep' => (new ManagePage())->songprep(),
                 'manage/songprep/original' => (new ManagePage())->songprepOriginal(),
@@ -67,6 +68,7 @@ final class App
                 'podcast/feed' => PodcastPage::feed(),
                 'studio' => (new StudioPage())->page(),
                 'embed' => self::embed(),
+                'api/me' => self::meJson(),
                 'privacy' => self::privacy(),
                 default => self::notFound(),
             };
@@ -114,6 +116,29 @@ final class App
         exit;
     }
 
+    /**
+     * Who is signed in, for the header of the website the station lives in (same site only: no
+     * CORS). Its script asks only while the sw_staff hint cookie is there; when nobody is signed
+     * in the hint is removed, so it stops asking.
+     */
+    private static function meJson(): never
+    {
+        header('Content-Type: application/json');
+        header('Cache-Control: private, no-store');
+        header('Vary: Cookie');
+        $me = self::me();
+        $out = ['signedIn' => false, 'signin' => self::url('signin')];
+        if ($me === null) {
+            Session::staffHint(false);
+        } else {
+            $out = ['signedIn' => true, 'name' => $me['name'], 'role' => Staff::ROLE_NAMES[$me['role']] ?? $me['role'],
+                'studio' => self::url('studio'), 'manage' => self::url('manage'), 'account' => self::url('account'),
+                'signout' => self::url('signout'), 'csrf' => Session::csrf()];
+        }
+        echo json_encode($out, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     /** The signed-in user for the page header, without starting a session for listeners. */
     public static function me(): ?array
     {
@@ -133,6 +158,9 @@ final class App
             $route = trim(substr((string) parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), strlen(self::base())), '/');
             header('Location: ' . self::url('signin') . '?next=' . rawurlencode(AuthPage::safeNext($route)), true, 303);
             exit;
+        }
+        if (!isset($_COOKIE[Session::STAFF_HINT])) {
+            Session::staffHint(true); // signed in before the hint existed, or by "Keep me signed in"
         }
         if (!Auth::allows($me, $role)) {
             http_response_code(403);

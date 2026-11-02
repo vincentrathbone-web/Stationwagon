@@ -236,7 +236,7 @@ final class Podcast
 
     private function mayRecord(array $user, array $show): bool
     {
-        return (int) ($show['dj_user_id'] ?? 0) === (int) $user['id'] || Auth::allows($user, 'manager');
+        return (int) ($show['dj_user_id'] ?? 0) === (int) $user['id'] || Auth::allows($user, 'podcast');
     }
 
     private function deviceTake(array $show): array
@@ -292,14 +292,14 @@ final class Podcast
 
     public function mayEdit(array $user, array $ep): bool
     {
-        return Auth::allows($user, 'manager') || ((int) ($ep['dj_user_id'] ?? 0) === (int) $user['id'] && Auth::allows($user, 'dj'));
+        return Auth::allows($user, 'podcast') || ((int) ($ep['dj_user_id'] ?? 0) === (int) $user['id'] && Auth::allows($user, 'dj'));
     }
 
     /** Episodes a person may see in the list: all for managers, their own for DJs. Skipped ones aren't listed. */
     public function list(array $user): array
     {
         $t = $this->db->table('episodes');
-        $mine = !Auth::allows($user, 'manager');
+        $mine = !Auth::allows($user, 'podcast');
         $rows = $this->db->run("SELECT * FROM $t WHERE station_id = ? AND status <> 'skipped'" . ($mine ? ' AND dj_user_id = ?' : '') . ' ORDER BY recorded_at DESC LIMIT 500',
             $mine ? [$this->station['id'], $user['id']] : [$this->station['id']])->fetchAll();
         foreach ($rows as &$r) {

@@ -202,6 +202,10 @@ try {
 
     $sched->delete($open);
     check('a DJ with no block at all is told to ask a manager', !$studio->slot($pieter, $now)['may'] && str_contains((string) $studio->slot($pieter, $now)['reason'], 'Ask a manager'));
+    check('  but with the "On air" tick they may go live any time', $studio->slot($pieter + ['permissions' => '["onair"]'], $now)['may']);
+    check('a manager without "On air" can’t go live outside a block', !$studio->slot($mgr + ['permissions' => '["schedule"]'], $now)['may']
+        && !$studio->mayEditOrder($mgr + ['permissions' => '[]'], 'user:' . $anna['id']));
+    check('a blocked manager may do nothing here', !$studio->slot($mgr + ['blocked_at' => '2027-01-01 00:00:00'], $now)['may']);
 
     echo "Library search\n";
     $found = $studio->songs('vision');

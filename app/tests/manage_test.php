@@ -5,7 +5,7 @@
 //   php app/tests/manage_test.php      (same SW_TEST_DB_* settings as install_test.php)
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
-use Stationwagon\{Auth, Db, DiagReports, Library, Planner, Playlists, PrepPresets, Schedule, Schema, Staff, StationSettings};
+use Stationwagon\{Auth, Db, DiagReports, Library, Permissions, Planner, Playlists, PrepPresets, Schedule, Schema, Staff, StationSettings};
 
 $t = test_database('manage');
 $root = temp_root('manage');
@@ -363,6 +363,65 @@ try {
     check('a manager removes a DJ, who then can’t sign in', $staff2->remove($someMgr, $djId) === null && $staff2->get($djId) === null);
     $_SESSION = [];
     check('  (sign-in refused)', !$auth->attempt('dan@example.test', 'brand new pass', '192.0.2.10')['ok']);
+
+    echo "Permissions and blocking\n";
+    $boss = $lastAdmin;
+    [$pmId] = $staff2->add($boss, 'Pat Partial', 'pat@example.test', 'manager', 'pat password 1', ['people', 'schedule']);
+    $pm = $staff2->get($pmId);
+    check('a manager can be given only some ticks', Permissions::of($pm) === ['schedule', 'people'] && Auth::allows($pm, 'schedule') && !Auth::allows($pm, 'library'));
+    check('  and still counts as a manager by role', Auth::allows($pm, 'manager'));
+    [$fullId] = $staff2->add($boss, 'Full Manager', 'full@example.test', 'manager', 'full password 1');
+    check('a manager with no ticks given has every one', Permissions::of($staff2->get($fullId)) === array_keys(Permissions::ALL) && $staff2->get($fullId)['permissions'] === null);
+    [$djId2] = $staff2->add($pm, 'Sam DJ', 'sam@example.test', 'dj', 'sam password 1', ['schedule', 'library']);
+    check('a manager can’t hand out a tick they haven’t got', Permissions::of($staff2->get($djId2)) === ['schedule']);
+    [$mgr2] = $staff2->add($pm, 'Max Manager', 'max@example.test', 'manager', 'max password 1');
+    check('  nor through a role’s usual ticks', Permissions::of($staff2->get($mgr2)) === ['schedule', 'people']);
+    check('  nor by changing someone’s role', $staff2->setRole($pm, $djId2, 'manager') === null && Permissions::of($staff2->get($djId2)) === ['schedule', 'people']);
+    $staff2->setRole($boss, $djId2, 'dj');
+    check('a role change goes back to the new role’s usual', Permissions::of($staff2->get($djId2)) === [] && $staff2->get($djId2)['permissions'] === null);
+    check('ticks can be changed', $staff2->setPermissions($boss, $djId2, ['onair', 'podcast']) === null && Permissions::of($staff2->get($djId2)) === ['onair', 'podcast']);
+    check('  a DJ with "On air" may run anyone’s show', Auth::allows($staff2->get($djId2), 'onair') && !Auth::allows($staff2->get($djId2), 'manager'));
+    check('  a manager keeps the ticks they can’t change', $staff2->setPermissions($pm, $djId2, []) === null && Permissions::of($staff2->get($djId2)) === ['onair', 'podcast']);
+    check('  unknown ticks are dropped', $staff2->setPermissions($boss, $djId2, ['onair', 'root', 'x']) === null && Permissions::of($staff2->get($djId2)) === ['onair']);
+    check('an admin’s ticks can’t be changed (they have everything)', $staff2->setPermissions($boss, $mgr2, []) === null && $staff2->setRole($boss, $mgr2, 'admin') === null
+        && $staff2->setPermissions($boss, $mgr2, []) !== null && Permissions::of($staff2->get($mgr2)) === array_keys(Permissions::ALL));
+    check('without "People" a manager manages nobody', Staff::grantable($staff2->get($fullId)) !== [] && Staff::grantable($staff2->get($djId2)) === []
+        && $staff2->setPermissions($boss, $fullId, ['library']) === null && Staff::grantable($staff2->get($fullId)) === []);
+    check('name and email can be changed', $staff2->edit($boss, $djId2, 'Samuel DJ', 'Samuel@Example.test') === [] && $staff2->get($djId2)['email'] === 'samuel@example.test');
+    check('  a taken email is refused', isset($staff2->edit($boss, $djId2, 'Samuel DJ', 'pat@example.test')['email']));
+    check('  nobody edits themselves here', $staff2->edit($boss, (int) $boss['id'], 'X', 'x@example.test') !== []);
+
+    $_SESSION = [];
+    $auth2 = new Auth($db, "$root/storage/cache/throttle");
+    check('Samuel signs in', $auth2->attempt('samuel@example.test', 'sam password 1', '192.0.2.30', true)['ok'] && $auth2->user() !== null);
+    $tokens = fn() => (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('remember_tokens') . ' WHERE user_id = ?', [$djId2])->fetchColumn();
+    check('  with "Keep me signed in"', $tokens() === 1);
+    $at = 1800010000.0;
+    $p->replan($at);
+    $live = $p->goLive($at, 'Samuel live', $djId2)['result'] ?? [];
+    check('  and goes live', isset($live['live']['public_id']), json_encode($live));
+    check('a manager without "People" can’t block', $staff2->block($staff2->get($fullId), $djId2, $p, $at + 30) !== null);
+    check('blocking works', $staff2->block($boss, $djId2, $p, $at + 30) === null && $staff2->get($djId2)['blocked_at'] !== null);
+    $show = $db->run('SELECT `open`, closed_reason FROM ' . $db->table('live_shows') . ' WHERE public_id = ?', [$live['live']['public_id']])->fetch();
+    check('  their live show ends at once', (int) $show['open'] === 0 && $show['closed_reason'] === 'DJ blocked', json_encode($show));
+    $after = array_values(array_filter($p->timeline($at + 60), fn($e) => $e['start'] > $at + 40));
+    check('  and the AutoDJ takes over', $after && $after[0]['type'] === 'song');
+    check('  their "Keep me signed in" devices are forgotten', $tokens() === 0);
+    $auth3 = new Auth($db, "$root/storage/cache/throttle");
+    check('  their open session is signed out on the next request', $auth3->user() === null && !isset($_SESSION['user_id']));
+    $_SESSION = [];
+    $try = $auth3->attempt('samuel@example.test', 'sam password 1', '192.0.2.31');
+    check('  and they can’t sign in', !$try['ok'] && str_contains((string) ($try['error'] ?? ''), 'blocked'), json_encode($try));
+    check('  a blocked person may do nothing', !Auth::allows($staff2->get($djId2), 'dj') && !Auth::allows($staff2->get($djId2), 'onair'));
+    check('blocking twice keeps the first time', $staff2->block($boss, $djId2, $p, $at + 90) === null);
+    check('unblocking lets them sign in again', $staff2->unblock($boss, $djId2) === null && (new Auth($db, "$root/storage/cache/throttle"))->attempt('samuel@example.test', 'sam password 1', '192.0.2.32')['ok']);
+    check('nobody blocks themselves', $staff2->block($boss, (int) $boss['id'], $p) !== null);
+    $staff2->setRole($boss, $mgr2, 'manager');
+    check('the last admin who can sign in can’t be blocked', $staff2->block(['id' => 0, 'role' => 'admin'], (int) $boss['id'], $p) !== null);
+    [$adm3] = $staff2->add($boss, 'Third Admin', 'adm3@example.test', 'admin', 'adm3 password 1');
+    check('  but one of two admins can', $staff2->block($boss, $adm3, $p) === null);
+    check('  and then the other is the last one', $staff2->block(['id' => 0, 'role' => 'admin'], (int) $boss['id'], $p) !== null && $staff2->remove(['id' => 0, 'role' => 'admin'], (int) $boss['id']) !== null);
+    check('the WordPress page’s actor (an admin with no account here) may manage anyone', Staff::canManage(['id' => 0, 'role' => 'admin'], $boss));
 
     echo "Diagnostics reports\n";
     $reports = new DiagReports("$root/storage/diag");

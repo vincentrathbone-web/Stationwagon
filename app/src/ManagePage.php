@@ -49,7 +49,7 @@ final class ManagePage
 
     public function skip(): void
     {
-        $me = $this->postAs('manager', 'manage');
+        $me = $this->postAs('onair', 'manage');
         $now = microtime(true);
         $r = $this->planner->skip($now)['result'];
         if ($r['cut_at'] === null) {
@@ -71,7 +71,7 @@ final class ManagePage
             if (empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
                 $this->uploadTooBig($wantsJson); // PHP drops the whole request past post_max_size
             }
-            $me = $this->postAs('manager', 'manage/library', $wantsJson);
+            $me = $this->postAs('library', 'manage/library', $wantsJson);
             $action = (string) ($_POST['action'] ?? '');
             if ($action === 'upload') {
                 $results = $this->upload($library);
@@ -109,7 +109,7 @@ final class ManagePage
             }
             App::redirect('manage/library' . (isset($_POST['q']) && $_POST['q'] !== '' ? '?q=' . rawurlencode((string) $_POST['q']) : ''));
         }
-        $me = App::requireRole('manager');
+        $me = App::requireRole('library');
         $q = trim((string) ($_GET['q'] ?? ''));
         $this->render('library', 'Music library', $me, [
             'tracks' => $library->tracks($q),
@@ -180,7 +180,7 @@ final class ManagePage
             if (empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
                 $this->uploadTooBig(true);
             }
-            $this->postAs('manager', 'manage/songprep', true);
+            $this->postAs('library', 'manage/songprep', true);
             $action = (string) ($_POST['action'] ?? '');
             $now = microtime(true);
             if ($action === 'save') {
@@ -212,7 +212,7 @@ final class ManagePage
             }
             $this->json(['ok' => false, 'error' => 'Unknown action.']);
         }
-        $me = App::requireRole('manager');
+        $me = App::requireRole('library');
         $tracks = array_map(fn($t) => $t + ['original' => $library->original($t) !== null], $library->tracks());
         $this->render('songprep', 'Song prep', $me, [
             'tracks' => $tracks,
@@ -227,7 +227,7 @@ final class ManagePage
     /** A song's original, for the Song prep screen (managers only; never cached by others). */
     public function songprepOriginal(): void
     {
-        App::requireRole('manager');
+        App::requireRole('library');
         $library = new Library($this->db, $this->station, SW_ROOT);
         $track = $library->get((int) ($_GET['id'] ?? 0));
         $path = $track ? $library->original($track) : null;
@@ -326,7 +326,7 @@ final class ManagePage
     {
         $lists = new Playlists($this->db, $this->station);
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-            $this->postAs('manager', 'manage/playlists');
+            $this->postAs('playlists', 'manage/playlists');
             [$id, $problem] = $lists->create((string) ($_POST['name'] ?? ''), (string) ($_POST['mode'] ?? 'shuffle'));
             if ($problem) {
                 Session::flash('bad', $problem);
@@ -335,7 +335,7 @@ final class ManagePage
             Session::flash('ok', 'Playlist made. Add songs to it, then put it on the schedule.');
             App::redirect("manage/playlists/$id");
         }
-        $me = App::requireRole('manager');
+        $me = App::requireRole('playlists');
         $this->render('playlists', 'Playlists', $me, ['lists' => $lists->all()]);
     }
 
@@ -344,7 +344,7 @@ final class ManagePage
         $lists = new Playlists($this->db, $this->station);
         $list = $lists->get($id);
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-            $this->postAs('manager', "manage/playlists/$id");
+            $this->postAs('playlists', "manage/playlists/$id");
             $action = (string) ($_POST['action'] ?? '');
             $track = (int) ($_POST['track'] ?? 0);
             $problem = match ($action) {
@@ -367,7 +367,7 @@ final class ManagePage
             });
             App::redirect($action === 'delete' && $problem === null ? 'manage/playlists' : "manage/playlists/$id");
         }
-        $me = App::requireRole('manager');
+        $me = App::requireRole('playlists');
         if ($list === null) {
             App::notFound();
             return;
@@ -389,7 +389,7 @@ final class ManagePage
     {
         $schedule = new Schedule($this->db, $this->station);
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-            $this->postAs('manager', 'manage/schedule');
+            $this->postAs('schedule', 'manage/schedule');
             if (($_POST['action'] ?? '') === 'delete') {
                 $problem = $schedule->delete((int) ($_POST['id'] ?? 0));
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Block removed. It applies from the next song.');
@@ -405,7 +405,7 @@ final class ManagePage
             $this->planner->replan(microtime(true));
             App::redirect('manage/schedule');
         }
-        $me = App::requireRole('manager');
+        $me = App::requireRole('schedule');
         $form = $_SESSION['schedule_form'] ?? ['in' => [], 'errors' => []];
         unset($_SESSION['schedule_form']);
         $now = microtime(true);
@@ -418,44 +418,60 @@ final class ManagePage
         ]);
     }
 
-    // ---- DJs -----------------------------------------------------------------------------
+    // ---- People --------------------------------------------------------------------------
 
-    public function djs(): void
+    /** Everyone who can sign in: add, change details, role and ticks, block, set a password, remove. */
+    public function people(): void
     {
         $staff = new Staff($this->db, $this->station);
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-            $me = $this->postAs('manager', 'manage/djs');
+            $me = $this->postAs('people', 'manage/people');
             $id = (int) ($_POST['id'] ?? 0);
             $action = (string) ($_POST['action'] ?? '');
+            $back = 'manage/people';
+            $ticks = isset($_POST['perms']) ? array_map('strval', (array) ($_POST['perm'] ?? [])) : null;
             if ($action === 'add') {
-                [$newId, $errors] = $staff->add($me, (string) ($_POST['name'] ?? ''), (string) ($_POST['email'] ?? ''), (string) ($_POST['role'] ?? 'dj'), (string) ($_POST['password'] ?? ''));
+                [$newId, $errors] = $staff->add($me, (string) ($_POST['name'] ?? ''), (string) ($_POST['email'] ?? ''), (string) ($_POST['role'] ?? 'dj'), (string) ($_POST['password'] ?? ''), $ticks);
                 if ($errors) {
-                    $_SESSION['djs_form'] = ['in' => array_diff_key($_POST, ['password' => 1, 'csrf' => 1]), 'errors' => $errors];
+                    $_SESSION['people_form'] = ['in' => array_diff_key($_POST, ['password' => 1, 'csrf' => 1]), 'errors' => $errors];
                     Session::flash('bad', 'Not added: ' . implode(' ', $errors));
                 } else {
                     Session::flash('ok', 'Added. Give them the email and password you chose; they can change the password on Your account.');
                 }
             } else {
+                $back = 'manage/people?person=' . $id;
                 $problem = match ($action) {
+                    'details' => implode(' ', $staff->edit($me, $id, (string) ($_POST['name'] ?? ''), (string) ($_POST['email'] ?? ''))) ?: null,
                     'role' => $staff->setRole($me, $id, (string) ($_POST['role'] ?? '')),
+                    'permissions' => $staff->setPermissions($me, $id, $ticks ?? []),
                     'password' => $staff->resetPassword($me, $id, (string) ($_POST['password'] ?? ''), Auth::fromConfig()),
+                    'block' => $staff->block($me, $id, $this->planner),
+                    'unblock' => $staff->unblock($me, $id),
                     'remove' => $staff->remove($me, $id),
                     default => 'Unknown action.',
                 };
+                if ($action === 'remove' && $problem === null) {
+                    $back = 'manage/people';
+                }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? match ($action) {
-                    'role' => 'Role changed.',
+                    'details' => 'Name and email saved.',
+                    'role' => 'Role changed. What they may do is back to that role’s usual.',
+                    'permissions' => 'Saved what they may do.',
                     'password' => 'New password set. Their other sessions are signed out.',
+                    'block' => 'Blocked. They are signed out everywhere, and if they were live the AutoDJ has taken over.',
+                    'unblock' => 'Unblocked. They can sign in again.',
                     default => 'Removed. They can no longer sign in.',
                 });
             }
-            App::redirect('manage/djs');
+            App::redirect($back);
         }
-        $me = App::requireRole('manager');
-        $form = $_SESSION['djs_form'] ?? ['in' => [], 'errors' => []];
-        unset($_SESSION['djs_form']);
-        $this->render('djs', 'DJs', $me, [
+        $me = App::requireRole('people');
+        $form = $_SESSION['people_form'] ?? ['in' => [], 'errors' => []];
+        unset($_SESSION['people_form']);
+        $this->render('people', 'People', $me, [
             'people' => $staff->all(),
             'grantable' => Staff::grantable($me),
+            'mayTick' => Staff::grantablePermissions($me),
             'form' => $form,
             'open' => (int) ($_GET['person'] ?? 0),
         ]);
@@ -467,12 +483,12 @@ final class ManagePage
     public function listeners(): void
     {
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-            $this->postAs('manager', 'manage/listeners');
+            $this->postAs('listeners', 'manage/listeners');
             [, $problem] = (new StationSettings($this->db, $this->station))->savePrivacyEmail((string) ($_POST['privacy_email'] ?? ''));
             Session::flash($problem ? 'bad' : 'ok', $problem ? "Not saved: $problem" : 'Saved. The Privacy page shows it now.');
             App::redirect('manage/listeners');
         }
-        $me = App::requireRole('manager');
+        $me = App::requireRole('listeners');
         $now = microtime(true);
         $listeners = new Listeners($this->db, $this->station);
         $this->render('listeners', 'Listeners', $me, [
@@ -494,7 +510,7 @@ final class ManagePage
     {
         $podcast = new Podcast($this->db, $this->station, SW_ROOT);
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-            $this->postAs('manager', 'manage/podcast');
+            $this->postAs('podcast', 'manage/podcast');
             $file = $_FILES['cover'] ?? null;
             $tmp = is_array($file) && ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK && is_uploaded_file($file['tmp_name']) ? $file['tmp_name'] : null;
             if (is_array($file) && !in_array($file['error'] ?? UPLOAD_ERR_NO_FILE, [UPLOAD_ERR_OK, UPLOAD_ERR_NO_FILE], true)) {
@@ -510,7 +526,7 @@ final class ManagePage
         $this->render('podcast', 'Podcast', $me, [
             'episodes' => $podcast->list($me),
             'details' => $podcast->details(),
-            'isManager' => Auth::allows($me, 'manager'),
+            'isManager' => Auth::allows($me, 'podcast'),
         ]);
     }
 
@@ -532,7 +548,7 @@ final class ManagePage
     {
         $settings = new StationSettings($this->db, $this->station);
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-            $this->postAs('manager', 'manage/sound');
+            $this->postAs('sound', 'manage/sound');
             [$station, $errors] = $settings->save($_POST);
             if ($errors) {
                 $_SESSION['sound_form'] = ['in' => array_diff_key($_POST, ['csrf' => 1]), 'errors' => $errors];
@@ -544,7 +560,7 @@ final class ManagePage
             Session::flash('ok', 'Saved. New settings apply from the next song.');
             App::redirect('manage/sound');
         }
-        $me = App::requireRole('manager');
+        $me = App::requireRole('sound');
         $form = $_SESSION['sound_form'] ?? ['in' => [], 'errors' => []];
         unset($_SESSION['sound_form']);
         $this->render('sound', 'Sound & safety', $me, [

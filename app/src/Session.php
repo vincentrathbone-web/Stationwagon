@@ -114,6 +114,26 @@ final class Session
         }
     }
 
+    public const STAFF_HINT = 'sw_staff';
+
+    /**
+     * A hint for the website the station lives in (its header's "Sign in"): "1" while someone is
+     * signed in here, for the whole site (path /) and readable by its scripts. It holds nothing
+     * about who: the header asks api/me for that, and only when the hint is there, so visitors'
+     * page views never reach the station. $expires 0: until the browser closes; past: removed.
+     */
+    public static function staffHint(bool $on, int $expires = 0): void
+    {
+        $expires = $on ? $expires : time() - 86400;
+        if (PHP_SAPI === 'cli') {
+            self::$cliCookies[self::STAFF_HINT] = [$on ? '1' : '', $expires];
+            return;
+        }
+        if (!headers_sent()) {
+            setcookie(self::STAFF_HINT, $on ? '1' : '', ['expires' => $expires, 'path' => '/', 'secure' => self::isHttps(), 'httponly' => false, 'samesite' => 'Lax']);
+        }
+    }
+
     public static function isHttps(): bool
     {
         // Cloudflare talks to this server over HTTPS too, so the server's own flag is enough

@@ -42,7 +42,7 @@ final class Studio
      */
     public function slot(array $user, float $now): array
     {
-        $manager = Auth::allows($user, 'manager');
+        $manager = Auth::allows($user, 'onair');
         $current = $mine = $next = null;
         foreach ($this->liveBlocks() as $b) {
             foreach ($this->occurrences($b, $now) as $o) {
@@ -209,7 +209,7 @@ final class Studio
 
     public function canControl(array $user, array $show): bool
     {
-        return (int) ($show['dj_user_id'] ?? 0) === (int) $user['id'] || Auth::allows($user, 'manager');
+        return (int) ($show['dj_user_id'] ?? 0) === (int) $user['id'] || Auth::allows($user, 'onair');
     }
 
     // ---- Notes from the studio -------------------------------------------------------------
@@ -253,7 +253,7 @@ final class Studio
     /** May this person change the running order with this scope? Their own block or their own list; managers any. */
     public function mayEditOrder(array $user, string $scope): bool
     {
-        if (Auth::allows($user, 'manager')) {
+        if (Auth::allows($user, 'onair')) {
             return preg_match('/^(block|user):\d+$/', $scope) === 1;
         }
         if ($scope === 'user:' . $user['id']) {

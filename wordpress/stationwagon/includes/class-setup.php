@@ -356,7 +356,7 @@ final class Stationwagon_Setup
         return "$php $dir/cli/plan.php > /dev/null 2>&1";
     }
 
-    private static function loadApp(string $dir): void
+    public static function loadApp(string $dir): void
     {
         if (!class_exists('\Stationwagon\Installer', false)) {
             require_once $dir . '/src/bootstrap.php';

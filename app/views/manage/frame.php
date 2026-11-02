@@ -2,13 +2,13 @@
 /** @var array $me @var array $station @var string $inner @var string $section @var ?array $nowPlaying @var string $csrf */
 $rail = [
     'overview' => ['manage', 'Overview', 'dj'],
-    'library' => ['manage/library', 'Music library', 'manager'],
-    'playlists' => ['manage/playlists', 'Playlists', 'manager'],
-    'schedule' => ['manage/schedule', 'Schedule', 'manager'],
-    'djs' => ['manage/djs', 'DJs', 'manager'],
-    'sound' => ['manage/sound', 'Sound & safety', 'manager'],
-    'songprep' => ['manage/songprep', 'Song prep', 'manager'],
-    'listeners' => ['manage/listeners', 'Listeners', 'manager'],
+    'library' => ['manage/library', 'Music library', 'library'],
+    'playlists' => ['manage/playlists', 'Playlists', 'playlists'],
+    'schedule' => ['manage/schedule', 'Schedule', 'schedule'],
+    'people' => ['manage/people', 'People', 'people'],
+    'sound' => ['manage/sound', 'Sound & safety', 'sound'],
+    'songprep' => ['manage/songprep', 'Song prep', 'library'],
+    'listeners' => ['manage/listeners', 'Listeners', 'listeners'],
     'podcast' => ['manage/podcast', 'Podcast', 'dj'],
 ];
 // A small POST form around one button; $fields are hidden inputs

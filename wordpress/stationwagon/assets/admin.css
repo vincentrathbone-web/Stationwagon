@@ -39,3 +39,20 @@
 .sw-facts td { word-break: break-all; }
 .sw-copy { display: block; white-space: pre-wrap; word-break: break-all; padding: 8px; }
 @media (max-width: 600px) { .sw-sub { margin-left: 0; } .sw-card { padding: 4px 14px 14px; } }
+
+/* People */
+.sw-ptable { margin-top: 12px; }
+.sw-ptable td { vertical-align: middle; }
+.sw-ptable .sw-acts { text-align: right; }
+.sw-ptable tr.sw-blocked td { color: var(--sw-ink-2); }
+.sw-tag.sw-tag-bad { border-color: #b32d2e; color: #b32d2e; }
+.sw-ptable tr.sw-editing td { background: #f6f7f7; }
+.sw-personform { display: grid; gap: 14px; padding: 6px 0; }
+.sw-pform label { margin-right: 8px; }
+.sw-pform p { margin: 4px 0; }
+.sw-perms { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; margin: 4px 0 8px; }
+.sw-perm { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start; background: #fff; border: 1px solid var(--sw-line); border-radius: 6px; padding: 8px 10px; }
+.sw-perm input { margin-top: 2px; }
+.sw-perm small { display: block; color: var(--sw-ink-2); }
+.button.sw-danger { color: #b32d2e; border-color: #b32d2e; }
+@media (max-width: 782px) { .sw-ptable th:nth-child(3), .sw-ptable td:nth-child(3), .sw-ptable th:nth-child(4), .sw-ptable td:nth-child(4) { display: none; } }

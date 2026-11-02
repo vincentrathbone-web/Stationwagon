@@ -95,6 +95,11 @@ try {
     $r = $b->go('');
     check('station page opens', $r['status'] === 200, (string) $r['status']);
     check('listeners get no cookie', $b->setCookies === [], implode(' | ', $b->setCookies));
+    $hb = new Browser($base);
+    $hb->cookies['sw_staff'] = '1';
+    $hm = $hb->go('api/me');
+    check('api/me for someone signed out: signedIn false, never cached, the stale hint removed, no session', $hm['status'] === 200 && (json_decode($hm['body'], true)['signedIn'] ?? null) === false
+        && str_contains(implode(',', $hm['headers']['cache-control'] ?? []), 'no-store') && !isset($hb->cookies['sw_staff']) && !isset($hb->cookies['sw_session']), $hm['body'] . ' ' . implode(',', $hm['headers']['cache-control'] ?? []));
     check('station page links to sign in', str_contains($r['body'], 'href="' . $basePath . '/signin"'));
     check('station page is the listener player', str_contains($r['body'], 'id="player"') && str_contains($r['body'], 'data-delay="20"') && str_contains($r['body'], 'assets/player.js'));
     check('with today’s schedule', str_contains($r['body'], '<h2>Today · '));
@@ -324,6 +329,19 @@ try {
         $r = $a->go('signin', ['csrf' => $csrf, 'email' => $email, 'password' => $pass, 'next' => 'manage']);
         check('right password goes to the manager', $r['status'] === 303 && str_ends_with($location($r), '/manage'), $r['status'] . ' ' . $location($r));
         check('a new session id after sign-in', ($a->cookies['sw_session'] ?? '') !== '' && ($a->cookies['sw_session'] ?? '') !== $before);
+        $hint = implode(' | ', array_filter($a->setCookies, fn($x) => str_starts_with($x, 'sw_staff=')));
+        check('  and the website’s hint: sw_staff=1 for the whole site, readable by its script, until the browser closes', str_starts_with($hint, 'sw_staff=1;') && preg_match('~;\s*path=/(;|$)~i', $hint) === 1
+            && stripos($hint, 'HttpOnly') === false && stripos($hint, 'Max-Age') === false && stripos($hint, 'SameSite=Lax') !== false, $hint);
+        $me = $a->go('api/me');
+        $mj = json_decode($me['body'], true);
+        check('api/me says who is signed in, with the links and a sign-out key', $me['status'] === 200 && ($mj['signedIn'] ?? null) === true && $mj['name'] === 'Web Test DJ' && $mj['role'] === 'DJ'
+            && $mj['studio'] === "$basePath/studio" && $mj['manage'] === "$basePath/manage" && $mj['signout'] === "$basePath/signout" && strlen((string) $mj['csrf']) === 64, $me['body']);
+        check('  never kept anywhere, and only for this site (no CORS)', str_contains(implode(',', $me['headers']['cache-control'] ?? []), 'no-store') && !isset($me['headers']['access-control-allow-origin']), implode(',', $me['headers']['cache-control'] ?? []));
+        $anon = new Browser($base);
+        $anon->cookies['sw_staff'] = '1';
+        $am = $anon->go('api/me');
+        check('  signed out: signedIn false, the stale hint removed, no session made', $am['status'] === 200 && (json_decode($am['body'], true)['signedIn'] ?? null) === false
+            && !isset($anon->cookies['sw_staff']) && !isset($anon->cookies['sw_session']), $am['body'] . ' ' . implode(' | ', $anon->setCookies));
         $r = $a->go('manage');
         check('manager page greets the DJ', $r['status'] === 200 && preg_match('/Good (morning|afternoon|evening), Web</', $r['body']) === 1, (string) $r['status']);
         check('a DJ sees the overview but not the library', str_contains($r['body'], '>Overview</a>') && !str_contains($r['body'], '>Music library</a>'));
@@ -412,6 +430,15 @@ try {
         check('  signing out there removes the cookie', $r['status'] === 303 && !isset($k->cookies['sw_remember']));
         unset($k->cookies['sw_session']);
         check('  and it stays signed out', $k->go('manage')['status'] === 303);
+        $w = new Browser($base);
+        $w->go('signin', ['csrf' => Browser::csrf($w->go('signin')), 'email' => $email, 'password' => 'a new password 1']);
+        $wm = json_decode($w->go('api/me')['body'], true);
+        $r = $w->go('signout', ['csrf' => $wm['csrf'] ?? '', 'back' => '/listen/']);
+        check('signing out from the website’s header goes back to that page, without the hint', $r['status'] === 303 && $location($r) === '/listen/' && !isset($w->cookies['sw_staff']), $location($r));
+        check('  and api/me then says signed out', (json_decode($w->go('api/me')['body'], true)['signedIn'] ?? null) === false);
+        $w->go('signin', ['csrf' => Browser::csrf($w->go('signin')), 'email' => $email, 'password' => 'a new password 1']);
+        $r = $w->go('signout', ['csrf' => Browser::csrf($w->go('manage')), 'back' => '//evil.example/']);
+        check('  never to another site', $r['status'] === 303 && str_ends_with($location($r), "$basePath/signin"), $location($r));
 
         echo "Station manager (throwaway manager account)\n";
         $tag = bin2hex(random_bytes(3));
@@ -424,7 +451,7 @@ try {
         $m = new Browser($base);
         $m->go('signin', ['csrf' => Browser::csrf($m->go('signin')), 'email' => $mEmail, 'password' => $mPass]);
         $r = $m->go('manage');
-        check('a manager sees every section', $r['status'] === 200 && str_contains($r['body'], '>Music library</a>') && str_contains($r['body'], '>Playlists</a>') && str_contains($r['body'], '>Schedule</a>') && str_contains($r['body'], '>DJs</a>') && str_contains($r['body'], '>Sound &amp; safety</a>'));
+        check('a manager sees every section', $r['status'] === 200 && str_contains($r['body'], '>Music library</a>') && str_contains($r['body'], '>Playlists</a>') && str_contains($r['body'], '>Schedule</a>') && str_contains($r['body'], '>People</a>') && str_contains($r['body'], '>Sound &amp; safety</a>'));
         $csrf = Browser::csrf($r);
         check('a manager has a Skip button', str_contains($r['body'], 'Skip this song'));
         check('the overview shows who is listening', !str_contains($r['body'], 'On air now') || !str_contains($r['body'], 'Skip this song') || (str_contains($r['body'], 'Listening now') && str_contains($r['body'], 'Most at once today')));
@@ -556,28 +583,62 @@ try {
         $r = $m->go("manage/playlists/$plId", ['csrf' => $csrf, 'action' => 'delete']);
         check('a playlist is deleted', $r['status'] === 303 && str_ends_with($location($r), '/manage/playlists') && $flashed($after($m, $r), 'Playlist deleted'));
 
-        // DJs
+        // People
         $r = $m->go('manage/djs');
-        check('DJs lists everyone, you marked', $r['status'] === 200 && str_contains($r['body'], 'Web Test Manager</b> <span class="pill">You</span>'));
+        check('the old DJs address goes to People', $r['status'] === 303 && str_ends_with($location($r), '/manage/people'), $location($r));
+        $r = $m->go('manage/people');
+        check('People lists everyone, you marked, with what each may do', $r['status'] === 200 && str_contains($r['body'], 'Web Test Manager</b> <span class="pill">You</span>') && str_contains($r['body'], '<th>May do</th>'));
+        check('  and the Add form has a tick for each permission', substr_count(substr($r['body'], (int) strpos($r['body'], 'id="addPerson"')), 'name="perm[]"') === 8);
         $djEmail = "web-test-$tag-dj@example.test";
-        $r = $m->go('manage/djs', ['csrf' => $csrf, 'action' => 'add', 'name' => 'Web Test New DJ', 'email' => $djEmail, 'role' => 'dj', 'password' => 'first pass 123']);
-        check('a manager adds a DJ', $flashed($after($m, $r), 'Added.'));
+        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'add', 'name' => 'Web Test New DJ', 'email' => $djEmail, 'role' => 'dj', 'password' => 'first pass 123', 'perms' => '1', 'perm' => ['schedule']]);
+        check('a manager adds a DJ with the Schedule tick', $flashed($after($m, $r), 'Added.'));
         $users[] = $newDj = (int) $db->run('SELECT id FROM ' . $db->table('users') . ' WHERE email = ?', [$djEmail])->fetchColumn();
-        $r = $m->go('manage/djs', ['csrf' => $csrf, 'action' => 'add', 'name' => 'Web Test Boss', 'email' => "web-test-$tag-boss@example.test", 'role' => 'admin', 'password' => 'first pass 123']);
+        check('  stored', $db->run('SELECT permissions FROM ' . $db->table('users') . ' WHERE id = ?', [$newDj])->fetchColumn() === '["schedule"]');
+        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'add', 'name' => 'Web Test Boss', 'email' => "web-test-$tag-boss@example.test", 'role' => 'admin', 'password' => 'first pass 123']);
         check('a manager can’t add an admin', $flashed($after($m, $r), 'Not added'));
         $d = new Browser($base);
         $d->go('signin', ['csrf' => Browser::csrf($d->go('signin')), 'email' => $djEmail, 'password' => 'first pass 123']);
-        check('the new DJ signs in', $d->go('manage')['status'] === 200);
-        $r = $m->go('manage/djs', ['csrf' => $csrf, 'action' => 'password', 'id' => $newDj, 'password' => 'second pass 123']);
+        $dm = $d->go('manage');
+        check('the new DJ signs in and sees Schedule, but not the library or People', $dm['status'] === 200 && str_contains($dm['body'], '>Schedule</a>') && !str_contains($dm['body'], '>Music library</a>') && !str_contains($dm['body'], '>People</a>'));
+        check('  Schedule opens for them; People doesn’t', $d->go('manage/schedule')['status'] === 200 && $d->go('manage/people')['status'] === 403);
+        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'permissions', 'id' => $newDj, 'perms' => '1', 'perm' => ['library', 'listeners']]);
+        check('a manager changes their ticks', $flashed($after($m, $r), 'Saved what they may do.'));
+        $dm = $d->go('manage');
+        check('  which applies at once', str_contains($dm['body'], '>Music library</a>') && str_contains($dm['body'], '>Listeners</a>') && !str_contains($dm['body'], '>Schedule</a>') && $d->go('manage/schedule')['status'] === 403);
+        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'details', 'id' => $newDj, 'name' => 'Web Test Renamed DJ', 'email' => $djEmail]);
+        $p = $after($m, $r);
+        check('a manager renames them', $flashed($p, 'Name and email saved.') && str_contains($p['body'], 'Web Test Renamed DJ'));
+        check('  with their forms open after the change', str_contains($p['body'], 'Save what they may do') && str_contains($p['body'], 'Yes, block Web Test Renamed DJ'));
+        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'password', 'id' => $newDj, 'password' => 'second pass 123']);
         check('a manager sets a new password', $flashed($after($m, $r), 'New password set.'));
         check('which signs the DJ out', $d->go('manage')['status'] === 303);
-        $r = $m->go('manage/djs', ['csrf' => $csrf, 'action' => 'remove', 'id' => $newDj]);
-        check('a manager removes the DJ', $flashed($after($m, $r), 'Removed.'));
+        $d = new Browser($base);
+        $d->go('signin', ['csrf' => Browser::csrf($d->go('signin')), 'email' => $djEmail, 'password' => 'second pass 123', 'remember' => '1']);
+        check('  they sign in with it (Keep me signed in)', $d->go('manage')['status'] === 200 && isset($d->cookies['sw_remember']));
+        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'block', 'id' => $newDj]);
+        check('a manager blocks them', $flashed($p = $after($m, $r), 'Blocked.') && str_contains($p['body'], 'pill bad">Blocked</span>') && str_contains($p['body'], '>Unblock</button>'));
+        check('  signed out at once', $d->go('manage')['status'] === 303);
+        unset($d->cookies['sw_session']);
+        check('  even with Keep me signed in', $d->go('studio')['status'] === 303);
         $d2 = new Browser($base);
         $r = $d2->go('signin', ['csrf' => Browser::csrf($d2->go('signin')), 'email' => $djEmail, 'password' => 'second pass 123']);
+        check('  and can’t sign in: told they’re blocked', $r['status'] === 401 && str_contains($r['body'], 'This account is blocked'));
+        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'unblock', 'id' => $newDj]);
+        check('a manager unblocks them', $flashed($after($m, $r), 'Unblocked.'));
+        $r = $d2->go('signin', ['csrf' => Browser::csrf($d2->go('signin')), 'email' => $djEmail, 'password' => 'second pass 123']);
+        check('  who can sign in again', $r['status'] === 303);
+        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'role', 'id' => $newDj, 'role' => 'manager']);
+        check('a manager promotes them', $flashed($after($m, $r), 'Role changed.'));
+        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'remove', 'id' => $newDj]);
+        check('a manager removes them', $flashed($after($m, $r), 'Removed.'));
+        $d3 = new Browser($base);
+        $r = $d3->go('signin', ['csrf' => Browser::csrf($d3->go('signin')), 'email' => $djEmail, 'password' => 'second pass 123']);
         check('who can no longer sign in', $r['status'] === 401);
-        $r = $m->go('manage/djs', ['csrf' => $csrf, 'action' => 'role', 'id' => $mgrId, 'role' => 'dj']);
+        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'role', 'id' => $mgrId, 'role' => 'dj']);
         check('nobody changes their own role', $flashed($after($m, $r), 'You can’t change'));
+        $r = $m->go('manage/people', ['csrf' => $csrf, 'action' => 'block', 'id' => $mgrId]);
+        check('or blocks themselves', $flashed($after($m, $r), 'You can’t block'));
+        check('a DJ can’t send the People form', $c->go('manage/people', ['csrf' => Browser::csrf($c->go('manage')), 'action' => 'block', 'id' => $mgrId])['status'] === 403);
 
         // Sound & safety (the station's own values are put back in the cleanup)
         $origSettings = $db->run('SELECT settings FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetchColumn();

@@ -31,7 +31,7 @@ namespace Stationwagon;
  */
 final class Schema
 {
-    public const VERSION = 11;
+    public const VERSION = 12;
 
     /** Table names without prefix, in creation order (foreign keys need their parents first). */
     public const TABLES = [
@@ -78,6 +78,8 @@ final class Schema
                 `role` ENUM('admin','manager','dj') NOT NULL DEFAULT 'dj',
                 `created_at` DATETIME NOT NULL,
                 `last_login_at` DATETIME NULL,
+                `blocked_at` DATETIME NULL COMMENT 'set while the person may not sign in',
+                `permissions` TEXT NULL COMMENT 'JSON list of what they may do; NULL: their role''s defaults (Permissions)',
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `{$p}users_email` (`email`)
             ) $opts",
@@ -484,6 +486,11 @@ final class Schema
                 "ALTER TABLE `{$p}tracks` ADD COLUMN `level_target` DECIMAL(4,1) NULL COMMENT 'the station loudness target it was levelled to (LUFS)' AFTER `level_gain_db`",
                 "ALTER TABLE `{$p}tracks` ADD COLUMN `preset_settings` TEXT NULL COMMENT 'JSON: the mastering settings it was made with' AFTER `preset`",
                 "UPDATE `{$p}tracks` SET `level_target` = -16.0 WHERE `loudness_lufs` IS NOT NULL AND `level_target` IS NULL",
+            ],
+            // people management: blocking, and what each person may do beyond their role's defaults
+            12 => [
+                "ALTER TABLE `{$p}users` ADD COLUMN `blocked_at` DATETIME NULL COMMENT 'set while the person may not sign in' AFTER `last_login_at`",
+                "ALTER TABLE `{$p}users` ADD COLUMN `permissions` TEXT NULL COMMENT 'JSON list of what they may do; NULL: their role''s defaults (Permissions)' AFTER `blocked_at`",
             ],
         ];
     }

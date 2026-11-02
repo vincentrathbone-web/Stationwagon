@@ -40,6 +40,10 @@ Options -Indexes
   <If "%{THE_REQUEST} =~ m#^[A-Z]+ [^ ?]*/podcast/api/#">
     Header set Cache-Control "private, no-store"
   </If>
+  # Who is signed in (the website's header asks): personal, never kept anywhere
+  <If "%{THE_REQUEST} =~ m#^[A-Z]+ [^ ?]*/api/me[ ?]#">
+    Header set Cache-Control "private, no-store"
+  </If>
   # Songs and live pieces never change at the same address
   <FilesMatch "\.mp3$">
     Header set Cache-Control "public, max-age=31536000, immutable"

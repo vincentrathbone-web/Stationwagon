@@ -31,8 +31,8 @@ $next = $onAir['next'];
         <div class="mstat"><b id="ovListening"><?= (int) $listening ?></b><span>Listening now</span></div>
         <div class="mstat"><b><?= (int) $todayPeak ?></b><span>Most at once today</span></div>
       </div>
-      <?php if (Auth::allows($me, 'manager')): ?><p class="muted" style="margin:8px 0 0"><a href="<?= h(App::url('manage/listeners')) ?>">Listeners by hour and day</a></p><?php endif ?>
-      <?php if (Auth::allows($me, 'manager') && $cur['type'] === 'song'): ?>
+      <?php if (Auth::allows($me, 'listeners')): ?><p class="muted" style="margin:8px 0 0"><a href="<?= h(App::url('manage/listeners')) ?>">Listeners by hour and day</a></p><?php endif ?>
+      <?php if (Auth::allows($me, 'onair') && $cur['type'] === 'song'): ?>
         <div class="row-actions"><?= $post('manage/skip', 'Skip this song', [], 'btn') ?><span class="hint2">The song fades out over 2 s at the next piece boundary.</span></div>
       <?php endif ?>
     <?php endif ?>
