@@ -279,13 +279,16 @@ $site = sw_host();
 ?><!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
 <title>Stationwagon setup</title>
+<!--SW_ICON-->
 <style>
 :root { --ground: #f6f8f6; --paper: #fff; --ink: #17201a; --ink-2: #4a564d; --line: #dde4de; --green: #138a43; --green-bg: #e7f4ec;
   --amber: #a15c00; --amber-bg: #fff4e2; --red: #b42318; --red-bg: #fdecea; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 680px; margin: 0 auto; padding: 32px 16px 64px; }
-h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.01em; } h1 span { color: var(--green); }
+h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -.01em; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+h1 .logo { display: block; height: 46px; width: auto; } h1 .lg-mark { color: var(--green); } h1 .lg-word { color: var(--ink); }
+h1 small { font-size: 22px; font-weight: 600; color: var(--ink-2); }
 h2 { font-size: 18px; margin: 0 0 10px; }
 .lede { color: var(--ink-2); margin: 0 0 22px; }
 .card { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin: 0 0 16px; }
@@ -314,7 +317,7 @@ table { border-collapse: collapse; width: 100%; } th, td { text-align: left; pad
 @media (max-width: 520px) { .sub { margin-left: 0; } }
 </style></head>
 <body><main>
-<h1><span>stationwagon</span> setup</h1>
+<h1><!--SW_LOGO--><small>setup</small></h1>
 <?php if ($done): ?>
   <p class="lede">The station's files are in place and this setup file has removed itself.</p>
   <div class="card"><ul class="checks"><?php foreach ($done['steps'] as $s): ?><li><span class="dot"></span><span class="what"><?= sw_h($s) ?></span></li><?php endforeach ?></ul></div>

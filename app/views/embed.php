@@ -9,6 +9,7 @@ $name = $station['name'] ?? 'Stationwagon';
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= h($name) ?> · Listen live</title>
 <?= Skins::headScript() ?>
+<?= App::icons() ?>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=Share+Tech+Mono&display=swap">
 <link rel="stylesheet" href="<?= h(App::asset('assets/app.css')) ?>">
@@ -52,7 +53,7 @@ $name = $station['name'] ?? 'Stationwagon';
   </div>
   <div class="em-side">
     <a class="em-open" href="<?= h(App::url('')) ?>" target="_blank" rel="noopener">Open the player <span aria-hidden="true">↗</span></a>
-    <span class="em-foot"><?= Skins::picker(true) ?><a class="em-priv" href="<?= h(App::url('privacy')) ?>" target="_blank" rel="noopener">Privacy</a></span>
+    <span class="em-foot"><a class="em-brand" href="<?= h(App::url('')) ?>" target="_blank" rel="noopener" title="Powered by Stationwagon" aria-label="Powered by Stationwagon"><?= App::mark() ?></a><?= Skins::picker(true) ?><a class="em-priv" href="<?= h(App::url('privacy')) ?>" target="_blank" rel="noopener">Privacy</a></span>
   </div>
 </div>
 <script src="<?= h(App::asset('assets/skin.js')) ?>" defer></script>

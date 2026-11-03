@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><?= h($title) ?> · Stationwagon</title>
 <?= Skins::headScript() ?>
+<?= App::icons() ?>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=Share+Tech+Mono&display=swap">
 <link rel="stylesheet" href="<?= h(App::asset('assets/app.css')) ?>">
@@ -13,7 +14,7 @@
 </head>
 <body>
 <header class="top<?= !empty($wide) ? ' wide' : '' ?>">
-  <a class="brand" href="<?= h(App::url('')) ?>">stationwagon</a><span class="ver"><?= h(Config::version()) ?></span>
+  <a class="brand" href="<?= h(App::url('')) ?>" aria-label="Stationwagon home"><?= App::logo() ?></a><span class="ver"><?= h(Config::version()) ?></span>
   <nav class="who">
     <?= Skins::picker() ?>
     <?php if (!empty($me)): ?>

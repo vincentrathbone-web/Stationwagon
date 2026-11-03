@@ -2,6 +2,9 @@
 .sw { --sw-green: #138a43; --sw-green-bg: #e7f4ec; --sw-amber: #a15c00; --sw-amber-bg: #fff4e2; --sw-line: #dcdcde; --sw-ink-2: #50575e; max-width: 880px; }
 .sw-title { display: flex; align-items: center; gap: 8px; }
 .sw-title .dashicons { color: var(--sw-green); font-size: 28px; width: 28px; height: 28px; }
+.sw-title .logo { display: block; height: 44px; width: auto; }
+.sw-title .lg-mark { color: var(--sw-green); }
+.sw-title .lg-word { color: #1d2327; }
 .sw-lead { font-size: 15px; max-width: 64ch; color: var(--sw-ink-2); }
 .sw-card { background: #fff; border: 1px solid var(--sw-line); border-radius: 8px; padding: 4px 20px 16px; margin: 16px 0; }
 .sw-card h2 { font-size: 17px; display: flex; align-items: center; gap: 10px; }

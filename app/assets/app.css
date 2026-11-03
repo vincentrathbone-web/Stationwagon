@@ -68,8 +68,12 @@ a { color: var(--amber); }
 code, pre { font-family: var(--f-mono); font-size: 13px; }
 code { background: var(--raised); padding: 1px 6px; border-radius: var(--r-small); }
 
-.top { max-width: 760px; margin: 0 auto; padding-block: 22px 8px; display: flex; align-items: baseline; gap: 10px; }
-.brand { font-weight: 800; font-size: 20px; letter-spacing: -.02em; color: var(--ink); text-decoration: none; }
+.top { max-width: 760px; margin: 0 auto; padding-block: 18px 8px; display: flex; align-items: center; gap: 10px; }
+.brand { display: inline-flex; text-decoration: none; }
+/* the logo (App::logo): the wagon takes the look's accent, the name its text colour */
+.brand .logo { display: block; height: 42px; width: auto; }
+.logo .lg-mark { color: var(--amber); }
+.logo .lg-word { color: var(--ink); }
 .who { margin-left: auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; font-weight: 600; font-size: 14px; }
 .who a { color: var(--muted); text-decoration: none; }
 .who a:hover, .who .link:hover { color: var(--ink); }
@@ -724,6 +728,7 @@ body.embed { height: 100%; }
 .em-open:hover, .em-priv:hover { color: var(--ink); }
 .em-priv { font-size: 11px; color: var(--faint); text-decoration: none; }
 .em-foot { display: flex; gap: 10px; align-items: baseline; }
+.em-brand { display: none; } /* the full layout's footer shows the wagon, below */
 @media (max-width: 380px) {
   .em { grid-template-columns: 52px minmax(0, 1fr); grid-template-areas: "play body" "play prog"; }
   .em-open { display: none; } /* the station name links to the player instead */
@@ -747,6 +752,9 @@ body.embed { height: 100%; }
   .em-prog { align-self: center; }
   .em-prog .em-bar { margin-top: 0; }
   .em-side { justify-content: flex-start; }
+  .em-brand { display: inline-flex; align-self: center; opacity: .85; }
+  .em-brand:hover { opacity: 1; }
+  .em-brand .logo { display: block; height: 16px; width: auto; }
 }
 @media (min-height: 280px) and (max-width: 380px) {
   /* Look and Privacy get a short row of their own at the top (in the corner they would cover the lamp) */

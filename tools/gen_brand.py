@@ -203,3 +203,30 @@ figcaption b {{ font-weight:600; overflow-wrap:anywhere; }} a {{ color:var(--dee
 with open(os.path.join(ROOT, "brand", "index.html"), "w", encoding="utf-8") as f:
     f.write(INDEX)
 print("index.html")
+
+# ---- The logo for the station's own pages: one inline SVG whose colours come from the page's tokens ----
+# (the mark follows the look's accent, the wordmark the look's text colour; app.css sets .lg-mark and .lg-word)
+d, b = mark(None, "x", mono="currentColor")
+themed = (f'<svg class="logo" viewBox="0 0 {W:.0f} {H:.0f}" role="img" aria-label="Stationwagon" focusable="false">'
+          f'<g class="lg-mark">{place(b, 1, P - MX, P - MY)}</g>'
+          f'<g class="lg-word">{word("currentColor", P + MW + GAP, base, FS)}</g></svg>\n')
+with open(os.path.join(ROOT, "app", "views", "logo.svg"), "w", encoding="utf-8") as f:
+    f.write(themed)
+os.makedirs(os.path.join(ROOT, "app", "assets", "brand"), exist_ok=True)
+import shutil
+shutil.copy(os.path.join(SVG, "stationwagon-favicon.svg"), os.path.join(ROOT, "app", "assets", "brand", "favicon.svg"))
+print("app/views/logo.svg, app/assets/brand/favicon.svg")
+
+# ---- The mark alone (the embed's footer) ----
+d, b = mark(None, "x", mono="currentColor")
+with open(os.path.join(ROOT, "app", "views", "mark.svg"), "w", encoding="utf-8") as f:
+    f.write(f'<svg class="logo" viewBox="0 0 {MW + 2 * PAD} {MH + 2 * PAD}" role="img" aria-label="Stationwagon" focusable="false">'
+            f'<g class="lg-mark">{place(b, 1, PAD - MX, PAD - MY)}</g></svg>\n')
+
+# ---- The WordPress plugin: the same inline logo, and a one-colour square icon for the admin menu ----
+shutil.copy(os.path.join(ROOT, "app", "views", "logo.svg"), os.path.join(ROOT, "wordpress", "stationwagon", "assets", "logo.svg"))
+d, b = mark(None, "x", mono="#a7aaad")
+y0 = MY - (MW - MH) / 2
+with open(os.path.join(ROOT, "wordpress", "stationwagon", "assets", "menu-icon.svg"), "w", encoding="utf-8") as f:
+    f.write(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{MX} {y0} {MW} {MW}" width="20" height="20">{b}</svg>\n')
+print("app/views/mark.svg, wordpress/stationwagon/assets/logo.svg, menu-icon.svg")

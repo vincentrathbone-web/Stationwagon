@@ -111,6 +111,30 @@ final class App
         return self::url($path) . '?v=' . $seen[$key];
     }
 
+    /** The Stationwagon logo as inline SVG: its colours come from the page's tokens (app.css, `.lg-mark` and `.lg-word`),
+     *  so it follows the look. Made by tools/gen_brand.py. */
+    public static function logo(): string
+    {
+        static $svg = null;
+        return $svg ??= (string) @file_get_contents(SW_ROOT . '/views/logo.svg');
+    }
+
+    /** Just the wagon, for tight places (the embed's footer). Same colours as the logo. */
+    public static function mark(): string
+    {
+        static $svg = null;
+        return $svg ??= (string) @file_get_contents(SW_ROOT . '/views/mark.svg');
+    }
+
+    /** The tab icon and the home-screen icon, for a page's <head>. */
+    public static function icons(): string
+    {
+        $e = static fn(string $s): string => htmlspecialchars($s, ENT_QUOTES);
+        return '<link rel="icon" type="image/svg+xml" href="' . $e(self::asset('assets/brand/favicon.svg')) . '">' . "\n"
+            . '<link rel="icon" type="image/png" sizes="32x32" href="' . $e(self::asset('assets/brand/favicon-32.png')) . '">' . "\n"
+            . '<link rel="apple-touch-icon" href="' . $e(self::asset('assets/brand/apple-touch-icon.png')) . '">' . "\n";
+    }
+
     public static function redirect(string $route): never
     {
         header('Location: ' . self::url($route), true, 303);

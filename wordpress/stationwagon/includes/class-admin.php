@@ -23,7 +23,16 @@ final class Stationwagon_Admin
 
     public static function menu(): void
     {
-        add_menu_page('Stationwagon', 'Stationwagon', 'manage_options', self::SLUG, [self::class, 'page'], 'dashicons-microphone', 58);
+        $file = dirname(__DIR__) . '/assets/menu-icon.svg';
+        $icon = is_readable($file) ? 'data:image/svg+xml;base64,' . base64_encode((string) file_get_contents($file)) : 'dashicons-microphone';
+        add_menu_page('Stationwagon', 'Stationwagon', 'manage_options', self::SLUG, [self::class, 'page'], $icon, 58);
+    }
+
+    /** The logo as inline SVG (made by tools/gen_brand.py), so the admin pages can colour it. */
+    private static function logo(): string
+    {
+        $file = dirname(__DIR__) . '/assets/logo.svg';
+        return is_readable($file) ? (string) file_get_contents($file) : '';
     }
 
     public static function links(array $links): array
@@ -38,8 +47,8 @@ final class Stationwagon_Admin
             return;
         }
         $base = plugins_url('assets/', dirname(__DIR__) . '/stationwagon.php');
-        wp_enqueue_style('stationwagon-admin', $base . 'admin.css', [], '1.2.0');
-        wp_enqueue_script('stationwagon-admin', $base . 'admin.js', [], '1.2.0', true);
+        wp_enqueue_style('stationwagon-admin', $base . 'admin.css', [], '1.2.1');
+        wp_enqueue_script('stationwagon-admin', $base . 'admin.js', [], '1.2.1', true);
     }
 
     /** After the plugin is updated, bring the station's code along (on the next admin page). */
@@ -136,7 +145,8 @@ final class Stationwagon_Admin
         $flash = self::flash();
         $station = Stationwagon_Setup::station();
         echo '<div class="wrap sw">';
-        echo '<h1 class="sw-title"><span class="dashicons dashicons-microphone"></span> Stationwagon</h1>';
+        $logo = self::logo();
+        echo '<h1 class="sw-title">' . ($logo !== '' ? $logo . '<span class="screen-reader-text">Stationwagon</span>' : '<span class="dashicons dashicons-microphone"></span> Stationwagon') . '</h1>';
         if (!empty($flash['ok'])) {
             printf('<div class="notice notice-success"><p>%s</p></div>', esc_html($flash['ok']));
         }

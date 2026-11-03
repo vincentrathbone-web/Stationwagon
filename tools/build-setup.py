@@ -15,6 +15,11 @@ a = ap.parse_args()
 
 version = open(os.path.join(app, "VERSION"), encoding="utf8").read().strip()
 php = open(os.path.join(repo, "setup", "setup.php"), encoding="utf8").read()
+# the page's logo and tab icon go inline, so the one file needs nothing else
+import base64
+logo = open(os.path.join(app, "views", "logo.svg"), encoding="utf8").read().strip()
+icon = base64.b64encode(open(os.path.join(app, "assets", "brand", "favicon.svg"), "rb").read()).decode("ascii")
+php = php.replace("<!--SW_LOGO-->", logo).replace("<!--SW_ICON-->", f'<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{icon}">')
 if a.source:
     php = re.sub(r"define\('SW_SOURCE', '[^']*'\);", lambda m: f"define('SW_SOURCE', '{a.source}');", php)
 if a.cpanel:
