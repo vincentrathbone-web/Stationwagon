@@ -410,7 +410,7 @@ try {
     $o3 = $mk('Old Full', 'manager', json_encode(['onair', 'library', 'playlists', 'schedule', 'podcast', 'listeners', 'sound', 'people']));
     $o4 = $mk('Old Plain', 'manager', null);
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '12' WHERE name = 'schema_version'");
-    check('the upgrade runs', Schema::upgrade($db) === [13, 14]);
+    check('the upgrade runs', Schema::upgrade($db) === [13, 14, 15]);
     $role = fn(int $id) => (string) $db->run("SELECT role FROM $u WHERE id = ?", [$id])->fetchColumn();
     $custom = $roles->get($role($o1));
     check('  "On air" becomes Go live any time and Run the on-air desk, in a new role', $custom !== null && str_starts_with($custom['name'], 'Custom role') && $custom['permissions'] === ['anytime', 'desk', 'schedule'], json_encode($custom));
@@ -496,7 +496,7 @@ try {
     check('a song that isn’t here is refused', $lib->setRights(999999, ['owner' => 'x']) !== null && $lib->setArt(999999, $jpg) !== null);
     $db->pdo->exec('ALTER TABLE ' . $db->table('tracks') . ' DROP COLUMN art, DROP COLUMN rights');
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '13' WHERE name = 'schema_version'");
-    check('the upgrade to 14 adds the columns', Schema::upgrade($db, $root) === [14] && $db->run('SHOW COLUMNS FROM ' . $db->table('tracks') . " LIKE 'rights'")->fetch() !== false);
+    check('the upgrade to 14 adds the columns', Schema::upgrade($db, $root) === [14, 15] && $db->run('SHOW COLUMNS FROM ' . $db->table('tracks') . " LIKE 'rights'")->fetch() !== false);
     check('  and reads the songs already in the library for their art and copyright', $lib->get($tid)['art'] !== null && Stationwagon\Rights::decode($lib->get($tid)['rights'])['owner'] === 'Alruin Music');
     $art = $lib->get($tid)['art'];
     check('removing a song removes its art file too', $lib->delete($tid, $p, $now) === null && !is_file("$root/storage/art/$art"));

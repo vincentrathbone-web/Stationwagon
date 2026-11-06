@@ -34,7 +34,7 @@ namespace Stationwagon;
  */
 final class Schema
 {
-    public const VERSION = 14;
+    public const VERSION = 15;
 
     /** Where the station's storage is, for upgrade steps that read files (the app's folder unless a test says otherwise). */
     private static ?string $root = null;
@@ -237,7 +237,7 @@ final class Schema
                 `station_id` INT UNSIGNED NOT NULL,
                 `live_show_id` INT UNSIGNED NULL,
                 `user_id` INT UNSIGNED NULL,
-                `kind` ENUM('verse','refs','video','note') NOT NULL,
+                `kind` ENUM('verse','refs','video','note','slides') NOT NULL,
                 `body` MEDIUMTEXT NOT NULL,
                 `posted_at` DATETIME NOT NULL,
                 `replaced_by` INT UNSIGNED NULL,
@@ -530,6 +530,10 @@ final class Schema
                     : $db->pdo->exec("ALTER TABLE `{$p}tracks` ADD COLUMN `rights` TEXT NULL COMMENT 'JSON: copyright details (Rights)' AFTER `art`"),
                 // songs already in the library: take the art and copyright details from their tags
                 fn(Db $db) => Library::backfillTags($db, self::$root ?? SW_ROOT),
+            ],
+            // presenter notes can be slides (pictures)
+            15 => [
+                "ALTER TABLE `{$p}presenter_notes` MODIFY `kind` ENUM('verse','refs','video','note','slides') NOT NULL",
             ],
         ];
     }

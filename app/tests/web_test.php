@@ -208,6 +208,38 @@ try {
     check('  and is never cached', str_contains(implode(',', $r2['headers']['cache-control'] ?? []), 'no-store'));
     $page = $s->go('')['body'];
     check('the station page has the notes panel (hidden until there are notes)', str_contains($page, 'id="lpNotes"') && preg_match('~assets/notes\.js\?v=[0-9a-f]{10}"~', $page) === 1);
+    echo "What the apps read (schedule, podcast, verse of the day)\n";
+    $r = $s->go('api/schedule.php');
+    $sj = json_decode($r['body'], true);
+    check('the schedule answers as JSON for any website', $r['status'] === 200 && ($r['headers']['access-control-allow-origin'][0] ?? '') === '*' && str_contains(implode(',', $r['headers']['content-type'] ?? []), 'json') && str_contains(implode(',', $r['headers']['cache-control'] ?? []), 'max-age=60'));
+    check('  with the station’s time zone, the clock and the blocks (ISO weekdays, HH:MM)', isset($sj['station']['timezone']) && abs(($sj['now'] ?? 0) - time()) < 30 && is_array($sj['blocks'] ?? null)
+        && array_reduce($sj['blocks'] ?? [], fn($ok, $b) => $ok && in_array($b['kind'], ['live', 'playlist'], true) && preg_match('/^\d\d:\d\d$/', $b['start']) === 1 && preg_match('/^\d\d:\d\d$/', $b['end']) === 1 && $b['days'] !== [] && max($b['days']) <= 7, true));
+    $r = $s->go('api/podcast.php');
+    $pj = json_decode($r['body'], true);
+    $feedBase = rtrim($base, '/') . '/';
+    check('the podcast list answers as JSON with absolute addresses of the app (not of its api folder)', $r['status'] === 200 && ($r['headers']['access-control-allow-origin'][0] ?? '') === '*' && ($pj['podcast']['feed'] ?? '') === $feedBase . 'podcast/feed' && is_array($pj['episodes'] ?? null)
+        && array_reduce($pj['episodes'] ?? [], fn($ok, $e) => $ok && str_starts_with($e['audio'], $feedBase . 'storage/podcasts/'), true), $r['body']);
+    $r = $s->go('api/podcast.php?episode=ep-20200101-00000000');
+    check('  an unknown episode is a 404 with an error', $r['status'] === 404 && isset(json_decode($r['body'], true)['error']));
+    $r = $s->go('api/verse.php?lang=en');
+    $ve = json_decode($r['body'], true);
+    check('the verse of the day: a reference, a link to read it, and the text when the server could fetch it', $r['status'] === 200 && ($r['headers']['access-control-allow-origin'][0] ?? '') === '*' && preg_match('/^\d{4}-\d\d-\d\d$/', (string) ($ve['date'] ?? '')) === 1
+        && ($ve['reference'] ?? '') !== '' && str_starts_with((string) ($ve['read'] ?? ''), 'https://www.biblegateway.com/passage/?search=') && (($ve['text'] ?? null) === null || ($ve['version'] ?? '') === 'WEB'), $r['body']);
+    $af = json_decode($s->go('api/verse.php?lang=af')['body'], true);
+    check('  in Afrikaans: the same day’s verse, no text, a link to the Afrikaans Bible', ($af['lang'] ?? '') === 'af' && array_key_exists('text', $af ?? []) && $af['text'] === null && str_contains((string) ($af['read'] ?? ''), 'version=AFR53') && ($af['date'] ?? '') === ($ve['date'] ?? 'x'));
+    check('  nothing in storage is served but the station’s songs, pictures and episodes', $s->go('storage/cache/schema-version')['status'] === 403 && $s->go('storage/slides/notes.txt')['status'] === 403);
+    if (!$public) {
+        // a slide picture is served (this copy's own storage folder; the base URL serves it)
+        $dir = dirname(__DIR__) . '/storage/slides';
+        @mkdir($dir, 0775, true);
+        $im = imagecreatetruecolor(32, 18);
+        ob_start(); imagejpeg($im); $jpeg = (string) ob_get_clean();
+        $slide = 'slide-' . substr(sha1($jpeg), 0, 12) . '.jpg';
+        file_put_contents("$dir/$slide", $jpeg);
+        $r = $s->go("storage/slides/$slide");
+        check('  a slide picture is served as an image, kept for good', $r['status'] === 200 && str_contains(implode(',', $r['headers']['content-type'] ?? []), 'image/jpeg') && $r['body'] === $jpeg, (string) $r['status']);
+        unlink("$dir/$slide");
+    }
     echo "Now playing and the embed\n";
     $r = $s->go('api/nowplaying.php');
     $np = json_decode($r['body'], true);

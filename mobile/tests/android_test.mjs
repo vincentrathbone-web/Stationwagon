@@ -178,8 +178,9 @@ const pages = async () => (await fetch(`http://localhost:${CDP}/json`).then((r) 
 const start = (extras = []) => adb("am", "start", "-n", `${PKG}/.MainActivity`, ...extras);
 /** Taps the button with this text (or description) on the phone's screen (Android's own dialogs). */
 function tapText(re, pkg = null) {
-  adb("uiautomator", "dump", "/sdcard/sw-ui.xml");
-  const xml = adb("cat", "/sdcard/sw-ui.xml");
+  let xml;
+  // a dump can fail while Android changes screens (Play Protect's box comes and goes): look again next time
+  try { adb("uiautomator", "dump", "/sdcard/sw-ui.xml"); xml = adb("cat", "/sdcard/sw-ui.xml"); } catch { return null; }
   for (const m of xml.matchAll(/<node [^>]*?text="([^"]*)"[^>]*?package="([^"]*)"[^>]*?content-desc="([^"]*)"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/g)) {
     const [, text, from, desc, x1, y1, x2, y2] = m;
     if (pkg && from !== pkg) continue;
@@ -208,7 +209,7 @@ async function dndOff() {
 
 /** The screen's nodes (Android's own screens), with their text, class, switch state and bounds. */
 function screenNodes() {
-  adb("uiautomator", "dump", "/sdcard/sw-ui.xml");
+  try { adb("uiautomator", "dump", "/sdcard/sw-ui.xml"); } catch { return []; }   // a dump can fail while Android changes screens
   return [...adb("cat", "/sdcard/sw-ui.xml").matchAll(/<node [^>]*?text="([^"]*)"[^>]*?class="([^"]*)"[^>]*?checked="(\w+)"[^>]*?bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/g)]
     .map(([, text, cls, checked, x1, y1, x2, y2]) => ({ text, cls, checked: checked === "true", x1: +x1, y1: +y1, x2: +x2, y2: +y2 }));
 }
@@ -451,8 +452,10 @@ try {
   await evaluate("document.getElementById('updBtn').click()");
   const confirm = await waitFor(() => tapText(/^(Update|Install)$/i), 30);
   check("Check for updates downloads it and Android asks to confirm the update (the first one from the app)", !!confirm, confirm);
-  // Android may show a second step (a scan, then "Continue"): answer it too while waiting
-  const newVersion = await waitFor(() => versionOnPhone() === NEW ? NEW : (tapText(/^(Update|Install|Continue( updating| installation)?)$/i), false), 90);
+  // Android may show a second step (a scan, then "Continue"): answer it too while waiting. Google Play Protect may ask
+  // "Scan app?" for a build it has not seen (tapped by a person, never by the test: it sends the app to Google) and
+  // its scan takes a while, so give it up to 4 minutes
+  const newVersion = await waitFor(() => versionOnPhone() === NEW ? NEW : (tapText(/^(Update|Install|Continue( updating| installation)?)$/i), false), 240);
   check(`  it installs: the phone has ${NEW}`, newVersion === NEW, versionOnPhone());
   check("  and the token never reached the file host", gh.tokenAtFileHost === 0 && gh.files >= 2, `${gh.files} downloads`);
   const after = await waitFor(() => { const p = pid(); return p && p !== before && p; }, 45);

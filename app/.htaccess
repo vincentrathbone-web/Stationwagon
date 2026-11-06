@@ -29,6 +29,10 @@ Options -Indexes
   <Files "nowplaying.php">
     Header set Cache-Control "public, max-age=0, s-maxage=2"
   </Files>
+  # Schedule, podcast list and verse of the day (apps and websites): a minute old is fresh enough
+  <FilesMatch "^(schedule|podcast|verse)\.php$">
+    Header set Cache-Control "public, max-age=60"
+  </FilesMatch>
   <FilesMatch "^(timeline|notes|listen)\.php$">
     Header set Cache-Control "no-store"
   </FilesMatch>

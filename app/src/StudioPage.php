@@ -15,6 +15,7 @@ use Throwable;
  *   POST piece?live=&seq=&dur=  one MP3 piece as the request body (409 gap, 410 closed)
  *   POST end    {live}
  *   POST note   {live, kind, fields}       POST note-remove {live, id}
+ *   POST slide?live=            one JPEG as the request body (or {b64}): a picture for a Slides note; answers {file, url}
  *   POST note-edit {live, id, fields}      (posted again as new; the old version stays until listeners reach it)
  *   POST order  {scope, items}
  * POSTs carry the session's form key in an X-CSRF header.
@@ -54,13 +55,14 @@ final class StudioPage
             $planner = Planner::forFirstStation();
             $studio = new Studio($planner);
             $now = microtime(true);
-            $in = $post && $action !== 'piece' ? (json_decode((string) file_get_contents('php://input'), true) ?: []) : [];
+            $in = $post && $action !== 'piece' && $action !== 'slide' ? (json_decode((string) file_get_contents('php://input'), true) ?: []) : [];
             $r = match (true) {
                 !$post && $action === 'state' => $this->state($studio, $planner, $me, $now),
                 !$post && $action === 'songs' => ['songs' => $studio->songs((string) ($_GET['q'] ?? ''))],
                 $post && $action === 'golive' => $studio->goLive($me, $now),
                 $post && $action === 'rejoin' => $studio->rejoin($me, $now),
                 $post && $action === 'piece' => $studio->addPiece($me, (string) ($_GET['live'] ?? ''), (int) ($_GET['seq'] ?? -1), (float) ($_GET['dur'] ?? 0), Request::audio(), $now),
+                $post && $action === 'slide' => $studio->addSlide($me, (string) ($_GET['live'] ?? ''), Request::audio()),
                 $post && $action === 'end' => $studio->endLive($me, (string) ($in['live'] ?? ''), $now),
                 $post && $action === 'note' => $studio->postNote($me, (string) ($in['live'] ?? ''), (string) ($in['kind'] ?? ''), is_array($in['fields'] ?? null) ? $in['fields'] : [], $now),
                 $post && $action === 'note-edit' => $studio->editNote($me, (string) ($in['live'] ?? ''), (int) ($in['id'] ?? 0), is_array($in['fields'] ?? null) ? $in['fields'] : [], $now),

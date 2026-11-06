@@ -22,6 +22,8 @@ final class Podcast
     public const MIN_SECONDS = 120;          // shorter shows are skipped (station setting podcast_min_seconds)
     public const TRACKS = ['music', 'mic'];
     public const SAMPLE_RATE = 44100;        // the studio records at this rate
+    public const SPLIT_SECONDS = 2;          // a silence this long ends a clip (podcast-core.js: SPLIT_SECONDS)
+    public const GAP_KEEP = 1;               // an empty stretch over SPLIT_SECONDS is shortened to this (GAP_KEEP there too)
     public const CHUNK_MAX_BYTES = 6_000_000;
     public const MAX_CHUNKS = 6000;          // per track: over 16 hours of 10 s chunks
     public const TAIL_MIN_SECONDS = 1.0;     // a device recording this much shorter than the show gets the rest as aired
@@ -614,6 +616,166 @@ final class Podcast
                 . "</item>\n";
         }
         return $out . "</channel>\n</rss>\n";
+    }
+
+    // ---- The public JSON (api/podcast.php) -------------------------------------------------------
+
+    /** The podcast and its published episodes for apps; `$base` is the app's absolute address. */
+    public function publicList(string $base): array
+    {
+        $base = rtrim($base, '/') . '/';
+        $d = $this->details();
+        $episodes = [];
+        foreach ($this->published() as $ep) {
+            if (($e = $this->publicEpisode($ep, $base)) !== null) {
+                $episodes[] = $e;
+            }
+        }
+        return [
+            'podcast' => ['title' => $d['title'], 'description' => $d['description'], 'author' => $d['author'], 'language' => $d['language'],
+                          'cover' => $d['cover'] ? $base . $d['cover'] : null, 'feed' => $base . 'podcast/feed', 'page' => $base . 'podcast'],
+            'episodes' => $episodes,
+        ];
+    }
+
+    /** One published episode as the public JSON has it (without its notes), or null when it has no audio. */
+    public function publicEpisode(array $ep, string $base): ?array
+    {
+        $url = $this->publicUrl($ep);
+        if ($url === null) {
+            return null;
+        }
+        $tz = new \DateTimeZone($this->station['timezone'] ?: 'UTC');
+        $host = $ep['dj_user_id'] ? $this->db->run('SELECT name FROM ' . $this->db->table('users') . ' WHERE id = ?', [$ep['dj_user_id']])->fetchColumn() : false;
+        return [
+            'id' => $ep['public_id'], 'title' => $ep['title'], 'description' => (string) $ep['description'],
+            'recorded_at' => (int) $ep['recorded_at'], 'date' => (new \DateTimeImmutable('@' . (int) $ep['recorded_at']))->setTimezone($tz)->format('Y-m-d'),
+            'seconds' => (int) round((float) $ep['audio_seconds']), 'bytes' => (int) $ep['audio_bytes'], 'audio' => rtrim($base, '/') . '/' . $url,
+            'host' => $host !== false && $host !== '' ? (string) $host : null,
+        ];
+    }
+
+    /** A published episode by its public id, with its notes and slides placed in its audio; null when there isn't one. */
+    public function publicEpisodeWithNotes(string $publicId, string $base): ?array
+    {
+        $ep = $this->db->run('SELECT * FROM ' . $this->db->table('episodes') . " WHERE station_id = ? AND public_id = ? AND status = 'published'", [$this->station['id'], $publicId])->fetch();
+        $out = $ep ? $this->publicEpisode($ep, $base) : null;
+        if ($out === null) {
+            return null;
+        }
+        $base = rtrim($base, '/') . '/';
+        $items = $this->notes($ep);
+        foreach ($items as &$item) {
+            foreach ($item['slides'] ?? [] as $i => $slide) {
+                $item['slides'][$i]['url'] = $base . $slide['url'];
+            }
+            unset($item['show']);
+        }
+        unset($item);
+        return $out + ['items' => $items];
+    }
+
+    /**
+     * The notes the presenter posted in an episode's shows, each with `at_s`: the second of the published
+     * audio it belongs to (when the presenter posted it, less what the mixdown cut out before it: the
+     * deleted clips and long silences, as `planTake` in assets/podcast-core.js works them out), so a player
+     * can show a note when listeners reach it. Oldest first.
+     * @return list<array>
+     */
+    public function notes(array $ep): array
+    {
+        $edits = json_decode((string) ($ep['edits'] ?? ''), true);
+        $edits = is_array($edits) ? $edits : [];
+        $deleted = array_flip(is_array($edits['mixed'] ?? null) ? $edits['mixed'] : (is_array($edits['deleted'] ?? null) ? $edits['deleted'] : []));
+        $out = 0.0;
+        $entries = [];
+        foreach ($this->takes((int) $ep['id']) as $t) {
+            $skip = (float) $t['skip_s'];
+            $segments = self::segments($t['analysis'] ? (json_decode((string) $t['analysis'], true) ?: null) : null, (int) $t['id'], $deleted, $skip, $skip + (float) $t['duration_s']);
+            $entries[(int) $t['live_show_id']][] = ['start' => (float) $t['start_at'], 'to' => $skip + (float) $t['duration_s'], 'segments' => $segments, 'out' => $out];
+            $out += array_sum(array_map(fn($s) => $s[1] - $s[0], $segments));
+        }
+        $items = (new Notes($this->db, $this->station))->forShows(array_keys($entries));
+        foreach ($items as &$item) {
+            $mine = $entries[$item['show']];
+            $at = 0.0;
+            foreach ($mine as $i => $e) {
+                $t = max(0.0, $item['posted'] - $e['start']);
+                if ($t < $e['to'] || $i === count($mine) - 1) {
+                    $at = $e['out'] + self::placeIn($e['segments'], $t);
+                    break;
+                }
+            }
+            $item['at_s'] = round($at, 1);
+        }
+        unset($item);
+        usort($items, fn($a, $b) => [$a['at_s'], $a['posted'], $a['id']] <=> [$b['at_s'], $b['posted'], $b['id']]);
+        return $items;
+    }
+
+    /**
+     * What one take puts into the episode, as [from, to] seconds of the take in order: the same as
+     * `planTake` in assets/podcast-core.js (keep the two in step). A take with no analysis (never opened
+     * in the editor) goes in whole, from `$from` to `$end`.
+     * @param ?array $analysis the take's stored analysis; $deleted "<take>:<track>:<index>" => index
+     * @return list<array{0: float, 1: float}>
+     */
+    public static function segments(?array $analysis, int $takeId, array $deleted, float $from, float $end): array
+    {
+        if (!$analysis) {
+            return $end > $from ? [[$from, $end]] : [];
+        }
+        $kept = [];
+        foreach (($analysis['tracks'] ?? []) as $name => $track) {
+            foreach (($track['clips'] ?? []) as $i => $c) {
+                if ($c[1] > $c[0] && $c[1] > $from && !isset($deleted["$takeId:$name:$i"])) {
+                    $kept[] = $c;
+                }
+            }
+        }
+        usort($kept, fn($a, $b) => $a[0] <=> $b[0]);
+        $union = [];
+        foreach ($kept as $c) {
+            $last = count($union) - 1;
+            if ($last >= 0 && $c[0] <= $union[$last][1]) {
+                $union[$last][1] = max($union[$last][1], $c[1]);
+            } else {
+                $union[] = [$c[0], $c[1]];
+            }
+        }
+        $segments = [];
+        if (!$union) {
+            return $segments;
+        }
+        $half = self::GAP_KEEP / 2;
+        $start = max(0.0, $union[0][0] - $half);
+        foreach ($union as $i => $u) {
+            $next = $union[$i + 1] ?? null;
+            if ($next !== null && $next[0] - $u[1] <= self::SPLIT_SECONDS) {
+                continue; // a short pause stays as it is
+            }
+            $segments[] = [round($start, 3), round(min($end, $u[1] + $half), 3)];
+            if ($next !== null) {
+                $start = $next[0] - $half;
+            }
+        }
+        return $segments;
+    }
+
+    /** Where second `$t` of a take lands in what it contributes: inside a cut stretch, at the start of what follows it. */
+    public static function placeIn(array $segments, float $t): float
+    {
+        $acc = 0.0;
+        foreach ($segments as [$a, $b]) {
+            if ($t < $a) {
+                return $acc;
+            }
+            if ($t <= $b) {
+                return $acc + ($t - $a);
+            }
+            $acc += $b - $a;
+        }
+        return $acc;
     }
 
     // ---- Housekeeping ---------------------------------------------------------------------------

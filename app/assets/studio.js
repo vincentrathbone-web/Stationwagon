@@ -57,14 +57,14 @@
    * Audio for an upload: raw MP3 bytes, or under 16 KB as base64 in JSON (Request::audio on the server),
    * since some hosts' firewalls refuse a small binary body outright (406; wordwave.co.za's under about 10 KB).
    */
-  async function audioBody(body) {
+  async function audioBody(body, type = "audio/mpeg") {
     const u8 = body instanceof Blob ? new Uint8Array(await body.arrayBuffer()) : body instanceof ArrayBuffer ? new Uint8Array(body) : body;
-    if (u8.byteLength >= 16384) return { body: u8, type: "audio/mpeg" };
+    if (u8.byteLength >= 16384) return { body: u8, type };
     let s = ""; for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, i + 8192));
     return { body: JSON.stringify({ b64: btoa(s) }), type: "application/json" };
   }
-  async function api(action, { body, query = "", raw = false } = {}) {
-    const sent = body === undefined ? null : raw ? await audioBody(body) : { body: JSON.stringify(body), type: "application/json" };
+  async function api(action, { body, query = "", raw = false, rawType } = {}) {
+    const sent = body === undefined ? null : raw ? await audioBody(body, rawType) : { body: JSON.stringify(body), type: "application/json" };
     const opts = !sent ? { cache: "no-store" } : {
       method: "POST", cache: "no-store", body: sent.body,
       headers: { "X-CSRF": CSRF, "Content-Type": sent.type },
@@ -875,7 +875,7 @@ registerProcessor("sw-tap", SwTap);`;
 
   // ---- Presenter notes drawer ---------------------------------------------------------------
   let kind = "verse", notes = [], confirmRemove = null, editing = null;
-  const KIND = { verse: "Verse", refs: "References", video: "Video", note: "Note" };
+  const KIND = { verse: "Verse", refs: "References", video: "Video", note: "Note", slides: "Slides" };
   function openDrawer(open) {
     $("stDrawer").hidden = !open;
     $("stNotesBtn").setAttribute("aria-expanded", String(open));
@@ -891,8 +891,57 @@ registerProcessor("sw-tap", SwTap);`;
   }
   function noteFields() {
     const f = $("noteForm").querySelector(`.st-nf[data-for="${kind}"]`), out = {};
-    f.querySelectorAll("input, textarea").forEach((i) => (out[i.name] = i.value));
+    f.querySelectorAll("input[name], textarea[name]").forEach((i) => (out[i.name] = i.value));
+    if (kind === "slides") out.images = slides.map((x) => x.file);
     return out;
+  }
+
+  // Slides: the pictures are made JPEGs of at most 1600 px here, uploaded one by one, and the note names them
+  let slides = [];
+  const SLIDE_PX = 1600;
+  async function slideJpeg(file) {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, SLIDE_PX / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k));
+    const g = c.getContext("2d");
+    g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); // a transparent PNG would turn black
+    g.drawImage(bmp, 0, 0, c.width, c.height);
+    bmp.close && bmp.close();
+    for (const q of [0.86, 0.7, 0.55]) {
+      const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", q));
+      if (blob && blob.size <= 1_400_000) return blob;
+    }
+    throw new Error("too big");
+  }
+  async function addSlides(files) {
+    const show = myShow();
+    if (!show) return;
+    const hint = $("slideHint");
+    for (const file of files) {
+      if (slides.length >= 30) { hint.textContent = "30 slides at most in one note."; break; }
+      hint.textContent = `Adding ${file.name}…`;
+      try {
+        const r = await api("slide", { body: await slideJpeg(file), raw: true, rawType: "image/jpeg", query: "?live=" + encodeURIComponent(show.public_id) });
+        if (r.error) { hint.textContent = `${file.name}: ${r.error}`; continue; }
+        slides.push({ file: r.file, url: r.url, name: file.name });
+      } catch (_) { hint.textContent = `${file.name} isn’t a picture the studio can use.`; continue; }
+      renderSlides();
+    }
+    if (slides.length && !hint.textContent.includes("isn’t") && !hint.textContent.includes(":")) hint.textContent = `${slides.length} slide${slides.length === 1 ? "" : "s"} ready. Post the note when they are in order.`;
+    $("slideFiles").value = "";
+  }
+  function renderSlides() {
+    $("slideList").replaceChildren(...slides.map((x, i) => {
+      const li = el("li"), img = el("img"), nm = el("span", "", `${i + 1}. ${x.name || x.file}`), acts = el("span", "st-sact");
+      img.src = BASE + x.url; img.alt = ""; img.loading = "lazy";
+      const mk = (label, title, fn, off) => { const b = el("button", "btn sm ghost", label); b.type = "button"; b.title = title; b.disabled = off; b.onclick = fn; return b; };
+      acts.append(mk("↑", "Move up", () => { [slides[i - 1], slides[i]] = [slides[i], slides[i - 1]]; renderSlides(); }, i === 0),
+        mk("↓", "Move down", () => { [slides[i + 1], slides[i]] = [slides[i], slides[i + 1]]; renderSlides(); }, i === slides.length - 1),
+        mk("Remove", "Remove this slide", () => { slides.splice(i, 1); renderSlides(); }, false));
+      li.append(img, nm, acts);
+      return li;
+    }));
   }
   async function postNote(e) {
     e.preventDefault();
@@ -916,7 +965,8 @@ registerProcessor("sw-tap", SwTap);`;
     editing = null; setKind(n.kind); editing = n.id;
     const f = $("noteForm").querySelector(`.st-nf[data-for="${n.kind}"]`);
     const v = { ref: n.ref, version: n.version, text: n.text, refs: (n.refs || []).map((r) => r.label).join("\n"), url: n.url };
-    f.querySelectorAll("input, textarea").forEach((i) => (i.value = v[i.name] ?? ""));
+    f.querySelectorAll("input[name], textarea[name]").forEach((i) => (i.value = v[i.name] ?? ""));
+    if (n.kind === "slides") { slides = (n.slides || []).map((x) => ({ file: x.file, url: x.url })); renderSlides(); }
     document.querySelectorAll(".st-kinds [data-kind]").forEach((b) => (b.disabled = b.dataset.kind !== n.kind));
     $("notePost").textContent = "Save changes"; $("noteCancel").hidden = false;
     $("noteHint").textContent = `Listeners get the changed note as new, ${DELAY} s after you save.`;
@@ -928,7 +978,9 @@ registerProcessor("sw-tap", SwTap);`;
     const was = editing;
     editing = null;
     const f = $("noteForm").querySelector(`.st-nf[data-for="${kind}"]`);
-    f.querySelectorAll("input, textarea").forEach((i) => { if (i.name !== "version") i.value = ""; });
+    f.querySelectorAll("input[name], textarea[name]").forEach((i) => { if (i.name !== "version") i.value = ""; });
+    if (slides.length) { slides = []; renderSlides(); }
+    $("slideHint").textContent = "Up to 30. Each is made a JPEG of at most 1600 px for listeners’ phones.";
     if (was !== null) f.querySelectorAll('input[name="version"]').forEach((i) => (i.value = "KJV"));
     document.querySelectorAll(".st-kinds [data-kind]").forEach((b) => (b.disabled = false));
     $("notePost").textContent = "Post note"; $("noteCancel").hidden = true;
@@ -937,6 +989,7 @@ registerProcessor("sw-tap", SwTap);`;
   function summary(n) {
     if (n.kind === "verse") return `${n.ref} (${n.version})`;
     if (n.kind === "refs") return n.refs.map((r) => r.label).join(", ");
+    if (n.kind === "slides") return `${n.text ? n.text + " · " : ""}${n.slides.length} slide${n.slides.length === 1 ? "" : "s"}`;
     return n.text.length > 90 ? n.text.slice(0, 88) + "…" : n.text;
   }
   function renderNotes() {
@@ -1014,6 +1067,7 @@ registerProcessor("sw-tap", SwTap);`;
     }
     const show = myShow();
     $("notePost").disabled = !(show && live);
+    $("slideFiles").disabled = !(show && live);
     $("stNotesHint").textContent = live ? `Posting to “${live.title}”.` : show ? "Your show is on air from before; end it, then go live again to post." : "Go live to post notes. Listeners see them beside the player.";
   }
 
@@ -1137,6 +1191,7 @@ registerProcessor("sw-tap", SwTap);`;
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("stDrawer").hidden) openDrawer(false); });
   document.querySelectorAll(".st-kinds [data-kind]").forEach((b) => (b.onclick = () => setKind(b.dataset.kind)));
   $("noteForm").onsubmit = postNote;
+  $("slideFiles").onchange = (e) => addSlides([...e.target.files]);
   $("noteCancel").onclick = () => { endEdit(); renderNotes(); };
   if (location.hash === "#notes") openDrawer(true);
   // on air, or the show's recording still uploading (it would carry on the next time the studio opens)

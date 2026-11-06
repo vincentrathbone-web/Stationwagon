@@ -9,12 +9,13 @@
   if (!root || !box) return;
   const $ = (id) => document.getElementById(id);
   const BASE = new URL(root.dataset.base, location.href).href, DELAY = Number(root.dataset.delay) || 0;
-  const KIND = { verse: "Verse", refs: "References", video: "Video", note: "Note" };
+  const KIND = { verse: "Verse", refs: "References", video: "Video", note: "Note", slides: "Slides" };
   const ICON = {
     verse: "M1 3.5C3 2.6 5.5 2.6 7.5 3.6V13c-2-1-4.5-1-6.5-.1zM8.5 3.6c2-1 4.5-1 6.5-.1v9.4c-2-.9-4.5-.9-6.5.1z",
     refs: "M2 3h2v2H2zM6 3.25h8v1.5H6zM2 7h2v2H2zM6 7.25h8v1.5H6zM2 11h2v2H2zM6 11.25h8v1.5H6z",
     video: "M5 3l8 5-8 5z",
     note: "M2 2h12v9H7l-3.5 3v-3H2z",
+    slides: "M2 3h12v8H2zM5 13h6v1.5H5z",
   };
   let data = null, rev = null, loading = false, shownKey = "", seen = null, fresh = new Set();
 
@@ -88,11 +89,32 @@
       const acts = el("div", "acts");
       acts.append(link(n.url, "Open video ↗"));
       nb.append(el("p", "txt", n.text), acts);
+    } else if (n.kind === "slides") {
+      if (n.text) nb.append(el("p", "txt", n.text));
+      nb.append(slideshow(n));
     } else {
       nb.append(el("p", "txt", n.text));
     }
     li.append(ico, nb);
     return li;
+  }
+
+  /** The slides one at a time, with Back and Next (the picture's address is relative to the station). */
+  function slideshow(n) {
+    const box = el("div", "lp-slides"), frame = el("div", "frame"), img = el("img"), bar = el("div", "bar");
+    const count = el("span", "", ""), back = el("button", "btn sm", "Back"), next = el("button", "btn sm", "Next");
+    back.type = next.type = "button";
+    let i = 0;
+    const show = () => {
+      img.src = BASE + n.slides[i].url; img.alt = `Slide ${i + 1} of ${n.slides.length}`;
+      count.textContent = `${i + 1} / ${n.slides.length}`;
+      back.disabled = i === 0; next.disabled = i === n.slides.length - 1;
+    };
+    back.addEventListener("click", () => { i = Math.max(0, i - 1); show(); });
+    next.addEventListener("click", () => { i = Math.min(n.slides.length - 1, i + 1); show(); });
+    frame.append(img); bar.append(back, count, next); box.append(frame, bar);
+    if (n.slides.length) show(); else box.hidden = true;
+    return box;
   }
 
   function copyText(text, from) {

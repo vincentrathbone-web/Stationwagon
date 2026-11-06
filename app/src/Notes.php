@@ -13,12 +13,14 @@ use DateTimeZone;
  * them (its endpoints come with the live studio); the player reads `forListeners()` through
  * api/notes.php whenever `rev()` (sent with every timeline) changes.
  *
+ * Slides are a few pictures (the presenter's slides as JPEGs) listeners swipe through.
+ *
  * Verse text is pasted by the presenter (the app ships no Bible text); each verse keeps its
  * version (KJV unless the presenter says otherwise) and links to that passage on Bible Gateway.
  */
 final class Notes
 {
-    public const KINDS = ['verse', 'refs', 'video', 'note'];
+    public const KINDS = ['verse', 'refs', 'video', 'note', 'slides'];
     public const PER_SHOW = 50;
     public const KEEP_DAYS = 7;
     public const DEFAULT_VERSION = 'KJV';
@@ -33,6 +35,7 @@ final class Notes
      *   refs:  text (a heading, may be empty), refs (a list, or one per line)
      *   video: text (a title), url (http or https)
      *   note:  text
+ *   slides: text (a title, may be empty), images (a list of file names the studio uploaded, see Slides)
      * @return array{body?: array, error?: string}
      */
     public static function clean(string $kind, array $in): array
@@ -75,6 +78,21 @@ final class Notes
                     return ['error' => 'The video address must start with http:// or https://.'];
                 }
                 return ['body' => ['text' => $text, 'url' => $url]];
+            case 'slides':
+                $images = $in['images'] ?? [];
+                $images = is_array($images) ? array_values(array_unique(array_map('strval', $images))) : [];
+                if (!$images) {
+                    return ['error' => 'Add at least one slide.'];
+                }
+                if (count($images) > Slides::MAX_PER_NOTE) {
+                    return ['error' => Slides::MAX_PER_NOTE . ' slides at most in one note.'];
+                }
+                foreach ($images as $image) {
+                    if (!Slides::valid($image)) {
+                        return ['error' => 'One of the slides isn’t one this station has.'];
+                    }
+                }
+                return ['body' => ['text' => $line('text', 200), 'images' => $images]];
             case 'note':
                 $text = $para('text', 1000);
                 return $text === '' ? ['error' => 'Write the note first.'] : ['body' => ['text' => $text]];
@@ -173,6 +191,20 @@ final class Notes
     }
 
     /**
+     * Every note of the shows `$showIds` (the shows of one podcast episode), oldest first; an edited
+     * note shows only as its newest version. Each has `show` (the show's id) and `posted` (unix seconds).
+     */
+    public function forShows(array $showIds): array
+    {
+        $ids = array_values(array_filter(array_map('intval', $showIds)));
+        if (!$ids) {
+            return [];
+        }
+        $rows = $this->db->run('SELECT * FROM ' . $this->db->table('presenter_notes') . ' WHERE live_show_id IN (' . implode(',', $ids) . ') AND replaced_by IS NULL ORDER BY posted_at, id')->fetchAll();
+        return array_map(fn($r) => $this->item($r) + ['show' => (int) $r['live_show_id']], $rows);
+    }
+
+    /**
      * Changes whenever what listeners should see changes: a note added or removed, a show opening
      * or closing, or a new day (the label moves from "This morning" to "Yesterday"). One small query.
      */
@@ -245,6 +277,9 @@ final class Notes
             $item['version'] = $b['version'] ?? self::DEFAULT_VERSION;
         } elseif ($r['kind'] === 'video') {
             $item['url'] = $b['url'] ?? '';
+        } elseif ($r['kind'] === 'slides') {
+            // addresses relative to the app, like every other file it serves
+            $item['slides'] = array_map(fn($f) => ['file' => $f, 'url' => Slides::path($f)], array_values(array_filter($b['images'] ?? [], fn($f) => Slides::valid((string) $f))));
         }
         return $item;
     }

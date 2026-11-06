@@ -134,6 +134,7 @@ $deck = fn(string $k): string => '
     <button class="btn sm" type="button" role="tab" data-kind="refs" aria-selected="false">References</button>
     <button class="btn sm" type="button" role="tab" data-kind="video" aria-selected="false">Video</button>
     <button class="btn sm" type="button" role="tab" data-kind="note" aria-selected="false">Note</button>
+    <button class="btn sm" type="button" role="tab" data-kind="slides" aria-selected="false">Slides</button>
   </div>
   <form class="st-nform" id="noteForm" novalidate>
     <div class="st-nf" data-for="verse">
@@ -156,6 +157,15 @@ $deck = fn(string $k): string => '
     </div>
     <div class="st-nf" data-for="note" hidden>
       <label class="field"><span class="lbl">Note</span><textarea name="text" rows="5" maxlength="1000" placeholder="Thank you for listening. Prayer requests: …"></textarea></label>
+    </div>
+    <div class="st-nf" data-for="slides" hidden>
+      <label class="field"><span class="lbl">Title (optional)</span><input name="text" maxlength="200" placeholder="Sunday’s message"></label>
+      <div class="field">
+        <span class="lbl" id="slideLbl">Slides (pictures of your slides, in order)</span>
+        <input type="file" id="slideFiles" accept="image/*" multiple aria-labelledby="slideLbl" disabled>
+        <p class="st-dhint" id="slideHint">Up to 30. Each is made a JPEG of at most 1600 px for listeners’ phones.</p>
+        <ol class="st-slides" id="slideList"></ol>
+      </div>
     </div>
     <p class="st-nerr" id="noteErr" role="alert" hidden></p>
     <div class="st-nacts"><span class="st-dhint" id="noteHint">Listeners see it <?= (int) $delay ?> s after you post, when they hear this moment.</span><button class="btn" type="button" id="noteCancel" hidden>Cancel</button><button class="btn primary" type="submit" id="notePost" disabled>Post note</button></div>

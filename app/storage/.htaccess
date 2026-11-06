@@ -10,3 +10,6 @@ Require all denied
 <FilesMatch "^art-[0-9a-f]{12}\.(jpg|png)$">
   Require all granted
 </FilesMatch>
+<FilesMatch "^slide-[0-9a-f]{12}\.jpg$">
+  Require all granted
+</FilesMatch>

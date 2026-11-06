@@ -459,6 +459,11 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
 .lp-pnote .refs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 .lp-pnote .refs a { background: var(--raised); border-radius: var(--r-pill); padding: 5px 11px; font-size: 13px; }
 .lp-pnote .acts { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.lp-slides { margin-top: 6px; display: grid; gap: 6px; max-width: 520px; }
+.lp-slides .frame { background: var(--raised); border-radius: var(--r-box); overflow: hidden; display: grid; place-items: center; aspect-ratio: 16 / 9; }
+.lp-slides img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.lp-slides .bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.lp-slides .bar .btn { padding: 5px 12px; font-size: 12px; }
 .lp-pnote a { color: var(--amber); font-weight: 600; text-decoration: none; }
 .lp-pnote a:hover { text-decoration: underline; }
 .lp-pnote a:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; border-radius: var(--r-small); }
@@ -654,6 +659,13 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
 .st-nlist p { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
 .st-outsel { max-width: 220px; margin-left: 4px; padding: 3px 6px; font: inherit; font-weight: 600; color: var(--ink); background: var(--raised); border: 1px solid var(--edge); border-radius: var(--r-chip); }
 .st-nlist li.editing { outline: 2px solid var(--amber); outline-offset: -2px; }
+.st-slides { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.st-slides li { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 10px; align-items: center; background: var(--raised); border-radius: var(--r-box); padding: 6px 8px; font-size: 13px; }
+.st-slides img { width: 56px; height: 36px; object-fit: cover; border-radius: var(--r-small); background: var(--panel); }
+.st-slides span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-sact { display: flex; gap: 4px; }
+.st-sact .btn { padding: 4px 9px; font-size: 12px; }
+.st-drawer input[type="file"] { font-size: 13px; color: var(--muted); }
 .st-kinds [data-kind]:disabled { opacity: .45; cursor: default; }
 .st-nrm { display: flex; gap: 6px; align-items: center; justify-content: flex-end; font-size: 12px; color: var(--muted); }
 .st-nrm .btn { padding: 6px 11px; font-size: 12px; }

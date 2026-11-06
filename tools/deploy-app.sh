@@ -3,6 +3,9 @@
 #   tools/deploy-app.sh <ssh-host> <remote-dir>
 # Example:
 #   tools/deploy-app.sh controll public_html/wordwave.controll.co.za/radio
+# On a HestiaCP host (signing in as root; the folder is absolute and the site has its own user):
+#   SW_OWNER=wordwaveco bash tools/deploy-app.sh vmcloud1 /home/wordwaveco/web/wordwave.co.za/public_html/radio
+#   (SW_PHP defaults to /usr/bin/php8.4)
 #
 # - Replaces the code but keeps the server's config.local.php (written by the installer) and
 #   storage/ (songs, live pieces), so re-deploys never touch a running station.
@@ -46,7 +49,13 @@ ssh "$host" "set -e
   if [ -f '$dir/config.local.php' ] && grep -q installed_at '$dir/config.local.php'; then
     rm -f ~/stationwagon-app.install.key
     echo 'Already installed: settings and storage kept'
-    /usr/local/bin/php '$dir/cli/upgrade.php'
+    if [ -n '${SW_OWNER:-}' ]; then
+      # Hestia-style host: we sign in as root, the site belongs to its own user
+      chown -R '${SW_OWNER:-}:${SW_OWNER:-}' '$dir'
+      sudo -u '${SW_OWNER:-}' '${SW_PHP:-/usr/bin/php8.4}' '$dir/cli/upgrade.php'
+    else
+      /usr/local/bin/php '$dir/cli/upgrade.php'
+    fi
   else
     mv ~/stationwagon-app.install.key '$dir/install.key'
     chmod 600 '$dir/install.key'

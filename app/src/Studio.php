@@ -226,6 +226,20 @@ final class Studio
         return $r + ['status' => isset($r['error']) ? 422 : 200];
     }
 
+    /** One slide's picture (a JPEG) for a note of the open show; the note names the file it gets back. */
+    public function addSlide(array $user, string $publicId, string $bytes): array
+    {
+        $show = $this->show($publicId);
+        if (!$show || !$this->canControl($user, $show)) {
+            return ['error' => 'This isn’t your show.', 'status' => 403];
+        }
+        if (!$show['open']) {
+            return ['error' => 'Slides can only be added while the show is on air.', 'status' => 409];
+        }
+        $r = (new Slides($this->db, SW_ROOT))->store($bytes);
+        return $r + ['status' => isset($r['error']) ? 422 : 200];
+    }
+
     public function editNote(array $user, string $publicId, int $id, array $fields, float $now): array
     {
         $show = $this->show($publicId);

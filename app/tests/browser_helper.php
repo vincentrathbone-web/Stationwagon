@@ -13,6 +13,12 @@
 //   php browser_helper.php live-end <public id>
 //   php browser_helper.php note <public id> <kind> <fields as JSON>  -> {"note"} or {"error"}
 //   php browser_helper.php note-edit <public id> <note id> <fields as JSON>  -> {"note", "replaces"} or {"error"}
+//   php browser_helper.php app-fixture [<minutes until the first live block>]  -> {blocks: [{id, title, start}], episode, show} for the listener app's phone test:
+//        two live blocks ("[ww-test] ...") every day, and a published 3-minute episode with notes and slides placed in it
+//        (add "pretty" for nice names, a presenter Pastor Daniel and drawn slides, for screenshots)
+//   php browser_helper.php app-fixture-clean                                  (all of it, its files too)
+//   php browser_helper.php verse-seed [<text>] | verse-clean               today's verse text put in the cache (-> {reference, text}) / the cached verse files removed
+//   php browser_helper.php slide <shade> [<width> <height>]       -> {"file", "url"}: a generated JPEG kept as a slide picture
 //   php browser_helper.php notes-clear <public id>                     (the test show's notes)
 //   php browser_helper.php dj [block]              -> a throwaway DJ {"id", "email", "password", "block"}
 //   php browser_helper.php live-info <public id>   -> the show, its pieces (scanned) and how many notes
@@ -23,7 +29,7 @@
 //   php browser_helper.php podcast-min <seconds | default>          -> the shortest show made into an episode, before
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
-use Stationwagon\{Db, Library, Notes, Planner, Podcast, Schedule, StationSettings};
+use Stationwagon\{Db, Library, Notes, Planner, Podcast, Schedule, Slides, StationSettings, Verse};
 
 const PHONE_DJ = 'stationwagon-phone-test@example.test';
 
@@ -151,6 +157,117 @@ if ($cmd === 'manager') {
     echo json_encode((new Notes($db, $station))->post($argv[2] ?? '', null, $argv[3] ?? '', json_decode($argv[4] ?? '{}', true) ?: []));
 } elseif ($cmd === 'note-edit') {
     echo json_encode((new Notes($db, $station))->edit($argv[2] ?? '', null, (int) ($argv[3] ?? 0), json_decode($argv[4] ?? '{}', true) ?: []));
+} elseif ($cmd === 'app-fixture-clean') {
+    $n = 0;
+    // the nicely named demo (app-fixture <minutes> pretty): everything of its presenter
+    $demo = (int) $db->run('SELECT id FROM ' . $db->table('users') . ' WHERE email = ?', ['ww-demo@example.test'])->fetchColumn();
+    if ($demo) {
+        foreach ($db->run('SELECT id, public_id FROM ' . $db->table('episodes') . ' WHERE dj_user_id = ?', [$demo])->fetchAll() as $ep) {
+            foreach (glob(SW_ROOT . '/storage/podcasts/' . $ep['public_id'] . '/*') ?: [] as $f) {
+                @unlink($f);
+            }
+            @rmdir(SW_ROOT . '/storage/podcasts/' . $ep['public_id']);
+            $db->run('DELETE FROM ' . $db->table('episodes') . ' WHERE id = ?', [$ep['id']]);
+            $n++;
+        }
+        foreach ($db->run('SELECT id FROM ' . $db->table('live_shows') . ' WHERE dj_user_id = ?', [$demo])->fetchAll(PDO::FETCH_COLUMN) as $show) {
+            $db->run('DELETE FROM ' . $db->table('presenter_notes') . ' WHERE live_show_id = ?', [$show]);
+            $db->run('DELETE FROM ' . $db->table('live_shows') . ' WHERE id = ?', [$show]);
+        }
+        $db->run('DELETE FROM ' . $db->table('schedule') . ' WHERE dj_user_id = ?', [$demo]);
+        $db->run('DELETE FROM ' . $db->table('station_users') . ' WHERE user_id = ?', [$demo]);
+        $db->run('DELETE FROM ' . $db->table('users') . ' WHERE id = ?', [$demo]);
+    }
+    foreach ($db->run('SELECT id, public_id FROM ' . $db->table('episodes') . " WHERE title LIKE '[ww-test]%'")->fetchAll() as $ep) {
+        foreach (glob(SW_ROOT . '/storage/podcasts/' . $ep['public_id'] . '/*') ?: [] as $f) {
+            @unlink($f);
+        }
+        @rmdir(SW_ROOT . '/storage/podcasts/' . $ep['public_id']);
+        $db->run('DELETE FROM ' . $db->table('episodes') . ' WHERE id = ?', [$ep['id']]);
+        $n++;
+    }
+    foreach ($db->run('SELECT id FROM ' . $db->table('live_shows') . " WHERE title LIKE '[ww-test]%'")->fetchAll(PDO::FETCH_COLUMN) as $show) {
+        $db->run('DELETE FROM ' . $db->table('presenter_notes') . ' WHERE live_show_id = ?', [$show]);
+        $db->run('DELETE FROM ' . $db->table('live_shows') . ' WHERE id = ?', [$show]);
+    }
+    $db->run('DELETE FROM ' . $db->table('schedule') . " WHERE title LIKE '[ww-test]%'");
+    echo json_encode(['cleaned' => $n]);
+} elseif ($cmd === 'app-fixture') {
+    $tz = new DateTimeZone($station['timezone'] ?: 'UTC');
+    $mins = (int) ($argv[2] ?? 20);
+    $clock = fn(int $plus) => (new DateTimeImmutable('now', $tz))->modify("+$plus minutes")->format('H:i');
+    $dj = (int) $db->run('SELECT id FROM ' . $db->table('users') . ' ORDER BY id LIMIT 1')->fetchColumn();
+    $pretty = ($argv[3] ?? '') === 'pretty'; // nice names and slide pictures, for screenshots (clean with app-fixture-clean too)
+    $tag = $pretty ? '' : '[ww-test] ';
+    if ($pretty) {
+        $dj = $db->insert('users', ['email' => 'ww-demo@example.test', 'name' => 'Pastor Daniel', 'password_hash' => password_hash(bin2hex(random_bytes(8)), PASSWORD_DEFAULT), 'role' => 'dj', 'created_at' => gmdate('Y-m-d H:i:s')]);
+        $db->insert('station_users', ['station_id' => $station['id'], 'user_id' => $dj]);
+    }
+    $sched = new Schedule($db, $station);
+    $blocks = [];
+    foreach ([[$tag . 'Morning Word', $mins, $mins + 45], [$tag . 'Evening Praise', $mins + 300, $mins + 360]] as [$title, $from, $to]) {
+        [$id, $err] = $sched->add(['title' => $title, 'kind' => 'live', 'dj_user_id' => $dj, 'days' => [1, 2, 4, 8, 16, 32, 64], 'start' => $clock($from), 'end' => $clock($to)]);
+        $blocks[] = ['id' => $id, 'title' => $title, 'start' => $clock($from), 'error' => $err];
+    }
+    // a published episode: a closed show of 3 minutes, its silent MP3, and notes posted along the way
+    $start = floor(microtime(true)) - 7200;
+    $pid = 'live-' . gmdate('Ymd-His', (int) $start) . '-' . bin2hex(random_bytes(3));
+    $showId = $db->insert('live_shows', ['station_id' => $station['id'], 'public_id' => $pid, 'dj_user_id' => $dj, 'title' => $tag . 'Sunday Service', 'start_at' => $start,
+        'open' => 0, 'closed_reason' => 'ended by DJ', 'last_piece_at' => $start + 180, 'created_at' => gmdate('Y-m-d H:i:s')]);
+    $slides = new Slides($db, SW_ROOT);
+    $pics = [];
+    foreach ([[60, 640, 360, ['Three things', 'to hold on to', '1  Grace', '2  Faith', '3  Hope']], [160, 640, 360, ['Romans 8:28', 'All things work together', 'for good']]] as [$shade, $w, $h, $lines]) {
+        $im = imagecreatetruecolor($w, $h);
+        imagefill($im, 0, 0, imagecolorallocate($im, $shade, 70, 160));
+        if ($pretty) {
+            imagefilledrectangle($im, 0, 0, $w, $h, imagecolorallocate($im, 10, 42, 106));
+            imagefilledrectangle($im, 0, $h - 10, $w, $h, imagecolorallocate($im, 53, 242, 160));
+            foreach ($lines as $i => $line) {
+                imagettftext($im, $i === 0 ? 40 : 30, 0, 40, 80 + $i * 56, imagecolorallocate($im, 244, 247, 255), 'C:/Windows/Fonts/arialbd.ttf', $line);
+            }
+        }
+        ob_start();
+        imagejpeg($im, null, 80);
+        $pics[] = $slides->store((string) ob_get_clean())['file'];
+    }
+    $put = function (float $at, string $kind, array $body) use ($db, $station, $showId, $dj) {
+        $db->insert('presenter_notes', ['station_id' => $station['id'], 'live_show_id' => $showId, 'user_id' => $dj, 'kind' => $kind, 'body' => json_encode($body, JSON_UNESCAPED_UNICODE), 'posted_at' => gmdate('Y-m-d H:i:s', (int) $at)]);
+    };
+    $put($start + 10, 'note', ['text' => 'Welcome to the service']);
+    $put($start + 40, 'verse', ['ref' => 'John 3:16', 'version' => 'KJV', 'text' => 'For God so loved the world, that he gave his only begotten Son.', 'passage' => 'John 3:16']);
+    $put($start + 70, 'slides', ['text' => 'Three points', 'images' => $pics]);
+    $put($start + 100, 'refs', ['text' => 'Read along', 'refs' => ['Romans 8:28', 'Psalm 23'], 'version' => 'KJV']);
+    $epPid = 'ep-' . gmdate('Ymd', (int) $start) . '-' . bin2hex(random_bytes(4));
+    $mp3 = SW_ROOT . "/storage/podcasts/$epPid";
+    mkdir($mp3, 0775, true);
+    $frame = "\xFF\xFB\x90\x00" . str_repeat("\0", 413);
+    file_put_contents("$mp3/sunday.mp3", str_repeat($frame, (int) ceil(180 * 44100 / 1152)));
+    $now = gmdate('Y-m-d H:i:s');
+    $epId = $db->insert('episodes', ['station_id' => $station['id'], 'public_id' => $epPid, 'live_show_id' => $showId, 'dj_user_id' => $dj, 'title' => $tag . 'Sunday Service',
+        'description' => $pretty ? 'Pastor Daniel on grace, faith and hope.' : 'A test episode with notes and slides.', 'status' => 'published', 'recorded_at' => $start, 'audio_file' => 'sunday.mp3', 'audio_bytes' => filesize("$mp3/sunday.mp3"),
+        'audio_seconds' => 180, 'mixed_at' => $now, 'published_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
+    $db->insert('episode_takes', ['episode_id' => $epId, 'live_show_id' => $showId, 'kind' => 'aired', 'start_at' => $start, 'duration_s' => 180, 'complete' => 1, 'created_at' => $now]);
+    echo json_encode(['blocks' => $blocks, 'episode' => $epPid, 'show' => $pid, 'slides' => $pics]);
+} elseif ($cmd === 'verse-seed') {
+    // today's verse text kept in the cache (this PC's PHP has no CA bundle to fetch it): -> {reference, text}
+    $tz = new DateTimeZone($station['timezone'] ?: 'UTC');
+    $date = (new DateTimeImmutable('now', $tz))->format('Y-m-d');
+    $ref = Verse::referenceFor($date);
+    $text = ($argv[2] ?? '') !== '' ? $argv[2] : '[ww-test] verse text for ' . $ref;
+    @mkdir(SW_ROOT . '/storage/cache', 0775, true);
+    file_put_contents(SW_ROOT . '/storage/cache/verse-' . $date . '.json', json_encode(['ref' => $ref, 'text' => $text]));
+    echo json_encode(['reference' => $ref, 'text' => $text, 'date' => $date]);
+} elseif ($cmd === 'verse-clean') {
+    foreach (glob(SW_ROOT . '/storage/cache/verse-*') ?: [] as $f) {
+        @unlink($f);
+    }
+    echo json_encode(['cleaned' => true]);
+} elseif ($cmd === 'slide') {
+    $im = imagecreatetruecolor((int) ($argv[3] ?? 640), (int) ($argv[4] ?? 360));
+    imagefill($im, 0, 0, imagecolorallocate($im, (int) ($argv[2] ?? 100), 80, 180));
+    ob_start();
+    imagejpeg($im, null, 80);
+    echo json_encode((new Slides($db, SW_ROOT))->store((string) ob_get_clean()));
 } elseif ($cmd === 'notes-clear') {
     $notes = new Notes($db, $station);
     foreach ($notes->forShow($argv[2] ?? '') as $n) {

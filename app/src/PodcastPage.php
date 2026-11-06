@@ -93,7 +93,9 @@ final class PodcastPage
     public static function base(): string
     {
         $https = ($_SERVER['HTTPS'] ?? '') === 'on' || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' || str_contains((string) ($_SERVER['HTTP_CF_VISITOR'] ?? ''), '"https"');
-        return ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . App::url('');
+        // the api/*.php files are real files inside the app's folder: the app's address is their parent's
+        $path = (string) preg_replace('#/api/?$#', '/', App::url(''));
+        return ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $path;
     }
 
     /** Send a file, honouring a single Range (the audio player seeks with them). */

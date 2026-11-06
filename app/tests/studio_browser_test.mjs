@@ -283,6 +283,40 @@ try {
   await evaluate(`(() => { document.querySelector('.st-nf[data-for="note"] [name=text]').value = ''; document.getElementById('noteForm').requestSubmit(); })()`);
   await sleep(1200);
   check("  an empty note says why and isn't posted", !(await evaluate("document.getElementById('noteErr').hidden")) && (await state()).notes.length === 1, await text("#noteErr"));
+
+  console.log("Slides");
+  await click('.st-kinds [data-kind="slides"]');
+  check("the Slides tab opens its form, picking pictures is open while on air", !(await evaluate(`document.querySelector('.st-nf[data-for="slides"]').hidden`)) && !(await evaluate("document.getElementById('slideFiles').disabled")));
+  // two pictures as the presenter's files: a big PNG (made a JPEG of at most 1600 px) and a small one
+  await evaluate(`(async () => {
+    const make = async (w, h, color, name) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = color; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.font = '80px sans-serif'; g.fillText(name, 40, 120); return new File([await new Promise((ok) => c.toBlob(ok, 'image/png'))], name + '.png', { type: 'image/png' }); };
+    const dt = new DataTransfer(); dt.items.add(await make(2400, 1350, '#245', 'one')); dt.items.add(await make(400, 300, '#a52', 'two'));
+    const input = document.getElementById('slideFiles'); input.files = dt.files; input.dispatchEvent(new Event('change'));
+  })()`);
+  let rows = 0;
+  for (let i = 0; i < 60 && rows < 2; i++) { await sleep(250); rows = await evaluate("document.querySelectorAll('#slideList li').length"); }
+  check("both pictures upload and list with a thumbnail each", rows === 2, `rows ${rows}: ${await text("#slideHint")}`);
+  await sleep(500);
+  const dims = await evaluate(`[...document.querySelectorAll('#slideList img')].map((i) => [i.naturalWidth, i.naturalHeight])`);
+  check("  the big one was made 1600 px wide, the small one kept its size", dims[0] && dims[0][0] === 1600 && dims[0][1] === 900 && dims[1] && dims[1][0] === 400 && dims[1][1] === 300, JSON.stringify(dims));
+  const names = () => evaluate(`[...document.querySelectorAll('#slideList li span:not(.st-sact)')].map((x) => x.textContent)`);
+  check("  they list in the order picked", (await names()).join("|") === "1. one.png|2. two.png", (await names()).join("|"));
+  await evaluate(`[...document.querySelectorAll('#slideList li')][1].querySelector('button[title="Move up"]').click()`);
+  check("  Move up changes the order", (await names()).join("|") === "1. two.png|2. one.png", (await names()).join("|"));
+  await evaluate(`(() => { document.querySelector('.st-nf[data-for="slides"] [name=text]').value = 'Sunday message'; document.getElementById('noteForm').requestSubmit(); })()`);
+  s = await until((x) => x.notes.length === 2, 6);
+  check("posting the slides note adds it to the show", !!s && helper("live-info", liveId).notes === 2, JSON.stringify(s && s.notes));
+  check("  the drawer lists it with its title and count", (await text("#noteList li:first-child p")) === "Sunday message · 2 slides", await text("#noteList li:first-child p"));
+  check("  and the form is empty again", (await evaluate("document.querySelectorAll('#slideList li').length")) === 0);
+  const feed = await evaluate(`fetch('${base}/api/notes.php', { cache: 'no-store' }).then((r) => r.json())`);
+  const slidesNote = (feed.items || []).find((n) => n.kind === "slides");
+  check("listeners' notes feed has the slides, in the changed order, with a title", !!slidesNote && slidesNote.text === "Sunday message" && slidesNote.slides.length === 2, JSON.stringify(slidesNote));
+  const served = await evaluate(`Promise.all(${JSON.stringify((slidesNote ? slidesNote.slides : []).map((x) => x.url))}.map((u) => fetch('${base}/' + u).then((r) => [r.status, r.headers.get('content-type')])))`);
+  check("  and the pictures are served as images", served.length === 2 && served.every(([st, type]) => st === 200 && type === "image/jpeg"), JSON.stringify(served));
+  await clickText("#noteList li:first-child .st-nrm button", "Remove");
+  await clickText("#noteList li .st-nrm button", "Remove");
+  s = await until((x) => x.notes.length === 1, 6);
+  check("  removing the slides note leaves the plain note", !!s && helper("live-info", liveId).notes === 1);
   await click("#stDrawerClose");
 
   console.log("Rejoining after a reload");

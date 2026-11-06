@@ -30,6 +30,22 @@ final class Schedule
     }
 
     /**
+     * The weekly blocks as the public JSON (api/schedule.php) tells them: `days` are ISO weekday numbers
+     * (Monday 1 … Sunday 7), `start` and `end` are HH:MM in the station's time zone (a block that ends
+     * before it starts runs past midnight; equal times are all day), `valid_from` / `valid_to` are dates or null.
+     * @return list<array>
+     */
+    public function publicBlocks(): array
+    {
+        return array_map(fn($b) => [
+            'id' => (int) $b['id'], 'title' => $b['title'], 'kind' => $b['kind'], 'host' => $b['kind'] === 'live' ? ($b['dj_name'] ?: null) : null,
+            'days' => array_values(array_filter(range(1, 7), fn($d) => ((int) $b['days'] & (1 << ($d - 1))) !== 0)),
+            'start' => substr($b['start_time'], 0, 5), 'end' => substr($b['end_time'], 0, 5),
+            'valid_from' => $b['valid_from'] ?: null, 'valid_to' => $b['valid_to'] ?: null,
+        ], $this->all());
+    }
+
+    /**
      * $in: title, kind (playlist|live), playlist_id or dj_user_id, days (list of bits), start, end (HH:MM).
      * @return array{0:?int,1:array<string,string>} [new id, field => problem]
      */

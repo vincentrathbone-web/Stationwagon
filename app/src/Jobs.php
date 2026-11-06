@@ -84,6 +84,9 @@ final class Jobs
                     $out[] = sprintf('%s: %d show(s) added to podcast episodes, raw tracks of %d episode(s) deleted',
                         $station['name'], $added, $cleaned);
                 }
+                if (($slides = (new Slides($db, SW_ROOT))->cleanup($now)) > 0) {
+                    $out[] = sprintf('%s: %d unused slide picture(s) deleted', $station['name'], $slides);
+                }
             }
             if (Geo::due($now) && self::mayFetchGeo($by)) {
                 Geo::tried();

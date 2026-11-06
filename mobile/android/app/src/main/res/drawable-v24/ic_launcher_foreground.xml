@@ -1,10 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- the on-air sign, from the Windows app's icon (tools/android-icons.py) -->
+<!-- the Stationwagon logo's mark, from brand/svg (tools/android-icons.py) -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#FF141414" android:pathData="M54,54m-7.6,0a7.6,7.6 0,1 1,15.2 0a7.6,7.6 0,1 1,-15.2 0" />
-    <path android:fillColor="#00000000" android:strokeColor="#FF141414" android:strokeWidth="5.4" android:strokeLineCap="round" android:pathData="M39.86,39.86A20,20 0,0 0 39.86,68.14" />
-    <path android:fillColor="#00000000" android:strokeColor="#FF141414" android:strokeWidth="5.4" android:strokeLineCap="round" android:pathData="M68.14,39.86A20,20 0,0 1 68.14,68.14" />
-    <path android:fillColor="#00000000" android:strokeColor="#FF141414" android:strokeWidth="5.4" android:strokeLineCap="round" android:pathData="M30.95,30.95A32.6,32.6 0,0 0 30.95,77.05" />
-    <path android:fillColor="#00000000" android:strokeColor="#FF141414" android:strokeWidth="5.4" android:strokeLineCap="round" android:pathData="M77.05,30.95A32.6,32.6 0,0 1 77.05,77.05" />
+    <group android:scaleX="0.33" android:scaleY="0.33" android:translateX="20.670" android:translateY="46.245">
+        <path android:fillColor="#FF121212" android:fillType="evenOdd" android:pathData="M8 70V40Q8 20 24 20H114L148 44H184Q194 46 194 56V70H168A18 18 0 0 0 132 70H64A18 18 0 0 0 28 70ZM22 28H58V44H22Z M64 28H100V44H64Z M106 28H116L138.7 44H106Z" />
+        <path android:fillColor="#FF121212" android:pathData="M64.5,12a4.5,4.5 0,1 1,9.0,0a4.5,4.5 0,1 1,-9.0,0" />
+        <path android:fillColor="#00000000" android:strokeColor="#FF121212" android:strokeWidth="6" android:strokeLineCap="round" android:pathData="M54.3 3.5A17 17 0 0 1 83.7 3.5" />
+        <path android:fillColor="#00000000" android:strokeColor="#FF121212" android:strokeWidth="6" android:strokeLineCap="round" android:pathData="M42.2 -3.5A31 31 0 0 1 95.8 -3.5" />
+        <path android:fillColor="#00000000" android:strokeColor="#FF121212" android:strokeWidth="6" android:strokeLineCap="round" android:pathData="M30.0 -10.5A45 45 0 0 1 108.0 -10.5" />
+        <path android:fillColor="#00000000" android:strokeColor="#FF121212" android:strokeWidth="2.6" android:strokeLineCap="round" android:pathData="M34.2,70a11.8,11.8 0,1 1,23.6,0a11.8,11.8 0,1 1,-23.6,0" />
+        <path android:fillColor="#00000000" android:strokeColor="#FF121212" android:strokeWidth="2.2" android:strokeLineCap="round" android:pathData="M39.6,70a6.4,6.4 0,1 1,12.8,0a6.4,6.4 0,1 1,-12.8,0" />
+        <path android:fillColor="#FF121212" android:pathData="M43.6,70a2.4,2.4 0,1 1,4.8,0a2.4,2.4 0,1 1,-4.8,0" />
+        <path android:fillColor="#00000000" android:strokeColor="#FF121212" android:strokeWidth="2.6" android:strokeLineCap="round" android:pathData="M138.2,70a11.8,11.8 0,1 1,23.6,0a11.8,11.8 0,1 1,-23.6,0" />
+        <path android:fillColor="#00000000" android:strokeColor="#FF121212" android:strokeWidth="2.2" android:strokeLineCap="round" android:pathData="M143.6,70a6.4,6.4 0,1 1,12.8,0a6.4,6.4 0,1 1,-12.8,0" />
+        <path android:fillColor="#FF121212" android:pathData="M147.6,70a2.4,2.4 0,1 1,4.8,0a2.4,2.4 0,1 1,-4.8,0" />
+    </group>
 </vector>

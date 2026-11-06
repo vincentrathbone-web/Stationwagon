@@ -175,7 +175,7 @@ details.built summary:hover{background:var(--ground)}
 const MAP = {
   updated: "3 Nov",
   commits: 46,
-  version: "0.9.2-dev",
+  version: "0.9.4-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
     { v: "v0.4", name: "Player & studio", when: "done 22 Oct" },
@@ -194,6 +194,7 @@ const MAP = {
       { text: "Recent, now and next; today's schedule", v: "v0.4", state: "done" },
       { text: "Stream-only mode", v: "v0.4", state: "done" },
       { text: "Now-playing API", note: "JSON for websites and apps, at the listener delay", v: "v0.4", state: "done" },
+      { text: "Schedule, podcast and verse of the day as JSON", note: "for apps and other sites; a podcast episode comes with the presenter's notes placed at the second of the audio they belong to", v: "v0.8", state: "done" },
       { text: "Embeddable player with Copy code", note: "dark or light; plays at the same 20 s delay", v: "v0.4", state: "done" },
       { text: "Listeners now, on the health line and in the studio", note: "a ping a minute, no cookies", v: "v0.4", state: "done" },
       { text: "Privacy page, linked under the player and in the embed", v: "v0.4", state: "done" },
@@ -208,6 +209,7 @@ const MAP = {
       { text: "Mic chain with presets and ducking", v: "v0.4", state: "done" },
       { text: "Running order for the show", v: "v0.4", state: "done" },
       { text: "Notes drawer for listeners", v: "v0.4", state: "done" },
+      { text: "Slides: pictures with a caption as a note", note: "up to 30 pictures, shrunk in the studio; listeners page through them, in the player and in the app", v: "v0.8", state: "done" },
       { text: "Output strip above the decks, resizable", v: "v0.4", state: "done" },
       { text: "Rejoin your show after a reload or a drop", note: "carries on as a new show with its notes", v: "v0.4", state: "done" },
       { text: "Dead-air warning after 10 s of silence", v: "v0.4", state: "done" },
@@ -257,6 +259,15 @@ const MAP = {
       { text: "The show goes on with the screen off", note: "an On air notification keeps the mic, sound and Wi-Fi awake", v: "v0.7", state: "done" },
       { text: "In-app updates from GitHub", note: "through the Stationwagon Updates plugin; checked when the app opens", v: "v0.7", state: "done" }
     ]},
+    { name: "Listener app (Android)", blurb: "A listener-only app per station, made from one config file; lives in the station's own repo (WordWave's android-app/). Chat is planned, not built.", features: [
+      { text: "Live stream with lock-screen and notification controls", note: "Media3; keeps playing with the screen off; tested on the phone", v: "v0.8", state: "done" },
+      { text: "Schedule with show reminders", note: "a native reminder per show, repeats weekly, survives a restart, tapping it opens the show; Listen live button", v: "v0.8", state: "done" },
+      { text: "Podcasts with the presenter's notes and slides", note: "they appear below the player as the audio reaches them", v: "v0.8", state: "done" },
+      { text: "Prayer and support requests", note: "the website's contact form", v: "v0.8", state: "done" },
+      { text: "Verse of the day, English and Afrikaans", note: "on the home screen and an optional daily notification; Afrikaans is the reference and a link", v: "v0.8", state: "done" },
+      { text: "A new station's app from one config file", note: "name, address, colours, logo, texts; README explains it", v: "v0.8", state: "done" },
+      { text: "Chat for listeners", note: "planned only: a placeholder screen behind a switch, nothing built", v: "v1.0", state: "later" }
+    ]},
     { name: "Pilot & launch", blurb: "WordWave runs beside AzuraCast first, then switches over.", features: [
       { text: "The pilot station, installed for real", note: "live at wordwave.co.za/radio; the website plays it through the embed", v: "v0.8", state: "progress" },
       { text: "Copy WordWave's library from AzuraCast", note: "needs your friend's OK first", v: "v0.8", state: "later" },
@@ -274,7 +285,11 @@ const MAP = {
   call: null,
   feedTitle: "Changed 20 Oct – 3 Nov",
   feed: [
-    { what: "Brand package", to: "a logo (a station wagon with speaker-cone wheels and a signal from its roof), the lowercase wordmark and Station green: 16 editable logo files, 21 PNGs, a favicon, an overview page and a README in brand/; the station's pages now show it in the header and as the tab icon and so do the setup page, the embed and the WordPress plugin (the Windows and Android app icons are still to do)", at: "3 Nov" },
+    { what: "Listener app for Android", to: "built in WordWave's android-app/: live stream, schedule with native reminders, podcasts with the presenter's notes and slideshows, prayer requests, verse of the day, English and Afrikaans; one config file makes another station's app; tested on the phone, not released; chat is planned only", at: "3 Nov" },
+    { what: "Slides in the studio", to: "a new note kind: up to 30 pictures with a caption; listeners page through them in the player and the app", at: "3 Nov" },
+    { what: "Schedule, podcast and verse JSON", to: "api/schedule.php, api/podcast.php (an episode with its notes placed in the audio) and api/verse.php; database 15; the live station needs a deploy before the app can use them", at: "3 Nov", kind: "info" },
+    { what: "Brand package", to: "a logo (a station wagon with speaker-cone wheels and a signal from its roof), the lowercase wordmark and Station green: 16 editable logo files, 21 PNGs, a favicon, an overview page and a README in brand/; the station's pages now show it in the header and as the tab icon and so do the setup page, the embed and the WordPress plugin", at: "3 Nov" },
+    { what: "App icons", to: "the Windows and Android studio apps have the new Stationwagon icon (the wagon with speaker wheels on the green tile) and the logo on their start pages; test builds 0.6.2 and 0.7.2 are tested, not yet released", at: "3 Nov" },
     { what: "Music library", to: "edits, album art and copyright save in place: the page no longer jumps to the top", at: "2 Nov" },
     { what: "Copyright", to: "a © badge on songs with details; the player and embed show the line and, on a click, the owner, licence, publisher, writers and links", at: "2 Nov" },
     { what: "Album art", to: "read from the MP3's tags, or added in the library; shown in the embed and on the phone's lock screen", at: "2 Nov" },

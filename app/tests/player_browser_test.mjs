@@ -293,6 +293,11 @@ try {
     }, Math.max(0, (show.start + 6.1) * 1000 - Date.now()));
     // a presenter note, posted now: listeners 20 s behind must not see it before they hear this moment
     notesShow = show.public_id;
+    // slides first (a second before the verse, so each reaches the listeners in its own tick)
+    const pics = [helper("slide", "40"), helper("slide", "170", "320", "240")];
+    const slidesPosted = helper("note", show.public_id, "slides", JSON.stringify({ text: "Today’s points", images: pics.map((x) => x.file) }));
+    check("a slides note is posted with two generated pictures", !!(slidesPosted.note && slidesPosted.note.id) && pics.every((x) => !!x.file), JSON.stringify(slidesPosted));
+    await sleep(1200);
     const postedAt = Date.now();
     const posted = helper("note", show.public_id, "verse", JSON.stringify({ ref: "Psalm 23:1", text: "The LORD is my shepherd; <b>I shall not want.</b>", passage: "Psalm 23" }));
     const nid = posted.note && posted.note.id;
@@ -308,6 +313,18 @@ try {
     const dom = await evaluate(`(() => { const li = document.querySelector('#lpNotesList li'), q = li.querySelector('blockquote'), t = document.getElementById('lpToast');
       return { text: q.textContent, tags: q.children.length, read: li.querySelector('a').href, toast: t.hidden ? '' : t.textContent }; })()`);
     check("  shown as text, with its Bible Gateway link and a toast", dom.text.includes("<b>I shall") && dom.tags === 0 && dom.read.startsWith("https://www.biblegateway.com/passage/?search=Psalm%2023") && dom.toast.startsWith("New note"), JSON.stringify(dom));
+    const slidesDom = await evaluate(`(async () => {
+      const box = document.querySelector('#lpNotesList .lp-slides'), img = box && box.querySelector('img'), btn = (t) => [...box.querySelectorAll('button')].find((b) => b.textContent === t), count = () => box.querySelector('.bar span').textContent;
+      await new Promise((ok) => (img.complete && img.naturalWidth ? ok() : img.addEventListener('load', ok)));
+      const first = { src: img.src, w: img.naturalWidth, count: count(), back: btn('Back').disabled, next: btn('Next').disabled, alt: img.alt };
+      btn('Next').click();
+      const second = { src: img.src, w: img.naturalWidth, count: count(), back: btn('Back').disabled, next: btn('Next').disabled };
+      btn('Back').click();
+      return { first, second, again: count(), title: box.parentElement.querySelector('.txt').textContent, kind: box.closest('li').querySelector('.kind').textContent };
+    })()`);
+    check("  the slides note shows its title and the first picture, loaded from the station", slidesDom.title === "Today’s points" && slidesDom.first.src === `${base}/${pics[0].url}` && slidesDom.first.w === 640 && slidesDom.first.count === "1 / 2"
+      && slidesDom.first.back && !slidesDom.first.next && slidesDom.kind.startsWith("Slides"), JSON.stringify(slidesDom));
+    check("  Next shows the second (Back is then open, Next is not), Back returns", slidesDom.second.src === `${base}/${pics[1].url}` && slidesDom.second.w === 320 && slidesDom.second.count === "2 / 2" && !slidesDom.second.back && slidesDom.second.next && slidesDom.again === "1 / 2", JSON.stringify(slidesDom));
     // the presenter fixes the verse: it comes again as new, and the old one stays until listeners reach the edit
     await sleep(2700); // the first toast has gone
     // every toast is recorded as it shows (it hides after 2.6 s, maybe before the test looks)
@@ -335,7 +352,7 @@ try {
     check("the changed note replaces the old one 20 s after the change", !!n && !n.shown.includes(nid) && after2 > 18.5 && after2 < 23, n ? `${after2.toFixed(1)} s, shown ${n.shown}` : JSON.stringify(await notes()));
     const dom2 = await evaluate(`(() => ({ items: document.querySelectorAll('#lpNotesList li').length, text: document.querySelector('#lpNotesList li blockquote').textContent,
       toast: (window.__toasts.find((x) => x.at > ${editedAt} + 18000) || {}).text || '', all: (window.__toasts || null) && window.__toasts.map((x) => ((x.at - ${editedAt}) / 1000).toFixed(1) + ' s ' + x.text) }))()`);
-    check("  as new, with a toast", !!n && n.fresh.includes(nid2) && dom2.items === 1 && dom2.text.includes("green pastures") && dom2.toast.startsWith("New note"), JSON.stringify({ ...dom2, show: n && n.show, fresh: n && n.fresh }));
+    check("  as new, with a toast", !!n && n.fresh.includes(nid2) && dom2.items === 2 && dom2.text.includes("green pastures") && dom2.toast.startsWith("New note"), JSON.stringify({ ...dom2, show: n && n.show, fresh: n && n.fresh }));
     while (seq < 5) await sleep(500);
     // the listener's tab is in the background when the show ends (another tab in front), as happened in the live test
     const other = (await call("Target.createTarget", { url: "about:blank", background: false })).result?.targetId;
