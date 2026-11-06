@@ -4,7 +4,7 @@ Radio software for small stations that runs on ordinary **shared cPanel hosting*
 with real crossfades, a stream for listeners, and a studio for live shows in the browser, on
 Windows or on Android. No root, no Docker, no extra ports, no programs running all day.
 
-The first station it's designed around is Radio WordWave / Radio WoordGolf.
+The first station it's designed around is Radio WordWave / Radio WoordGolf. Its website and Android listener app live in the **[WordWave repo](https://github.com/vincentrathbone-web/WordWave)** and read from this station through public JSON endpoints (now playing, schedule, podcasts, verse of the day, stream).
 
 **New here? Start with the [Getting started guide](docs/getting-started.html)** (download it and
 open it in a browser). It covers setting up a station, running it, and going live, with a contents
