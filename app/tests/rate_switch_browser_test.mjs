@@ -11,8 +11,11 @@
 // play that much late (Firefox's media pipeline; the same stream is exact in Edge). That limit was agreed with
 // the user (2026-11-09) and is why stations default to 44.1 kHz for every song: there, songs after the change
 // are checked for pitch only and their lateness is reported as a note.
-//   node app/tests/rate_switch_browser_test.mjs http://localhost:8080/stationwagon-app [--firefox]
-// Edge is driven over the DevTools protocol; Firefox (C:/Program Files/Mozilla Firefox) over WebDriver BiDi.
+//   node app/tests/rate_switch_browser_test.mjs http://localhost:8080/stationwagon-app [--firefox | --phone]
+// Edge is driven over the DevTools protocol; Firefox (C:/Program Files/Mozilla Firefox) over WebDriver BiDi;
+// --phone uses the Android phone's browser over USB (Brave, or SW_PHONE_BROWSER; adb at SW_ADB; the phone
+// unlocked, and `adb reverse tcp:8080 tcp:8080` for Laragon): its one tab has the station page, with the
+// stream-only page and the embed in frames on it (DevTools can't open tabs on Android).
 // Needs SW_PHP (php.exe) unless php is on PATH. Changes the station's schedule for a few minutes
 // (a block and a playlist named "[ww-test] Rate switch", removed at the end): Laragon only.
 import { spawn, execFileSync } from "node:child_process";
@@ -23,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
 const base = (process.argv.slice(2).find((a) => !a.startsWith("--")) || "").replace(/\/$/, "");
-const FIREFOX = process.argv.includes("--firefox");
+const FIREFOX = process.argv.includes("--firefox"), PHONE = process.argv.includes("--phone");
 if (!base) { console.error("Usage: node app/tests/rate_switch_browser_test.mjs <base url>"); process.exit(1); }
 const here = dirname(fileURLToPath(import.meta.url));
 const php = process.env.SW_PHP || "php";
@@ -90,16 +93,24 @@ const TAP = `(() => {
     const el = [...els].find((e) => !e.paused);
     if (!el) return [];
     if (!elTaps.has(el)) {
-      const tracks = (el.captureStream || el.mozCaptureStream).call(el).getAudioTracks(); // Firefox: mozCaptureStream
+      const stream = (el.captureStream || el.mozCaptureStream).call(el), tracks = stream.getAudioTracks(); // Firefox: mozCaptureStream
+      el.__stream = stream;
       if (!tracks.length) return [];
       own = own || new AudioContext();
-      const src = own.createMediaStreamSource(new MediaStream(tracks)), an = own.createAnalyser(), mute = own.createGain();
+      if (own.state === "suspended") own.resume().catch(() => {});
+      // every track: a stream source takes only the first by id, and an element can hand over two (Android:
+      // hls.js's media source gives one that stays silent)
+      const an = own.createAnalyser(), mute = own.createGain();
       an.fftSize = 8192; an.smoothingTimeConstant = 0; mute.gain.value = 0;
-      src.connect(an); connect.call(an, mute); connect.call(mute, own.destination);
+      for (const t of tracks) own.createMediaStreamSource(new MediaStream([t])).connect(an);
+      connect.call(an, mute); connect.call(mute, own.destination);
       elTaps.set(el, an);
     }
     return [elTaps.get(el)];
   };
+  // for the test's own diagnosis when a page gives no readings
+  window.__tapInfo = () => ({ taps: taps.length, own: own && own.state, els: [...els].map((e) => [e.paused, +e.currentTime.toFixed(1), e.readyState]), elTaps: elTaps.size,
+    tracks: [...elTaps.keys()].map((e) => e.__stream ? e.__stream.getAudioTracks().map((t) => t.readyState + (t.muted ? ' muted' : '')) : null), peak: (r => r && [Math.round(r.hz), Math.round(r.db)])(read()) });
   // every node that reaches the speakers is tapped (a page may also have a silent keep-alive there)
   const read = () => peak(taps) || peak(elementTap());
   setInterval(() => { try { if (window.swEmbed && swEmbed.heard && !window.__heardAt) window.__heardAt = performance.now() / 1000;
@@ -118,11 +129,79 @@ const send = (msg) => new Promise((ok) => { const i = ++id; pending.set(i, ok); 
 const connect = async (url) => {
   ws = new WebSocket(url);
   await new Promise((ok, bad) => { ws.onopen = ok; ws.onerror = bad; });
-  ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); } };
+  ws.onmessage = (m) => {
+    const d = JSON.parse(m.data);
+    if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); }
+    const c = d.method === "Runtime.executionContextCreated" && d.params.context;
+    if (c && c.auxData && c.auxData.isDefault) contexts.set(c.auxData.frameId, c.id);
+  };
 };
+const contexts = new Map(); // DevTools: a frame's id -> its page's own context
 const waitFor = async (url) => { for (let i = 0; i < 100; i++) { try { const r = await fetch(url); if (r.status < 500) return; } catch { /* starting */ } await sleep(200); } };
 let browser;
-if (!FIREFOX) {
+if (PHONE) {
+  const adbPath = process.env.SW_ADB || "D:/Android/platform-tools/adb.exe";
+  const APP = process.env.SW_PHONE_BROWSER || "com.brave.browser";
+  const adb = (...args) => execFileSync(adbPath, ["shell", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  const call = (method, params = {}) => send({ method, params });
+  const frames = { "/": null }, frameIds = {};
+  browser = {
+    name: `the phone's ${APP}`,
+    async start() {
+      if (adb("dumpsys", "window").includes("isKeyguardShowing=true")) throw new Error("the phone is locked: unlock it and run this again");
+      execFileSync(adbPath, ["reverse", "tcp:8080", "tcp:8080"], { stdio: "ignore" });
+      adb("monkey", "-p", APP, "-c", "android.intent.category.LAUNCHER", "1"); // the browser in front
+      await sleep(2000);
+      // port 9222 to that browser (Chrome has its own socket next to the plain one, which Brave may hold)
+      const pid = adb("pidof", APP).trim().split(/\s+/)[0];
+      const own = pid && adb("cat", "/proc/net/unix").includes(`@chrome_devtools_remote_${pid}`) ? `chrome_devtools_remote_${pid}` : "chrome_devtools_remote";
+      execFileSync(adbPath, ["forward", "tcp:9222", `localabstract:${own}`], { stdio: "ignore" });
+      const held = await fetch("http://localhost:9222/json/version").then((r) => r.json()).catch(() => ({}));
+      if (held["Android-Package"] !== APP) throw new Error(`port 9222 leads to ${held["Android-Package"] || "nothing"}, not ${APP}: open it on the phone`);
+      const find = async () => (await (await fetch("http://localhost:9222/json")).json()).find((t) => t.type === "page");
+      let pg = await find();
+      if (!pg) { adb("am", "start", "-a", "android.intent.action.VIEW", "-d", `${base}/privacy`, "-p", APP); for (let i = 0; i < 20 && !pg; i++) { await sleep(500); pg = await find(); } }
+      await connect(pg.webSocketDebuggerUrl);
+      await call("Page.enable"); await call("Runtime.enable");
+      const ua = (await call("Runtime.evaluate", { expression: "navigator.userAgent", returnByValue: true })).result?.result?.value || "";
+      await call("Network.setUserAgentOverride", { userAgent: ua + " StationwagonTest" }); // kept out of the station's stats
+      await call("Page.addScriptToEvaluateOnNewDocument", { source: TAP }); // every frame gets it
+    },
+    async open(url) {
+      const path = url.slice(base.length) || "/";
+      if (path === "/") {
+        await call("Page.navigate", { url });
+        for (let i = 0; i < 30; i++) { if ((await this.evaluate(null, "typeof SwPlayer").catch(() => "")) === "object") break; await sleep(1000); }
+        return null;
+      }
+      const fid = "rt" + Object.keys(frames).length;
+      await this.evaluate(null, `(() => { const f = document.createElement('iframe'); f.id = ${JSON.stringify(fid)}; f.src = ${JSON.stringify(url)};
+        f.allow = 'autoplay'; f.style.cssText = 'width:100%;height:240px;border:0;display:block'; document.body.prepend(f); })()`);
+      for (let i = 0; i < 30; i++) {
+        if (await this.evaluate(fid, path.startsWith("/embed") ? "!!window.swEmbed" : "typeof SwPlayer === 'object'").catch(() => false)) break;
+        await sleep(1000);
+      }
+      frames[path] = fid;
+      // its frame id: then it is asked in its own context, so a tap there is its own gesture (Android
+      // keeps an AudioContext a frame makes without one suspended, and the test's analyser with it)
+      const tree = (await call("Page.getFrameTree")).result.frameTree;
+      const child = (tree.childFrames || []).find((f) => f.frame.url === url || f.frame.url.endsWith(path));
+      if (child) frameIds[fid] = child.frame.id;
+      return fid;
+    },
+    async evaluate(fid, expression) {
+      const ctx = fid !== null && frameIds[fid] ? contexts.get(frameIds[fid]) : undefined;
+      const expr = fid === null || ctx ? expression : `document.getElementById(${JSON.stringify(fid)}).contentWindow.eval(${JSON.stringify(expression)})`;
+      const r = await call("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true, userGesture: true, ...(ctx ? { contextId: ctx } : {}) });
+      if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || "page error");
+      return r.result?.result?.value;
+    },
+    async close() {
+      // stop the sound and leave the tab on a quiet page
+      try { await call("Page.navigate", { url: `${base}/privacy` }); } catch { /* gone */ }
+    },
+  };
+} else if (!FIREFOX) {
   const exe = ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:/Program Files/Google/Chrome/Application/chrome.exe"].find((b) => existsSync(b));
   proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--disable-sync", "--disable-extensions",
     "--autoplay-policy=no-user-gesture-required", "--disable-background-media-suspend", "--disable-renderer-backgrounding",
@@ -245,14 +324,24 @@ try {
       const turn = rel.find(([t, hz, db]) => t > TURN - 3 && t < TURN + 3 && db > -80 && Math.abs(hz - HIGH) < 10);
       check(`  the turn at ${TURN} s is heard on time`, !!turn && turn[0] - TURN > -0.15 && turn[0] - TURN < 0.35, turn ? `${(turn[0] - TURN).toFixed(2)} s` : "never heard");
     }
+    if (!log.some(([h, , db]) => h !== null && db > -80)) { // nothing heard at all: what the page itself says
+      const why = name === "embed" ? st.events : { status: st.status, stream: st.stream, events: st.events, diag: st.diag && { waits: st.diag.waits, dropLog: st.diag.dropLog } };
+      console.log(`  (nothing was heard on this page: ${log.length} readings, all quiet; ${JSON.stringify(why).slice(0, 1500)})`);
+      console.log(`  (the tap: ${JSON.stringify(await evaluate(sid, "window.__tapInfo && __tapInfo()").catch((e) => String(e)))})`);
+    }
     if (name === "embed") {
       // before it is heard it is silent and seeking to the delay (waiting is expected there)
       const bad = (st.events || []).filter((x) => /stall|waiting|error/i.test(x) && parseFloat(x) > (st.heardAt || 0) + 0.5);
       check("no stalls, waits or errors once it is heard", bad.length === 0, bad.slice(0, 3).join(" | "));
     } else {
       const d = st.diag;
+      const wallLessHeard = await evaluate(sid, "Date.now() / 1000 - SwPlayer.state().heard"); // the page's clock against the moment heard
       check("no dropouts, stalls or waits", st.drops === 0 && d.stalls === 0 && d.waits === 0 && (d.dropLog || []).length === 0,
-        `${st.drops} drops, ${d.stalls} stalls, ${d.waits} waits${(d.dropLog || []).length ? ": " + JSON.stringify(d.dropLog.slice(0, 2)) : ""}`);
+        `${st.drops} drops, ${d.stalls} stalls, ${d.waits} waits${(d.dropLog || []).length ? ": " + d.dropLog.slice(0, 4).map((x) => {
+          // where it fell: the moment heard then (20 s behind the wall clock), against the songs
+          const h = x.at / 1000 - wallLessHeard, k = at.findLastIndex((e) => e.start <= h);
+          return `${x.cause} (${x.detail}) at ${k < 0 ? `${(h - at[0].start).toFixed(1)} s before song A` : `song ${songs[k].name} + ${(h - at[k].start).toFixed(1)} s`}`;
+        }).join("; ") : ""}`);
       if (name === "stream") check("  and the stream never changed speed", st.stream && st.stream.rate === 1, st.stream && String(st.stream.rate));
     }
   }
@@ -264,9 +353,10 @@ try {
   try {
     if (ws) { await Promise.race([browser.close(), sleep(3000)]); await sleep(1000); ws.close(); }
   } catch { /* closed */ }
-  proc.kill();
+  if (proc) proc.kill();
   if (FIREFOX) try { execFileSync("taskkill", ["/F", "/T", "/PID", String(proc.pid)], { stdio: "ignore" }); } catch { /* gone */ }
   await sleep(500);
+  if (PHONE) try { execFileSync(process.env.SW_ADB || "D:/Android/platform-tools/adb.exe", ["forward", "--remove", "tcp:9222"], { stdio: "ignore" }); } catch { /* none */ }
   for (const d of [dir, profile]) try { rmSync(d, { recursive: true, force: true }); } catch { /* still held */ }
 }
 console.log(`\n${passed} passed, ${failed} failed`);

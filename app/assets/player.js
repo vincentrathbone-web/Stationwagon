@@ -115,7 +115,8 @@
         this.gainNode = ctx.createGain(); this.gainNode.gain.value = 0;
         ctx.createMediaElementSource(this.el).connect(this.gainNode).connect(out);
       }
-      this.el.addEventListener("waiting", () => { if (this.active && this.gain > 0) { player.waits++; player.dropout("waiting for data", "the stream"); } });
+      // a wait just after its own seek (holding the delay at the join) isn't a dropout, as on the song decks
+      this.el.addEventListener("waiting", () => { if (this.active && this.gain > 0 && performance.now() - (this.seekedAt || 0) > 2000) { player.waits++; player.dropout("waiting for data", "the stream"); } });
     }
     get gain() { return this.gainNode ? this.gainNode.gain.value : this.vol; }
     async start() {
