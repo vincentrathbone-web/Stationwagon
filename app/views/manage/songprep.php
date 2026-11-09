@@ -1,5 +1,5 @@
 <?php use function Stationwagon\h; use Stationwagon\App;
-/** @var array $tracks @var array $presets @var int $defaultId @var int $prepKbps @var array $prep @var int $song @var string $csrf */
+/** @var array $tracks @var array $presets @var int $defaultId @var array $prepQuality @var array $prep @var int $song @var string $csrf */
 [, $prepLevel, $prepTarget] = $prep;
 $data = [
     'tracks' => array_map(fn($t) => ['id' => (int) $t['id'], 'title' => $t['title'], 'artist' => $t['artist'], 'file' => $t['file'], 'original' => $t['original'],
@@ -92,5 +92,5 @@ $data = [
 <script type="application/json" id="songprepData"><?= json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?></script>
 <script src="<?= h(App::asset('assets/prep-core.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/master-core.js')) ?>" defer></script>
-<script src="<?= h(App::asset('assets/prep.js')) ?>" data-kbps="<?= (int) $prepKbps ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js', 'assets/master-core.js'])) ?>" defer></script>
+<script src="<?= h(App::asset('assets/prep.js')) ?>" data-kbps="<?= $prepQuality['kbps'] ?>" data-rate="<?= $prepQuality['rate'] ?>" data-precision="<?= $prepQuality['precision'] ?>" data-dither="<?= $prepQuality['dither'] ? 1 : 0 ?>" data-quality="<?= $prepQuality['q'] ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js', 'assets/master-core.js', 'assets/vendor/lame-3.100.js'])) ?>" defer></script>
 <script src="<?= h(App::asset('assets/songprep.js')) ?>" defer></script>

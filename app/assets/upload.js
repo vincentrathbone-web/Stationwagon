@@ -67,7 +67,7 @@
 
   const row = (name) => {
     const li = document.createElement("li");
-    li.innerHTML = '<span class="n"></span><span class="s">Waiting</span><i class="bar"><i></i></i>';
+    li.innerHTML = '<span class="n"></span><span class="s">Waiting</span><span class="w" hidden></span><i class="bar"><i></i></i>';
     li.querySelector(".n").textContent = name;
     list.appendChild(li);
     return li;
@@ -75,10 +75,14 @@
 
   const db = (v) => (v > 0 ? "+" : "") + v.toFixed(1).replace("-", "−") + " dB";
   const lufs = (v) => v.toFixed(1).replace("-", "−") + " LUFS";
-  const describe = (p) => p.prepared
+  const khz = (r) => String(r / 1000).replace(/.0+$/, "") + " kHz";
+  const describe = (p) => p.kept
+    ? "kept as uploaded (nothing to change: no mastering, no levelling, " + khz(p.info.quality.rate) + "), measured at " + lufs(p.info.lufs)
+    : p.prepared
     ? (p.info.mastered ? "mastered, " : "") +
       (p.info.levelled ? "levelled " + lufs(p.info.lufs_before) + " → " + lufs(p.info.lufs) + " (" + db(p.info.gain_db) + ")" : "kept at " + lufs(p.info.lufs)) +
-      (p.info.trimmed_start_s + p.info.trimmed_end_s >= 0.1 ? ", " + (p.info.trimmed_start_s + p.info.trimmed_end_s).toFixed(1) + " s of silence trimmed" : "")
+      (p.info.trimmed_start_s + p.info.trimmed_end_s >= 0.1 ? ", " + (p.info.trimmed_start_s + p.info.trimmed_end_s).toFixed(1) + " s of silence trimmed" : "") +
+      (p.info.quality ? ", " + p.info.quality.kbps + " kbps at " + khz(p.info.quality.rate) : "")
     : "as it is: " + p.note;
 
   const send = (p, name, li) => new Promise((done) => {
@@ -131,8 +135,11 @@
       let p = { file: files[i], prepared: false, note: "song prep didn’t load" };
       if (window.SwPrep) {
         try {
+          // a sample-rate conversion the station makes is said before the work starts, and stays on the row
+          const warn = li.querySelector(".w");
           p = await window.SwPrep.prepare(files[i], (stage) => { status.textContent = stage; },
-            { master: !master || master.checked ? preset : false, level: !level || level.checked, target: Number(form.dataset.target) });
+            { master: !master || master.checked ? preset : false, level: !level || level.checked, target: Number(form.dataset.target),
+              onNotice: (text) => { warn.textContent = text; warn.hidden = false; } });
         } catch (ex) {
           p = { file: files[i], prepared: false, note: "prep failed: " + ex.message };
         }

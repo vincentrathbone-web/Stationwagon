@@ -369,6 +369,41 @@ HT);
         return null;
     }
 
+    /**
+     * Whether a song's file was made by song prep before round 51 (lamejs, whose level came out 0.26 to
+     * 0.45 dB under the target): it has no "STATIONWAGON_PREP" tag naming LAME 3.100. Songs that were
+     * never prepared are not "old" here. Files are named by their content, so each answer is kept in
+     * storage/cache/prep-encoder.json and the tag is read once per file.
+     */
+    public function madeWithOldEncoder(array $track): bool
+    {
+        $file = basename((string) $track['file']);
+        $cacheFile = $this->root . '/storage/cache/prep-encoder.json';
+        if ($this->encoderCache === null) {
+            $this->encoderCache = is_file($cacheFile) ? (json_decode((string) file_get_contents($cacheFile), true) ?: []) : [];
+        }
+        if (!array_key_exists($file, $this->encoderCache)) {
+            $old = false;
+            $fh = @fopen($this->root . '/storage/media/' . $file, 'rb');
+            if ($fh) {
+                $head = (string) fread($fh, 10);
+                if (strlen($head) === 10 && str_starts_with($head, 'ID3')) {
+                    $size = ((ord($head[6]) & 0x7f) << 21) | ((ord($head[7]) & 0x7f) << 14) | ((ord($head[8]) & 0x7f) << 7) | (ord($head[9]) & 0x7f);
+                    $tag = (string) fread($fh, min($size, 16 * 1024 * 1024));
+                    // prepared (it carries song prep's own tags) but not by LAME 3.100
+                    $old = str_contains($tag, 'STATIONWAGON_SOURCE_LUFS') && !preg_match('/STATIONWAGON_PREP\x00+LAME 3\.100/', $tag);
+                }
+                fclose($fh);
+            }
+            $this->encoderCache[$file] = $old;
+            @file_put_contents($cacheFile, json_encode($this->encoderCache), LOCK_EX);
+        }
+        return (bool) $this->encoderCache[$file];
+    }
+
+    /** @var array<string,bool>|null which files were made before round 51 (see madeWithOldEncoder) */
+    private ?array $encoderCache = null;
+
     /** The file a song was made from, when the station has it, or null. */
     public function original(array $track): ?string
     {

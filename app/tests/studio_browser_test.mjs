@@ -35,7 +35,7 @@ const exe = ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:
   .find((b) => { try { readFileSync(b, { flag: "r" }); return true; } catch { return false; } });
 const profile = mkdtempSync(join(tmpdir(), "sw-studio-profile-"));
 const port = 9300 + Math.floor(Math.random() * 500);
-const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run",
+const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--disable-sync", "--disable-extensions",
   "--autoplay-policy=no-user-gesture-required", "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "about:blank"], { stdio: "ignore" });
 let ws, id = 0;
 const dialogs = [];

@@ -58,7 +58,7 @@ const originals = join(here, "..", "storage", "originals");
 const exe = ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:/Program Files/Google/Chrome/Application/chrome.exe"].find((b) => existsSync(b));
 const profile = mkdtempSync(join(tmpdir(), "sw-songprep-profile-"));
 const port = 9300 + Math.floor(Math.random() * 500);
-const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--mute-audio",
+const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--disable-sync", "--disable-extensions", "--mute-audio",
   "--autoplay-policy=no-user-gesture-required", "--window-size=1280,1800", "about:blank"], { stdio: "ignore" });
 let ws, id = 0;
 const pending = new Map(), errors = [];

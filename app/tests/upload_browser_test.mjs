@@ -11,6 +11,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import vm from "node:vm";
+import { createRequire } from "node:module";
 
 const base = (process.argv[2] || "").replace(/\/$/, "");
 if (!base) { console.error("Usage: node app/tests/upload_browser_test.mjs <base url>"); process.exit(1); }
@@ -29,8 +30,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(readFileSync(join(here, "../assets/vendor/lame.min.js"), "utf8") + "\nthis.lamejs = lamejs;", sandbox);
-const RATE = 44100;
-function mp3(parts, title, kbps = 128) {
+const core = createRequire(import.meta.url)("../assets/prep-core.js");
+const media = join(here, "..", "storage", "media");
+function mp3(parts, title, kbps = 128, RATE = 44100) {
   const n = parts.reduce((s, [, sec]) => s + Math.round(sec * RATE), 0);
   const l = new Int16Array(n), r = new Int16Array(n);
   let i = 0;
@@ -50,10 +52,13 @@ const dir = mkdtempSync(join(tmpdir(), "sw-prep-browser-"));
 const songTitle = `Prep Browser Test ${tag}`;
 const silentTitle = `Prep Silent Test ${tag}`;
 const plainTitle = `Prep Plain Test ${tag}`;
+const oddTitle = `Prep 32 kHz Test ${tag}`;
 const song = join(dir, "prep song.mp3"), silent = join(dir, "silent.mp3"), fake = join(dir, "fake.mp3"), plain = join(dir, "plain.mp3");
 writeFileSync(song, mp3([[0, 2], [0.4, 20], [0, 1.5]], songTitle));   // about -8 LUFS, silence both ends
 writeFileSync(silent, mp3([[0, 6]], silentTitle));
 writeFileSync(plain, mp3([[0, 1], [0.1, 15], [0, 1]], plainTitle));   // about -21 LUFS
+const odd = join(dir, "odd rate.mp3");
+writeFileSync(odd, mp3([[0.3, 12]], oddTitle, 128, 32000));   // a 32 kHz song: goes to the station's 44.1 kHz (the default), and the uploader is told
 writeFileSync(fake, Buffer.from("not audio at all ".repeat(400)));
 const songSha1 = createHash("sha1").update(readFileSync(song)).digest("hex");
 
@@ -62,7 +67,7 @@ const exe = ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:
   .find((b) => { try { readFileSync(b, { flag: "r" }); return true; } catch { return false; } });
 const profile = mkdtempSync(join(tmpdir(), "sw-prep-profile-"));
 const port = 9300 + Math.floor(Math.random() * 500);
-const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "about:blank"], { stdio: "ignore" });
+const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--disable-sync", "--disable-extensions", "about:blank"], { stdio: "ignore" });
 let ws, id = 0;
 const pending = new Map();
 const call = (method, params = {}) => new Promise((ok) => { const i = ++id; pending.set(i, ok); ws.send(JSON.stringify({ id: i, method, params })); });
@@ -81,7 +86,7 @@ async function upload(files) {
   const input = await call("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: "#files" });
   await call("DOM.setFileInputFiles", { nodeId: input.result.nodeId, files });
   for (let i = 0; i < 600; i++) {
-    const rows = await evaluate(`[...document.querySelectorAll('#uplist li')].map((li) => ({ cls: li.className, text: li.querySelector('.s').textContent }))`).catch(() => null);
+    const rows = await evaluate(`[...document.querySelectorAll('#uplist li')].map((li) => ({ cls: li.className, text: li.querySelector('.s').textContent, warn: li.querySelector('.w') && !li.querySelector('.w').hidden ? li.querySelector('.w').textContent : '' }))`).catch(() => null);
     if (rows && rows.length === files.length && rows.every((r) => (r.cls === "ok" || r.cls === "bad") && !r.text.includes("keeping the original"))) {
       await sleep(1500); await loaded(); // the library reloads itself 0.9 s after an upload
       return rows;
@@ -115,6 +120,7 @@ try {
   check("the library shows both switches, on", sw[0] === true && sw[1] === true, JSON.stringify(sw));
   let rows = await upload([song]);
   check("the song is mastered, levelled and added", rows && rows[0].cls === "ok" && rows[0].text.startsWith("Added, mastered, levelled"), rows && rows[0].text);
+  check("  a 44.1 kHz song needs no conversion, so no warning", rows && rows[0].warn === "", rows && rows[0].warn);
   const t = helper("track", songTitle);
   check("it's marked as mastered", t && Number(t.mastered) === 1);
   check("  with the built-in preset, and the file the manager chose is kept as its original (round 40)", t && t.preset === "Audition chain" && rows[0].text.includes("original kept")
@@ -132,12 +138,20 @@ try {
       const a = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(buf);
       return SwPrepCore.loudness([a.getChannelData(0), a.getChannelData(1)], 44100);
     })()`);
-    check("the stored file really measures -16 LUFS", near(measured, -16, 0.3), measured && measured.toFixed(2));
+    check("the stored file really measures -16 LUFS (within 0.1: LAME's own gain cut is undone)", near(measured, -16, 0.1), measured && measured.toFixed(2));
   }
   await go(`${base}/manage/library`);
   check("the library shows it Mastered and Levelled", await evaluate(`(() => { const row = [...document.querySelectorAll('tbody tr')].find((tr) => tr.textContent.includes(${JSON.stringify(songTitle)})); return !!row && row.textContent.includes('Mastered') && row.textContent.includes('Levelled'); })()`));
   rows = await upload([song]);
   check("the same song again is caught as a duplicate", rows && rows[0].cls === "ok" && rows[0].text === "Already there", rows && rows[0].text);
+
+  console.log("A song at another sample rate (round 51)");
+  rows = await upload([odd]);
+  check("a 32 kHz song is prepared, and the uploader is warned it is converted to 44.1 kHz (the station's rate)", rows && rows[0].cls === "ok" && /32 kHz to 44\.1 kHz/.test(rows[0].warn) && rows[0].text.includes("at 44.1 kHz"),
+    rows && `${rows[0].warn} | ${rows[0].text}`);
+  const od = helper("track", oddTitle);
+  const oddRate = od && core.mp3Rate(new Uint8Array(readFileSync(join(media, od.file))));
+  check("  the stored song is a 44.1 kHz MP3 as long as the original", oddRate === 44100 && near(od.duration_s, 12, 0.1), od && `${oddRate} Hz, ${od.duration_s} s`);
 
   console.log("Both switches off");
   await go(`${base}/manage/library`);
@@ -148,10 +162,11 @@ try {
   await go(`${base}/manage/library`);
   check("  and they stay off on the next visit", JSON.stringify(await evaluate(`[document.getElementById('prepMaster').checked, document.getElementById('prepLevel').checked]`)) === "[false,false]");
   rows = await upload([plain]);
-  check("a song goes up kept at its own level", rows && rows[0].cls === "ok" && rows[0].text.startsWith("Added, kept at"), rows && rows[0].text);
+  // round 51: with nothing to change (no mastering, no levelling, its rate kept) the original goes up as it came
+  check("a song goes up kept as uploaded, measured", rows && rows[0].cls === "ok" && rows[0].text.startsWith("Added, kept as uploaded") && rows[0].text.includes("measured at"), rows && rows[0].text);
   const pl = helper("track", plainTitle);
   check("  not mastered and without a levelled loudness", pl && Number(pl.mastered) === 0 && pl.loudness_lufs === null, pl && JSON.stringify({ mastered: pl.mastered, lufs: pl.loudness_lufs }));
-  check("  but still trimmed (17 s → about 15.1 s)", pl && near(pl.duration_s, 15.1, 0.15), pl && `${pl.duration_s} s`);
+  check("  the very file that was chosen, not encoded again (17 s, its own fingerprint)", pl && near(pl.duration_s, 17.0, 0.1) && pl.file === pl.sha1 + ".mp3", pl && `${pl.duration_s} s, ${pl.file} / ${pl.sha1}`);
   if (pl) {
     const m = await evaluate(`(async () => {
       const buf = await (await fetch(${JSON.stringify(`${base}/storage/media/${pl.file}`)})).arrayBuffer();
@@ -171,7 +186,7 @@ try {
 } finally {
   if (prepBefore) helper("prep", prepBefore.master ? "1" : "0", prepBefore.level ? "1" : "0", String(prepBefore.target ?? -16));
   if (user) {
-    const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle);
+    const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle, oddTitle);
     console.log(`Cleanup: throwaway manager and test songs removed${r.hidden ? ` (${r.hidden} on air, hidden)` : ""}`);
   }
   try { ws && ws.close(); } catch { /* closed */ }

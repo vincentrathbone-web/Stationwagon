@@ -39,7 +39,7 @@ const exe = ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:
   .find((b) => { try { readFileSync(b, { flag: "r" }); return true; } catch { return false; } });
 const profile = mkdtempSync(join(tmpdir(), "sw-podcast-profile-"));
 const port = 9300 + Math.floor(Math.random() * 500);
-const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--window-size=1280,900", "about:blank"], { stdio: "ignore" });
+const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--disable-sync", "--disable-extensions", "--window-size=1280,900", "about:blank"], { stdio: "ignore" });
 let ws, id = 0;
 const pending = new Map();
 const call = (method, params = {}) => new Promise((ok) => { const i = ++id; pending.set(i, ok); ws.send(JSON.stringify({ id: i, method, params })); });

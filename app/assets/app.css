@@ -293,6 +293,9 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
 .uplist .s { color: var(--muted); }
 .uplist li.ok .s { color: var(--ok); }
 .uplist li.bad .s { color: var(--onair); }
+/* a sample-rate conversion the station makes (round 51): said before the work, kept on the row */
+.uplist .w { grid-column: 1 / -1; color: var(--warn); }
+.uplist .w::before { content: "⚠ "; }
 .uplist .bar { grid-column: 1 / -1; height: 4px; background: var(--well); border-radius: 2px; overflow: hidden; display: block; }
 .uplist .bar i { display: block; height: 100%; width: 0; background: var(--amber-soft); }
 .picklist { display: grid; gap: 4px; max-height: 340px; overflow-y: auto; margin-bottom: 14px; }

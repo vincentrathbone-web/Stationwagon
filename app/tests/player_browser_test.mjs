@@ -50,7 +50,7 @@ const exe = ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:
   .find((b) => { try { readFileSync(b, { flag: "r" }); return true; } catch { return false; } });
 const profile = mkdtempSync(join(tmpdir(), "sw-player-profile-"));
 const port = 9300 + Math.floor(Math.random() * 500);
-const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run",
+const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--disable-sync", "--disable-extensions",
   "--autoplay-policy=no-user-gesture-required",
   // keep the page counted as in front: a page the browser thinks is hidden draws nothing (the spectrum), and
   // Windows marks even a headless window hidden once the PC is idle (CalculateNativeWinOcclusion, below)
@@ -318,6 +318,7 @@ try {
       await new Promise((ok) => (img.complete && img.naturalWidth ? ok() : img.addEventListener('load', ok)));
       const first = { src: img.src, w: img.naturalWidth, count: count(), back: btn('Back').disabled, next: btn('Next').disabled, alt: img.alt };
       btn('Next').click();
+      await img.decode().catch(() => {}); // the second picture loaded (until then the browser still reports the first one's size)
       const second = { src: img.src, w: img.naturalWidth, count: count(), back: btn('Back').disabled, next: btn('Next').disabled };
       btn('Back').click();
       return { first, second, again: count(), title: box.parentElement.querySelector('.txt').textContent, kind: box.closest('li').querySelector('.kind').textContent };
@@ -368,7 +369,7 @@ try {
     s = await until((x) => x.stream && !x.stream.active, 5);
     check("  and the stream deck stops", !!s);
     const kept = await untilNotes((x) => x.show && !x.show.live, 10);
-    check("  the show's notes stay, no longer Live", !!kept && kept.shown.includes(nid2) && !kept.shown.includes(nid) && kept.fresh.length === 0, kept && kept.show.label);
+    check("  the show's notes stay, no longer Live", !!kept && kept.shown.includes(nid2) && !kept.shown.includes(nid) && kept.fresh.length === 0, kept ? `${kept.show.label}; shown ${kept.shown}, fresh ${kept.fresh}, want ${nid2} not ${nid}` : "");
   }
   if (failed) console.log("Player events:\n    " + ((await state()).events || []).join("\n    "));
   await evaluate("SwPlayer.stop()");

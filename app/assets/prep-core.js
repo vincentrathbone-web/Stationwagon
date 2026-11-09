@@ -126,6 +126,165 @@
     };
   }
 
+  // ---- Sound quality (round 51): the rate, resampling, precision and dither, LAME 3.100 -------------
+
+  /**
+   * The rate a song is prepared at. setting: 44100 or 48000, or 0 for the song's own rate; a song's
+   * own rate that is neither goes to its family (multiples of 11025 to 44.1 kHz, the rest to 48 kHz),
+   * so the ratio is as simple as it can be.
+   */
+  function targetRate(source, setting = 0) {
+    if (setting === 44100 || setting === 48000) return setting;
+    if (source === 44100 || source === 48000) return source;
+    return source % 11025 === 0 ? 44100 : 48000;
+  }
+
+  /**
+   * Why a song's rate changes, in words for the uploader, or "" when it doesn't.
+   * setting as for targetRate.
+   */
+  function rateNote(source, setting = 0) {
+    const to = targetRate(source, setting), k = (r) => String(r / 1000).replace(/\.0+$/, "") + " kHz";
+    if (to === source) return "";
+    return setting === to ? `converted from ${k(source)} to ${k(to)}, the station’s setting`
+      : `converted from ${k(source)} to ${k(to)}: the station plays songs at 44.1 or 48 kHz`;
+  }
+
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  function besselI0(x) { let s = 1, t = 1; for (let k = 1; k < 60; k++) { t *= (x / (2 * k)) * (x / (2 * k)); s += t; if (t < 1e-21 * s) break; } return s; }
+
+  /**
+   * The resampler's filter: a Kaiser-windowed sinc, flat to 20 kHz (or 90.7 % of the lower rate's
+   * half, whichever is lower), at least ATTEN dB down from the lower rate's half on, so nothing folds
+   * back. One row of taps per output phase; each row adds up to exactly 1. For from → to.
+   */
+  const ATTEN = 150;
+  function resampler(from, to) {
+    const g = gcd(from, to), L = to / g, M = from / g, low = Math.min(from, to);
+    const pass = Math.min(20000, 0.4535 * low), stop = low / 2, cut = (pass + stop) / 2 / from; // cut in cycles per input sample
+    const width = (stop - pass) / from, beta = 0.1102 * (ATTEN - 8.7);
+    const half = Math.ceil((ATTEN - 7.95) / (2.285 * 2 * Math.PI * width) / 2) + 1, taps = 2 * half, i0b = besselI0(beta);
+    const rows = [];
+    for (let p = 0; p < L; p++) {
+      const row = new Float64Array(taps), frac = p / L;
+      let sum = 0;
+      for (let j = 0; j < taps; j++) {
+        const t = frac + half - 1 - j; // the input sample's distance from the output point
+        const r = t / half;
+        const w = Math.abs(r) >= 1 ? 0 : besselI0(beta * Math.sqrt(1 - r * r)) / i0b;
+        const s = t === 0 ? 2 * cut : Math.sin(2 * Math.PI * cut * t) / (Math.PI * t);
+        row[j] = s * w; sum += row[j];
+      }
+      for (let j = 0; j < taps; j++) row[j] /= sum;
+      rows.push(row);
+    }
+    return { L, M, half, taps, rows, pass, stop };
+  }
+
+  /** Resample each channel from → to (Float32Array in, Float32Array out); the same channels when equal. */
+  function resample(channels, from, to, onProgress = null) {
+    if (from === to) return channels;
+    const f = resampler(from, to), n = channels[0].length, out = Math.ceil(n * f.L / f.M);
+    return channels.map((x, c) => {
+      const y = new Float32Array(out);
+      for (let i = 0; i < out; i++) {
+        const pos = i * f.M, base = Math.floor(pos / f.L), row = f.rows[pos - base * f.L], k0 = base - f.half + 1;
+        let s = 0;
+        const j0 = Math.max(0, -k0), j1 = Math.min(f.taps, n - k0);
+        for (let j = j0; j < j1; j++) s += row[j] * x[k0 + j];
+        y[i] = s;
+        if (onProgress && (i & 0xffff) === 0) onProgress((c + i / out) / channels.length);
+      }
+      return y;
+    });
+  }
+
+  /** A small fast random source (xorshift32), seeded so a song comes out the same every time. */
+  function rng(seed = 0x9e3779b9) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+
+  /**
+   * Round each channel to `bits` (16 or 24) in place, with TPDF dither (two uniform randoms, ±1 LSB)
+   * when asked; 32 leaves floats as they are. Clipped to the range a signed integer of that size holds.
+   */
+  function quantize(channels, bits, dither, random = rng()) {
+    if (bits >= 32) return channels;
+    const scale = Math.pow(2, bits - 1), hi = (scale - 1) / scale;
+    for (const x of channels) {
+      for (let i = 0; i < x.length; i++) {
+        let v = x[i] * scale;
+        if (dither) v += random() - random();
+        v = Math.round(v) / scale;
+        x[i] = v > hi ? hi : v < -1 ? -1 : v;
+      }
+    }
+    return channels;
+  }
+
+  /** The final 16-bit samples for the encoder (Int16Array per channel), dithered when asked. */
+  function toInt16(channels, dither, random = rng(0x2545f491)) {
+    return channels.map((x) => {
+      const y = new Int16Array(x.length);
+      for (let i = 0; i < x.length; i++) {
+        let v = x[i] * 32768;
+        if (dither) v += random() - random();
+        v = Math.round(v);
+        y[i] = v > 32767 ? 32767 : v < -32768 ? -32768 : v;
+      }
+      return y;
+    });
+  }
+
+  /**
+   * Encode 16-bit stereo as CBR MP3 with LAME 3.100 (the WebAssembly build, `lame` from SwLame()).
+   * quality: LAME's -q, 0 (best, slowest) to 9 (fastest). The bit reservoir is on, as in the lame
+   * command line (reservoir false turns it off). Returns { chunks: Uint8Array[], lowpass, delay, quality }.
+   */
+  function encodeLame(lame, pcm, rate, kbps = P.KBPS, quality = 0, onProgress = null, reservoir = true) {
+    const h = lame._sw_open(rate, 2, kbps, quality, reservoir ? 1 : 0);
+    if (!h) throw new Error("LAME refused these settings (" + rate + " Hz, " + kbps + " kbps)");
+    // LAME quietly picks another rate or bit rate when it can't do the one asked for: refuse that instead
+    if (lame._sw_get(h, 3) !== rate || lame._sw_get(h, 4) !== kbps) {
+      const got = lame._sw_get(h, 3) + " Hz, " + lame._sw_get(h, 4) + " kbps";
+      lame._sw_close(h);
+      throw new Error("LAME refused these settings (" + rate + " Hz, " + kbps + " kbps; it offered " + got + ")");
+    }
+    const n = pcm[0].length, chunk = 1152 * 32, outSize = Math.ceil(1.25 * chunk + 7200);
+    const pl = lame._malloc(chunk * 2), pr = lame._malloc(chunk * 2), po = lame._malloc(outSize), out = [];
+    try {
+      for (let s = 0; s < n; s += chunk) {
+        const m = Math.min(chunk, n - s);
+        lame.HEAP16.set(pcm[0].subarray(s, s + m), pl >> 1);
+        lame.HEAP16.set(pcm[1].subarray(s, s + m), pr >> 1);
+        const k = lame._sw_encode(h, pl, pr, m, po, outSize);
+        if (k < 0) throw new Error("LAME stopped (" + k + ")");
+        if (k) out.push(lame.HEAPU8.slice(po, po + k));
+        if (onProgress && (s / chunk) % 8 === 0) onProgress(s / n);
+      }
+      const k = lame._sw_flush(h, po, outSize);
+      if (k > 0) out.push(lame.HEAPU8.slice(po, po + k));
+      if (onProgress) onProgress(1);
+      return { chunks: out, lowpass: lame._sw_get(h, 2), delay: lame._sw_get(h, 5), quality: lame._sw_get(h, 0) };
+    } finally {
+      lame._sw_close(h); lame._free(pl); lame._free(pr); lame._free(po);
+    }
+  }
+
+  /** The sample rate of an MP3 from its first frame (after any ID3v2 tag), or null. */
+  function mp3Rate(bytes) {
+    let i = 0;
+    if (bytes.length >= 10 && bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+      i = 10 + (((bytes[6] & 0x7f) << 21) | ((bytes[7] & 0x7f) << 14) | ((bytes[8] & 0x7f) << 7) | (bytes[9] & 0x7f)) + (bytes[5] & 0x10 ? 10 : 0);
+    }
+    const RATES = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
+    for (const end = Math.min(bytes.length - 4, i + 65536); i < end; i++) {
+      if (bytes[i] !== 0xff || (bytes[i + 1] & 0xe0) !== 0xe0) continue;
+      const v = (bytes[i + 1] >> 3) & 3, layer = (bytes[i + 1] >> 1) & 3, bi = bytes[i + 2] >> 4, ri = (bytes[i + 2] >> 2) & 3;
+      if (v === 1 || layer === 0 || bi === 0 || bi === 15 || ri === 3) continue;
+      return RATES[v][ri];
+    }
+    return null;
+  }
+
   /** Encode stereo floats as CBR MP3 with lamejs. Returns a list of Uint8Array chunks. */
   function encode(lamejs, channels, rate, kbps = P.KBPS, onProgress = null) {
     const enc = new lamejs.Mp3Encoder(2, rate, kbps);
@@ -169,6 +328,10 @@
     const own = [["STATIONWAGON_SOURCE_LUFS", info.lufs_before.toFixed(2) + " LUFS"]];
     if (info.levelled) own.push(["STATIONWAGON_LEVEL_GAIN", (info.gain_db >= 0 ? "+" : "") + info.gain_db.toFixed(2) + " dB"],
       ["STATIONWAGON_LEVEL_TARGET", Number(info.target).toFixed(1) + " LUFS"]);
+    // how it was made (round 51): "LAME 3.100 q0, 160 kbps CBR, 48000 Hz from 44100 Hz, 32-bit float, TPDF dither"
+    const q = info.quality;
+    if (q && q.encoder) own.push(["STATIONWAGON_PREP", `${q.encoder} q${q.q}, ${q.kbps} kbps CBR, ${q.rate} Hz` +
+      (q.source_rate !== q.rate ? ` from ${q.source_rate} Hz` : "") + `, ${q.precision === 32 ? "32-bit float" : q.precision + "-bit"}, ${q.dither ? "TPDF dither" : "no dither"}`]);
     const safe = (n) => [(n >>> 21) & 0x7f, (n >>> 14) & 0x7f, (n >>> 7) & 0x7f, n & 0x7f];
     const unsafe = (b, i) => ((b[i] & 0x7f) << 21) | ((b[i + 1] & 0x7f) << 14) | ((b[i + 2] & 0x7f) << 7) | (b[i + 3] & 0x7f);
     const ascii = (t) => Array.from(t, (c) => c.charCodeAt(0) & 0x7f);
@@ -207,7 +370,8 @@
 
   function round(v, d) { const f = Math.pow(10, d); return Math.round(v * f) / f; }
 
-  const api = { P, kFilters, loudness, outro, peakDb, soundSpan, prepare, encode, tags, levelTags };
+  const api = { P, kFilters, loudness, outro, peakDb, soundSpan, prepare, encode, tags, levelTags,
+    targetRate, rateNote, resampler, resample, rng, quantize, toInt16, encodeLame, mp3Rate };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.SwPrepCore = api;
 })(typeof self !== "undefined" ? self : this);

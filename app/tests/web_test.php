@@ -704,10 +704,11 @@ try {
         // Sound & safety (the station's own values are put back in the cleanup)
         $origSettings = $db->run('SELECT settings FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetchColumn();
         $r = $m->go('manage/sound');
-        check('Sound & safety opens with seven sliders and four choices', $r['status'] === 200 && substr_count($r['body'], 'type="range"') === 7 && substr_count($r['body'], '<select id="f-') === 4, (string) $r['status']);
+        check('Sound & safety opens with eight sliders and seven choices', $r['status'] === 200 && substr_count($r['body'], 'type="range"') === 8 && substr_count($r['body'], '<select id="f-') === 7, (string) $r['status']);
         check('with the fade shape preview, the MB an hour and the listener delay', str_contains($r['body'], 'id="fadeCurve"') && str_contains($r['body'], 'fades.js') && str_contains($r['body'], '192 kbps · 86 MB an hour') && preg_match('/About \d+ s/', $r['body']) === 1);
         $values = ['csrf' => $csrf, 'crossfade_seconds' => '5', 'fade_shape' => 's_curve', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '4', 'duck_db' => '-10',
-            'live_timeout_seconds' => '10', 'rejoin_minutes' => '5', 'silence_db' => '-50', 'recent_tracks' => '3', 'live_kbps' => '160', 'prep_kbps' => '256'];
+            'live_timeout_seconds' => '10', 'rejoin_minutes' => '5', 'silence_db' => '-50', 'recent_tracks' => '3', 'live_kbps' => '160', 'prep_kbps' => '256',
+            'prep_rate' => '44100', 'prep_precision' => '32', 'prep_dither' => '1', 'prep_quality' => '9'];
         $r = $m->go('manage/sound', ['fade_shape' => 'wobbly'] + $values);
         check('a fade shape not on the list is refused', $flashed($after($m, $r), 'Fade shape: choose one of the options.'));
         $r = $m->go('manage/sound', ['crossfade_seconds' => '99'] + $values);

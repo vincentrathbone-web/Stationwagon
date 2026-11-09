@@ -18,6 +18,8 @@ final class StationSettings
     public const TARGET_MAX = -8.0;
     public const TARGET_DEFAULT = -16.0;
     private const QUALITY = [96 => '96 kbps', 128 => '128 kbps', 160 => '160 kbps', 192 => '192 kbps', 256 => '256 kbps'];
+    // prepared songs (round 51): up to 320 kbps, MP3's most
+    private const PREP_QUALITY = [96 => '96 kbps', 128 => '128 kbps', 160 => '160 kbps', 192 => '192 kbps', 224 => '224 kbps', 256 => '256 kbps', 320 => '320 kbps'];
 
     public const FIELDS = [
         'crossfade_seconds' => ['group' => 'Transitions', 'label' => 'Crossfade between songs', 'help' => 'Both songs overlap for this long.', 'min' => 0, 'max' => 12, 'step' => 1, 'unit' => 's'],
@@ -32,7 +34,15 @@ final class StationSettings
             'choices' => [0 => 'Off: play every song to its end', -50 => 'Below −50 dB: only near-silence', -40 => 'Below −40 dB: fade-outs and silence', -30 => 'Below −30 dB: quiet endings too']],
         'recent_tracks' => ['group' => 'Songs', 'label' => 'Songs not to repeat', 'help' => 'Shuffle never picks one of the last this many songs.', 'min' => 0, 'max' => 20, 'step' => 1, 'unit' => 'songs'],
         'live_kbps' => ['group' => 'Sound quality', 'label' => 'Live shows', 'help' => 'The studio sends live shows at this quality.', 'choices' => self::QUALITY],
-        'prep_kbps' => ['group' => 'Sound quality', 'label' => 'Prepared songs', 'help' => 'Songs are saved at this quality when they’re prepared on upload. Songs already in the library keep theirs.', 'choices' => self::QUALITY],
+        'prep_kbps' => ['group' => 'Sound quality', 'label' => 'Prepared songs', 'help' => 'Songs are saved at this quality when they’re prepared on upload. Songs already in the library keep theirs.', 'choices' => self::PREP_QUALITY],
+        // round 51: how songs are prepared. They apply to songs prepared from now on (uploads, Song prep's Apply, re-levelling).
+        'prep_rate' => ['group' => 'Sound quality', 'label' => 'Sample rate of prepared songs', 'help' => 'One rate for every song plays smoothly in every browser; a song at another rate is converted once, with no audible loss, and the uploader is told. Keeping each song’s own rate means no conversion for 44.1 and 48 kHz songs (others go to the nearer of the two: 88.2 and 22.05 kHz to 44.1, 96 and 32 kHz to 48), but in Firefox the website player and the stream-only page go quiet for about 5 s where the rate changes.',
+            'choices' => [44100 => '44.1 kHz for every song', 48000 => '48 kHz for every song', 0 => 'The song’s own rate (44.1 or 48 kHz)']],
+        'prep_precision' => ['group' => 'Sound quality', 'label' => 'Processing precision', 'help' => 'The size of the samples between the steps of song prep (resampling, mastering, levelling). The finished song is always 16-bit.',
+            'choices' => [32 => '32-bit float: no rounding until the end', 24 => '24-bit: rounded after each step', 16 => '16-bit: rounded after each step']],
+        'prep_dither' => ['group' => 'Sound quality', 'label' => 'Dither', 'help' => 'Whenever samples are rounded (always at the end, to 16-bit), a tiny noise (TPDF) turns the rounding error into a steady hiss far below hearing instead of distortion on quiet passages.',
+            'choices' => [1 => 'On: TPDF dither when rounding', 0 => 'Off: plain rounding']],
+        'prep_quality' => ['group' => 'Sound quality', 'label' => 'Encoding quality', 'help' => 'How hard LAME 3.100 works on each song: 0 is the fastest, 9 the best and slowest (LAME’s -q 9 to 0). The size of the song stays the same.', 'min' => 0, 'max' => 9, 'step' => 1, 'unit' => ''],
     ];
 
     public function __construct(private readonly Db $db, private readonly array $station)
@@ -42,7 +52,13 @@ final class StationSettings
     /** @return array<string,float|int|string> the current value of every field */
     public function values(): array
     {
-        $all = Planner::settings($this->station);
+        return self::valuesOf($this->station);
+    }
+
+    /** @return array<string,float|int|string> */
+    private static function valuesOf(array $station): array
+    {
+        $all = Planner::settings($station);
         $out = [];
         foreach (self::FIELDS as $key => $f) {
             $out[$key] = isset($f['choices']) ? self::choice($all[$key], $f['choices']) : self::number($all[$key], $f['step']);
@@ -103,6 +119,18 @@ final class StationSettings
         $json = json_encode($own, JSON_UNESCAPED_SLASHES);
         $this->db->run('UPDATE ' . $this->db->table('stations') . ' SET settings = ? WHERE id = ?', [$json, $this->station['id']]);
         return [['settings' => $json] + $this->station, []];
+    }
+
+    /**
+     * How songs are prepared (round 51), for prep.js's data attributes: kbps, rate (0 = the song's own),
+     * precision (bits), dither (bool) and LAME's -q (0 best .. 9 fastest; the setting runs the other way).
+     * @return array{kbps:int,rate:int,precision:int,dither:bool,q:int}
+     */
+    public static function prepQuality(array $station): array
+    {
+        $v = self::valuesOf($station);
+        return ['kbps' => (int) $v['prep_kbps'], 'rate' => (int) $v['prep_rate'], 'precision' => (int) $v['prep_precision'],
+            'dither' => (int) $v['prep_dither'] === 1, 'q' => 9 - (int) $v['prep_quality']];
     }
 
     /** Song prep's two switches on the Music library page: [master, level]. */

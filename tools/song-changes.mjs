@@ -55,7 +55,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const exe = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 const profile = mkdtempSync(join(tmpdir(), "sw-changes-"));
 const port = 9500 + Math.floor(Math.random() * 90);
-const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--mute-audio", "about:blank"], { stdio: "ignore" });
+const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--disable-sync", "--disable-extensions", "--mute-audio", "about:blank"], { stdio: "ignore" });
 const endEdge = () => spawnSync("powershell", ["-NoProfile", "-Command", `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | Where-Object { $_.CommandLine -like '*${profile}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`], { stdio: "ignore" });
 for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { console.error("stopped: closing the browser"); endEdge(); process.exit(1); }); // a long run stopped early
 let ws = null, id = 0;

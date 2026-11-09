@@ -61,7 +61,7 @@ const levelTag = (file) => {
 const exe = ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:/Program Files/Google/Chrome/Application/chrome.exe"].find((b) => existsSync(b));
 const profile = mkdtempSync(join(tmpdir(), "sw-loud-profile-"));
 const port = 9300 + Math.floor(Math.random() * 500);
-const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--mute-audio",
+const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--disable-sync", "--disable-extensions", "--mute-audio",
   "--window-size=1280,1600", "about:blank"], { stdio: "ignore" });
 let ws, id = 0;
 const pending = new Map(), errors = [];
@@ -112,6 +112,7 @@ async function relevel() {
 
 let user = null, prepBefore = null;
 try {
+  helper("cleanup-like", "Loudness Test %", "Loudness Mastered %"); // songs a killed run left: re-levelling would wait for one on air
   prepBefore = helper("prep");
   helper("prep", "0", "1", "-16");
   for (let i = 0; i < 50; i++) { await sleep(200); try { await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; } catch { /* starting */ } }
@@ -155,11 +156,14 @@ try {
   await evaluate("document.getElementById('relevelSkip').click()");
   s = await rl();
   check("Only new uploads: it leaves the songs, and a quiet line stays", !s.ask && s.later && (await evaluate("document.querySelector('#relevelLater span').textContent")).includes("another loudness than −14.0"));
+  // a key step is saved a moment after it lands: wait for the station to have it (up to 10 s), not a fixed time
+  const savedAs = async (v) => { const t0 = Date.now(); while (Date.now() - t0 < 10000) { if (helper("prep").target === v) return Date.now() - t0; await sleep(150); } return null; };
   await slide(-14.5, false);
-  await sleep(1200);
-  check("the keys step past a mark by half a dB (no snap)", (await evaluate("document.getElementById('prepTarget').value")) === "-14.5" && helper("prep").target === -14.5);
+  let ms = await savedAs(-14.5);
+  check("the keys step past a mark by half a dB (no snap)", (await evaluate("document.getElementById('prepTarget').value")) === "-14.5" && ms !== null, ms === null ? "not saved in 10 s" : `saved in ${ms} ms`);
   await slide(-14, false);
-  await sleep(1200);
+  ms = await savedAs(-14);
+  check("  and back to the mark, saved", ms !== null, ms === null ? `not saved in 10 s (the station has ${helper("prep").target})` : `saved in ${ms} ms`);
   await go(`${base}/manage/library`);
   s = await rl();
   check("after a reload the quiet line is still there", s.later && !s.ask && s.target === -14);
@@ -194,6 +198,24 @@ try {
   tB = helper("track", titleB);
   check("  at the new target, still mastered the same way", Number(tB.level_target) === -12 && Math.abs(Number(tB.loudness_lufs) + 12) < 0.15 && Number(tB.mastered) === 1 && tB.preset_settings === "{}"
     && Math.abs(Number(tB.source_lufs) - Number(beforeB.source_lufs)) < 0.05, `${tB.loudness_lufs} LUFS, source ${beforeB.source_lufs} → ${tB.source_lufs}`);
+
+  console.log("A song made before round 51 (the old encoder, about 0.3 dB under the target)");
+  const made = helper("make-old", titleB);
+  await go(`${base}/manage/library`);
+  s = await rl();
+  const oldItem = s && s.songs.find((x) => x.title === titleB);
+  check("it is offered on a quiet line, as made with the old encoder", !!made.file && !!oldItem && oldItem.old === true && s.later && !s.ask
+    && (await evaluate("document.querySelector('#relevelLater span').textContent")).includes("old encoder"), JSON.stringify({ made, oldItem }));
+  await evaluate("document.getElementById('relevelOpen').click()");
+  const why = await evaluate("document.getElementById('relevelText').textContent");
+  check("  Re-level says why", why.includes("old encoder") && why.includes("0.3 dB") && !why.includes("levelled to −12.0 LUFS; the station"), why);
+  await relevel();
+  tB = helper("track", titleB);
+  tg = levelTag(tB.file);
+  check("  re-levelling makes it again with LAME 3.100 at the target", tB.file !== made.file && /^LAME 3\.100/.test(tg.PREP || "") && Math.abs(Number(tB.loudness_lufs) + 12) < 0.15 && Number(tB.mastered) === 1,
+    `${tB.loudness_lufs} LUFS, ${tg.PREP}`);
+  s = await rl();
+  check("  and then nothing is offered", !s.ask && !s.later && !s.songs.length, JSON.stringify(s.songs));
 
   console.log("Elsewhere");
   await go(`${base}/manage/songprep?song=${tB.id}`);

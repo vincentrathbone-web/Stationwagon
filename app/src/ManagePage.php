@@ -139,7 +139,7 @@ final class ManagePage
             'confirm' => (int) ($_GET['confirm'] ?? 0),
             'edit' => (int) ($_GET['edit'] ?? 0),
             'maxUpload' => self::maxUploadBytes(),
-            'prepKbps' => (int) $this->planner->setting('prep_kbps'),
+            'prepQuality' => StationSettings::prepQuality($this->station),
             'prep' => StationSettings::prep($this->station),
             'preset' => (new PrepPresets($this->db, $this->station))->forImport(),
             'relevel' => $this->relevelList($library),
@@ -151,7 +151,9 @@ final class ManagePage
      * what its re-level needs: whether the station has its original, and the mastering to make it
      * with again (master: false, or the settings, {} being the built-in chain). A song made before
      * its settings were kept uses its preset by name, or is only levelled when that preset is gone.
-     * @return list<array{id:int,title:string,target:float,original:bool,master:mixed,preset:?string}>
+     * Also the songs levelled to the target by song prep before round 51 (old: true), whose encoder left
+     * them 0.26 to 0.45 dB under it; re-levelling makes them again with LAME 3.100.
+     * @return list<array{id:int,title:string,target:float,original:bool,master:mixed,preset:?string,old:bool}>
      */
     private function relevelList(Library $library): array
     {
@@ -165,7 +167,11 @@ final class ManagePage
         }
         $out = [];
         foreach ($library->tracks() as $t) {
-            if ($t['level_target'] === null || abs((float) $t['level_target'] - $target) < 0.05) {
+            if ($t['level_target'] === null) {
+                continue;
+            }
+            $old = abs((float) $t['level_target'] - $target) < 0.05;
+            if ($old && !$library->madeWithOldEncoder($t)) {
                 continue;
             }
             $master = false;
@@ -176,7 +182,7 @@ final class ManagePage
                     : (mb_strtolower($preset) === mb_strtolower(PrepPresets::BUILT_IN) ? (object) [] : (isset($byName[mb_strtolower($preset)]) ? (object) $byName[mb_strtolower($preset)] : false));
             }
             $out[] = ['id' => (int) $t['id'], 'title' => $t['title'], 'target' => (float) $t['level_target'],
-                'original' => $library->original($t) !== null, 'master' => $master, 'preset' => $master === false ? null : $preset];
+                'original' => $library->original($t) !== null, 'master' => $master, 'preset' => $master === false ? null : $preset, 'old' => $old];
         }
         return $out;
     }
@@ -238,7 +244,7 @@ final class ManagePage
             'tracks' => $tracks,
             'presets' => $presets->all(),
             'defaultId' => PrepPresets::defaultId($this->station),
-            'prepKbps' => (int) $this->planner->setting('prep_kbps'),
+            'prepQuality' => StationSettings::prepQuality($this->station),
             'prep' => StationSettings::prep($this->station),
             'song' => (int) ($_GET['song'] ?? 0),
         ], 'songprep');

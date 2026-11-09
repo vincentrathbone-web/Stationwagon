@@ -33,7 +33,7 @@ const exe = ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:
 const profile = mkdtempSync(join(tmpdir(), "sw-skin-profile-"));
 const port = 9300 + Math.floor(Math.random() * 500);
 // frames stay in the page's process, so the test can reach into the framed embed
-const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run",
+const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--disable-sync", "--disable-extensions",
   "--autoplay-policy=no-user-gesture-required", "--disable-site-isolation-trials", "--disable-features=IsolateOrigins,site-per-process,CalculateNativeWinOcclusion",
   "--window-size=1280,900", "about:blank"], { stdio: "ignore" });
 

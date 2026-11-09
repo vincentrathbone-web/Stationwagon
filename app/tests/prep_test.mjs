@@ -247,5 +247,74 @@ r = core.prepare(tone([[null, 1], [-20, 12], [null, 1]], R, { freq: 440 }), R, {
 check("loudness normalization off: the song keeps its level", r.info.gain_db === 0 && r.info.levelled === false && near(r.info.lufs, r.info.lufs_before, 0.001), `${r.info.lufs} LUFS`);
 check("  and is still trimmed", near(r.info.seconds, 12.1, 0.02), `${r.info.seconds} s`);
 
+console.log("Sound quality (round 51): the rate, resampling, rounding, LAME 3.100");
+const rates = [[44100, 0, 44100], [48000, 0, 48000], [32000, 0, 48000], [22050, 0, 44100], [88200, 0, 44100], [96000, 0, 48000], [8000, 0, 48000], [11025, 0, 44100],
+  [44100, 48000, 48000], [48000, 44100, 44100], [96000, 44100, 44100]];
+const wrongRate = rates.filter(([s, set, want]) => core.targetRate(s, set) !== want);
+check("the rate: 44.1 and 48 kHz kept, the rest to their family, or the station's setting", !wrongRate.length, wrongRate.map(([s, set]) => `${s}/${set} -> ${core.targetRate(s, set)}`).join(", "));
+check("  the uploader's note says what changes, and nothing when nothing does",
+  core.rateNote(44100, 0) === "" && core.rateNote(48000, 48000) === "" && /32 kHz to 48 kHz/.test(core.rateNote(32000, 0)) && /44\.1 kHz to 48 kHz.*setting/.test(core.rateNote(44100, 48000)),
+  `${core.rateNote(32000, 0)} | ${core.rateNote(44100, 48000)}`);
+{
+  const RS = 44100, x = tone([[-6, 2]], RS, { freq: 1000 });
+  const y = core.resample(x.map((c) => c.slice()), RS, 48000);
+  const n = y[0].length, mid = y[0].subarray(4800, n - 4800);
+  // the 1 kHz tone must stay 1 kHz at the new rate: count zero crossings over the middle
+  let zc = 0; for (let i = 1; i < mid.length; i++) if ((mid[i - 1] < 0) !== (mid[i] < 0)) zc++;
+  const hz = zc / 2 / (mid.length / 48000);
+  const lvl = 20 * Math.log10(Math.sqrt(mid.reduce((s, v) => s + v * v, 0) / mid.length) * Math.SQRT2);
+  check("resampling 44.1 -> 48 kHz: as long, the tone stays at 1 kHz and -6 dBFS", n === Math.round(x[0].length * 48000 / RS) && near(hz, 1000, 1) && near(lvl, -6, 0.01), `${n} samples, ${hz.toFixed(1)} Hz, ${lvl.toFixed(3)} dBFS`);
+  const hi = tone([[-6, 1]], 48000, { freq: 23000 });
+  const down = core.resample(hi, 48000, 44100)[0].subarray(4410, 44100 - 4410);
+  const left = 20 * Math.log10(Math.max(...down.map(Math.abs)) / 0.5);
+  check("  48 -> 44.1 kHz: a 23 kHz tone (above the new Nyquist) is filtered out, not folded back", left < -120, `${left.toFixed(1)} dB`);
+  const same = core.resample(x, RS, RS);
+  check("  the same rate is left alone", same === x || same[0] === x[0]);
+}
+{
+  const q = (bits, dither) => {
+    const x = tone([[-20, 2]], 44100, { freq: 441.3 }), ref = x.map((c) => c.slice());
+    core.quantize(x, bits, dither, core.rng(1));
+    let e = 0; for (let i = 0; i < x[0].length; i++) e += (x[0][i] - ref[0][i]) ** 2;
+    return 10 * Math.log10(e / x[0].length);
+  };
+  check("rounding to 16 bits with TPDF dither adds -96.3 dBFS of steady noise", near(q(16, true), -96.33, 0.3), q(16, true).toFixed(2) + " dBFS");
+  check("  without dither -101.1 dBFS", near(q(16, false), -101.1, 0.5), q(16, false).toFixed(2) + " dBFS");
+  check("  at 24 bits -144.5 dBFS; 32-bit float leaves the samples alone", near(q(24, true), -144.5, 0.5) && q(32, true) === -Infinity, q(24, true).toFixed(2) + " dBFS");
+  const loud = [Float32Array.of(1.5, -1.5, 0.5, 1 / 32768)];
+  const i16 = core.toInt16(loud, false)[0];
+  check("the final 16 bits are clipped at full scale, not wrapped", i16[0] === 32767 && i16[1] === -32768 && i16[2] === 16384 && i16[3] === 1, [...i16].join(", "));
+  const a = core.rng(5), b = core.rng(5);
+  check("  the dither's random numbers repeat for the same seed", a() === b() && a() === b());
+}
+{
+  const SwLame = createRequire(import.meta.url)("../assets/vendor/lame-3.100.js");
+  const lame = await SwLame();
+  check("LAME 3.100 (WebAssembly) loads in Node", lame.UTF8ToString(lame._sw_version()) === "3.100", lame.UTF8ToString(lame._sw_version()));
+  for (const LR of [44100, 48000]) {
+    const pcm = core.toInt16(tone([[-12, 5]], LR, { freq: 440 }), true);
+    const enc = core.encodeLame(lame, pcm, LR, 160, 0);
+    const bytes = Buffer.concat(enc.chunks.map((c) => Buffer.from(c)));
+    const want = 160000 / 8 * 5;
+    check(`  ${LR / 1000} kHz at 160 kbps CBR, -q 0: about 100 kB, its first frame says ${LR} Hz, lowpass 17.5 kHz, delay 576`,
+      Math.abs(bytes.length / want - 1) < 0.03 && core.mp3Rate(bytes) === LR && enc.lowpass === 17500 && enc.delay === 576 && enc.quality === 0,
+      `${bytes.length} bytes, ${core.mp3Rate(bytes)} Hz, lowpass ${enc.lowpass}, delay ${enc.delay}, q ${enc.quality}`);
+  }
+  const scales = [96, 128, 160, 192, 224, 256, 320].map((k) => { const h = lame._sw_open(44100, 2, k, 0, 1), s = lame._sw_get(h, 6); lame._sw_close(h); return [k, s]; });
+  check("  LAME's own gain cut for low bit rates (0.95 at 160 kbps) is undone: unity at every bit rate the station offers", scales.every(([, s]) => s === 10000),
+    scales.map(([k, s]) => `${k}: ${s / 10000}`).join(", "));
+  const fast = core.encodeLame(lame, core.toInt16(tone([[-12, 2]], 44100), true), 44100, 128, 9, null, false);
+  check("  -q 9 without the bit reservoir works too", fast.quality === 9 && fast.chunks.length > 0, `q ${fast.quality}`);
+  let refused = null;
+  try { core.encodeLame(lame, core.toInt16(tone([[-12, 1]], 44100), true), 44100, 7, 0); } catch (ex) { refused = ex.message; }
+  check("  a bit rate LAME can't do is refused with a reason", refused !== null && /refused|kbps/.test(refused), refused || "no error");
+  const head = core.levelTags(new Uint8Array(0), { lufs_before: -12, lufs: -16, gain_db: -4, peak_db: -1, target: -16, levelled: true, mastered: false,
+    quality: { encoder: "LAME 3.100", q: 0, kbps: 160, rate: 48000, source_rate: 44100, precision: 32, dither: true } });
+  const text = Buffer.from(head).toString("latin1");
+  check("the MP3's tag says how it was made", text.includes("STATIONWAGON_PREP") && text.includes("LAME 3.100 q0, 160 kbps CBR, 48000 Hz from 44100 Hz, 32-bit float, TPDF dither"),
+    (text.match(/LAME 3\.100[^\0]*/) || [""])[0]);
+  check("mp3Rate skips an ID3v2 tag and gives null for what isn't MP3", core.mp3Rate(new Uint8Array([...head, 0xff, 0xfb, 0x94, 0x00, 0, 0, 0, 0])) === 48000 && core.mp3Rate(new Uint8Array(100)) === null);
+}
+
 console.log(failed ? `\n${failed} of ${passed + failed} checks failed` : "\nAll checks passed");
 process.exit(failed ? 1 : 0);

@@ -253,7 +253,11 @@ final class Installer
             'live_fade_seconds' => 6.0, // the go-live fade; until 2026-10-20 it was the crossfade
             // v0.4 Sound & safety (round 25)
             'fade_shape' => 'equal_power', 'duck_db' => -12, 'rejoin_minutes' => 10, 'silence_db' => -40,
-            'live_kbps' => 192, 'prep_kbps' => 192,
+            'live_kbps' => 192, 'prep_kbps' => 160, // prepared songs at 160 kbps since round 51 (it was 192)
+            // round 51, how songs are prepared: every song at 44.1 kHz (one rate in the stream: Firefox's hls.js
+            // pages fall about 5 s behind, with a gap, at a 44.1/48 kHz change), 32-bit float between the steps,
+            // TPDF dither when rounding, LAME's best quality (the setting 9 is -q 0)
+            'prep_rate' => 44100, 'prep_precision' => 32, 'prep_dither' => 1, 'prep_quality' => 9,
             // song prep on upload (round 34): level to -16 LUFS; mastering like the station's Audition
             // chain is off unless chosen (round 39: it squeezed real music flat and pushed the treble)
             'prep_master' => 0, 'prep_level' => 1,

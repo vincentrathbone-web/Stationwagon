@@ -17,8 +17,13 @@
 
   const describe = () => {
     const ready = songs.filter((s) => s.original), stuck = songs.length - ready.length;
-    const from = [...new Set(songs.map((s) => fmt(s.target)))].join(" or ");
-    return { ready, text: plural(songs.length, "song was", "songs were") + " levelled to " + from + " LUFS; the station’s target is now " + fmt(target) + " LUFS." +
+    // old: levelled to the target before round 51, when the encoder left songs 0.26–0.45 dB under it
+    const moved = songs.filter((s) => !s.old), old = songs.length - moved.length;
+    const from = [...new Set(moved.map((s) => fmt(s.target)))].join(" or ");
+    const parts = [];
+    if (moved.length) parts.push(plural(moved.length, "song was", "songs were") + " levelled to " + from + " LUFS; the station’s target is now " + fmt(target) + " LUFS.");
+    if (old) parts.push(plural(old, "song was", "songs were") + " made with the old encoder, which left " + (old === 1 ? "it" : "them") + " about 0.3 dB under the target; re-levelling makes " + (old === 1 ? "it" : "them") + " again from the original at the exact level.");
+    return { ready, text: parts.join(" ") +
       (stuck ? " " + plural(stuck, "of them has", "of them have") + " no original, so it stays as it is until it’s uploaded again." : "") };
   };
   const show = (ask) => {
@@ -27,7 +32,9 @@
     box.hidden = !ask || !songs.length;
     later.hidden = ask || !songs.length;
     document.getElementById("relevelText").textContent = d.text;
-    later.querySelector("span").textContent = plural(songs.length, "song is", "songs are") + " levelled to another loudness than " + fmt(target) + " LUFS.";
+    later.querySelector("span").textContent = songs.some((s) => !s.old)
+      ? plural(songs.length, "song is", "songs are") + " levelled to another loudness than " + fmt(target) + " LUFS."
+      : plural(songs.length, "song was", "songs were") + " made with the old encoder, a little under " + fmt(target) + " LUFS.";
     go.disabled = !d.ready.length;
     go.textContent = d.ready.length ? "Re-level " + plural(d.ready.length, "song", "songs") + " now" : "Nothing to re-level";
   };

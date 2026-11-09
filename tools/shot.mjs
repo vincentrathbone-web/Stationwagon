@@ -28,7 +28,7 @@ mkdirSync(out, { recursive: true });
 
 const profile = mkdtempSync(join(tmpdir(), "sw-shot-"));
 const port = 9300 + Math.floor(Math.random() * 500);
-const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--hide-scrollbars", "about:blank"], { stdio: "ignore" });
+const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, "--no-first-run", "--disable-sync", "--disable-extensions", "--hide-scrollbars", "about:blank"], { stdio: "ignore" });
 
 let version = null;
 for (let i = 0; i < 50 && !version; i++) {

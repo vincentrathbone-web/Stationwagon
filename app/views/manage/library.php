@@ -1,5 +1,5 @@
 <?php use function Stationwagon\{h, duration, megabytes}; use Stationwagon\App;
-/** @var array $tracks @var string $q @var int $total @var int $bytes @var int $confirm @var int $edit @var int $maxUpload @var int $prepKbps @var array $prep @var array $preset @var array $relevel @var string $csrf */
+/** @var array $tracks @var string $q @var int $total @var int $bytes @var int $confirm @var int $edit @var int $maxUpload @var array $prepQuality @var array $prep @var array $preset @var array $relevel @var string $csrf */
 [$prepMaster, $prepLevel, $prepTarget] = $prep;
 $lufs = fn(float $v) => str_replace('-', '−', number_format($v, 1));
 // the usual loudness targets, marked on the slider (round 41)
@@ -99,7 +99,7 @@ $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 
   </table>
 </div>
 <script src="<?= h(App::asset('assets/prep-core.js')) ?>" defer></script>
-<script src="<?= h(App::asset('assets/prep.js')) ?>" data-kbps="<?= (int) $prepKbps ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js', 'assets/master-core.js'])) ?>" defer></script>
+<script src="<?= h(App::asset('assets/prep.js')) ?>" data-kbps="<?= $prepQuality['kbps'] ?>" data-rate="<?= $prepQuality['rate'] ?>" data-precision="<?= $prepQuality['precision'] ?>" data-dither="<?= $prepQuality['dither'] ? 1 : 0 ?>" data-quality="<?= $prepQuality['q'] ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js', 'assets/master-core.js', 'assets/vendor/lame-3.100.js'])) ?>" defer></script>
 <script src="<?= h(App::asset('assets/upload.js')) ?>" defer></script>
 <template id="libEditTpl">
   <tr class="editing"><td colspan="6">

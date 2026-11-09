@@ -5,9 +5,13 @@
 //   php browser_helper.php track <title>      -> the newest ready track with that title, or null
 //   php browser_helper.php presets [clear <name prefix> | default <id>]  -> {"presets", "default"}
 //   php browser_helper.php cleanup <user id> [<title> ...]
+//   php browser_helper.php make-old <title>  (its stored file made to look prepared before round 51: the LAME 3.100 tag renamed, a new file name) -> {file}
+//   php browser_helper.php cleanup-like <SQL LIKE pattern> ...   (songs a killed run left, e.g. "Loudness %"; one on air is hidden) -> {removed, hidden}
 //   php browser_helper.php lib-songs <n>    -> n throwaway songs "Web Test Lib NN" and one tagged with a cover and copyright: {"ids", "tagged"}
 //   php browser_helper.php lib-info <id>    -> the song's title, art file and rights
 //   php browser_helper.php lib-clean        (every "Web Test Lib" song, and their art)
+//   php browser_helper.php rate-fixture "<mp3>|<title>" ...  -> the songs imported, in order in a "[ww-test] Rate switch" playlist that a block plays from now: {ids, playlist, block, tracks}
+//   php browser_helper.php rate-fixture-clean                 (the block, the playlist and the "[ww-test] Rate" songs)
 //   php browser_helper.php live-start <title> -> {"public_id", "start"}
 //   php browser_helper.php live-piece <public id> <seq> <mp3 file> [<seconds> | auto]
 //   php browser_helper.php live-end <public id>
@@ -29,7 +33,7 @@
 //   php browser_helper.php podcast-min <seconds | default>          -> the shortest show made into an episode, before
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
-use Stationwagon\{Db, Library, Notes, Planner, Podcast, Schedule, Slides, StationSettings, Verse};
+use Stationwagon\{Db, Library, Notes, Planner, Playlists, Podcast, Schedule, Slides, StationSettings, Verse};
 
 const PHONE_DJ = 'stationwagon-phone-test@example.test';
 
@@ -49,6 +53,20 @@ if ($cmd === 'manager') {
     $row = $db->run('SELECT id, file, sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs, source_lufs, level_gain_db, level_target, mastered, preset, preset_settings, outro FROM ' . $db->table('tracks') .
         " WHERE station_id = ? AND title = ? AND status = 'ready' ORDER BY id DESC LIMIT 1", [$station['id'], $argv[2] ?? ''])->fetch();
     echo json_encode($row ?: null);
+} elseif ($cmd === 'make-old') {
+    $row = $db->run('SELECT id, file FROM ' . $db->table('tracks') . " WHERE station_id = ? AND title = ? AND status = 'ready' ORDER BY id DESC LIMIT 1", [$station['id'], $argv[2] ?? ''])->fetch();
+    $from = $row ? SW_ROOT . '/storage/media/' . $row['file'] : '';
+    $bytes = $row && is_file($from) ? (string) file_get_contents($from) : '';
+    $old = str_replace("STATIONWAGON_PREP\0LAME 3.100", "STATIONWAGON_PREP\0lamejs 1.2", $bytes); // same length: the tag's size holds
+    if ($bytes === '' || $old === $bytes) {
+        echo json_encode(['error' => 'no song with a LAME 3.100 tag']);
+    } else {
+        $name = sha1($old) . '.mp3';
+        file_put_contents(SW_ROOT . '/storage/media/' . $name, $old);
+        $db->run('UPDATE ' . $db->table('tracks') . ' SET file = ? WHERE id = ?', [$name, $row['id']]);
+        @unlink($from);
+        echo json_encode(['file' => $name]);
+    }
 } elseif ($cmd === 'presets') {
     // song prep's presets and the import default; with "clear <prefix>", first remove those named so
     // and set the default back (default <id>) when given
@@ -111,6 +129,43 @@ if ($cmd === 'manager') {
     array_map('unlink', glob("$dir/*.mp3") ?: []);
     @rmdir($dir);
     echo json_encode(['ids' => $ids, 'tagged' => $tagged]);
+} elseif ($cmd === 'rate-fixture') {
+    // round 51: songs at 44.1 and 48 kHz one after another. The MP3s (paths) are imported with the titles
+    // given, put in order in a "[ww-test] Rate switch" playlist, and an all-hour block plays it from now.
+    $files = array_slice($argv, 2);
+    $lib = new Library($db, $station, SW_ROOT);
+    $ids = [];
+    foreach ($files as $i => $spec) {
+        [$path, $title] = explode('|', $spec, 2);
+        $ids[] = $lib->import($path, $title, 'Rate Tester', basename($path))['id'];
+    }
+    $lists = new Playlists($db, $station);
+    [$pl] = $lists->create('[ww-test] Rate switch', 'in_order');
+    $lists->add((int) $pl, $ids);
+    $tz = new DateTimeZone($station['timezone'] ?: 'UTC');
+    $at = fn(int $plus) => (new DateTimeImmutable('now', $tz))->modify("+$plus minutes")->format('H:i');
+    [$block, $err] = (new Schedule($db, $station))->add(['title' => '[ww-test] Rate switch', 'kind' => 'playlist', 'playlist_id' => $pl, 'days' => [1, 2, 4, 8, 16, 32, 64],
+        'start' => $at(-2), 'end' => $at(58)]);
+    $planner->replan(microtime(true));
+    $tracks = $db->run('SELECT id, title, duration_s, file FROM ' . $db->table('tracks') . ' WHERE id IN (' . implode(',', array_map('intval', $ids)) . ')')->fetchAll();
+    echo json_encode(['ids' => $ids, 'playlist' => $pl, 'block' => $block, 'error' => $err, 'tracks' => $tracks]);
+} elseif ($cmd === 'rate-fixture-clean') {
+    $n = 0;
+    foreach ($db->run('SELECT id FROM ' . $db->table('schedule') . " WHERE station_id = ? AND title = '[ww-test] Rate switch'", [$station['id']])->fetchAll(PDO::FETCH_COLUMN) as $b) {
+        (new Schedule($db, $station))->delete((int) $b);
+    }
+    foreach ($db->run('SELECT id FROM ' . $db->table('playlists') . " WHERE station_id = ? AND name = '[ww-test] Rate switch'", [$station['id']])->fetchAll(PDO::FETCH_COLUMN) as $p) {
+        (new Playlists($db, $station))->delete((int) $p);
+    }
+    $lib = new Library($db, $station, SW_ROOT);
+    foreach ($db->run('SELECT id FROM ' . $db->table('tracks') . " WHERE station_id = ? AND (title LIKE '[ww-test] Rate %' OR title LIKE '[test] [ww-test] Rate %')", [$station['id']])->fetchAll(PDO::FETCH_COLUMN) as $id) {
+        if ($lib->delete((int) $id, $planner, microtime(true)) !== null) {
+            $db->run('UPDATE ' . $db->table('tracks') . " SET status = 'error', title = CONCAT('[test] ', title) WHERE id = ? AND title NOT LIKE '[test] %'", [$id]); // on air now: hidden, removed by the next run
+        }
+        $n++;
+    }
+    $planner->replan(microtime(true));
+    echo json_encode(['cleaned' => $n]);
 } elseif ($cmd === 'lib-info') {
     $r = (new Library($db, $station, SW_ROOT))->get((int) ($argv[2] ?? 0));
     echo json_encode($r ? ['title' => $r['title'], 'artist' => $r['artist'], 'album' => $r['album'], 'art' => $r['art'], 'rights' => $r['rights'] === null ? null : json_decode($r['rights'], true)] : null);
@@ -143,6 +198,19 @@ if ($cmd === 'manager') {
     }
     $planner->replan(microtime(true));
     echo json_encode(['hidden' => $hidden]);
+} elseif ($cmd === 'cleanup-like') {
+    $lib = new Library($db, $station, SW_ROOT);
+    $removed = $hidden = 0;
+    foreach (array_slice($argv, 2) as $like) {
+        foreach ($db->run('SELECT id FROM ' . $db->table('tracks') . " WHERE station_id = ? AND title LIKE ? AND title NOT LIKE '[test] %'", [$station['id'], $like])->fetchAll(PDO::FETCH_COLUMN) as $id) {
+            if ($lib->delete((int) $id, $planner, microtime(true)) === null) { $removed++; continue; }
+            // on air right now: hidden like 'cleanup' does; web_test.php's next run removes it
+            $db->run('UPDATE ' . $db->table('tracks') . " SET status = 'error', title = CONCAT('[test] Web Test Song ', title) WHERE id = ?", [$id]);
+            $hidden++;
+        }
+    }
+    $planner->replan(microtime(true));
+    echo json_encode(['removed' => $removed, 'hidden' => $hidden]);
 } elseif ($cmd === 'live-start') {
     $r = $planner->goLive(microtime(true), $argv[2] ?? 'Browser test show')['result'];
     echo json_encode(isset($r['live']) ? ['public_id' => $r['live']['public_id'], 'start' => $r['live']['start']] : ['error' => $r['error'] ?? 'no show']);

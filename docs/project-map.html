@@ -173,9 +173,9 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "3 Nov",
+  updated: "8 Nov",
   commits: 46,
-  version: "0.9.4-dev",
+  version: "0.9.5-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
     { v: "v0.4", name: "Player & studio", when: "done 22 Oct" },
@@ -234,6 +234,8 @@ const MAP = {
       { text: "Podcast episodes: edit, hide, feed", note: "two-track editor: zoom, cut clips, mix down, publish", v: "v0.4", state: "done" },
       { text: "Mastering in song prep, as your Audition chain", note: "Broadcast1 + Master1, matched by measuring; off by default since 30 Oct (it squeezed real music), levelling stays on", v: "v0.8", state: "done" },
       { text: "Song prep screen: mastering presets tried on a whole song", note: "EQ curve, simple and full dynamics, original/processed A/B, meters; presets, one for new uploads; Apply to a song from its kept original", v: "v0.8", state: "done" },
+      { text: "Best-quality song prep, with quality settings", note: "real LAME 3.100 at full level, 160 kbps; 44.1 kHz by default (48 kHz or each song's own as choices); precision, dither and an encoding-quality slider; the original kept when nothing changes; the uploader told about a forced conversion; measured against lossless music: 4–6 dB closer to the original than before", v: "v0.8", state: "done" },
+      { text: "Upload one song at a time, with a details window first", note: "like YouTube's: album art (when the MP3 has none), title, artist and licensing: songwriters, publisher, licence number or link, licence terms", v: "v0.8", state: "next" },
       { text: "Loudness target with a slider, and re-levelling the library", note: "−23 to −8 LUFS, the usual levels marked; each song's normalization kept with it and in its MP3 tag", v: "v0.8", state: "done" }
     ]},
     { name: "Streaming & hosting", blurb: "Runs on shared cPanel hosting with Cloudflare in front: PHP and Apache only.", features: [
@@ -278,13 +280,19 @@ const MAP = {
     ]}
   ],
   next: {
-    title: "The WordWave pilot (v0.8)",
-    text: "The website's player (the embed) no longer plays faster or slower to keep time, which made songs sound squeezed and skip; its clock no longer jumps with Cloudflare's cache. The station's loudness is yours to set: a slider in the Music library (−16 for Apple and podcasts, −14 for Spotify, −11 like FM radio, −9 very loud), and after a change it offers to re-level every song from its original, keeping each song's sound. Each song's normalization is kept with it, also in its MP3. Song prep tries mastering on a whole song, with presets. Radio WordWave runs at wordwave.co.za/radio. Next, the pilot station gets its music and runs beside AzuraCast.",
-    order: ["Try the station on your own devices", "Run it beside AzuraCast for a week", "Copy WordWave's library when its owner agrees", "Then launch (v1.0)"]
+    title: "The upload window with licensing (v0.8)",
+    text: "Song prep now makes songs at the best quality: real LAME, the quality settings in the app, the original kept when nothing changes, and tests against lossless music. Next in your goal of 8 Nov: uploads one song at a time, with a window for the art, title, artist and licensing before it goes up; then WAV, FLAC and AAC uploads. Not committed or on a server yet: the test server can't be reached from this PC.",
+    order: ["The upload window with licensing", "WAV, FLAC and AAC uploads", "Then the pilot steps: your devices, a week beside AzuraCast"]
   },
   call: null,
-  feedTitle: "Changed 20 Oct – 3 Nov",
+  feedTitle: "Changed 20 Oct – 8 Nov",
   feed: [
+    { what: "Your choices on song prep", to: "44.1 kHz the default rate (in Firefox the website player went quiet ~5 s at a 44.1/48 kHz change); older songs offered for re-levelling; untouched uploads stay untouched; tested on Laragon and now in Firefox too; the server waits", at: "9 Nov" },
+    { what: "Best-quality song prep", to: "real LAME 3.100 at full level, 160 kbps by default, each song's own rate or 44.1/48 kHz, precision, dither and a quality slider in Sound & safety; an untouched upload is kept as it came; uploaders told about a forced rate change", at: "8 Nov" },
+    { what: "Measured on lossless music", to: "EBU test recordings and a 24-bit techno track: a prepared song is now 4–6 dB closer to the original than with lamejs, within 0.3 dB of a single encode; songs at 44.1 and 48 kHz play one after another with no gap", at: "8 Nov", kind: "info" },
+    { what: "Quality choices made", to: "real LAME 3.100 in the browser; 160 kbps as the default setting; other sample rates to 44.1 or 48 kHz, whichever is nearest; tests on free lossless music", at: "8 Nov" },
+    { what: "Laragon rebuilt", to: "it had gone from this PC: Laragon 8.8.0 with the station, the test WordPress and test databases made again; every test passes there", at: "8 Nov", kind: "info" },
+    { what: "Sound quality reviewed", to: "one encode from the kept original today; lamejs fixed at quality 3 with its bit reservoir off; your goals written down as the next step", at: "8 Nov", kind: "info" },
     { what: "Listener app for Android", to: "built in WordWave's android-app/: live stream, schedule with native reminders, podcasts with the presenter's notes and slideshows, prayer requests, verse of the day, English and Afrikaans; one config file makes another station's app; tested on the phone, not released; chat is planned only", at: "3 Nov" },
     { what: "Slides in the studio", to: "a new note kind: up to 30 pictures with a caption; listeners page through them in the player and the app", at: "3 Nov" },
     { what: "Schedule, podcast and verse JSON", to: "api/schedule.php, api/podcast.php (an episode with its notes placed in the audio) and api/verse.php; database 15; the live station needs a deploy before the app can use them", at: "3 Nov", kind: "info" },
