@@ -474,8 +474,14 @@ try {
   // a tall frame (the website's Listen page; this test's whole window) shows the album art, the copyright line,
   // the spectrum and the output strip; the sound itself still plays from the element, not through Web Audio
   const parts = await evaluate("['emArt', 'emSpec', 'emWave'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return r.width > 0 && r.height > 0; })");
-  // the copyright line shows only for a song that has copyright details (library_browser_test.mjs checks it with them)
-  check("  a tall frame shows the album art (a CD in its case when the song has none), the spectrum and the strip; no copyright line without copyright details", parts.every(Boolean) && (await evaluate("document.getElementById('emRights').hidden && getComputedStyle(document.getElementById('emRights')).display === 'none'")) && (await evaluate("!!document.querySelector('#emArt .cd-disc')")), JSON.stringify(parts));
+  // the copyright line shows only for a song that has copyright details (library_browser_test.mjs checks it with
+  // them); a live station's song may have them, so it follows what is on air (read with the line, in one go)
+  const look = await evaluate(`(() => { const on = swEmbed.np && swEmbed.np.on_air, song = on && on.type !== 'live' ? on : null, b = document.getElementById('emRights');
+    const shown = !b.hidden && getComputedStyle(b).display !== 'none';
+    return { rights: !!(song && song.rights), shown, line: b.textContent, want: song && song.rights ? song.rights.line : '', art: !!(song && song.art),
+      cd: !!document.querySelector('#emArt .cd-disc'), img: !document.getElementById('emArtImg').hidden }; })()`);
+  check("  a tall frame shows the album art (a CD in its case when the song has none), the spectrum and the strip; the copyright line only with copyright details",
+    parts.every(Boolean) && look.shown === look.rights && look.line === look.want && (look.art ? look.img : look.cd), JSON.stringify({ parts, ...look }));
   const vis = await waitFor("(() => { const v = swEmbed.vis; return v.attached && v.spectrum && v.spectrum.lit > 0 && v.measured && v.measured[1] > 0.01 && v.planned && v.planned[1] > 0.01 && v; })()", 15);
   check("  the spectrum lights and the strip shows the measured sound and the coming seconds", !!vis, JSON.stringify(await evaluate("swEmbed.vis")));
   const pingBefore = await evaluate("swEmbed.ping");

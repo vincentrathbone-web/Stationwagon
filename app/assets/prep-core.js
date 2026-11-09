@@ -343,7 +343,9 @@
       return [0x54, 0x58, 0x58, 0x58, ...(ver === 4 ? safe(n) : [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff]), 0, 0, ...body];
     };
     // the frames already there, without our own; the extended header (if any) is kept in front
-    let start = 10, kept = [];
+    // (kept as pieces, not spread into one array: an album-art frame can hold a million bytes)
+    let start = 10;
+    const kept = [];
     if (hasTag) {
       const end = Math.min(head.length, 10 + unsafe(head, 6));
       if (flags & 0x40) start += ver === 4 ? unsafe(head, 10) : 4 + ((head[10] << 24) | (head[11] << 16) | (head[12] << 8) | head[13]);
@@ -356,21 +358,84 @@
           let j = 11; while (j < f.length && f[j] !== 0) j++;
           ours = String.fromCharCode(...f.subarray(11, j)).startsWith("STATIONWAGON_");
         }
-        if (!ours) kept.push(...f);
+        if (!ours) kept.push(f);
         i += 10 + n;
       }
     }
-    const frames = [...kept, ...own.flatMap(frame)], pad = 256;
-    const out = new Uint8Array(start + frames.length + pad);
-    out.set([0x49, 0x44, 0x33, ver, 0, flags & 0x40, ...safe(start - 10 + frames.length + pad)]);
+    kept.push(Uint8Array.from(own.flatMap(frame)));
+    const size = kept.reduce((s, f) => s + f.length, 0), pad = 256;
+    const out = new Uint8Array(start + size + pad);
+    out.set([0x49, 0x44, 0x33, ver, 0, flags & 0x40, ...safe(start - 10 + size + pad)]);
     if (start > 10) out.set(head.subarray(10, start), 10);
-    out.set(frames, start);
+    let at = start;
+    for (const f of kept) { out.set(f, at); at += f.length; }
     return out;
   }
 
+  /**
+   * An ID3v2.4 tag (UTF-8 text) for an MP3 made from another format (round 54), from that file's own
+   * tags as the decoder names them (title, artist, album, album_artist, genre, track, date, composer,
+   * publisher, copyright) and its cover (picture: { mime, data }), so the station reads the same title,
+   * artist, songwriters and album art as from an MP3. Empty values are left out.
+   */
+  function id3(t = {}, picture = null) {
+    const utf8 = (s) => new TextEncoder().encode(s);
+    const safe = (n) => [(n >>> 21) & 0x7f, (n >>> 14) & 0x7f, (n >>> 7) & 0x7f, n & 0x7f];
+    const parts = [];
+    const add = (id, body) => {
+      parts.push(Uint8Array.from([...Array.from(id, (c) => c.charCodeAt(0)), ...safe(body.length), 0, 0]), body);
+    };
+    const year = String(t.date || t.year || "").match(/\d{4}/);
+    const text = { TIT2: t.title, TPE1: t.artist, TALB: t.album, TPE2: t.album_artist, TCON: t.genre, TRCK: t.track,
+      TDRC: year ? year[0] : "", TCOM: t.composer, TPUB: t.publisher, TCOP: t.copyright };
+    for (const [id, v] of Object.entries(text)) {
+      const s = String(v || "").replace(/\0/g, " ").trim();
+      if (s) { const b = utf8(s), body = new Uint8Array(b.length + 1); body[0] = 3; body.set(b, 1); add(id, body); }
+    }
+    if (picture && picture.data && picture.data.length) {
+      const mime = Array.from(picture.mime || "image/jpeg", (c) => c.charCodeAt(0) & 0x7f);
+      const body = new Uint8Array(1 + mime.length + 1 + 1 + 1 + picture.data.length);
+      body.set([0, ...mime, 0, 3, 0]); // Latin-1, the mime type, front cover, no description
+      body.set(picture.data, mime.length + 4);
+      add("APIC", body);
+    }
+    const size = parts.reduce((s, p) => s + p.length, 0), pad = 256;
+    const out = new Uint8Array(10 + size + pad);
+    out.set([0x49, 0x44, 0x33, 4, 0, 0, ...safe(size + pad)]);
+    let at = 10;
+    for (const p of parts) { out.set(p, at); at += p.length; }
+    return out;
+  }
+
+  /**
+   * What kind of audio file this is, by its first bytes (round 54): "mp3", "wav", "flac", "m4a", "ogg",
+   * "wma", "aac" (raw ADTS), or null. A FLAC or AAC with an ID3 tag in front is looked for past the tag.
+   * name (optional) settles an MP3 that starts with neither a tag nor a frame.
+   */
+  function sniff(bytes, name = "") {
+    const at = (i, s) => Array.from(s).every((c, k) => bytes[i + k] === c.charCodeAt(0));
+    if (bytes.length < 12) return null;
+    if (at(0, "RIFF") && at(8, "WAVE") || at(0, "RF64") && at(8, "WAVE")) return "wav";
+    if (at(0, "fLaC")) return "flac";
+    if (at(4, "ftyp")) return "m4a";
+    if (at(0, "OggS")) return "ogg";
+    if ([0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11].every((b, k) => bytes[k] === b)) return "wma";
+    let i = 0;
+    if (at(0, "ID3")) i = 10 + (((bytes[6] & 0x7f) << 21) | ((bytes[7] & 0x7f) << 14) | ((bytes[8] & 0x7f) << 7) | (bytes[9] & 0x7f)) + (bytes[5] & 0x10 ? 10 : 0);
+    if (i && i + 4 <= bytes.length && at(i, "fLaC")) return "flac";
+    if (i + 2 <= bytes.length && bytes[i] === 0xff && (bytes[i + 1] & 0xf6) === 0xf0) return "aac"; // ADTS: layer 0
+    if (i + 2 <= bytes.length && bytes[i] === 0xff && (bytes[i + 1] & 0xe0) === 0xe0 && (bytes[i + 1] & 0x06) !== 0) return "mp3";
+    if (i || /\.mp3$/i.test(name)) return "mp3"; // a tag, then the frames a little further on
+    return null;
+  }
+
+  /** The MP3 the station keeps as a converted upload's original (round 54): 320 kbps at its own rate when
+   *  that is 44.1 or 48 kHz, otherwise at the nearest of the two. */
+  const ORIGINAL = { kbps: 320, rate: (source) => targetRate(source, 0) };
+
   function round(v, d) { const f = Math.pow(10, d); return Math.round(v * f) / f; }
 
-  const api = { P, kFilters, loudness, outro, peakDb, soundSpan, prepare, encode, tags, levelTags,
+  const api = { P, kFilters, loudness, outro, peakDb, soundSpan, prepare, encode, tags, levelTags, id3, sniff, ORIGINAL,
     targetRate, rateNote, resampler, resample, rng, quantize, toInt16, encodeLame, mp3Rate };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.SwPrepCore = api;

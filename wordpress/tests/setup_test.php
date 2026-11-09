@@ -464,7 +464,7 @@ try {
     wp('option delete stationwagon_station', true);
     if ($mode === 'stub') {
         $st = $cpState();
-        $root = new PDO('mysql:host=127.0.0.1', 'root', '');
+        $root = new PDO('mysql:host=' . (getenv('SW_TEST_DB_HOST') ?: '127.0.0.1'), 'root', '');
         foreach ($st['databases'] ?? [] as $d) { $root->exec("DROP DATABASE IF EXISTS `$d`"); }
         foreach ($st['users'] ?? [] as $u) { $root->exec("DROP USER IF EXISTS '$u'@'%'"); }
         wp('config delete STATIONWAGON_CPANEL_URL --type=constant', true);

@@ -16,7 +16,7 @@ $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 
 <form class="drop" id="drop" method="post" enctype="multipart/form-data" action="<?= h(App::url('manage/library')) ?>" data-max="<?= (int) $maxUpload ?>" data-preset="<?= h(json_encode($presetSettings, JSON_UNESCAPED_SLASHES)) ?>" data-preset-name="<?= h($presetName) ?>" data-target="<?= h((string) $prepTarget) ?>">
   <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
   <input type="hidden" name="action" value="upload">
-  <div><b>Add songs</b><br><span class="muted2">Drop MP3 files here, or choose them. Your browser first prepares each song as chosen below and trims silence at both ends. Up to <?= h(megabytes($maxUpload)) ?> per upload; the same song twice is only stored once.</span>
+  <div><b>Add songs</b><br><span class="muted2">Drop songs here, or choose them: MP3, WAV, FLAC, M4A (AAC or ALAC), AAC, Ogg, Opus or WMA. Your browser first prepares each song as chosen below and trims silence at both ends; other formats become MP3s, with a 320 kbps MP3 kept as the original. Up to <?= h(megabytes($maxUpload)) ?> per upload; the same song twice is only stored once.</span>
     <div class="prep-opts" id="prepOpts">
       <label class="swrow" title="EQ and compression with the import preset, tried and set on the Song prep screen"><input class="sw" type="checkbox" name="master" value="1" id="prepMaster"<?= $prepMaster ? ' checked' : '' ?>> Apply pre-processing <span class="muted2">(mastering with “<?= h($presetName) ?>”, <a href="<?= h(App::url('manage/songprep')) ?>">change in Song prep</a>)</span></label>
       <label class="swrow" title="Every song plays at the same loudness"><input class="sw" type="checkbox" name="level" value="1" id="prepLevel"<?= $prepLevel ? ' checked' : '' ?>> Loudness normalization <span class="muted2">(<span id="prepTargetSw"><?= h($lufs($prepTarget)) ?></span> LUFS)</span></label>
@@ -41,7 +41,7 @@ $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 
     <p class="muted2" id="relevelLater" hidden><span></span> <button class="btn sm" type="button" id="relevelOpen">Re-level</button></p>
   </div>
   <div class="drop-actions">
-    <input id="files" name="files[]" type="file" accept=".mp3,audio/mpeg" multiple>
+    <input id="files" name="files[]" type="file" accept=".mp3,.wav,.flac,.m4a,.mp4,.aac,.ogg,.oga,.opus,.wma,audio/*" multiple>
     <button class="btn primary" type="submit">Upload</button>
   </div>
   <ol class="uplist" id="uplist" hidden></ol>
@@ -99,7 +99,7 @@ $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 
   </table>
 </div>
 <script src="<?= h(App::asset('assets/prep-core.js')) ?>" defer></script>
-<script src="<?= h(App::asset('assets/prep.js')) ?>" data-kbps="<?= $prepQuality['kbps'] ?>" data-rate="<?= $prepQuality['rate'] ?>" data-precision="<?= $prepQuality['precision'] ?>" data-dither="<?= $prepQuality['dither'] ? 1 : 0 ?>" data-quality="<?= $prepQuality['q'] ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js', 'assets/master-core.js', 'assets/vendor/lame-3.100.js'])) ?>" defer></script>
+<script src="<?= h(App::asset('assets/prep.js')) ?>" data-kbps="<?= $prepQuality['kbps'] ?>" data-rate="<?= $prepQuality['rate'] ?>" data-precision="<?= $prepQuality['precision'] ?>" data-dither="<?= $prepQuality['dither'] ? 1 : 0 ?>" data-quality="<?= $prepQuality['q'] ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js', 'assets/master-core.js', 'assets/vendor/lame-3.100.js', 'assets/vendor/ffmpeg-decode-7.1.js'])) ?>" defer></script>
 <script src="<?= h(App::asset('assets/upload.js')) ?>" defer></script>
 <template id="libEditTpl">
   <tr class="editing"><td colspan="6">

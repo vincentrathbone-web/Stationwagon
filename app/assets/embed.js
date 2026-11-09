@@ -276,7 +276,9 @@
     }
     el.addEventListener("waiting", () => { log("waiting"); if (settled && el === audio) state("Buffering…"); });
     for (const e of ["play", "playing", "stalled", "suspend", "ended", "error"]) el.addEventListener(e, () => log(e === "error" && el.error ? `error ${el.error.code}` : e));
-    el.addEventListener("playing", () => { if (el === audio) { try { vis.attach(el); } catch (ex) { log(`no visuals: ${ex && ex.name}`); } } });
+    // the spectrum stops itself once the sound is paused and its bars have fallen; started in Listen's tap it
+    // can stop before a slow stream's first sound, so it starts again whenever the sound does
+    el.addEventListener("playing", () => { if (el === audio) { try { vis.attach(el); if (vis.spec) vis.spec.run(); } catch (ex) { log(`no visuals: ${ex && ex.name}`); } } });
     // paused, but not by Stop (which drops the element first): something outside did it
     el.addEventListener("pause", () => { log("pause"); if (el === audio) setTimeout(() => { if (el === audio && el.paused) restart("paused from outside"); }, 1000); });
     await el.play();

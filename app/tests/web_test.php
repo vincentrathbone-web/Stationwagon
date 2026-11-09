@@ -589,7 +589,10 @@ try {
         $fake = $upload("$tmpDir/fake.mp3", 'fake.mp3');
         check('a file that isn’t audio is refused', !($fake['ok'] ?? true) && str_contains((string) $fake['error'], 'not an MP3'), (string) ($fake['error'] ?? ''));
         $txt = $upload("$tmpDir/fake.mp3", 'notes.txt');
-        check('only MP3 files are taken', !($txt['ok'] ?? true) && str_contains((string) $txt['error'], 'Only MP3'));
+        check('only MP3 files are taken', !($txt['ok'] ?? true) && str_contains((string) $txt['error'], 'Only songs in MP3'), (string) ($txt['error'] ?? ''));
+        // other formats are converted in the browser (round 54): sent as they are, the server says so
+        $wav = $upload("$tmpDir/fake.mp3", 'song.wav');
+        check('  a WAV sent without the browser is refused, saying it is converted there', !($wav['ok'] ?? true) && str_contains((string) $wav['error'], 'converted to MP3 in your browser'), (string) ($wav['error'] ?? ''));
         $file = $db->run('SELECT file FROM ' . $db->table('tracks') . ' WHERE id = ?', [$trackId])->fetchColumn();
         check('the song is served from storage', (new Browser($base))->go("storage/media/$file", null, ['Range: bytes=0-1'])['status'] === 206);
         $r = $m->go('manage/library?q=' . rawurlencode($tag));

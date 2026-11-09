@@ -2,6 +2,9 @@
 // throwaway manager uploads generated MP3s on the Music library page, and the stored songs are
 // checked (mastered, levelled, trimmed, tags kept, duplicates caught, fallbacks for silent and fake
 // files), and the two switches (pre-processing, loudness normalization) are saved and obeyed.
+// Round 54: songs in WAV (16-bit, 24-bit 96 kHz), FLAC, M4A (AAC, ALAC), Ogg Vorbis, Opus and WMA
+// are converted in the browser, each with its tags, cover and songwriter, and a 320 kbps MP3 original
+// kept (samples from make_format_samples.mjs; skipped with a note when the lossless music isn't here).
 //   node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app
 // Needs SW_PHP (php.exe) unless php is on PATH. Signs in a throwaway account: not for a public server.
 import { spawn, spawnSync, execFileSync } from "node:child_process";
@@ -12,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import vm from "node:vm";
 import { createRequire } from "node:module";
+import { makeSamples, SAMPLES, TAGS } from "./make_format_samples.mjs";
 
 const base = (process.argv[2] || "").replace(/\/$/, "");
 if (!base) { console.error("Usage: node app/tests/upload_browser_test.mjs <base url>"); process.exit(1); }
@@ -61,6 +65,23 @@ const odd = join(dir, "odd rate.mp3");
 writeFileSync(odd, mp3([[0.3, 12]], oddTitle, 128, 32000));   // a 32 kHz song: goes to the station's 44.1 kHz (the default), and the uploader is told
 writeFileSync(fake, Buffer.from("not audio at all ".repeat(400)));
 const songSha1 = createHash("sha1").update(readFileSync(song)).digest("hex");
+const badWav = join(dir, "not audio.wav"), badWma = join(dir, "broken.wma");
+writeFileSync(badWav, Buffer.from("not audio at all ".repeat(400)));
+// a WMA header's first bytes, then nothing that decodes
+writeFileSync(badWma, Buffer.concat([Buffer.from([0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11, 0xa6, 0xd9, 0x00, 0xaa, 0x00, 0x62, 0xce, 0x6c]), Buffer.alloc(4000, 7)]));
+let formats = null;
+try { formats = makeSamples(); } catch (ex) { formats = null; console.log(`(the format samples can't be made: ${ex.message})`); }
+/** An MP3's bit rate and sample rate from its first frame (after any ID3 tag). */
+function frameInfo(bytes) {
+  let i = 0;
+  if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) i = 10 + (((bytes[6] & 0x7f) << 21) | ((bytes[7] & 0x7f) << 14) | ((bytes[8] & 0x7f) << 7) | (bytes[9] & 0x7f));
+  for (; i < bytes.length - 4; i++) {
+    if (bytes[i] !== 0xff || (bytes[i + 1] & 0xe0) !== 0xe0 || ((bytes[i + 1] >> 3) & 3) !== 3 || ((bytes[i + 1] >> 1) & 3) !== 1) continue;
+    const kbps = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320][bytes[i + 2] >> 4];
+    return { kbps, rate: [44100, 48000, 32000][(bytes[i + 2] >> 2) & 3] };
+  }
+  return null;
+}
 
 // ---- Browser -------------------------------------------------------------------------------
 const exe = ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:/Program Files/Google/Chrome/Application/chrome.exe"]
@@ -183,10 +204,55 @@ try {
   const s = helper("track", silentTitle);
   check("  without a loudness", s !== null && s.loudness_lufs === null);
   check("a file that isn't audio is still refused by the server", rows && rows[1].cls === "bad" && rows[1].text.includes("not an MP3"), rows && rows[1].text);
+
+  console.log("Other formats, converted in the browser (round 54)");
+  rows = await upload([badWav, badWma]);
+  check("a .wav that isn't audio is not sent", rows && rows[0].cls === "bad" && rows[0].text.startsWith("Not added: not an audio file"), rows && rows[0].text);
+  check("a broken WMA is not sent either, saying why", rows && rows[1].cls === "bad" && rows[1].text.startsWith("Not added:") && !rows[1].text.includes("undefined"), rows && rows[1].text);
+  if (!formats) {
+    check("the format samples are here (lossless test music and the test ffmpeg)", false, "see HANDOVER.md");
+  } else {
+    let first = null;
+    for (const smp of SAMPLES) {
+      helper("cleanup-like", TAGS.title); // the samples share their tags: one at a time
+      const file = join(formats, smp.file);
+      rows = await upload([file]);
+      const r = rows && rows[0];
+      const label = `${smp.file} (${smp.kind}${smp.rate ? ", " + smp.rate / 1000 + " kHz" : ""})`;
+      check(`${label} is converted, prepared and added`, r && r.cls === "ok" && r.text.startsWith(`Added, converted from ${smp.kind} (`) && r.text.includes("320 kbps MP3 kept as its original") && r.text.includes("original kept"), r && r.text);
+      if (smp.rate) check("  the uploader is told its rate is converted to 44.1 kHz (the station's rate)", r && new RegExp(`from ${smp.rate / 1000} kHz to 44\.1 kHz`).test(r.warn), r && r.warn);
+      else check("  no rate warning at 44.1 kHz", r && r.warn === "", r && r.warn);
+      const t = helper("track", TAGS.title);
+      check("  stored with its title, artist and album from the file's own tags", t && t.artist === TAGS.artist && t.album === TAGS.album, t && `${t.title} / ${t.artist} / ${t.album}`);
+      if (smp.writers !== false) check("  and its songwriter", t && String(t.rights || "").includes(TAGS.composer), t && t.rights);
+      if (smp.cover) check("  and its cover as the album art", t && !!t.art, t && String(t.art));
+      const media = t && readFileSync(join(here, "..", "storage", "media", t.file));
+      const fi = media && frameInfo(new Uint8Array(media));
+      check("  the song is an MP3 at the station's rate and quality, about 30 s long", t && fi && fi.rate === 44100 && fi.kbps === Number(t.bitrate_kbps) && near(t.duration_s, 30, 0.7), t && `${fi && fi.kbps} kbps, ${fi && fi.rate} Hz, ${t.duration_s} s`);
+      const origPath = t && join(here, "..", "storage", "originals", `${t.sha1}.mp3`);
+      const orig = origPath && existsSync(origPath) ? readFileSync(origPath) : null;
+      const oi = orig && frameInfo(new Uint8Array(orig));
+      const oRate = core.ORIGINAL.rate(smp.rate || 44100);
+      check(`  its original is kept as a 320 kbps MP3 at ${oRate / 1000} kHz, known by its fingerprint`, orig && oi && oi.kbps === 320 && oi.rate === oRate && createHash("sha1").update(orig).digest("hex") === t.sha1,
+        oi ? `${oi.kbps} kbps, ${oi.rate} Hz` : "no original");
+      check("  the original carries the same tags (no Stationwagon levelling tags)", orig && orig.includes(Buffer.from(TAGS.title)) && !orig.includes(Buffer.from("STATIONWAGON_")));
+      if (!first && t) {
+        first = t;
+        const measured = await evaluate(`(async () => {
+          const buf = await (await fetch(${JSON.stringify(`${base}/storage/media/${t.file}`)})).arrayBuffer();
+          const a = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(buf);
+          return SwPrepCore.loudness([a.getChannelData(0), a.getChannelData(1)], 44100);
+        })()`);
+        check("  the stored song measures the station's target (−16 LUFS within 0.1)", near(measured, -16, 0.1), measured && measured.toFixed(2));
+      }
+    }
+    rows = await upload([join(formats, SAMPLES[SAMPLES.length - 1].file)]); // still in the library
+    check(`the same ${SAMPLES[SAMPLES.length - 1].kind} again is caught as a duplicate (converted the same way twice)`, rows && rows[0].cls === "ok" && rows[0].text === "Already there", rows && rows[0].text);
+  }
 } finally {
   if (prepBefore) helper("prep", prepBefore.master ? "1" : "0", prepBefore.level ? "1" : "0", String(prepBefore.target ?? -16));
   if (user) {
-    const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle, oddTitle);
+    const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle, oddTitle, TAGS.title);
     console.log(`Cleanup: throwaway manager and test songs removed${r.hidden ? ` (${r.hidden} on air, hidden)` : ""}`);
   }
   try { ws && ws.close(); } catch { /* closed */ }

@@ -4,7 +4,9 @@
 // by the file it was made from (kept for the Song prep screen), and the page reloads to show them.
 // The switches and the loudness target slider are the station's, saved as soon as they change; a new
 // target offers to re-level the library (relevel.js, told by an "sw:target" event). Without JavaScript
-// the form still works.
+// the form still works (MP3s only). Other formats (round 54: WAV, FLAC, M4A, AAC, Ogg, Opus, WMA) are
+// converted in the browser (prep.js): the song goes up as an MP3, followed by the 320 kbps MP3 the
+// station keeps as its original; one that can't be converted isn't sent.
 (() => {
   const form = document.getElementById("drop");
   if (!form || !window.FormData || !window.XMLHttpRequest) return;
@@ -76,14 +78,17 @@
   const db = (v) => (v > 0 ? "+" : "") + v.toFixed(1).replace("-", "−") + " dB";
   const lufs = (v) => v.toFixed(1).replace("-", "−") + " LUFS";
   const khz = (r) => String(r / 1000).replace(/.0+$/, "") + " kHz";
-  const describe = (p) => p.kept
+  const from = (p) => p.info && p.info.converted
+    ? "converted from " + p.info.converted.kind + " (" + p.info.converted.from.codec + ", " + khz(p.info.converted.from.rate) + "; a " + p.info.converted.original_kbps + " kbps MP3 kept as its original), "
+    : "";
+  const describe = (p) => from(p) + (p.kept
     ? "kept as uploaded (nothing to change: no mastering, no levelling, " + khz(p.info.quality.rate) + "), measured at " + lufs(p.info.lufs)
     : p.prepared
     ? (p.info.mastered ? "mastered, " : "") +
       (p.info.levelled ? "levelled " + lufs(p.info.lufs_before) + " → " + lufs(p.info.lufs) + " (" + db(p.info.gain_db) + ")" : "kept at " + lufs(p.info.lufs)) +
       (p.info.trimmed_start_s + p.info.trimmed_end_s >= 0.1 ? ", " + (p.info.trimmed_start_s + p.info.trimmed_end_s).toFixed(1) + " s of silence trimmed" : "") +
       (p.info.quality ? ", " + p.info.quality.kbps + " kbps at " + khz(p.info.quality.rate) : "")
-    : "as it is: " + p.note;
+    : "as it is: " + p.note);
 
   const send = (p, name, li) => new Promise((done) => {
     const data = new FormData();
@@ -144,10 +149,16 @@
           p = { file: files[i], prepared: false, note: "prep failed: " + ex.message };
         }
       }
-      if (p.prepared && maxBytes && p.file.size > maxBytes && files[i].size <= maxBytes) {
+      if (p.refused) {
+        // not an MP3 and not converted: nothing to send (the station takes MP3s only)
+        li.className = "bad";
+        status.textContent = "Not added: " + p.note;
+        continue;
+      }
+      if (p.prepared && maxBytes && p.file.size > maxBytes && files[i].size <= maxBytes && !p.original) {
         p = { file: files[i], prepared: false, sourceSha1: p.sourceSha1, note: "the prepared song is bigger than this server accepts" };
       }
-      const res = await send(p, files[i].name, li);
+      const res = await send(p, p.name || files[i].name, li);
       if (res) ok++;
       // keep the file the song was made from too, so it can be prepared again (Song prep); also for
       // a song already in the library that hasn't got its original yet (uploaded before round 40)
@@ -155,7 +166,8 @@
         const status = li.querySelector(".s"), said = status.textContent;
         status.textContent = said + " · keeping the original";
         const data = new FormData();
-        data.append("csrf", csrf); data.append("action", "original"); data.append("id", String(res.id)); data.append("original", files[i], files[i].name);
+        data.append("csrf", csrf); data.append("action", "original"); data.append("id", String(res.id));
+        data.append("original", p.original || files[i], p.original ? p.name : files[i].name);
         const kept = await fetch(form.getAttribute("action"), { method: "POST", body: data, headers: { Accept: "application/json" }, credentials: "same-origin" })
           .then((x) => x.json()).catch(() => ({ ok: false, error: "connection lost" }));
         status.textContent = said + (kept.ok ? " · original kept" : " · original not kept: " + (kept.error || "failed"));

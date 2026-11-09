@@ -6,7 +6,14 @@
 // it was made added to them (SwPrepCore.levelTags). With nothing to do (no mastering, no levelling, the
 // rate kept) the original goes up as it came. When the browser can't, the original goes up as it is,
 // with a note why.
-//   SwPrep.prepare(file, onStage, { master, level, target, onNotice }) -> { file, prepared, kept?, info?, note?, sourceSha1? }
+// Other formats (round 54: WAV, FLAC, M4A/AAC/ALAC, Ogg, Opus, WMA) are decoded in the worker with the
+// station's own decoder, then made into two MP3s from that one sound: the 320 kbps original the station
+// keeps (for re-levelling) and the song, both tagged with the file's own title, artist, songwriters and
+// cover. Only MP3s reach the server, so one that can't be converted isn't uploaded (refused: true).
+//   SwPrep.prepare(file, onStage, { master, level, target, onNotice }) ->
+//     { file, prepared, kept?, info?, note?, sourceSha1?, original?, name?, kind, refused? }
+// original (converted uploads): the MP3 original to keep; name: the upload's name with .mp3; sourceSha1
+// is then that original's SHA-1 (the station's fingerprint for the song).
 // onNotice(text) is told, before the work starts, when the song's sample rate will be converted.
 // The station's quality settings come from this script tag: data-kbps, data-rate (0 = the song's own,
 // 44100 (the default), 48000), data-precision (32, 24, 16), data-dither (1/0) and data-quality (LAME's -q, 0 best).
@@ -18,6 +25,8 @@
   const KBPS = num(ds.kbps, 160);
   const QUALITY = { rate: num(ds.rate, 44100), precision: num(ds.precision, 32), dither: num(ds.dither, 1) === 1, q: num(ds.quality, 0) };
   const MAX_BYTES = 60 * 1024 * 1024; // about an hour at 128 kbps; longer would need too much memory
+  const MAX_OTHER = 400 * 1024 * 1024; // a WAV or FLAC: about 40 minutes of 24-bit 48 kHz WAV
+  const NAMES = { wav: "WAV", flac: "FLAC", m4a: "M4A", ogg: "Ogg", wma: "WMA", aac: "AAC" };
 
   const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
   const asIs = (file, sourceSha1, note) => ({ file, prepared: false, sourceSha1, note });
@@ -27,16 +36,47 @@
     const end = (fn, v) => { w.terminate(); fn(v); };
     w.onmessage = (e) => {
       const m = e.data;
-      if (m.stage) onStage(m.stage + (m.progress !== undefined ? " " + Math.round(m.progress * 100) + " %" : ""));
+      if (m.notice) { if (opts.onNotice) opts.onNotice(m.notice); }
+      else if (m.stage) onStage(m.stage + (m.progress !== undefined ? " " + Math.round(m.progress * 100) + " %" : ""));
       else if (m.done || m.skip || m.keep) end(resolve, m);
       else end(reject, new Error(m.error || "Prep failed"));
     };
     w.onerror = (e) => { e.preventDefault(); end(reject, new Error(e.message || "Prep failed")); };
     const master = opts.master && typeof opts.master === "object" ? opts.master : !!opts.master;
-    w.postMessage({ channels, rate, kbps: KBPS, master, level: opts.level !== false, target: opts.target, quality: QUALITY }, channels.map((c) => c.buffer));
+    const job = { kbps: KBPS, master, level: opts.level !== false, target: opts.target, quality: QUALITY };
+    if (opts.file) w.postMessage(Object.assign(job, { file: opts.file }), [opts.file]);
+    else w.postMessage(Object.assign(job, { channels, rate }), channels.map((c) => c.buffer));
   });
 
+  const sha1 = async (blob) => {
+    try { return window.crypto && crypto.subtle ? hex(await crypto.subtle.digest("SHA-1", await blob.arrayBuffer())) : null; } catch (_) { return null; }
+  };
+
+  /** An upload that isn't an MP3: decoded and converted in the worker (round 54). */
+  async function convert(file, kind, onStage, opts) {
+    const refuse = (note) => ({ file, prepared: false, refused: true, kind, note });
+    if (!window.Worker) return refuse("this browser can’t convert it to MP3");
+    if (file.size > MAX_OTHER) return refuse("too long to convert in the browser (over " + Math.round(MAX_OTHER / 1048576) + " MB)");
+    onStage("Decoding");
+    let r;
+    try {
+      r = await work(null, null, onStage, Object.assign({}, opts, { file: await file.arrayBuffer() }));
+    } catch (ex) {
+      return refuse(ex.message);
+    }
+    if (r.skip) return refuse(r.skip);
+    const C = window.SwPrepCore, head = C.id3(r.tags, r.picture);
+    const original = new Blob([head, ...r.original.chunks], { type: "audio/mpeg" });
+    const song = new Blob([C.levelTags(head, r.info), ...r.chunks], { type: "audio/mpeg" });
+    const name = file.name.replace(/\.[^.\/]*$/, "") + ".mp3";
+    r.info.converted.kind = kind === "ogg" && r.source.codec === "opus" ? "Opus" : NAMES[kind] || kind;
+    return { file: song, prepared: true, info: r.info, sourceSha1: await sha1(original), original, name, kind };
+  }
+
   async function prepare(file, onStage = () => {}, opts = {}) {
+    const kind = window.SwPrepCore.sniff(new Uint8Array(await file.slice(0, 65536).arrayBuffer()), file.name || "");
+    if (kind && kind !== "mp3") return convert(file, kind, onStage, opts);
+    if (!kind) return { file, prepared: false, refused: true, kind, note: "not an audio file the station can read (MP3, WAV, FLAC, M4A, AAC, Ogg, Opus or WMA)" };
     const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!Offline || !window.Worker) return asIs(file, null, "this browser can’t prepare songs");
     const bytes = new Uint8Array(await file.arrayBuffer());

@@ -46,7 +46,7 @@ if (!$ok) {
 }
 $args = $_POST + $_GET;
 $state['calls'][] = $path . (isset($args['cpanel_jsonapi_func']) ? ' ' . $args['cpanel_jsonapi_module'] . '::' . $args['cpanel_jsonapi_func'] : '');
-$pdo = new PDO('mysql:host=127.0.0.1', 'root', '', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+$pdo = new PDO('mysql:host=' . (getenv('SW_TEST_DB_HOST') ?: '127.0.0.1'), 'root', '', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 $uapi = fn($data) => ['status' => 1, 'data' => $data, 'errors' => null];
 $fail = fn(string $msg) => ['status' => 0, 'data' => null, 'errors' => [$msg]];
 $q = fn(string $s) => '`' . str_replace('`', '', $s) . '`';

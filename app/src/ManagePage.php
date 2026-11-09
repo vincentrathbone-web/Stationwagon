@@ -294,7 +294,9 @@ final class ManagePage
                 continue;
             }
             if (!preg_match('/\.mp3$/i', $name)) {
-                $out[] = ['name' => $name, 'ok' => false, 'error' => 'Only MP3 files for now.'];
+                $out[] = ['name' => $name, 'ok' => false, 'error' => preg_match('/\.(wav|flac|m4a|mp4|aac|ogg|oga|opus|wma)$/i', $name)
+                    ? 'The station plays MP3s: other formats are converted to MP3 in your browser, which needs JavaScript on this page.'
+                    : 'Only songs in MP3 (or WAV, FLAC, M4A, AAC, Ogg, Opus or WMA, converted in your browser).'];
                 continue;
             }
             $tmp = (string) ((array) $files['tmp_name'])[$i];
