@@ -1,0 +1,18 @@
+# Stationwagon on a HestiaCP host (nginx in front of Apache). Copy this file to
+# /home/<user>/conf/web/<domain>/nginx.conf_stationwagon and nginx.ssl.conf_stationwagon
+# (change /radio/ and the root to the station's folder), then `nginx -t` and reload nginx.
+#
+# nginx serves static files itself and ignores .htaccess, so keep the private storage folders and
+# non-media files out of reach. A ^~ prefix wins over the template's static-file regex.
+# Mirrors app/storage/.htaccess (and the song headers in app/.htaccess).
+location ^~ /radio/storage/ {
+	location ~* ^/radio/storage/(originals|diag|sessions|cache|geo)(/|$) { return 403; }
+	location ~* "^/radio/storage/(.+/)?([^/]+\.mp3|(cover|art)-[0-9a-f]{12}\.(jpg|png)|slide-[0-9a-f]{12}\.jpg)$" {
+		try_files  $uri @fallback;
+		root       /home/wordwaveco/web/wordwave.co.za/public_html;
+		# songs, pieces and pictures never change at the same address
+		expires    off;
+		add_header Cache-Control "public, max-age=31536000, immutable";
+	}
+	return 403;
+}

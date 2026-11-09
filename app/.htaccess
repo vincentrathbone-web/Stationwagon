@@ -42,11 +42,17 @@ Options -Indexes
     Header set Cache-Control "public, max-age=300"
   </If>
   <If "%{THE_REQUEST} =~ m#^[A-Z]+ [^ ?]*/podcast/api/#">
-    Header set Cache-Control "private, no-store"
+    # PHP sends the same; behind PHP-FPM (Hestia) its copy can sit in the error-headers table, so a plain
+    # "set" adds a second one: drop both copies, then set one that holds for any status
+    Header unset Cache-Control
+    Header always set Cache-Control "private, no-store"
   </If>
   # Who is signed in (the website's header asks): personal, never kept anywhere
   <If "%{THE_REQUEST} =~ m#^[A-Z]+ [^ ?]*/api/me[ ?]#">
-    Header set Cache-Control "private, no-store"
+    # PHP sends the same; behind PHP-FPM (Hestia) its copy can sit in the error-headers table, so a plain
+    # "set" adds a second one: drop both copies, then set one that holds for any status
+    Header unset Cache-Control
+    Header always set Cache-Control "private, no-store"
   </If>
   # Songs and live pieces never change at the same address
   <FilesMatch "\.mp3$">

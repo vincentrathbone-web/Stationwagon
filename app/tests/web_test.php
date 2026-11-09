@@ -123,8 +123,9 @@ try {
     // scripts and styles are tagged by content, so a phone never keeps an old copy (the host says a week)
     preg_match('~assets/player\.js\?v=([0-9a-f]{10})"~', $r['body'], $pm);
     preg_match('~assets/app\.css\?v=([0-9a-f]{10})"~', $r['body'], $cm);
-    $tag = fn (string $path) => substr(sha1(sha1($b->go($path)['body'])), 0, 10);
-    check('the player and style links carry their content tags', ($pm[1] ?? '') === $tag('assets/player.js') && ($cm[1] ?? '') === $tag('assets/app.css'), ($pm[1] ?? '-') . ' ' . ($cm[1] ?? '-'));
+    // fetched by the tagged address, as browsers do (a CDN may still hold an old copy of the bare one)
+    $tag = fn (string $path, string $v) => substr(sha1(sha1($b->go("$path?v=$v")['body'])), 0, 10);
+    check('the player and style links carry their content tags', ($pm[1] ?? '') !== '' && $pm[1] === $tag('assets/player.js', $pm[1]) && ($cm[1] ?? '') !== '' && $cm[1] === $tag('assets/app.css', $cm[1]), ($pm[1] ?? '-') . ' ' . ($cm[1] ?? '-'));
     foreach (['assets/player.js', 'assets/vendor/hls.min.js'] as $asset) {
         $a = $b->go($asset);
         check("$asset is served", $a['status'] === 200 && strlen($a['body']) > 1000, (string) $a['status']);
@@ -250,9 +251,12 @@ try {
     check('  browsers always ask again; Cloudflare may keep it 2 s', str_contains($ncc, 'max-age=0') && str_contains($ncc, 's-maxage=2'), $ncc);
     if (isset($r['headers']['cf-cache-status'])) {
         // behind Cloudflare its Cache Rule covers nowplaying.php too: a second ask straight after is served from the edge
-        $again = $s->go('api/nowplaying.php');
-        $status = $again['headers']['cf-cache-status'][0] ?? '';
-        check('  Cloudflare keeps it (the embeds’ every-15 s asks mostly don’t reach PHP)', $status === 'HIT' || ($status === 'EXPIRED' && ($r['headers']['cf-cache-status'][0] ?? '') === 'HIT'), ($r['headers']['cf-cache-status'][0] ?? '') . ' → ' . $status);
+        // (a few asks: the 2 s can run out between two of them, and an edge has several machines that each fill on their own)
+        $seen = [$r['headers']['cf-cache-status'][0] ?? ''];
+        for ($i = 0; $i < 4 && !in_array('HIT', $seen, true); $i++) {
+            $seen[] = $s->go('api/nowplaying.php')['headers']['cf-cache-status'][0] ?? '';
+        }
+        check('  Cloudflare keeps it (the embeds’ every-15 s asks mostly don’t reach PHP)', in_array('HIT', $seen, true), implode(' → ', $seen));
     }
     check('  it is told at the listener delay', ($np['delay'] ?? 0) === 20 && abs(($np['server_now'] ?? 0) - ($np['heard_at'] ?? 0) - 20) < 0.2 && abs(($np['server_now'] ?? 0) - microtime(true)) < 30);
     check('  with the station, now, next and recent', isset($np['station']['name']) && array_key_exists('on_air', $np) && is_array($np['next'] ?? null) && is_array($np['recent'] ?? null));
