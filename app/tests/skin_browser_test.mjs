@@ -127,6 +127,17 @@ try {
     l = await A.evaluate(LOOK);
     check(`/${p} (signed in) is hi-fi`, l.skin === "hifi" && l.amber === HIFI && l.pick === "hifi" && l.font === "Barlow", JSON.stringify(l));
   }
+  // round 55: at phone width the top bar (logo, version, Look, the signed-in links) wraps instead of pushing
+  // the Look picker and Sign out off the side (found in Safari's engine; Edge did the same)
+  await A.call("Emulation.setDeviceMetricsOverride", { width: 360, height: 740, deviceScaleFactor: 1, mobile: false });
+  for (const p of ["", "manage", "manage/library", "podcast", "privacy"]) {
+    await A.go(`${base}/${p}`);
+    const w = await A.evaluate(`(() => { const out = [...document.querySelectorAll(".top *")].filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && (r.right > innerWidth + 1 || r.left < -1); }).map((el) => el.tagName.toLowerCase() + "." + el.className);
+      return { page: document.documentElement.scrollWidth, inner: innerWidth, out }; })()`);
+    check(`  /${p} at 360 px: the top bar fits, nothing scrolls sideways`, w.inner === 360 && w.page <= 360 && !w.out.length, JSON.stringify(w));
+  }
+  await A.call("Emulation.clearDeviceMetricsOverride");
+  await A.go(`${base}/studio`); // the checks below read the studio's deck
   // the studio's deck waves are drawn on a canvas: their background is the skin's display colour
   const deckBg = async () => { await sleep(700); return A.evaluate(`(() => { const c = document.getElementById("wA"); if (!c || !c.width) return null; const d = c.getContext("2d").getImageData(2, 2, 1, 1).data; return [d[0], d[1], d[2]]; })()`); };
   let px = await deckBg();

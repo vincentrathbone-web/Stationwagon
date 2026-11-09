@@ -4,19 +4,24 @@
 // Checked for each: converted with the station's own decoder, the song an MP3 at 44.1 kHz and the station's
 // bit rate, levelled to -16 LUFS (decoded back by the browser itself), its tags and cover in an ID3 tag,
 // the 320 kbps original known by its fingerprint, and the time it took.
-//   node app/tests/prep_formats_browser_test.mjs http://localhost:8080/stationwagon-app [--firefox | --phone]
-// Edge over DevTools, Firefox over WebDriver BiDi, --phone: Brave on the Android phone over USB (unlocked;
+//   node app/tests/prep_formats_browser_test.mjs http://localhost:8080/stationwagon-app [--firefox | --webkit | --phone]
+// Edge over DevTools, Firefox over WebDriver BiDi, --webkit: Playwright's WebKit (Safari's engine), --phone: Brave on the Android phone over USB (unlocked;
 // adb at SW_ADB; Laragon and the samples reach it through `adb reverse`). Needs the lossless test music.
 import { spawn, execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 import { makeSamples, SAMPLES, TAGS } from "./make_format_samples.mjs";
 
 const base = (process.argv[2] || "").replace(/\/$/, "");
-if (!base) { console.error("Usage: node app/tests/prep_formats_browser_test.mjs <base url> [--firefox | --phone]"); process.exit(1); }
-const FIREFOX = process.argv.includes("--firefox"), PHONE = process.argv.includes("--phone");
+if (!base) { console.error("Usage: node app/tests/prep_formats_browser_test.mjs <base url> [--firefox | --webkit | --phone]"); process.exit(1); }
+const FIREFOX = process.argv.includes("--firefox"), PHONE = process.argv.includes("--phone"), WEBKIT = process.argv.includes("--webkit");
+// --webkit: playwright-core and its WebKit in SW_PLAYWRIGHT (default D:/Dev/toolshed/playwright; see HANDOVER.md)
+const PW = process.env.SW_PLAYWRIGHT || "D:/Dev/toolshed/playwright";
+if (WEBKIT && !process.env.PLAYWRIGHT_BROWSERS_PATH) process.env.PLAYWRIGHT_BROWSERS_PATH = join(PW, "browsers");
 let failed = 0, passed = 0;
 const check = (label, ok, detail = "") => {
   ok ? passed++ : failed++;
@@ -77,6 +82,18 @@ if (PHONE) {
       return r.result?.result?.value;
     },
     async close() { try { await call("Page.navigate", { url: `${base}/privacy` }); } catch { /* gone */ } },
+  };
+} else if (WEBKIT) {
+  // Safari's engine: Playwright's WebKit build for Windows (not Safari itself, which Apple only makes for its
+  // own devices; the same engine, but its own sound and video formats)
+  const { webkit } = await import(pathToFileURL(join(PW, "node_modules", "playwright-core", "index.mjs")).href);
+  let wk, ctx;
+  browser = {
+    name: "WebKit (Playwright, Safari's engine)",
+    async start() { wk = await webkit.launch({ headless: true }); ctx = await wk.newContext(); ws = null; },
+    async open(url) { const pg = await ctx.newPage(); await pg.goto(url, { waitUntil: "load" }); return pg; },
+    async evaluate(pg, expression) { return pg.evaluate(expression); },
+    async close() { await wk.close(); },
   };
 } else if (!FIREFOX) {
   const exe = ["C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "C:/Program Files/Google/Chrome/Application/chrome.exe"].find((b) => existsSync(b));
@@ -152,14 +169,38 @@ const PREPARE = (url, name) => `(async () => {
     return null;
   };
   const text = (bytes) => new TextDecoder().decode(bytes.subarray(0, Math.min(bytes.length, 1200000)));
-  const a = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(song.slice().buffer);
-  return { prepared: true, secs, notices, name: p.name, kind: p.info.converted && p.info.converted.kind, codec: p.info.converted && p.info.converted.from.codec,
+  // decoded back by the browser itself; a browser without Web Audio (Playwright's WebKit on Windows) hands
+  // the song to the test, which decodes it with the test ffmpeg
+  const Off = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const a = Off ? await new Off(2, 1, 44100).decodeAudioData(song.slice().buffer) : null;
+  let b64 = null;
+  if (!a) { let s = ""; for (let i = 0; i < song.length; i += 32768) s += String.fromCharCode.apply(null, song.subarray(i, i + 32768)); b64 = btoa(s); }
+  return { prepared: true, secs, notices, b64, decodedBy: a ? "this browser" : "the test ffmpeg",
+    seconds: a ? a.duration : 0, lufs: a ? SwPrepCore.loudness([a.getChannelData(0), a.getChannelData(1)], 44100) : 0, name: p.name, kind: p.info.converted && p.info.converted.kind, codec: p.info.converted && p.info.converted.from.codec,
     song: frame(song), orig: frame(orig), shaOk: hex(await crypto.subtle.digest("SHA-1", orig)) === p.sourceSha1,
-    seconds: a.duration, lufs: SwPrepCore.loudness([a.getChannelData(0), a.getChannelData(1)], 44100),
     songTags: ["TIT2", "TPE1", "TALB", "TCOM", "APIC", "STATIONWAGON_PREP"].filter((k) => text(song).includes(k)),
     origTags: ["TIT2", "TPE1", "APIC", "STATIONWAGON_"].filter((k) => text(orig).includes(k)),
     title: text(song).includes(${JSON.stringify(TAGS.title)}) };
 })()`;
+
+// A song the browser can't decode back itself (no Web Audio): the test ffmpeg makes it a float WAV, measured
+// with song prep's own loudness meter
+const core = createRequire(import.meta.url)("../assets/prep-core.js");
+function measure(mp3) {
+  const dir = mkdtempSync(join(tmpdir(), "sw-formats-measure-"));
+  try {
+    writeFileSync(join(dir, "song.mp3"), mp3);
+    const cli = process.env.SW_FFMPEG_CLI || "D:/Dev/toolshed/ffmpeg-cli/ffmpeg.js";
+    execFileSync(process.execPath, [cli, "-hide_banner", "-loglevel", "error", "-y", "-i", "song.mp3", "-ac", "2", "-ar", "44100", "-c:a", "pcm_f32le", "song.wav"], { cwd: dir, stdio: ["ignore", "ignore", "pipe"] }); // its stderr only on a failure (it warns about getrusage)
+    const w = readFileSync(join(dir, "song.wav"));
+    let at = 12;
+    while (at < w.length - 8 && w.toString("ascii", at, at + 4) !== "data") at += 8 + w.readUInt32LE(at + 4);
+    const f = new Float32Array(w.buffer.slice(w.byteOffset + at + 8, w.byteOffset + w.length - ((w.length - at - 8) % 8)));
+    const L = new Float32Array(f.length / 2), R = new Float32Array(f.length / 2);
+    for (let i = 0; i < L.length; i++) { L[i] = f[2 * i]; R[i] = f[2 * i + 1]; }
+    return { seconds: L.length / 44100, lufs: core.loudness([L, R], 44100) };
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
 
 try {
   await browser.start();
@@ -172,7 +213,8 @@ try {
     const label = `${s.file} (${s.kind}${s.rate ? ", " + s.rate / 1000 + " kHz" : ""})`;
     check(`${label} is converted with the station's decoder`, r.prepared && r.kind === s.kind && r.name === s.file.replace(/\.[^.]+$/, ".mp3"), r.prepared ? `${r.kind}, ${r.codec}, ${r.secs.toFixed(1)} s` : r.note);
     if (!r.prepared) continue;
-    check("  the song: an MP3 at 44.1 kHz and 192 kbps, about 30 s, at −16 LUFS (decoded by this browser)",
+    if (r.b64) Object.assign(r, measure(Buffer.from(r.b64, "base64")));
+    check(`  the song: an MP3 at 44.1 kHz and 192 kbps, about 30 s, at −16 LUFS (decoded by ${r.decodedBy})`,
       r.song && r.song.rate === 44100 && r.song.kbps === 192 && Math.abs(r.seconds - 30) < 0.8 && Math.abs(r.lufs + 16) <= 0.15, `${r.song && r.song.kbps} kbps, ${r.song && r.song.rate} Hz, ${r.seconds.toFixed(2)} s, ${r.lufs.toFixed(2)} LUFS`);
     check("  with the title, artist, album" + (s.writers === false ? "" : ", songwriter") + (s.cover ? ", cover" : "") + " and how it was made in its tag",
       r.title && ["TIT2", "TPE1", "TALB", "STATIONWAGON_PREP"].every((k) => r.songTags.includes(k)) && (s.writers === false || r.songTags.includes("TCOM")) && (!s.cover || r.songTags.includes("APIC")), r.songTags.join(" "));
@@ -185,7 +227,7 @@ try {
 } catch (ex) {
   check("the test ran to the end", false, ex.message);
 } finally {
-  try { if (ws) { await Promise.race([browser.close(), sleep(3000)]); await sleep(500); ws.close(); } } catch { /* closed */ }
+  try { if (WEBKIT) await Promise.race([browser.close(), sleep(5000)]); else if (ws) { await Promise.race([browser.close(), sleep(3000)]); await sleep(500); ws.close(); } } catch { /* closed */ }
   if (proc) proc.kill();
   if (FIREFOX && proc) try { execFileSync("taskkill", ["/F", "/T", "/PID", String(proc.pid)], { stdio: "ignore" }); } catch { /* gone */ }
   if (PHONE) for (const a of [["forward", "--remove", "tcp:9222"], ["reverse", "--remove", `tcp:${samplePort}`]]) try { execFileSync(adbPath, a, { stdio: "ignore" }); } catch { /* none */ }
