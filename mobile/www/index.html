@@ -29,6 +29,10 @@
   .btn.primary { background: var(--accent); color: var(--on-accent); } .btn.primary:active { background: var(--accent-hover); }
   .acts { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
   .msg { min-height: 1.5em; margin-top: 10px; color: var(--ink-2); } .msg.bad { color: var(--bad); }
+  /* the station finder's line under the address (round 59) */
+  .found { min-height: 1.5em; margin-top: 6px; font-size: 14px; color: var(--ink-2); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .found.ok { color: var(--accent); font-weight: 600; } .found.bad { color: var(--bad); }
+  .found button { background: none; border: 0; padding: 6px 0; font: 600 14px/1.4 inherit; color: var(--ink); text-decoration: underline; }
   .lamp { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); margin-right: 8px; vertical-align: 1px; }
   .lamp.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); } .lamp.warn { background: var(--warn); }
   .state { font-weight: 600; }
@@ -46,7 +50,8 @@
     <form class="card" id="form">
       <h2>Your station</h2>
       <label for="station">The station’s address</label>
-      <input id="station" type="text" inputmode="url" placeholder="radio.example.com/stationwagon-app" autocomplete="url" autocapitalize="off" spellcheck="false" required>
+      <input id="station" type="text" inputmode="url" placeholder="example.com/radio" autocomplete="url" autocapitalize="off" spellcheck="false" required>
+      <div class="found" id="found" role="status"></div>
       <div class="acts">
         <button class="btn primary" type="submit" id="openBtn">Save and open the studio</button>
       </div>
@@ -132,8 +137,48 @@
     return true;
   }
 
+  // ---- Finding the station (round 59): the address typed may be the website's, not the station's ----
+  let finding = 0, station = null; // station: what findStation found for the address in the box
+  /** Asks the app where the station is; shows "Found: …" (and puts its address in the box) or why not. */
+  async function findStation() {
+    const typed = $("station").value.trim(), mine = ++finding;
+    station = null; showFound();
+    if (!typed) return null;
+    $("found").className = "found"; $("found").textContent = "Looking for the station…";
+    const r = await App.findStation({ address: typed }).catch((e) => ({ found: false, reachable: false, message: why(e) }));
+    if (mine !== finding) return null; // typed again meanwhile
+    station = r;
+    if (r.found) $("station").value = r.base;
+    showFound();
+    return r;
+  }
+  function showFound() {
+    const f = $("found"), r = station;
+    f.replaceChildren();
+    f.className = "found" + (r ? (r.found ? " ok" : " bad") : "");
+    if (r && r.found) f.textContent = `✓ Found: ${r.name}`;
+    else if (r) {
+      f.append("✗ " + r.message + " ");
+      const again = document.createElement("button"); again.type = "button"; again.id = "findAgain"; again.textContent = "Check again";
+      again.onclick = findStation; f.append(again);
+    }
+    $("openBtn").disabled = !!r && !r.found;
+  }
+  let typing = null;
+  $("station").addEventListener("input", () => { finding++; station = null; showFound(); clearTimeout(typing); typing = setTimeout(findStation, 800); });
+
+  /**
+   * Opens the saved station's studio if it is still a station there; else shows this page and why. When the
+   * station can't be reached at all it opens anyway: the app's offline page has Try again and Change the station.
+   */
   async function openStudio() {
     $("boot").hidden = false; $("page").hidden = true;
+    $("bootMsg").textContent = "Looking for the station…";
+    const r = await findStation();
+    if (r && (r.found ? !r.exact : r.reachable)) {
+      say("msg", r.found ? "The saved address isn’t the station’s own. It’s found at the address above: tap Save and open the studio." : "");
+      return showPage();
+    }
     $("bootMsg").textContent = "Opening the studio…";
     try { await App.openStation(); return; } catch (e) { say("msg", why(e), true); }
     showPage();
@@ -151,6 +196,10 @@
 
   $("form").onsubmit = async (e) => {
     e.preventDefault();
+    clearTimeout(typing);
+    // only a station found at this address is saved and opened
+    const r = station && station.found && station.base === $("station").value.trim() ? station : await findStation();
+    if (!r || !r.found) return;
     try {
       const s = await App.saveStation({ station: $("station").value });
       $("station").value = s.station;
@@ -179,6 +228,7 @@
       return openStudio();
     }
     showPage();
+    if (info.station) findStation(); // App settings: show that the saved address is (still) the station
   })();
   window.SwApp = { info: () => info };
 })();

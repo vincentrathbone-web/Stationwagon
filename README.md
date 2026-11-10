@@ -15,8 +15,8 @@ list and quick search.
 | Part | Version | State |
 |---|---|---|
 | Server app (`app/`) | `0.9.7-dev` | Station manager, AutoDJ, listener player, browser studio, podcasts, listener stats, best-quality song prep, uploads in any common format and a details window with licensing: done, tested and **live** |
-| Windows studio app | [`v0.6.3`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/v0.6.3) | Released; offers each new version in an update window |
-| Android studio app | [`android-v0.7.3`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/android-v0.7.3) | Released; offers each new version in an update window |
+| Windows studio app | [`v0.6.4`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/v0.6.4) | Released; finds the station from the website's address; offers each new version in an update window |
+| Android studio app | [`android-v0.7.4`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/android-v0.7.4) | Released; finds the station from the website's address; offers each new version in an update window |
 | WordPress plugin | `1.2.1` | Installs and updates a station next to a WordPress site |
 
 **The first station is live**: Radio WordWave plays its music on Stationwagon at

@@ -28,7 +28,7 @@ import com.getcapacitor.annotation.Permission;
 
 /**
  * The app's native parts, for its own start page and the station's studio page:
- * - start page only: the station's address, opening the studio, updates
+ * - start page only: the station's address (and finding the station from it), opening the studio, updates
  * - both: Do Not Disturb, on air (the foreground service), the start page, quitting, the look picked in the studio
  * Events: "back" (Back pressed while on air), "updateProgress" ({ got, total }), "updateFailed" ({ message }).
  */
@@ -98,6 +98,21 @@ public class StationAppPlugin extends Plugin {
         } catch (IllegalArgumentException e) {
             call.reject(e.getMessage());
         }
+    }
+
+    /**
+     * Finds the station from the address typed ({ address }): { found, base, name, exact, reachable,
+     * message } (StationFinder; the website's address finds the station linked from it, round 59).
+     */
+    @PluginMethod
+    public void findStation(PluginCall call) {
+        if (!fromStartPage(call)) return;
+        String address = call.getString("address", "");
+        new Thread(() -> {
+            StationFinder.Result r = StationFinder.find(address);
+            call.resolve(new JSObject().put("found", r.found).put("base", r.base).put("name", r.name)
+                .put("exact", r.exact).put("reachable", r.reachable).put("message", r.message));
+        }).start();
     }
 
     @PluginMethod

@@ -4,7 +4,8 @@
 // password, Ogg, a second source), going live by itself, the pieces reaching the station whole and
 // in order, song titles, a short drop that carries on the show, Stop ending it (and its podcast from
 // the aired sound), Mixxx's and Shoutcast's ways of connecting, a DJ outside their slot, the close
-// question while on air, the settings window, and what the station's page may not do.
+// question while on air, the settings window, what the station's page may not do, and finding the station from the website's
+// address (round 59).
 // Takes about 4 minutes.
 //   node desktop/tests/app_test.mjs [base url] [path to stationwagon-studio.exe]
 // Needs SW_PHP (php.exe) unless php is on PATH. Your own app settings are put back afterwards.
@@ -368,6 +369,47 @@ try {
   for (let i = 0, last = ""; i < 50; i++) { await sleep(200); const p = await path(); if (p && p === last && (await evaluate("document.readyState").catch(() => "")) === "complete") break; last = p; }
   check("Keep me signed in: the app closed and opened again goes straight to the studio, signed in", (await path()).endsWith("/studio") && !!(await until((x) => x.slot, 10)), await path());
   check("  the test used its own WebView2 profile (yours is left alone)", existsSync(join(profile, "EBWebView")));
+
+  console.log("Finding the station (round 59)");
+  // a stand-in website: its home page links to a station in /myradio/, which answers like one
+  const site = httpServer((req, res) => {
+    if (req.url === "/") { res.writeHead(200, { "Content-Type": "text/html" }); res.end('<p><a href="/listen/">Listen</a> <a href="/myradio/signin">Sign in</a></p>'); return; }
+    if (req.url.startsWith("/myradio/api/nowplaying.php")) { res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"station":{"name":"Stand-in Radio"}}'); return; }
+    res.writeHead(404); res.end("not found");
+  });
+  await new Promise((ok) => site.listen(0, "127.0.0.1", ok));
+  const SITE = `http://127.0.0.1:${site.address().port}/`;
+  const NAME = (await (await fetch(`${base}/api/nowplaying.php`)).json()).station.name;
+  const root = new URL(base).origin + "/";
+  closeWindow("Stationwagon Studio");
+  for (let i = 0; i < 30 && alive(); i++) await sleep(200);
+  writeFileSync(cfgFile, JSON.stringify({ ...JSON.parse(readFileSync(cfgFile, "utf8")), station: root }));
+  app = launch();
+  await attach((x) => x.url.startsWith("http://tauri.localhost"));
+  const finder = async () => evaluate(`({ box: document.getElementById("station").value, found: document.getElementById("found").textContent, cls: document.getElementById("found").className,
+    open: !document.getElementById("openBtn").disabled, page: !document.getElementById("page").hidden, msg: document.getElementById("msg").textContent })`);
+  const waitFinder = async (ok, seconds = 25) => { let f = null; for (let i = 0; i < seconds * 4; i++) { f = await finder().catch(() => null); if (f && ok(f)) return f; await sleep(250); } return f; };
+  let f = await waitFinder((x) => x.page && x.cls.includes("ok"));
+  check(`saved as the website's address (${root}): the app doesn't open a page that isn't there; its page shows the station it found instead`,
+    f && f.page && f.box === base + "/" && f.found === `✓ Found: ${NAME}` && f.open && /isn’t the station’s own/.test(f.msg), f && `${f.box} · ${f.found} · ${f.msg}`);
+  check("  (the main window is still the app's own page)", (await targets()).some((x) => x.url.startsWith("http://tauri.localhost")) && !(await targets()).some((x) => x.url.startsWith(base)));
+  const typeAddress = (a) => evaluate(`(() => { const i = document.getElementById("station"); i.value = ${JSON.stringify(a)}; i.dispatchEvent(new Event("input")); })()`);
+  await typeAddress(`${root}nothing-here/`);
+  f = await waitFinder((x) => x.cls.includes("bad"));
+  check("typing an address with no station: '✗ There's no Stationwagon station at …', and Save and open can't be pressed", f && /no Stationwagon station at/.test(f.found) && !f.open, f && f.found);
+  await typeAddress("http://localhost:9/");
+  f = await waitFinder((x) => x.cls.includes("bad"));
+  check("  a server that doesn't answer: 'Couldn't reach …' with Check again", f && /Couldn’t reach/.test(f.found) && /Check again/.test(f.found) && !f.open, f && f.found);
+  await typeAddress(SITE);
+  f = await waitFinder((x) => x.cls.includes("ok"));
+  check("a website whose home page links to its station: found through that link", f && f.box === `${SITE}myradio/` && f.found === "✓ Found: Stand-in Radio" && f.open, f && `${f.box} · ${f.found}`);
+  await typeAddress(root.replace(/\/$/, ""));
+  f = await waitFinder((x) => x.cls.includes("ok"));
+  check(`the website's address typed again: the station found in its folder (${base}/)`, f && f.box === base + "/" && f.found === `✓ Found: ${NAME}`, f && `${f.box} · ${f.found}`);
+  await evaluate(`document.getElementById("form").requestSubmit()`);
+  t = await attach((x) => x.url.startsWith(base));
+  check("  Save and open: the station's studio opens, and the station's own address is saved", !!t && JSON.parse(readFileSync(cfgFile, "utf8")).station === base + "/", t ? t.url : "no studio");
+  site.close();
 
   console.log("Closing");
   closeWindow("Stationwagon Studio");

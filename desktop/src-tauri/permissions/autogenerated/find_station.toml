@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-find-station"
+description = "Enables the find_station command without any pre-configured scope."
+commands.allow = ["find_station"]
+
+[[permission]]
+identifier = "deny-find-station"
+description = "Denies the find_station command without any pre-configured scope."
+commands.deny = ["find_station"]

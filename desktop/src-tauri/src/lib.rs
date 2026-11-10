@@ -156,6 +156,125 @@ fn renew_password(state: State<App>) -> Result<String, String> {
     Ok(pw)
 }
 
+// ---- Finding the station (round 59) ------------------------------------------------------------
+// A DJ may type the website's address (https://wordwave.co.za) instead of the station's
+// (https://wordwave.co.za/radio/). Every Stationwagon station answers api/nowplaying.php with
+// { station: { name } }, so the app asks there: at the address typed, at the stations linked from
+// that page (its links to …/radio/, …/radio/signin, …/radio/embed), and in the usual folders.
+
+/// What find_station found: `found` with the station's base and name; else why not.
+#[derive(Serialize, Default)]
+struct Station { found: bool, base: String, name: String, exact: bool, reachable: bool, message: String }
+
+/// The usual folders a station is installed in, tried after the address typed and its links.
+const STATION_FOLDERS: [&str; 4] = ["radio/", "stationwagon-app/", "stationwagon/", "station/"];
+
+/// The station's base for a link on the site: the part before /studio, /signin, /embed, … ("" if none).
+fn base_from_link(link: &url::Url) -> Option<url::Url> {
+    let path = link.path();
+    for mark in ["/studio", "/signin", "/embed", "/manage", "/podcast", "/api/"] {
+        if let Some(i) = path.find(mark) {
+            let rest = &path[i + mark.len()..];
+            if mark.ends_with('/') || rest.is_empty() || rest.starts_with('/') || rest.starts_with('.') {
+                let mut b = link.clone();
+                b.set_query(None);
+                b.set_fragment(None);
+                b.set_path(&format!("{}/", &path[..i]));
+                return Some(b);
+            }
+        }
+    }
+    None
+}
+
+/// The same site, with or without www.
+fn same_site(a: &url::Url, b: &url::Url) -> bool {
+    let h = |u: &url::Url| u.host_str().unwrap_or("").trim_start_matches("www.").to_ascii_lowercase();
+    h(a) == h(b) && a.port_or_known_default() == b.port_or_known_default()
+}
+
+/// Links (href and src) on a page that point into a station on the same site.
+fn station_links(page: &url::Url, html: &str) -> Vec<url::Url> {
+    let mut out: Vec<url::Url> = Vec::new();
+    for attr in ["href=\"", "src=\"", "href='", "src='"] {
+        let quote = attr.chars().last().unwrap();
+        let mut rest = html;
+        while let Some(i) = rest.find(attr) {
+            rest = &rest[i + attr.len()..];
+            let end = rest.find(quote).unwrap_or(0);
+            let raw = rest[..end].replace("&amp;", "&");
+            if let Ok(link) = page.join(&raw) {
+                if same_site(page, &link) {
+                    if let Some(b) = base_from_link(&link) { if !out.contains(&b) { out.push(b); } }
+                }
+            }
+            if out.len() >= 8 { return out; }
+        }
+    }
+    out
+}
+
+/// Asks base/api/nowplaying.php: Some((base after any redirect, the station's name)) for a station.
+async fn station_at(client: &reqwest::Client, base: &url::Url) -> Result<Option<(url::Url, String)>, ()> {
+    let ask = base.join("api/nowplaying.php").map_err(|_| ())?;
+    let r = client.get(ask).header("Accept", "application/json").send().await.map_err(|_| ())?;
+    if !r.status().is_success() { return Ok(None); }
+    let mut real = r.url().clone();
+    let v: serde_json::Value = match r.json().await { Ok(v) => v, Err(_) => return Ok(None) };
+    let name = v.get("station").and_then(|s| s.get("name")).and_then(|n| n.as_str()).map(|s| s.trim().to_string());
+    let Some(name) = name else { return Ok(None) };
+    real.set_query(None);
+    let p = real.path().trim_end_matches("api/nowplaying.php").to_string();
+    real.set_path(&p);
+    Ok(Some((real, if name.is_empty() { "a Stationwagon station".into() } else { name })))
+}
+
+fn http_client() -> Result<reqwest::Client, String> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .user_agent(concat!("Stationwagon Studio/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+/// Finds the station from an address as typed (see above). Never fails: `found`, or a message saying why not.
+#[tauri::command]
+async fn find_station(address: String) -> Station {
+    let typed = match station_base(&address) { Ok(b) => b, Err(e) => return Station { message: e, ..Default::default() } };
+    let client = match http_client() { Ok(c) => c, Err(e) => return Station { message: e, ..Default::default() } };
+    let found = |(base, name): (url::Url, String), reachable| Station {
+        found: true, exact: base == typed, base: base.to_string(), name, reachable, message: String::new(),
+    };
+    // the address typed
+    let first = station_at(&client, &typed).await;
+    if let Ok(Some(hit)) = first { return found(hit, true); }
+    // the page at that address, for its links to the station
+    let mut candidates: Vec<url::Url> = Vec::new();
+    let mut reachable = first.is_ok();
+    if let Ok(r) = client.get(typed.clone()).send().await {
+        reachable = true;
+        let page = r.url().clone();
+        if let Ok(html) = r.text().await { candidates.extend(station_links(&page, &html)); }
+    }
+    if !reachable {
+        return Station { reachable: false, message: format!("Couldn’t reach {typed}. Check the address and your internet connection, then try again."), ..Default::default() };
+    }
+    for f in STATION_FOLDERS {
+        if let Ok(u) = typed.join(f) { if !candidates.contains(&u) { candidates.push(u); } }
+    }
+    candidates.retain(|c| c != &typed);
+    // ask them all at once, then take the first that is a station, in the order above
+    let tasks: Vec<_> = candidates.iter().cloned().map(|c| {
+        let client = client.clone();
+        tauri::async_runtime::spawn(async move { station_at(&client, &c).await })
+    }).collect();
+    for t in tasks {
+        if let Ok(Ok(Some(hit))) = t.await { return found(hit, true); }
+    }
+    Station { reachable: true, message: format!("There’s no Stationwagon station at {typed}. Type the station’s own address, for example https://example.com/radio"), ..Default::default() }
+}
+
 /// Opens the studio of the saved station in the main window (and closes the settings window).
 #[tauri::command]
 fn open_station(app: AppHandle, state: State<App>) -> Result<(), String> {
@@ -294,7 +413,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            get_info, save_settings, renew_password, open_station, check_update, install_update,
+            get_info, save_settings, renew_password, open_station, check_update, install_update, find_station,
             bridge_status, set_busy, quit_app, open_settings, set_look
         ])
         .run(tauri::generate_context!())
@@ -303,7 +422,24 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{station_base, Look};
+    use super::{base_from_link, station_base, station_links, Look};
+
+    #[test]
+    fn station_from_links() {
+        let u = |s: &str| url::Url::parse(s).unwrap();
+        let b = |s: &str| base_from_link(&u(s)).map(|x| x.to_string());
+        assert_eq!(b("https://wordwave.co.za/radio/signin").unwrap(), "https://wordwave.co.za/radio/");
+        assert_eq!(b("https://wordwave.co.za/radio/embed?theme=dark").unwrap(), "https://wordwave.co.za/radio/");
+        assert_eq!(b("https://wordwave.co.za/radio/api/nowplaying.php").unwrap(), "https://wordwave.co.za/radio/");
+        assert_eq!(b("https://x.example/studio").unwrap(), "https://x.example/");
+        assert!(b("https://wordwave.co.za/studios-and-more/").is_none());
+        assert!(b("https://wordwave.co.za/listen/").is_none());
+        let page = u("https://wordwave.co.za/");
+        let html = r#"<a href="/listen/">Listen</a><a href="https://wordwave.co.za/radio/signin">Sign in</a>
+            <iframe src="https://www.wordwave.co.za/radio/embed"></iframe><a href="https://other.example/radio/signin">x</a>"#;
+        let found: Vec<String> = station_links(&page, html).iter().map(|x| x.to_string()).collect();
+        assert_eq!(found, vec!["https://wordwave.co.za/radio/", "https://www.wordwave.co.za/radio/"]);
+    }
 
     #[test]
     fn looks() {

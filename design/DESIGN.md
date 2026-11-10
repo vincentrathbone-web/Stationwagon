@@ -251,7 +251,9 @@ the picker buttons, in the bad colour when something failed.
 ### Windows app (round 33; not in the mock-ups)
 
 The app's main window is the station's own studio page. Its own settings page (`desktop/ui/index.html`,
-green tokens, one column) has two cards: **Your station** (the address, Save and open the studio, Check
+green tokens, one column) has two cards: **Your station** (the address with the station finder's line under it, round 59:
+"Looking for the station…", **✓ Found: <name>** in the accent colour, or **✗ <why>** in the bad colour with an underlined
+**Check again**; Save and open the studio, which can't be pressed while there's no station; Check
 for updates) and **BUTT and Mixxx** (a lamp and what is sending, the address, port, mount, user, password
 and format to type into BUTT or Mixxx, Copy the password, New password, and folded how-tos). When the app
 opens it shows "Checking for updates…", then the **update window** when a newer version is out (see below), or
@@ -279,7 +281,7 @@ corners); the app's own start page uses the same look.
 
 The same idea on Android (`mobile/`, Capacitor): the app's main screen is the station's own studio page.
 Its own start page (`mobile/www/index.html`, green tokens, one column, 44 px buttons, safe-area padding)
-has three cards: **Your station** (the address, Save and open the studio), **On air on this phone** (a lamp
+has three cards: **Your station** (the address with the same station finder's line as on Windows, Save and open the studio), **On air on this phone** (a lamp
 and "Do Not Disturb: allowed / not allowed yet", what the app does when you go live, and **Allow Do Not
 Disturb**, which opens Android's own screen) and **Updates** (Check for updates, which opens the update window, and a lamp with "Opening again after an update: allowed / not allowed yet", **Allow display over other apps**, and on Xiaomi phones **Allow Autostart**, each opening Android's own list, where the DJ switches Stationwagon Studio on).
 Opening the app shows "Checking for updates…", the update window when a newer version is out, or "Opening the studio…".

@@ -254,14 +254,16 @@ const MAP = {
       { text: "Studio in WebView2 (Tauri)", note: "the station's own studio page, always the server's version", v: "v0.6", state: "done" },
       { text: "Local Icecast bridge for BUTT and Mixxx", note: "BUTT connecting goes live by itself; tested with the real BUTT", v: "v0.6", state: "done" },
       { text: "Signed installer with auto-update", note: "v0.6.2 released on GitHub (new key, 10 Nov); updates come through the Stationwagon Updates plugin", v: "v0.6", state: "done" },
-      { text: "An update window that asks first", note: "0.6.3: \"Version X is now available\" with what it brings, Remind me later or Update now; in the studio's look", v: "v0.6", state: "done" }
+      { text: "An update window that asks first", note: "0.6.3: \"Version X is now available\" with what it brings, Remind me later or Update now; in the studio's look", v: "v0.6", state: "done" },
+      { text: "Finds the station from the website's address", note: "0.6.4: \"✓ Found\" before Open; a wrong saved address shows the settings, not a dead page", v: "v0.6", state: "done" }
     ]},
     { name: "Android app", blurb: "The studio as an installed Android app; iPhones and iPads keep the browser studio.", features: [
       { text: "Studio as an Android app (Capacitor, Android 8+)", note: "the station's own studio page, always the server's version", v: "v0.7", state: "done" },
       { text: "Do Not Disturb on air, with a warning first", note: "alarms only; on at Go live, back at End show; yours is left alone", v: "v0.7", state: "done" },
       { text: "The show goes on with the screen off", note: "an On air notification keeps the mic, sound and Wi-Fi awake", v: "v0.7", state: "done" },
       { text: "In-app updates from GitHub", note: "through the Stationwagon Updates plugin; checked when the app opens", v: "v0.7", state: "done" },
-      { text: "An update window that asks first", note: "0.7.3: the same window as on Windows, sized for a phone", v: "v0.7", state: "done" }
+      { text: "An update window that asks first", note: "0.7.3: the same window as on Windows, sized for a phone", v: "v0.7", state: "done" },
+      { text: "Finds the station from the website's address", note: "0.7.4: \"✓ Found\" before Open", v: "v0.7", state: "done" }
     ]},
     { name: "Listener app (Android)", blurb: "A listener-only app per station, made from one config file; lives in the station's own repo (WordWave's android-app/). Chat is planned, not built.", features: [
       { text: "Live stream with lock-screen and notification controls", note: "Media3; keeps playing with the screen off; tested on the phone", v: "v0.8", state: "done" },
@@ -289,6 +291,7 @@ const MAP = {
   call: null,
   feedTitle: "Changed 20 Oct – 10 Nov",
   feed: [
+    { what: "The apps find the station", to: "type the website's address (wordwave.co.za) and the Windows or Android app finds the station at /radio/, shows \"✓ Found: Radio WordWave\" and opens only then; a wrong address says why. Windows 0.6.4 and Android 0.7.4 released", at: "10 Nov" },
     { what: "Updates ask first now", to: "both studio apps show \"Version X is now available\" with the release's notes (New features, Improvements, Fixes, Warning), Remind me later or Update now, in the look picked in the studio; modelled on the KDOHC app. Windows 0.6.3 and Android 0.7.3 released", at: "10 Nov" },
     { what: "No pilot week needed", to: "WordWave has already played live music on Stationwagon for a week, so running beside AzuraCast and copying its library are dropped; old server backups from 1–9 Nov deleted", at: "10 Nov", kind: "info" },
     { what: "Studio apps released", to: "Windows 0.6.2 and Android 0.7.2 with the new logo; signed with new keys (the old ones were lost with the PC rebuild), so uninstall an older copy once; then updates come by themselves again", at: "10 Nov" },

@@ -168,7 +168,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
   </div>
   <div class="results" id="results" hidden></div>
   <div class="toc" id="toc"></div>
-  <div class="foot">Matches Stationwagon 0.9.7 (server), Windows app 0.6.3 and Android app 0.7.3. Updated 10 Nov 2026, with the WordPress plugin 1.2.1.</div>
+  <div class="foot">Matches Stationwagon 0.9.7 (server), Windows app 0.6.4 and Android app 0.7.4. Updated 10 Nov 2026, with the WordPress plugin 1.2.1.</div>
 </nav>
 
 <main>
@@ -582,7 +582,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
     <li>In the browser studio on Windows, choose <b>Get the Windows app</b> and run the installer. No admin rights are needed.</li>
     <li>The first time, Windows SmartScreen may say "unknown publisher": choose <b>More info</b>, then <b>Run anyway</b>.</li>
     <li>Had version 0.6.1 or older? Uninstall it once first (Windows Settings → Apps). Since 0.6.2 the app is signed with a new key, so the old app can't update to it. After that, new versions are offered in an <a href="#updates">update window</a>.</li>
-    <li>Type your station's address and open the studio. Sign in; the app offers to save your password.</li>
+    <li>Type your station's address. The website's address is fine too (for example <code>wordwave.co.za</code>): the app looks for the station and shows <b>✓ Found:</b> with its name and its own address. Then press <b>Save and open the studio</b>. Sign in; the app offers to save your password.</li>
   </ol>
   <h4>Broadcasting with BUTT or Mixxx</h4>
   <p>The app has a <b>bridge</b>: BUTT or Mixxx sends to the app as if it were an Icecast server, and the app sends your show to the station. Open <b>App settings</b> in the status strip to see the port and password, then set up BUTT like this:</p>
@@ -610,7 +610,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
   <p>For Android 8 and newer.</p>
   <ol class="steps">
     <li>Sign in to the studio in your phone's browser and choose <b>Get the Android app</b>. Allow your browser to install it when Android asks. Had version 0.7.1 or older? Uninstall it first: since 0.7.2 the app is signed with a new key, so Android won't install it over the old one. After that, new versions are offered in an <a href="#updates">update window</a>.</li>
-    <li>Open <b>Stationwagon Studio</b>. On its start page, type your station's address and press <b>Save and open the studio</b>.</li>
+    <li>Open <b>Stationwagon Studio</b>. On its start page, type your station's address (or the website's: the app finds the station and shows <b>✓ Found:</b>), then tap <b>Save and open the studio</b>.</li>
     <li>Sign in. Android offers to save your password; next time it offers <b>Use your saved password</b>.</li>
     <li>When you switch on the studio, allow <b>Do Not Disturb</b>, so calls and messages can't sound on air. The app turns it on (alarms only) when you go live and puts it back when you end.</li>
     <li>On the start page (<b>App settings</b>), allow <b>Display over other apps</b> so the app opens again by itself after an update. On a Xiaomi phone, also allow <b>Autostart</b>. In each list Android shows, find Stationwagon Studio and switch it on.</li>
@@ -658,6 +658,8 @@ ol.flow > li > a:hover { text-decoration: underline; }
   <p>That's fine: WAV, FLAC, M4A, AAC, Ogg, Opus and WMA are turned into MP3 in your browser when you <a href="#library">add them</a>. Very large files (over about 400 MB) may be too big for a phone's memory; use a computer.</p>
   <h4>The window says the songwriters, licence or publisher are missing.</h4>
   <p>It's a reminder, not a block. Add the song now and fill them in later with <b>Edit</b> → <b>© Copyright and licence…</b>; see <a href="#details">Song details</a>.</p>
+  <h4>The app says there's no Stationwagon station at my address.</h4>
+  <p>Check the spelling, or type the station's own address, usually the website's address followed by <code>/radio</code>. Ask the station's manager if you're not sure. "Couldn't reach" means the site didn't answer: check your internet connection and press <b>Check again</b>.</p>
   <h4>I chose Remind me later. How do I update now?</h4>
   <p>Open <b>App settings</b> (at the top of the studio) and press <b>Check for updates</b>. The same window opens with <b>Update now</b>.</p>
   <h4>The app won't update from 0.6.1 or 0.7.1 (or older).</h4>

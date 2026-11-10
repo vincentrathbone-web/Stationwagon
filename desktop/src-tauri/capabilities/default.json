@@ -15,6 +15,7 @@
     "allow-set-busy",
     "allow-quit-app",
     "allow-open-settings",
-    "allow-set-look"
+    "allow-set-look",
+    "allow-find-station"
   ]
 }

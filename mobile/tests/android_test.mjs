@@ -1,7 +1,8 @@
 // End-to-end test of Stationwagon Studio for Android (mobile/) on a real phone over USB, against
 // Laragon (the phone reaches it on localhost through adb reverse, which the WebView treats as secure,
 // so the mic works). Installs the test build of the older version, then:
-//   - the start page: a wrong address refused, the station saved, the studio opened;
+//   - the start page: a wrong address refused, the station found from the website's address (round 59),
+//     the station saved, the studio opened;
 //   - the app's own parts refused from the station's pages (only the start page may save or update);
 //   - the studio: a throwaway DJ signs in, switches on with the phone's mic, is asked to allow Do Not
 //     Disturb, goes live: Do Not Disturb on (alarms only), the "On air" service running, Back asks
@@ -353,7 +354,16 @@ try {
     check("  Allow Autostart opens Xiaomi's Autostart screen; switched on there, Back comes back to the page", on === "on" && !!url && await waitFor(() => shown("page"), 10), on);
   }
   await evaluate(`(() => { document.getElementById("station").value = "not an address!"; document.getElementById("form").requestSubmit(); })()`);
-  check("a wrong address is refused", (await waitFor(async () => (await text("#msg")).includes("doesn’t look like a web address") && await text("#msg"), 5)) !== null, await text("#msg"));
+  check("a wrong address is refused", (await waitFor(async () => (await text("#found")).includes("doesn’t look like a web address") && await text("#found"), 10)) !== null, await text("#found"));
+  // round 59: the website's address finds the station in its folder; an address with no station says so
+  const root = new URL(base).origin + "/", NAME = (await (await fetch(`${base}/api/nowplaying.php`)).json()).station.name;
+  const typeAddress = (a) => evaluate(`(() => { const i = document.getElementById("station"); i.value = ${JSON.stringify(a)}; i.dispatchEvent(new Event("input")); })()`);
+  await typeAddress(root);
+  let fnd = await waitFor(async () => { const t = await text("#found"); return t.startsWith("✓") && t; }, 30);
+  check(`typing the website's address (${root}): '✓ Found: ${NAME}', and the box shows the station's own address`, fnd === `✓ Found: ${NAME}` && (await evaluate("document.getElementById('station').value")) === base + "/" && !(await evaluate("document.getElementById('openBtn').disabled")), `${fnd} · ${await evaluate("document.getElementById('station').value")}`);
+  await typeAddress(root + "nothing-here/");
+  fnd = await waitFor(async () => { const t = await text("#found"); return t.startsWith("✗") && t; }, 30);
+  check("  an address with no station: '✗ There's no Stationwagon station at …', Save and open can't be tapped", !!fnd && /no Stationwagon station at/.test(fnd) && await evaluate("document.getElementById('openBtn').disabled"), fnd);
   let r = await native("checkUpdate");
   check("Check for updates: nothing newer", r && r.ok && !r.value.version, JSON.stringify(r));
   await evaluate(`(() => { document.getElementById("station").value = ${JSON.stringify(base + "/studio")}; document.getElementById("form").requestSubmit(); })()`);
@@ -430,6 +440,13 @@ try {
   await evaluate(`(() => { document.getElementById("station").value = ${JSON.stringify(base)}; document.getElementById("form").requestSubmit(); })()`);
   url = await attach(new RegExp("^" + base.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&") + "/studio"), 20);
   check("  and the right address opens the studio again, still signed in (the app keeps the sign-in over its own restarts)", !!url, url);
+  start(["--es", "sw_station", new URL(base).origin + "/"]);
+  url = await attach(START, 20);
+  const boot = url && await waitFor(async () => { const t = await text("#found"); return (await shown("page")) && t.startsWith("✓") && t; }, 30);
+  check("saved as the website's address: the app shows its start page with the station it found, instead of a page that isn't there", !!boot && (await evaluate("document.getElementById('station').value")) === base + "/" && /isn’t the station’s own/.test(await text("#msg")), `${boot} · ${await text("#msg")}`);
+  await evaluate(`document.getElementById("form").requestSubmit()`);
+  url = await attach(STUDIO, 20);
+  check("  Save and open: the station's studio opens", !!url, url);
   await waitFor(() => shown("stDroidSet"), 10); // the studio sets its buttons up just after the page loads
   await evaluate("document.getElementById('stDroidSet').click()");
   url = await attach(START, 15);
