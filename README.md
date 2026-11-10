@@ -10,23 +10,32 @@ The first station it's designed around is Radio WordWave / Radio WoordGolf. Its 
 open it in a browser). It covers setting up a station, running it, and going live, with a contents
 list and quick search.
 
-## Status (29 Oct 2026)
+## Status (10 Nov 2026)
 
 | Part | Version | State |
 |---|---|---|
-| Server app (`app/`) | `0.8.0-dev` | Station manager, AutoDJ, listener player, browser studio, podcasts, listener stats: done and tested on the real shared host |
-| Windows studio app | [`v0.6.1`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/v0.6.1) | Released; updates itself |
-| Android studio app | [`android-v0.7.1`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/android-v0.7.1) | Released; updates itself |
+| Server app (`app/`) | `0.9.7-dev` | Station manager, AutoDJ, listener player, browser studio, podcasts, listener stats, best-quality song prep, uploads in any common format and a details window with licensing: done, tested and **live** |
+| Windows studio app | [`v0.6.2`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/v0.6.2) | Released; updates itself |
+| Android studio app | [`android-v0.7.2`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/android-v0.7.2) | Released; updates itself |
+| WordPress plugin | `1.2.1` | Installs and updates a station next to a WordPress site |
 
-**Next: the WordWave pilot (`v0.8`)**: fill the pilot station with test music, run it beside
-AzuraCast for a week, then launch (`v1.0`). The test station runs at
-https://wordwave.controll.co.za/stationwagon-app/ (the studio is at `/studio`, for signed-in staff).
+**The first station is live**: Radio WordWave plays its music on Stationwagon at
+https://wordwave.co.za/radio/ (the studio is at `/studio`, for signed-in staff), and the website
+plays it through the embed. It has run live music for over a week, so the planned week beside
+AzuraCast is no longer needed. **Next: the launch steps (`v1.0`)**: guides for managers and DJs,
+the upgrade path without WordPress, and online song lookups (to investigate).
+
+> **Apps 0.6.2 and 0.7.2 are signed with new keys.** If you have Windows 0.6.1 / Android 0.7.1 or
+> older, uninstall it once and install the new one from the studio's **Get the app** link; later
+> updates install by themselves again.
+
 [`HANDOVER.md`](HANDOVER.md) has the full status, decisions and open issues.
 
 ## What you need
 
 - Shared hosting with cPanel, **PHP 8.1+** and **MySQL or MariaDB**. A WordPress site makes
-  setup easiest.
+  setup easiest. A VPS with HestiaCP (nginx in front) works too: see [`docs/hestia/`](docs/hestia/)
+  for the nginx rules that keep the station's private files private.
 - No cron job needed: the background jobs also run during visits (a cron job is optional).
 - Cloudflare in front is recommended: it caches the listener stream.
 - For DJs: Chrome or Edge, Safari on iPhone and iPad, the Windows app (Windows 10/11) or the
@@ -71,8 +80,16 @@ To build the files yourself: `python tools/build-wp-plugin.py` and `python tools
   every listener hears the same moment. It mixes two decks for real crossfades and plays live shows
   from the stream. A small **embed player** and a now-playing API (`api/nowplaying.php`) put the
   station on other websites.
-- Songs are **prepared in the browser** on upload: **mastered** (matched to the station's Adobe
-  Audition chain), levelled to −16 LUFS, silence trimmed, short fades. Both switches can be turned off.
+- Songs are **prepared in the browser** on upload: silence trimmed with short fades, **mastered**
+  with the station's preset (optional), levelled to the loudness target (−16 LUFS by default) and
+  encoded **once** with real **LAME 3.100** (160 kbps by default; sample rate, precision, dither and
+  encoding quality are settings). An MP3 that needs nothing done is kept exactly as it came.
+- **Any common format** can be uploaded: WAV, FLAC, M4A (AAC, ALAC), AAC, Ogg, Opus and WMA are turned
+  into MP3 in the browser by the station's own small FFmpeg decoder, keeping their tags and cover.
+- Before each song is added, a **details window** asks for its album art, title and artist, the
+  recording (label, ISRC, ℗), the song (songwriters, publisher, ISWC, ©) and its **licence** (type,
+  number, link, valid until, terms), filled in from the file's own tags. Missing songwriters, licence or
+  publisher are warned about but don't block; listeners can see all of it from the player.
 - Live shows come from the **studio**, which mixes mic and music, encodes MP3 and uploads a piece
   every 6 seconds. A DJ goes live in their own schedule slot; Deck A picks up the AutoDJ song
   exactly where it is, so listeners hear no jump. If the pieces stop for 8 seconds, the AutoDJ takes
@@ -84,7 +101,8 @@ To build the files yourself: `python tools/build-wp-plugin.py` and `python tools
   - the **Android app** (Capacitor), with Do Not Disturb on air and shows that keep going with the
     screen off.
 
-  Both apps update themselves through the **Stationwagon Updates** WordPress plugin (`wordpress/`).
+  Both apps update themselves through the **Stationwagon Updates** WordPress plugin (`wordpress/`),
+  which hands out the newest GitHub release.
 - Presenters post **notes for listeners** (Bible verses, references, video links, short notes)
   from the studio; listeners see each one when they reach that moment of the show.
 - Every live show becomes a draft **podcast episode**: the studio records music and mic on the DJ's
@@ -116,5 +134,5 @@ To build the files yourself: `python tools/build-wp-plugin.py` and `python tools
 | [`design/DESIGN.md`](design/DESIGN.md) | Screens, skin tokens and copy rules |
 | [`design/skins/`](design/skins/) | Clickable mock-ups of the player, studio and manager in two skins (hi-fi and green) |
 
-To run it on a PC or the test server, see "Dev environment" and "Test server" in
-[`HANDOVER.md`](HANDOVER.md).
+To run it on a PC, see "Dev environment" in [`HANDOVER.md`](HANDOVER.md); "The live station" there
+covers deploying to wordwave.co.za.

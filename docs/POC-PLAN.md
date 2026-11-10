@@ -213,11 +213,13 @@ after a cut; Skip uses what the presser hears; HLS players hold a fixed 20 s del
 
 ## After the POC: build-out order
 
-Progress (2026-10-20): steps 1 and 2 are done (Core & manager, `v0.1`, closed as `0.1.0`). Step 3
-is under way: the two-deck listener player with its HLS fallback is built and tested on desktop and an
-Android phone; the embed and a now-playing API are still to come. Step 4 is under way: the live
-studio works in the app (decks, mixer, presets, running order, notes for listeners); recording to a
-podcast is still to come. `HANDOVER.md` has the details.
+Progress (2026-11-10): steps 1 to 6 are done, and more: the Windows and Android studio apps are released
+(`v0.6.2`, `android-v0.7.2`), song prep makes the best quality with real LAME 3.100, uploads take any common
+format, and a details window asks for each song's copyright and licence. The first station, Radio WordWave,
+is live on wordwave.co.za/radio and already plays live music, so the planned week beside AzuraCast is no longer
+needed. Still open from step 6: the optional external Icecast relay. `HANDOVER.md` has the details.
+
+(Progress on 2026-10-20: steps 1 and 2 done; steps 3 and 4 under way.)
 
 1. **Core:** MySQL schema, installer (WordPress-style), timeline planner as a service class, cron
    plus lazy planning, settings.
