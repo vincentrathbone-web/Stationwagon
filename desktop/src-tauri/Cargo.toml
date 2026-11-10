@@ -1,6 +1,6 @@
 [package]
 name = "stationwagon-studio"
-version = "0.6.2"
+version = "0.6.3"
 description = "Stationwagon Studio for Windows: the station's studio, with a bridge for BUTT and Mixxx"
 edition = "2021"
 publish = false

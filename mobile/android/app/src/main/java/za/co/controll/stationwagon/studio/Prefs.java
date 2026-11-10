@@ -42,6 +42,15 @@ final class Prefs {
         return a;
     }
 
+    /** The look picked in the studio, as JSON ({ skin, vars }), or null. */
+    String look() {
+        return p.getString("look", null);
+    }
+
+    void look(String json) {
+        p.edit().putString("look", json).apply();
+    }
+
     /** Where updates are looked up; test builds may point it at a stand-in. */
     String updateEndpoint() {
         String e = BuildConfig.SW_TEST ? p.getString("endpoint", null) : null;

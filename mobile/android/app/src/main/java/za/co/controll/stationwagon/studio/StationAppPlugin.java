@@ -29,7 +29,7 @@ import com.getcapacitor.annotation.Permission;
 /**
  * The app's native parts, for its own start page and the station's studio page:
  * - start page only: the station's address, opening the studio, updates
- * - both: Do Not Disturb, on air (the foreground service), the start page, quitting
+ * - both: Do Not Disturb, on air (the foreground service), the start page, quitting, the look picked in the studio
  * Events: "back" (Back pressed while on air), "updateProgress" ({ got, total }), "updateFailed" ({ message }).
  */
 @CapacitorPlugin(
@@ -79,6 +79,10 @@ public class StationAppPlugin extends Plugin {
         r.put("dnd", dnd());
         r.put("reopen", reopen());
         r.put("test", BuildConfig.SW_TEST);
+        String look = prefs().look();
+        if (look != null) {
+            try { r.put("look", new JSObject(look)); } catch (org.json.JSONException e) { /* left out */ }
+        }
         call.resolve(r);
     }
 
@@ -181,6 +185,31 @@ public class StationAppPlugin extends Plugin {
             });
     }
 
+
+    /**
+     * The studio page passes the look picked there ({ look: { skin, vars: { "--accent": "#1ed760", … } } });
+     * the start page and its update dialog use it from then on. Only short CSS tokens with plain values.
+     */
+    @PluginMethod
+    public void setLook(PluginCall call) {
+        JSObject look = call.getObject("look");
+        JSObject vars = look != null ? look.getJSObject("vars") : null;
+        String skin = look != null ? look.getString("skin", "") : "";
+        boolean ok = skin != null && skin.matches("[a-z]{1,20}") && vars != null && vars.length() <= 40;
+        JSObject clean = new JSObject();
+        if (ok) {
+            java.util.Iterator<String> keys = vars.keys();
+            while (keys.hasNext()) {
+                String k = keys.next();
+                String v = vars.optString(k, "");
+                if (!k.matches("--[a-z0-9-]{1,22}") || !v.matches("[A-Za-z0-9 #%(),.'\"_-]{1,200}") || v.toLowerCase(java.util.Locale.ROOT).contains("url")) { ok = false; break; }
+                clean.put(k, v);
+            }
+        }
+        if (!ok) { call.reject("That isn’t a look."); return; }
+        prefs().look(new JSObject().put("skin", skin).put("vars", clean).toString());
+        call.resolve();
+    }
 
     @PluginMethod
     public void openSettings(PluginCall call) {

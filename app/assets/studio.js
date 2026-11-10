@@ -801,6 +801,21 @@ registerProcessor("sw-tap", SwTap);`;
     APP.event.listen("close-requested", askClose);
     $("stAppSet").onclick = () => APP.core.invoke("open_settings");
   } else if (/Windows/.test(navigator.userAgent)) $("stGetApp").hidden = false;
+  // the app's own page (its settings and its update dialog) follows the look picked here (round 58);
+  // an app from before 0.6.3 / 0.7.3 doesn't know set_look and says no, which is fine
+  if (APP || DROID) {
+    const LOOK = [["--ground"], ["--panel"], ["--raised"], ["--edge"], ["--ink"], ["--muted", "--ink-2"], ["--faint", "--muted"],
+      ["--amber", "--accent"], ["--accent-hover"], ["--on-accent"], ["--onair", "--bad"], ["--warn"], ["--r-card"], ["--r-box"],
+      ["--r-field"], ["--r-small"], ["--r-pill"], ["--card-edge"], ["--card-shadow"], ["--btn-shadow"], ["--f-body"]];
+    const sendLook = () => {
+      const css = getComputedStyle(document.documentElement), vars = {};
+      for (const [from, to] of LOOK) { const v = css.getPropertyValue(from).trim(); if (v) vars[to || from] = v.replace(/\s+/g, " "); }
+      const look = { skin: window.SwSkin ? SwSkin.current() : "green", vars };
+      try { (APP ? APP.core.invoke("set_look", { look }) : DROID.setLook({ look })).catch(() => {}); } catch (_) { /* an older app */ }
+    };
+    sendLook();
+    window.addEventListener("sw:skin", sendLook);
+  }
 
   // ---- Running order ------------------------------------------------------------------------
   let saveTimer = null, orderDirty = false, orderJson = "", saving = 0;

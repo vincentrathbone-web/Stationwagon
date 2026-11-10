@@ -21,5 +21,10 @@
 - After changes to `setup/setup.php`, the app's installer or `tools/appzip.py`: `python tools/build-setup.py`, then
   `setup/tests/setup_php_test.php` on Laragon (with the cPanel stand-in) and on the server (downloading from the real
   release); a change to the app also needs a new `stationwagon-releases` release before the server run (commands in HANDOVER.md).
+- **Release notes:** the apps show each release's GitHub description in their update dialog (round 58). Write it
+  for the people using the app, in simple words, under these headings in this order (leave out empty ones):
+  `## New features`, `## Improvements`, `## Fixes`, `## Warning`, each with `-` bullets. Other markdown is shown
+  as plain text; the Updates plugin trims it at 4000 characters. Windows (`v…`) and Android (`android-v…`)
+  releases each get their own.
 - Record test results in the test log in `docs/POC-PLAN.md`.
 - Commit and push only when the user asks.

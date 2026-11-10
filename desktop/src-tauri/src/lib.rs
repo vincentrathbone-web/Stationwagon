@@ -23,11 +23,35 @@ pub struct Settings {
     pub station: Option<String>,
     pub port: u16,
     pub password: String,
+    /// The look picked in the studio (Green or Hi-fi), for the app's own page and its update dialog
+    #[serde(default)]
+    pub look: Option<Look>,
+}
+
+/// A look's colours and shapes as the studio page sent them: { skin, vars: { "--accent": "#1ed760", … } }.
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct Look {
+    pub skin: String,
+    pub vars: std::collections::BTreeMap<String, String>,
+}
+
+impl Look {
+    /// Only short CSS tokens with plain values, so the studio page can't put anything else on the app's page.
+    fn checked(self) -> Result<Look, String> {
+        let ok_skin = !self.skin.is_empty() && self.skin.len() <= 20 && self.skin.bytes().all(|b| b.is_ascii_lowercase());
+        let ok_vars = self.vars.len() <= 40
+            && self.vars.iter().all(|(k, v)| {
+                k.starts_with("--") && k.len() <= 24 && k[2..].bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                    && !v.is_empty() && v.len() <= 200 && !v.to_ascii_lowercase().contains("url")
+                    && v.chars().all(|c| c.is_ascii_alphanumeric() || " #%(),.'\"-_".contains(c))
+            });
+        if ok_skin && ok_vars { Ok(self) } else { Err("That isn't a look.".into()) }
+    }
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { station: None, port: 8000, password: new_password() }
+        Self { station: None, port: 8000, password: new_password(), look: None }
     }
 }
 
@@ -89,7 +113,8 @@ fn allow_station(app: &AppHandle, base: &url::Url) -> Result<(), String> {
         .permission("allow-bridge-status")
         .permission("allow-set-busy")
         .permission("allow-quit-app")
-        .permission("allow-open-settings");
+        .permission("allow-open-settings")
+        .permission("allow-set-look");
     app.add_capability(cap).map_err(|e| e.to_string())?;
     allowed.push(origin);
     Ok(())
@@ -145,17 +170,21 @@ fn open_station(app: AppHandle, state: State<App>) -> Result<(), String> {
     Ok(())
 }
 
+/// A newer version and what it brings (the release's description on GitHub).
+#[derive(Serialize)]
+struct Found { version: String, notes: String }
+
 /// Looks for a newer version (at the address in tauri.conf.json, or SW_UPDATE_ENDPOINT for tests).
 #[tauri::command]
-async fn check_update(app: AppHandle, state: State<'_, App>) -> Result<Option<String>, String> {
+async fn check_update(app: AppHandle, state: State<'_, App>) -> Result<Option<Found>, String> {
     let mut b = app.updater_builder();
     if let Ok(ep) = std::env::var("SW_UPDATE_ENDPOINT") {
         b = b.endpoints(vec![url::Url::parse(&ep).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
     }
     let update = b.build().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
-    let version = update.as_ref().map(|u| u.version.clone());
+    let found = update.as_ref().map(|u| Found { version: u.version.clone(), notes: u.body.clone().unwrap_or_default() });
     *state.update.lock().unwrap() = update;
-    Ok(version)
+    Ok(found)
 }
 
 /// Downloads and installs the update found by check_update (refused while on air), then restarts.
@@ -187,6 +216,14 @@ fn bridge_status(state: State<App>) -> bridge::Status {
 #[tauri::command]
 fn set_busy(busy: bool, state: State<App>) {
     state.busy.store(busy, Ordering::SeqCst);
+}
+
+/// The studio page passes the look picked there; the app's own page uses it from then on.
+#[tauri::command]
+fn set_look(look: Look, state: State<App>) -> Result<(), String> {
+    let look = look.checked()?;
+    state.settings.lock().unwrap().look = Some(look);
+    state.save()
 }
 
 #[tauri::command]
@@ -258,7 +295,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_info, save_settings, renew_password, open_station, check_update, install_update,
-            bridge_status, set_busy, quit_app, open_settings
+            bridge_status, set_busy, quit_app, open_settings, set_look
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stationwagon Studio");
@@ -266,7 +303,19 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::station_base;
+    use super::{station_base, Look};
+
+    #[test]
+    fn looks() {
+        let l = |skin: &str, k: &str, v: &str| Look { skin: skin.into(), vars: [(k.to_string(), v.to_string())].into() }.checked().is_ok();
+        assert!(l("hifi", "--accent", "#ffb24a"));
+        assert!(l("green", "--card-shadow", "inset 1px 1px 0 #4b463e, inset -1px -1px 0 #0a0908"));
+        assert!(l("hifi", "--f-body", "\"Barlow\", system-ui, -apple-system, \"Segoe UI\", sans-serif"));
+        assert!(!l("hifi", "--accent", "url(https://evil.example.com/x.png)"));
+        assert!(!l("hifi", "--accent", "red; } body { display: none"));
+        assert!(!l("hifi", "color", "red"));
+        assert!(!l("Hi-fi", "--accent", "red"));
+    }
 
     #[test]
     fn station_addresses() {

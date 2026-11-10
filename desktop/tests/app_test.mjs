@@ -167,6 +167,7 @@ try {
   app = launch();
 
   console.log("Opening the app");
+  check("the update dialog is the same file in the Windows and the Android app", readFileSync(join(here, "../ui/update-dialog.js"), "utf8") === readFileSync(join(here, "../../mobile/www/update-dialog.js"), "utf8"));
   let t = await attach((x) => /\/(studio|signin)/.test(x.url));
   for (let i = 0, last = ""; i < 50; i++) { await sleep(200); const p = await path(); if (p && p === last && (await evaluate("document.readyState").catch(() => "")) === "complete") break; last = p; }
   check("it checks for an update, then opens the saved station's studio by itself", !!t && upd.hits >= 1, t ? t.url : "no page");
@@ -184,6 +185,22 @@ try {
   check("the studio knows it runs in the app, and shows the bridge", s && s.app && !(await evaluate("document.getElementById('stBridge').hidden")) && (await text("#stBridgeState")).includes(`127.0.0.1:${BRIDGE_PORT}`),
     await text("#stBridgeState"));
   check("  without the 'Get the Windows app' link", await evaluate("document.getElementById('stGetApp').hidden"));
+  // round 58: the app's own page and its update dialog follow the look picked in the studio
+  const lookNow = () => { try { return JSON.parse(readFileSync(cfgFile, "utf8")).look || null; } catch { return null; } };
+  const skin0 = await evaluate("SwSkin.current()"), accent0 = await evaluate("getComputedStyle(document.documentElement).getPropertyValue('--amber').trim()");
+  let look = null;
+  for (let i = 0; i < 20 && !(look && look.skin === skin0); i++) { await sleep(250); look = lookNow(); }
+  check("the studio passes its look to the app (the skin, its accent as the app page's --accent)", look && look.skin === skin0 && look.vars["--accent"] === accent0 && look.vars["--ink-2"], look && `${look.skin} ${look.vars["--accent"]}`);
+  const other = skin0 === "hifi" ? "green" : "hifi";
+  await evaluate(`SwSkin.set(${JSON.stringify(other)})`);
+  const accent1 = await evaluate("getComputedStyle(document.documentElement).getPropertyValue('--amber').trim()");
+  look = null;
+  for (let i = 0; i < 20 && !(look && look.skin === other); i++) { await sleep(250); look = lookNow(); }
+  check("  picking another look passes that one at once", look && look.skin === other && look.vars["--accent"] === accent1 && accent1 !== accent0, look && `${look.skin} ${look.vars["--accent"]}`);
+  await evaluate(`SwSkin.set(${JSON.stringify(skin0)})`);
+  check("  the app refuses anything that isn't a plain look (a url, a broken-out rule, an unknown key)",
+    await evaluate(`Promise.all([{ skin: "hifi", vars: { "--accent": "url(https://example.com/x)" } }, { skin: "hifi", vars: { "--accent": "red; } body { display: none" } }, { skin: "hifi", vars: { color: "red" } }]
+      .map((look) => window.__TAURI__.core.invoke("set_look", { look }).then(() => false, () => true))).then((r) => r.every(Boolean))`));
   let src = source({ head: icecast() });
   await src.ready;
   s = await until((x) => x.bridge.connected, 6);
@@ -316,6 +333,8 @@ try {
   const st = await attach((x) => x.url.includes("#settings"));
   check("App settings opens the settings window", !!st, main.map((x) => x.url).join(" "));
   await sleep(800);
+  const pageLook = await evaluate("[document.documentElement.getAttribute('data-skin'), getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()].join(' ')");
+  check("  in the studio's look", pageLook === `${skin0} ${accent0}`, `${pageLook} vs ${skin0} ${accent0}`);
   check("  it shows the station, the bridge's port and password", (await evaluate("document.getElementById('station').value")) === base + "/" &&
     (await text("#portShow")) === String(BRIDGE_PORT) && (await text("#pw")) === PASSWORD);
   check("  and that the bridge is waiting", (await text("#bridgeState")).startsWith("Waiting for BUTT"), await text("#bridgeState"));

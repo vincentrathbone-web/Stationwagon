@@ -8,9 +8,10 @@
 //     instead of leaving, App settings refused while on air; End show puts Do Not Disturb back;
 //   - the offline page when the station can't be reached, and its way back to the start page;
 //   - updates through the Stationwagon Updates plugin (PHP's own server, wordpress/tests/wp-stub.php)
-//     and a stand-in for GitHub: nothing newer, Android's OK for installing asked for, a download that
-//     doesn't match refused, then the newer version downloaded, confirmed in Android's dialog,
-//     installed, and the app opened again by itself;
+//     and a stand-in for GitHub: nothing newer, Android's OK for installing asked for; opening the app
+//     with a newer version shows the update dialog (round 58: the notes, the studio's look, Remind me
+//     later and its notice); a download that doesn't match refused there, then the newer version
+//     downloaded, confirmed in Android's dialog, installed, and the app opened again by itself;
 //   - opening the app: it checks for updates, then goes straight to the studio;
 //   - a show with the screen off for 60 s: pieces keep reaching the station.
 // Uninstalls the app afterwards and leaves no Do Not Disturb set by hand (a schedule that was on, like
@@ -70,7 +71,7 @@ const github = createServer((req, res) => {
       { tag_name: "v0.6.0", published_at: at(60), assets: [{ id: 11, name: "Stationwagon-Studio_0.6.0_x64-setup.exe", size: 5 }] },
       { tag_name: "android-v" + OLD, published_at: at(30), body: "First", assets: [{ id: 21, name: `Stationwagon-Studio_${OLD}.apk`, size: 5, digest: "sha256:00" }] },
     ];
-    if (gh.mode !== "same") list.unshift({ tag_name: "android-v" + NEW, published_at: at(1), body: "Test notes",
+    if (gh.mode !== "same") list.unshift({ tag_name: "android-v" + NEW, published_at: at(1), body: "## New features\r\n- A dialog before each update\r\n\r\nFixes:\r\n- The start page follows the studio's look\r\n### Warning\r\n- Android asks to confirm the install",
       assets: [{ id: 22, name: `Stationwagon-Studio_${NEW}.apk`, size: newApk.length, digest: "sha256:" + (gh.mode === "tampered" ? "0".repeat(64) : sha) }] });
     return send(200, JSON.stringify(list), { "Content-Type": "application/json" });
   }
@@ -158,6 +159,14 @@ const native = (method, args = {}) => evaluate(`(async () => {
   if (!window.Capacitor) return { error: "no bridge on this page" };
   return Capacitor.Plugins.StationApp.${method}(${JSON.stringify(args)}).then((value) => ({ ok: true, value }), (e) => ({ error: e.message, code: e.code }));
 })()`, 20000);
+// the update dialog (update-dialog.js), as the test reads it; the studio picks Hi-fi first, so its header is amber
+const lookAccent = "rgb(255, 178, 74)";
+const DIALOG = `(() => { const d = document.getElementById("swuDialog"); if (!d) return null;
+  return { title: (d.querySelector("h3") || {}).textContent, you: (d.querySelector(".swu-head p") || {}).textContent,
+    heads: [...d.querySelectorAll(".swu-h")].map((x) => x.textContent), bullets: [...d.querySelectorAll(".swu-b span:last-child")].map((x) => x.textContent),
+    box: (d.querySelector(".swu-box") || {}).textContent, error: (d.querySelector("#swuError") || {}).textContent || null,
+    buttons: [...d.querySelectorAll("button")].map((x) => x.textContent), head: getComputedStyle(d.querySelector(".swu-head") || d).backgroundColor,
+    android: d.classList.contains("android"), text: d.innerText }; })()`;
 const text = (sel) => evaluate(`(document.querySelector(${JSON.stringify(sel)}) || {}).textContent || ""`);
 const shown = (id) => evaluate(`!!document.getElementById(${JSON.stringify(id)}) && !document.getElementById(${JSON.stringify(id)}).hidden`);
 const clickText = (sel, label) => evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].find((x) => x.textContent.trim() === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`);
@@ -366,6 +375,11 @@ try {
   let s = await until((x) => x.slot, 15);
   check("the DJ signs in and the studio opens, in the DJ's block", !!s && s.slot.may, s && s.slot.title);
   check("  with App settings, and no 'Get the Android app' link", await shown("stDroidSet") && !(await shown("stGetAndroid")));
+  await evaluate("SwSkin.set('hifi')");
+  r = await waitFor(async () => { const x = await native("info"); return x && x.ok && x.value.look && x.value.look.skin === "hifi" && x; }, 10);
+  check("  the studio passes its look to the app (Hi-fi picked: the app keeps it for its own page)", r && r.value.look.vars["--accent"] === "#ffb24a" && r.value.look.vars["--ink-2"], JSON.stringify(r && r.value.look && r.value.look.vars["--accent"]));
+  r = await evaluate(`Promise.all([{ skin: "hifi", vars: { "--accent": "url(https://example.com/x)" } }, { skin: "hifi", vars: { color: "red" } }].map((look) => Capacitor.Plugins.StationApp.setLook({ look }).then(() => false, () => true))).then((r) => r.every(Boolean))`);
+  check("  and refuses anything that isn't a plain look", r === true);
   await clickText("#stBannerActs button", "Switch on the studio");
   s = await until((x) => x.on, 15);
   check("switching on starts sound and the phone's microphone", !!s, s ? "" : await text("#stBannerText"));
@@ -439,8 +453,21 @@ try {
   adb("am", "force-stop", PKG);
   const files0 = gh.files;
   start();
-  url = await attach(STUDIO, 40);
-  check("opening the app with a download that doesn't match the release: refused, and the studio opens as it is, still signed in", !!url && gh.files > files0 && versionOnPhone() === OLD, `${url} · ${versionOnPhone()}`);
+  url = await attach(START, 40);
+  let d = url && await waitFor(() => evaluate(DIALOG), 20);
+  check(`opening the app with a newer version: the update dialog, "Version ${NEW} is now available", "You have version ${OLD}."`, d && d.title === `Version ${NEW} is now available` && d.you === `You have version ${OLD}.` && d.android, d && `${d.title} / ${d.you}`);
+  check("  the notes under their headings", d && d.heads.join("|") === "New features|Fixes|Warning" && d.bullets.join("|") === "A dialog before each update|The start page follows the studio's look|Android asks to confirm the install", d && `${d.heads.join("|")} · ${d.bullets.join("|")}`);
+  check("  it says the phone asks to confirm the install; Remind me later and Update now", d && /phone asks you to confirm/.test(d.box) && d.buttons.join("|") === "Remind me later|Update now", d && d.buttons.join("|"));
+  check(`  in the studio's look (${lookAccent})`, d && d.head === lookAccent, d && d.head);
+  await evaluate(`document.getElementById("swuUpdate").click()`);
+  d = await waitFor(async () => { const x = await evaluate(DIALOG); return x && x.error && x; }, 60);
+  check("  Update now with a download that doesn't match the release: refused, the dialog says why, Try again", d && /doesn’t match/.test(d.error) && d.buttons.includes("Try again") && gh.files > files0 && versionOnPhone() === OLD, d ? d.error : versionOnPhone());
+  await evaluate(`document.getElementById("swuLater").click()`);
+  d = await evaluate(DIALOG);
+  check("  Remind me later: the notice that it can be installed from App settings", d && /you can update later/.test(d.text) && d.text.includes(`install version ${NEW}`) && d.buttons.join("|") === "Open App settings|OK", d && d.text.replace(/\s+/g, " "));
+  await evaluate(`document.getElementById("swuOk").click()`);
+  url = await attach(STUDIO, 30);
+  check("  OK: the studio opens as it is, still signed in", !!url && versionOnPhone() === OLD, `${url} · ${versionOnPhone()}`);
   await waitFor(() => shown("stDroidSet"), 10);
   await evaluate("document.getElementById('stDroidSet').click()");
   url = await attach(START, 15);
@@ -450,6 +477,9 @@ try {
   const before = pid();
   await evaluate("window.__progress = 0; Capacitor.Plugins.StationApp.addListener('updateProgress', (p) => { window.__progress = p.got / p.total; })");
   await evaluate("document.getElementById('updBtn').click()");
+  d = await waitFor(() => evaluate(DIALOG), 20);
+  check("Check for updates on the start page shows the dialog too", d && d.title === `Version ${NEW} is now available`, d && d.title);
+  await evaluate(`document.getElementById("swuUpdate").click()`);
   const confirm = await waitFor(() => tapText(/^(Update|Install)$/i), 30);
   check("Check for updates downloads it and Android asks to confirm the update (the first one from the app)", !!confirm, confirm);
   // Android may show a second step (a scan, then "Continue"): answer it too while waiting. Google Play Protect may ask

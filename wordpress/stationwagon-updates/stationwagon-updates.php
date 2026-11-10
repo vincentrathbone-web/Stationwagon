@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Stationwagon Updates
  * Description: Hands out Stationwagon Studio for Windows and Android (the installers and their updates) from the private Stationwagon repository's GitHub releases. The GitHub token stays on this server.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Controll
  * Requires PHP: 7.4
  * License: Proprietary
@@ -27,12 +27,16 @@
  * (…-setup.exe) and its signature (…-setup.exe.sig), an Android one the APK (…apk). The version is
  * the one in the file's name (Stationwagon-Studio_0.7.0.apk), else the tag's. The token: a
  * fine-grained one for this repository only, Contents read-only.
+ *
+ * `notes` is the release's description on GitHub (New features / Improvements / Fixes / Warning,
+ * `-` bullets): the apps show it in their update dialog. Trimmed to 4000 characters.
  */
 
 defined('ABSPATH') || exit;
 
 final class Stationwagon_Updates
 {
+    const NOTES_MAX = 4000;
     const OPTION_TOKEN = 'stationwagon_updates_token';
     const OPTION_REPO = 'stationwagon_updates_repo';
     const DEFAULT_REPO = 'vincentrathbone-web/Stationwagon';
@@ -80,7 +84,7 @@ final class Stationwagon_Updates
         }
         $response = new WP_REST_Response([
             'version' => $version,
-            'notes' => (string) ($release['body'] ?? ''),
+            'notes' => self::notes($release),
             'pub_date' => (string) ($release['published_at'] ?? gmdate('c')),
             'platforms' => [
                 'windows-x86_64' => [
@@ -132,7 +136,7 @@ final class Stationwagon_Updates
         $digest = (string) ($apk['digest'] ?? '');
         $response = new WP_REST_Response([
             'version' => $version,
-            'notes' => (string) ($release['body'] ?? ''),
+            'notes' => self::notes($release),
             'pub_date' => (string) ($release['published_at'] ?? gmdate('c')),
             'url' => rest_url(self::NS . '/android/apk'),
             'size' => (int) ($apk['size'] ?? 0),
@@ -372,6 +376,17 @@ final class Stationwagon_Updates
             echo esc_html($err !== '' ? $err : 'No Android release found yet.');
         }
         echo '</p></div>';
+    }
+
+    /** The release's description for the update dialog: Windows line ends made plain, at most NOTES_MAX characters. */
+    private static function notes(array $release)
+    {
+        $body = trim(str_replace("\r\n", "\n", (string) ($release['body'] ?? '')));
+        if (strlen($body) <= self::NOTES_MAX) {
+            return $body;
+        }
+        $cut = function_exists('mb_strcut') ? mb_strcut($body, 0, self::NOTES_MAX, 'UTF-8') : substr($body, 0, self::NOTES_MAX);
+        return rtrim($cut);
     }
 }
 

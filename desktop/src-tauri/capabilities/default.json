@@ -14,6 +14,7 @@
     "allow-bridge-status",
     "allow-set-busy",
     "allow-quit-app",
-    "allow-open-settings"
+    "allow-open-settings",
+    "allow-set-look"
   ]
 }
