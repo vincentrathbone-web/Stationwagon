@@ -254,10 +254,26 @@ The app's main window is the station's own studio page. Its own settings page (`
 green tokens, one column) has two cards: **Your station** (the address, Save and open the studio, Check
 for updates) and **BUTT and Mixxx** (a lamp and what is sending, the address, port, mount, user, password
 and format to type into BUTT or Mixxx, Copy the password, New password, and folded how-tos). When the app
-opens it shows "Checking for updates…", "Installing version …" with a bar, or "Opening the studio…". In the
+opens it shows "Checking for updates…", then the **update window** when a newer version is out (see below), or
+"Opening the studio…". In the
 studio's status strip the app adds **BUTT / Mixxx** with its state ("waiting on 127.0.0.1:8000", "BUTT
 sending · MP3 128 kbps") and an **App settings** button; a Windows browser gets **Get the Windows app**
 there instead.
+
+### The update window (round 58; both apps; modelled on the KDOHC app's dialog)
+
+`update-dialog.js` (the same file in `desktop/ui` and `mobile/www`) draws a modal card over a dimmed page:
+a header in the accent colour ("Version X is now available", "You have version Y." at 80 % opacity), the
+release's notes (bold headings with a gap above, **Warning** in the warn colour with a triangle sign, `•`
+bullets, other lines muted), a thin bordered box with what happens next (Windows, bold in the warn colour:
+the app closes while it updates and opens again; Android, muted: the phone asks to confirm), and a footer
+with a muted text button **Remind me later** and the accent button **Update now** (a turning arrow and
+"Downloading n%" while busy; **Try again** after an error, which shows in bold in the bad colour).
+Remind me later swaps the card for a short notice ("No problem, you can update later.", where App settings
+is) with **Open App settings** and **OK**. Windows: dim 50 %, card up to 512 px, 18 px title; Android: dim
+90 %, 448 px, 16 px title and taller, bolder buttons. Colours, corners, bevels and the font are the look
+picked in the studio, which the studio page passes to the app (Hi-fi gives an amber header and square
+corners); the app's own start page uses the same look.
 
 ### Android app (round 35; not in the mock-ups)
 
@@ -265,8 +281,8 @@ The same idea on Android (`mobile/`, Capacitor): the app's main screen is the st
 Its own start page (`mobile/www/index.html`, green tokens, one column, 44 px buttons, safe-area padding)
 has three cards: **Your station** (the address, Save and open the studio), **On air on this phone** (a lamp
 and "Do Not Disturb: allowed / not allowed yet", what the app does when you go live, and **Allow Do Not
-Disturb**, which opens Android's own screen) and **Updates** (Check for updates, a bar while it downloads, and a lamp with "Opening again after an update: allowed / not allowed yet", **Allow display over other apps**, and on Xiaomi phones **Allow Autostart**, each opening Android's own list, where the DJ switches Stationwagon Studio on).
-Opening the app shows "Checking for updates…", "Downloading version …" with a bar, or "Opening the studio…".
+Disturb**, which opens Android's own screen) and **Updates** (Check for updates, which opens the update window, and a lamp with "Opening again after an update: allowed / not allowed yet", **Allow display over other apps**, and on Xiaomi phones **Allow Autostart**, each opening Android's own list, where the DJ switches Stationwagon Studio on).
+Opening the app shows "Checking for updates…", the update window when a newer version is out, or "Opening the studio…".
 When the station can't be reached the app shows its own **offline page** ("The station can't be reached",
 Try again, Change the station). In the studio, once switched on, the banner explains Do Not Disturb: with
 access, that it turns on at Go live (alarms still ring) and back at End show; without, the same with **Allow

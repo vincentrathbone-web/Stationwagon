@@ -168,7 +168,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
   </div>
   <div class="results" id="results" hidden></div>
   <div class="toc" id="toc"></div>
-  <div class="foot">Matches Stationwagon 0.9.7 (server), Windows app 0.6.2 and Android app 0.7.2. Updated 10 Nov 2026, with the WordPress plugin 1.2.1.</div>
+  <div class="foot">Matches Stationwagon 0.9.7 (server), Windows app 0.6.3 and Android app 0.7.3. Updated 10 Nov 2026, with the WordPress plugin 1.2.1.</div>
 </nav>
 
 <main>
@@ -317,7 +317,14 @@ ol.flow > li > a:hover { text-decoration: underline; }
 <section class="s" id="updates" data-title="Updating the station">
   <h3>Updating the station <span class="role">Admin</span></h3>
   <p>Update the Stationwagon plugin like any plugin (upload the newer zip). The next time you open the WordPress admin, the station's code is brought up to date too. Your settings, songs and recordings stay, and <b>the database upgrades itself</b>.</p>
-  <p>Removing the plugin leaves the station running and untouched. The Windows and Android studio apps update themselves when they open (never during a show).</p>
+  <p>Removing the plugin leaves the station running and untouched.</p>
+  <h4>Updating the studio apps</h4>
+  <p>When you open the Windows or Android app and a new version is out, a window says <b>Version … is now available</b> and lists what it brings under <b>New features</b>, <b>Improvements</b>, <b>Fixes</b> and <b>Warning</b>. It uses the look you picked in the studio.</p>
+  <ul>
+    <li><b>Update now</b> downloads it. On Windows the app closes while it updates and opens again by itself; on Android your phone asks you to confirm the install.</li>
+    <li><b>Remind me later</b> opens the studio as it is. The window comes back the next time you open the app, and you can install the update any time from <b>App settings</b> → <b>Check for updates</b>.</li>
+    <li>Something went wrong? The window says why, with <b>Try again</b>.</li>
+  </ul>
 </section>
 
 <section class="s" id="nowp" data-title="Without WordPress">
@@ -574,7 +581,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
   <ol class="steps">
     <li>In the browser studio on Windows, choose <b>Get the Windows app</b> and run the installer. No admin rights are needed.</li>
     <li>The first time, Windows SmartScreen may say "unknown publisher": choose <b>More info</b>, then <b>Run anyway</b>.</li>
-    <li>Had version 0.6.1 or older? Uninstall it once first (Windows Settings → Apps). Version 0.6.2 is signed with a new key, so the old app can't update to it by itself; later updates install by themselves again.</li>
+    <li>Had version 0.6.1 or older? Uninstall it once first (Windows Settings → Apps). Since 0.6.2 the app is signed with a new key, so the old app can't update to it. After that, new versions are offered in an <a href="#updates">update window</a>.</li>
     <li>Type your station's address and open the studio. Sign in; the app offers to save your password.</li>
   </ol>
   <h4>Broadcasting with BUTT or Mixxx</h4>
@@ -602,7 +609,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
   <h3>The Android app <span class="role">DJ</span></h3>
   <p>For Android 8 and newer.</p>
   <ol class="steps">
-    <li>Sign in to the studio in your phone's browser and choose <b>Get the Android app</b>. Allow your browser to install it when Android asks. Had version 0.7.1 or older? Uninstall it first: 0.7.2 is signed with a new key, so Android won't install it over the old one.</li>
+    <li>Sign in to the studio in your phone's browser and choose <b>Get the Android app</b>. Allow your browser to install it when Android asks. Had version 0.7.1 or older? Uninstall it first: since 0.7.2 the app is signed with a new key, so Android won't install it over the old one. After that, new versions are offered in an <a href="#updates">update window</a>.</li>
     <li>Open <b>Stationwagon Studio</b>. On its start page, type your station's address and press <b>Save and open the studio</b>.</li>
     <li>Sign in. Android offers to save your password; next time it offers <b>Use your saved password</b>.</li>
     <li>When you switch on the studio, allow <b>Do Not Disturb</b>, so calls and messages can't sound on air. The app turns it on (alarms only) when you go live and puts it back when you end.</li>
@@ -651,8 +658,10 @@ ol.flow > li > a:hover { text-decoration: underline; }
   <p>That's fine: WAV, FLAC, M4A, AAC, Ogg, Opus and WMA are turned into MP3 in your browser when you <a href="#library">add them</a>. Very large files (over about 400 MB) may be too big for a phone's memory; use a computer.</p>
   <h4>The window says the songwriters, licence or publisher are missing.</h4>
   <p>It's a reminder, not a block. Add the song now and fill them in later with <b>Edit</b> → <b>© Copyright and licence…</b>; see <a href="#details">Song details</a>.</p>
-  <h4>The app won't update to 0.6.2 or 0.7.2.</h4>
-  <p>Those versions are signed with a new key. Uninstall the old app once and install the new one from the studio's <b>Get the app</b> link.</p>
+  <h4>I chose Remind me later. How do I update now?</h4>
+  <p>Open <b>App settings</b> (at the top of the studio) and press <b>Check for updates</b>. The same window opens with <b>Update now</b>.</p>
+  <h4>The app won't update from 0.6.1 or 0.7.1 (or older).</h4>
+  <p>Since 0.6.2 and 0.7.2 the apps are signed with a new key. Uninstall the old app once and install the new one from the studio's <b>Get the app</b> link.</p>
   <h4>I forgot my password.</h4>
   <p>Ask the station's admin to set a new one on the <a href="#djs">DJs</a> screen.</p>
 </section>

@@ -15,8 +15,8 @@ list and quick search.
 | Part | Version | State |
 |---|---|---|
 | Server app (`app/`) | `0.9.7-dev` | Station manager, AutoDJ, listener player, browser studio, podcasts, listener stats, best-quality song prep, uploads in any common format and a details window with licensing: done, tested and **live** |
-| Windows studio app | [`v0.6.2`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/v0.6.2) | Released; updates itself |
-| Android studio app | [`android-v0.7.2`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/android-v0.7.2) | Released; updates itself |
+| Windows studio app | [`v0.6.3`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/v0.6.3) | Released; offers each new version in an update window |
+| Android studio app | [`android-v0.7.3`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/android-v0.7.3) | Released; offers each new version in an update window |
 | WordPress plugin | `1.2.1` | Installs and updates a station next to a WordPress site |
 
 **The first station is live**: Radio WordWave plays its music on Stationwagon at
@@ -25,9 +25,10 @@ plays it through the embed. It has run live music for over a week, so the planne
 AzuraCast is no longer needed. **Next: the launch steps (`v1.0`)**: guides for managers and DJs,
 the upgrade path without WordPress, and online song lookups (to investigate).
 
-> **Apps 0.6.2 and 0.7.2 are signed with new keys.** If you have Windows 0.6.1 / Android 0.7.1 or
-> older, uninstall it once and install the new one from the studio's **Get the app** link; later
-> updates install by themselves again.
+> **Since 0.6.2 and 0.7.2 the apps are signed with new keys.** If you have Windows 0.6.1 / Android 0.7.1 or
+> older, uninstall it once and install the new one from the studio's **Get the app** link. From 0.6.3
+> and 0.7.3 on, the apps show an **update window** when a new version is out: what it brings, then
+> **Update now** or **Remind me later**.
 
 [`HANDOVER.md`](HANDOVER.md) has the full status, decisions and open issues.
 
@@ -101,8 +102,10 @@ To build the files yourself: `python tools/build-wp-plugin.py` and `python tools
   - the **Android app** (Capacitor), with Do Not Disturb on air and shows that keep going with the
     screen off.
 
-  Both apps update themselves through the **Stationwagon Updates** WordPress plugin (`wordpress/`),
-  which hands out the newest GitHub release.
+  Both apps get their updates through the **Stationwagon Updates** WordPress plugin (`wordpress/`),
+  which hands out the newest GitHub release. When the app opens and a newer version is out, an
+  **update window** shows what it brings (the release's notes: New features, Improvements, Fixes,
+  Warning) with **Update now** and **Remind me later**, in the look picked in the studio.
 - Presenters post **notes for listeners** (Bible verses, references, video links, short notes)
   from the studio; listeners see each one when they reach that moment of the show.
 - Every live show becomes a draft **podcast episode**: the studio records music and mic on the DJ's
