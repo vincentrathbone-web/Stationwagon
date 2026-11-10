@@ -484,7 +484,8 @@ ol.flow > li > a:hover { text-decoration: underline; }
 
 <section class="s" id="website" data-title="Put the player on your website">
   <h3>Put the player on your website <span class="role">Manager</span></h3>
-  <p>On the station page, open <b>Put the player on your website</b>, choose the dark or light look and press <b>Copy</b>. Paste that code into any web page: it shows a small player that plays the station 20 seconds behind, like the station page.</p>
+  <p>Put the station's <code>embed</code> page in a frame on any web page, for example <code>&lt;iframe src="https://your-site/radio/embed" height="300"&gt;&lt;/iframe&gt;</code> (add <code>?look=light</code> for a light website). It's a player that plays the station 20 seconds behind, with the same crossfades as the station page; 280 px or taller shows the album art, the spectrum and the scrolling strip.</p>
+  <p>For a small <b>Now playing</b> card without sound (album art, the song and artist, a thin progress line and a <b>Listen</b> button), frame <code>now</code> instead, about 84 px tall: <code>now?link=https://your-site/listen/</code> sends a click to your own Listen page (the station page if you leave it out), and <code>&amp;target=new</code> opens it in a new tab.</p>
   <p>Other apps and websites can read what's playing (now, the next 3 songs, the last 5) from <code>api/nowplaying.php</code>.</p>
 </section>
 
@@ -496,6 +497,13 @@ ol.flow > li > a:hover { text-decoration: underline; }
 <section class="s" id="look" data-title="Change the look (skins)">
   <h3>Change the look <span class="role">Everyone</span></h3>
   <p>Every screen has a <b>Look</b> menu in its top bar: <b>Green</b> (the default) or <b>Hi-fi</b> (amber on graphite). It's your own choice, kept on that device, and it changes every screen at once.</p>
+</section>
+
+<section class="s" id="bar" data-title="The bar: what's on air">
+  <h3>The bar: what's on air <span class="role">Everyone</span></h3>
+  <p>Along the bottom of the studio, the manager and your account page runs <b>the bar</b>: the song or show on air with its album art, a scrolling strip of what goes out, and how far the song has got. It shows what listeners hear, 20 seconds behind.</p>
+  <p>It always opens <b>muted</b>. Press the <b>speaker</b> to listen, and again to mute it. Point at the speaker (or tap it on a phone) and a <b>volume</b> slider comes up out of it; the bar remembers your volume. It keeps playing with no gap while you move between screens, and goes quiet by itself when you open the studio or Song prep, so it never gets in the way of your own show or your song checks. <b>Open the player</b> takes you to the station page.</p>
+  <p>The Windows and Android apps have the same bar under their screens.</p>
 </section>
 
 <!-- ============ PART 3 ============ -->
@@ -684,6 +692,8 @@ ol.flow > li > a:hover { text-decoration: underline; }
     <dt>Ducking</dt><dd>The music dipping under the DJ's voice.</dd>
     <dt>Rejoin</dt><dd>Carrying on your show after a drop or a reload.</dd>
     <dt>Embed</dt><dd>The small player you put on another website.</dd>
+    <dt>Now playing card</dt><dd>A small card for another website with the song on air and a Listen button; it plays no sound.</dd>
+    <dt>The bar</dt><dd>The strip along the bottom of the staff's screens with what's on air, a speaker button and a volume slider.</dd>
     <dt>Bridge</dt><dd>The part of the Windows app that takes BUTT's or Mixxx's sound and sends it to the station.</dd>
     <dt>Episode</dt><dd>A show's podcast recording, as a draft until you publish it.</dd>
   </dl>

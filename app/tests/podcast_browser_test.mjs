@@ -145,6 +145,8 @@ try {
 
   dj = helper("dj");
   show = helper("podcast-show", String(dj.id), "15");
+  // the screens as they are, not inside the station's frame page with the bar (round 61; the shell test has that)
+  await call("Network.setCookie", { name: "sw_bare", value: "1", url: base + "/" });
   await go(`${base}/signin`);
   await evaluate(`(() => { const f = document.querySelector('main form'); f.email.value = ${JSON.stringify(dj.email)}; f.password.value = ${JSON.stringify(dj.password)}; f.submit(); })()`);
   for (let i = 0; i < 50 && !(await evaluate("location.pathname").catch(() => "")).endsWith("/manage"); i++) await sleep(100);

@@ -4,6 +4,11 @@
 //!
 //! The studio page may only listen to the bridge's events and read its status; everything else the
 //! app can do is for its own local pages. The station's address gets that permission when it opens.
+//!
+//! Under the station's screens (the studio, the manager screens, the account page) the window has a second
+//! view, the bar (round 61): the station's `bar` page, what's on air with a mute button and a volume slider.
+//! It stays loaded while the screen above changes, so its sound has no gap. The browser gets the same from
+//! the station's frame page (views/shell.php); the app's own user agent mark tells the station not to send it.
 
 mod bridge;
 mod mp3;
@@ -14,7 +19,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::ipc::CapabilityBuilder;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewBuilder, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -70,6 +75,124 @@ struct App {
     busy: AtomicBool,
     update: Mutex<Option<tauri_plugin_updater::Update>>,
     allowed: Mutex<Vec<String>>,
+    /// the bar: shown (a station screen is open above it), and tall (its volume slider is up)
+    bar_on: AtomicBool,
+    bar_tall: AtomicBool,
+    /// the screen above, told to the bar (it mutes itself in the studio and Song prep)
+    bar_route: Mutex<String>,
+    /// one screen change at a time (each runs on its own thread)
+    bar_busy: Mutex<()>,
+    /// the bar's view is shown now (shown or hidden only when that changes: showing a view can take the keyboard)
+    bar_shown: AtomicBool,
+}
+
+/// The same options for every view in the app: WebView2 refuses a second view whose options differ. The
+/// first part is what wry passes by default; the bar may start playing (muted) without a click.
+const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
+/// The bar's height (84 px: room to breathe, the user's ask), and its height while its volume slider is up
+/// (150 px more, over the screen's foot).
+const BAR_H: f64 = 84.0;
+const BAR_TALL_H: f64 = 234.0;
+
+/// The screen at an address, if it is one of the station's screens with the bar under it (the same list
+/// as the station's App::shellRoute): "studio", "account", "manage" or "manage/...".
+fn bar_route(base: &url::Url, at: &url::Url) -> Option<String> {
+    if base.origin() != at.origin() { return None; }
+    let r = at.path().strip_prefix(base.path())?.trim_end_matches('/');
+    let screen = r == "studio" || r == "account" || r == "manage"
+        || (r.starts_with("manage/") && r != "manage/skip" && r != "manage/songprep/original");
+    if screen { Some(r.to_string()) } else { None }
+}
+
+/// Puts the screen and the bar where they belong for the window's size: the bar along the foot (taller,
+/// over the screen's foot, while its slider is up), or only the screen.
+fn lay_out(app: &AppHandle) {
+    let state = app.state::<App>();
+    // (with the bar in it, "main" is a window with two views, no longer a "webview window")
+    let (Some(window), Some(screen)) = (app.get_window("main"), app.get_webview("main")) else { return };
+    let Ok(size) = window.inner_size() else { return };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let size = size.to_logical::<f64>(scale);
+    let bar = app.get_webview("bar");
+    let on = state.bar_on.load(Ordering::SeqCst) && bar.is_some();
+    let screen_h = if on { (size.height - BAR_H).max(0.0) } else { size.height };
+    let _ = screen.set_bounds(tauri::Rect { position: LogicalPosition::new(0.0, 0.0).into(), size: LogicalSize::new(size.width, screen_h).into() });
+    if let Some(bar) = bar {
+        if on {
+            let h = if state.bar_tall.load(Ordering::SeqCst) { BAR_TALL_H } else { BAR_H }.min(size.height);
+            let _ = bar.set_bounds(tauri::Rect { position: LogicalPosition::new(0.0, size.height - h).into(), size: LogicalSize::new(size.width, h).into() });
+            if !state.bar_shown.swap(true, Ordering::SeqCst) {
+                let _ = bar.show();
+                let _ = screen.set_focus(); // the keyboard stays with the screen
+            }
+        } else if state.bar_shown.swap(false, Ordering::SeqCst) {
+            let _ = bar.hide();
+            let _ = screen.set_focus();
+        }
+    }
+}
+
+/// The screen above changed: shows or hides the bar (making it the first time), and tells it the screen.
+fn screen_changed(app: &AppHandle, at: &url::Url) {
+    let state = app.state::<App>();
+    let _one = state.bar_busy.lock().unwrap();
+    let base = state.settings.lock().unwrap().station.clone().and_then(|s| station_base(&s).ok());
+    let route = base.as_ref().and_then(|b| bar_route(b, at));
+    state.bar_on.store(route.is_some(), Ordering::SeqCst);
+    if let (Some(base), Some(route)) = (base, route) {
+        *state.bar_route.lock().unwrap() = route.clone();
+        let want = base.join("bar").ok();
+        match app.get_webview("bar") {
+            Some(bar) => {
+                // another station: its own bar
+                if bar.url().ok().map(|u| u.origin() != base.origin() || !u.path().starts_with(base.path())).unwrap_or(false) {
+                    let _ = allow_bar(app, &base);
+                    if let Some(w) = want { let _ = bar.navigate(w); }
+                } else {
+                    tell_bar(&bar, &route);
+                }
+            }
+            None => {
+                if let (Some(w), Some(window)) = (want, app.get_window("main")) {
+                    let _ = allow_bar(app, &base);
+                    let handle = app.clone();
+                    let builder = WebviewBuilder::new("bar", WebviewUrl::External(w))
+                        .additional_browser_args(BROWSER_ARGS)
+                        .transparent(true)
+                        .on_page_load(move |bar, p| {
+                            if p.event() == tauri::webview::PageLoadEvent::Finished {
+                                let r = handle.state::<App>().bar_route.lock().unwrap().clone();
+                                tell_bar(&bar, &r);
+                            }
+                        });
+                    let made = window.add_child(builder, LogicalPosition::new(0.0, 0.0), LogicalSize::new(1.0, BAR_H));
+                    if made.is_err() { state.bar_on.store(false, Ordering::SeqCst); }
+                }
+            }
+        }
+    }
+    lay_out(app);
+}
+
+fn tell_bar(bar: &tauri::Webview, route: &str) {
+    let r = serde_json::to_string(route).unwrap_or_else(|_| String::from("\"\""));
+    let _ = bar.eval(format!("window.SwBar && window.SwBar.screen({r})"));
+}
+
+/// Lets the station's bar (only that view, only that site) make room for its volume slider.
+fn allow_bar(app: &AppHandle, base: &url::Url) -> Result<(), String> {
+    let origin = base.origin().ascii_serialization();
+    let state = app.state::<App>();
+    let mut allowed = state.allowed.lock().unwrap();
+    let key = format!("bar {origin}");
+    if allowed.contains(&key) { return Ok(()); }
+    let cap = CapabilityBuilder::new(format!("bar-{}", allowed.len()))
+        .remote(format!("{origin}/*"))
+        .webview("bar")
+        .permission("allow-bar-tall");
+    app.add_capability(cap).map_err(|e| e.to_string())?;
+    allowed.push(key);
+    Ok(())
 }
 
 impl App {
@@ -107,7 +230,7 @@ fn allow_station(app: &AppHandle, base: &url::Url) -> Result<(), String> {
     if allowed.contains(&origin) { return Ok(()); }
     let cap = CapabilityBuilder::new(format!("station-{}", allowed.len()))
         .remote(format!("{origin}/*"))
-        .window("main")
+        .webview("main")
         .permission("core:event:allow-listen")
         .permission("core:event:allow-unlisten")
         .permission("allow-bridge-status")
@@ -127,7 +250,7 @@ struct Info { settings: Settings, version: String, bridge: bridge::Status, open:
 
 #[tauri::command]
 fn get_info(app: AppHandle, state: State<App>) -> Info {
-    let open = app.get_webview_window("main").and_then(|w| w.url().ok()).map(|u| u.scheme().starts_with("http") && u.host_str() != Some("tauri.localhost")).unwrap_or(false);
+    let open = app.get_webview("main").and_then(|w| w.url().ok()).map(|u| u.scheme().starts_with("http") && u.host_str() != Some("tauri.localhost")).unwrap_or(false);
     Info { settings: state.settings.lock().unwrap().clone(), version: app.package_info().version.to_string(), bridge: state.bridge.status(), open }
 }
 
@@ -282,9 +405,9 @@ fn open_station(app: AppHandle, state: State<App>) -> Result<(), String> {
     let base = station_base(&station)?;
     allow_station(&app, &base)?;
     let studio = base.join("studio").map_err(|e| e.to_string())?;
-    let main = app.get_webview_window("main").ok_or("The main window is gone.")?;
+    let main = app.get_webview("main").ok_or("The main window is gone.")?;
     main.navigate(studio).map_err(|e| e.to_string())?;
-    let _ = main.set_focus();
+    if let Some(w) = app.get_window("main") { let _ = w.set_focus(); }
     if let Some(w) = app.get_webview_window("settings") { let _ = w.close(); }
     Ok(())
 }
@@ -345,6 +468,14 @@ fn set_look(look: Look, state: State<App>) -> Result<(), String> {
     state.save()
 }
 
+/// The bar's volume slider is up (or down again): the bar grows over the screen's foot, or shrinks back.
+#[tauri::command]
+async fn bar_tall(tall: bool, app: AppHandle, state: State<'_, App>) -> Result<(), ()> {
+    state.bar_tall.store(tall, Ordering::SeqCst);
+    lay_out(&app);
+    Ok(())
+}
+
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
@@ -359,6 +490,7 @@ async fn open_settings(app: AppHandle) -> Result<(), String> {
     }
     WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("index.html#settings".into()))
         .title("Stationwagon Studio: settings")
+        .additional_browser_args(BROWSER_ARGS)
         .inner_size(560.0, 720.0)
         .build()
         .map(|_| ())
@@ -380,10 +512,30 @@ fn remember_passwords(w: &tauri::WebviewWindow) {
     });
 }
 
+/// Marks the app in the station's user agent ("StationwagonStudio/<version> (Windows)"), as the Android app
+/// does, so the station sends its screens as they are, not inside its frame page with a bar (the app has its own).
+#[cfg(windows)]
+fn mark_user_agent(w: &tauri::WebviewWindow) {
+    let _ = w.with_webview(|wv| unsafe {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings2;
+        use windows_core::{Interface, HSTRING, PWSTR};
+        if let Ok(s) = wv.controller().CoreWebView2().and_then(|c| c.Settings()).and_then(|s| s.cast::<ICoreWebView2Settings2>()) {
+            let mut ua = PWSTR::null();
+            if s.UserAgent(&mut ua).is_ok() && !ua.is_null() {
+                let now = ua.to_string().unwrap_or_default();
+                drop(webview2_com::CoTaskMemPWSTR::from(ua)); // frees it
+                if !now.contains("StationwagonStudio/") {
+                    let _ = s.SetUserAgent(&HSTRING::from(format!("{now} StationwagonStudio/{} (Windows)", env!("CARGO_PKG_VERSION"))));
+                }
+            }
+        }
+    });
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            if let Some(w) = app.get_webview_window("main") { let _ = w.unminimize(); let _ = w.set_focus(); }
+            if let Some(w) = app.get_window("main") { let _ = w.unminimize(); let _ = w.set_focus(); }
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -395,15 +547,34 @@ pub fn run() {
             let bridge = Bridge::new(std::sync::Arc::new(move |e: Event| { let _ = handle.emit("bridge", e); }));
             bridge.set_password(&settings.password);
             let port = settings.port;
-            app.manage(App { bridge, settings: Mutex::new(settings), path, busy: AtomicBool::new(false), update: Mutex::new(None), allowed: Mutex::new(Vec::new()) });
+            app.manage(App { bridge, settings: Mutex::new(settings), path, busy: AtomicBool::new(false), update: Mutex::new(None), allowed: Mutex::new(Vec::new()),
+                bar_on: AtomicBool::new(false), bar_tall: AtomicBool::new(false), bar_route: Mutex::new(String::new()), bar_busy: Mutex::new(()), bar_shown: AtomicBool::new(true) });
             let state = app.state::<App>();
             state.save().ok(); // keeps the first password
             state.bridge.listen(port);
             #[cfg(windows)]
-            if let Some(w) = app.get_webview_window("main") { remember_passwords(&w); }
+            if let Some(w) = app.get_webview_window("main") { remember_passwords(&w); mark_user_agent(&w); }
+            // the screen keeps its own place in the window from now on (the bar goes under it)
+            if let Some(w) = app.get_webview_window("main") { let v: &tauri::Webview = w.as_ref(); let _ = v.set_auto_resize(false); }
             Ok(())
         })
+        .on_page_load(|webview, p| {
+            if webview.label() == "main" && p.event() == tauri::webview::PageLoadEvent::Finished {
+                // not on the window's own thread: making the bar waits for that thread
+                let (app, at) = (webview.app_handle().clone(), p.url().clone());
+                std::thread::spawn(move || screen_changed(&app, &at));
+            }
+        })
         .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. } = event {
+                if window.label() == "main" { lay_out(window.app_handle()); }
+            }
+            // back in front (after the settings window, say): the keys go to the page, not the bar
+            if let tauri::WindowEvent::Focused(true) = event {
+                if window.label() == "main" {
+                    if let Some(screen) = window.app_handle().get_webview("main") { let _ = screen.set_focus(); }
+                }
+            }
             // closing the studio while on air: the page asks first ("End the show" or "Close anyway")
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" && window.state::<App>().busy.load(Ordering::SeqCst) {
@@ -414,7 +585,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_info, save_settings, renew_password, open_station, check_update, install_update, find_station,
-            bridge_status, set_busy, quit_app, open_settings, set_look
+            bridge_status, set_busy, quit_app, open_settings, set_look, bar_tall
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stationwagon Studio");
@@ -422,7 +593,25 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{base_from_link, station_base, station_links, Look};
+    use super::{bar_route, base_from_link, station_base, station_links, Look};
+
+    #[test]
+    fn bar_under_screens() {
+        let u = |s: &str| url::Url::parse(s).unwrap();
+        let base = u("https://wordwave.co.za/radio/");
+        let r = |s: &str| bar_route(&base, &u(s));
+        assert_eq!(r("https://wordwave.co.za/radio/studio").as_deref(), Some("studio"));
+        assert_eq!(r("https://wordwave.co.za/radio/manage/").as_deref(), Some("manage"));
+        assert_eq!(r("https://wordwave.co.za/radio/manage/songprep?x=1").as_deref(), Some("manage/songprep"));
+        assert_eq!(r("https://wordwave.co.za/radio/account").as_deref(), Some("account"));
+        assert!(r("https://wordwave.co.za/radio/").is_none());
+        assert!(r("https://wordwave.co.za/radio/signin").is_none());
+        assert!(r("https://wordwave.co.za/radio/manage/skip").is_none());
+        assert!(r("https://wordwave.co.za/radio/manage/songprep/original").is_none());
+        assert!(r("https://wordwave.co.za/radio/studios").is_none());
+        assert!(r("https://other.example/radio/studio").is_none());
+        assert!(r("tauri://localhost/index.html").is_none());
+    }
 
     #[test]
     fn station_from_links() {

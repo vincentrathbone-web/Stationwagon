@@ -5,6 +5,9 @@
 // is tall enough. Before round 60 the embed played the HLS stream, which joins songs end to end with
 // no crossfade. If something outside pauses the sound (a phone's power manager), or it stops moving,
 // the player starts it again by itself, still counted as the same listener.
+// The same page is the bar under the staff's screens (`bar`, round 61): long and flat, with a mute button,
+// not counted as listening. It has no Listen button: it runs while it's open, always muted on opening, with a
+// speaker button whose volume slider pops up out of it (the volume is remembered); it goes quiet by itself in the studio and Song prep.
 (() => {
   const root = document.getElementById("embed");
   const BASE = root.dataset.base;
@@ -13,6 +16,7 @@
   const POLL_MS = 15000;
   const CLOCK_MS = 300000; // a fresh clock sample this often (the player keeps its own while it plays)
   let np = null, offset = 0, timer = 0, polledAt = 0, clockSamples = [], clockAt = 0, on = false, note = "";
+  const BAR = root.dataset.kind === "bar";
 
   const mmss = (s) => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
   const state = (text) => { $("emState").textContent = text; };
@@ -109,15 +113,65 @@
   root.addEventListener("sw:player", (e) => {
     const d = e.detail;
     on = d.on; note = d.note || "";
-    $("emPlay").setAttribute("aria-pressed", on ? "true" : "false"); $("emPlay").setAttribute("aria-label", on ? "Stop" : "Listen");
+    if (!BAR) { $("emPlay").setAttribute("aria-pressed", on ? "true" : "false"); $("emPlay").setAttribute("aria-label", on ? "Stop" : "Listen"); }
     root.classList.toggle("playing", on);
     if (note) state(note);
+    else if (!on && BAR) state(d.status === "Blocked" ? "Press the speaker to hear it" : "");
     else if (!on) state(d.status === "Blocked" ? "The browser blocked the sound: press play again" : "Press play to listen");
     else if (!heard()) state(d.status === "Reconnecting" ? "Reconnecting…" : "Connecting…");
     tick();
   });
 
-  $("emPlay").addEventListener("click", () => (on ? P.stop() : P.start()));
+  if (!BAR) $("emPlay").addEventListener("click", () => (on ? P.stop() : P.start()));
+
+  // ---- The bar: mute, and what it remembers between screens and visits -------------------------------------
+  let muted = false;
+  function setMuted(m, auto = false) {
+    muted = !!m; P.mute(muted);
+    root.classList.toggle("is-muted", muted);
+    const b = $("emMute");
+    b.setAttribute("aria-pressed", muted ? "true" : "false"); b.setAttribute("aria-label", muted ? "Unmute" : "Mute"); b.title = muted ? (auto ? "Muted while you work here: press to listen" : "Unmute") : "Mute";
+  }
+  if (BAR) {
+    setMuted(true); // always quiet on opening (the user, round 61)
+    // the speaker: heard or quiet; if the browser held the sound back until a tap, this tap starts it
+    $("emMute").addEventListener("click", () => { setMuted(!muted); if (!on) P.start(); });
+    const vol = $("emVol"), pop = $("emVolPop"), sound = $("emSound");
+    // the bar is as tall as the room its host gives it (84 px in the Windows app and a wide browser, 64 on a
+    // phone); while the slider is up the host gives it 150 px more, and the bar keeps its own height at the foot
+    const fit = () => { if (!pop.hidden) return; root.style.setProperty("--bar-h", innerHeight + "px"); root.classList.toggle("roomy", innerHeight >= 76); };
+    fit();
+    window.addEventListener("resize", fit);
+    vol.value = Math.round(P.volume() * 100);
+    vol.addEventListener("input", () => { P.volume(vol.value / 100); if (muted && vol.value > 0) setMuted(false); if (!on) P.start(); });
+    // the slider pops up out of the speaker: the page around the bar (the frame page, or an app) makes room for it
+    let shut = 0;
+    const tall = (t) => {
+      try { if (window.parent !== window) window.parent.postMessage({ sw: "bar-tall", tall: t }, location.origin); } catch (_) { /* another site */ }
+      if (window.SwBarHost && window.SwBarHost.tall) try { window.SwBarHost.tall(t); } catch (_) { /* the Android app's own */ }
+      if (window.__TAURI__ && window.__TAURI__.core) window.__TAURI__.core.invoke("bar_tall", { tall: t }).catch(() => {}); // the Windows app's
+    };
+    const openPop = () => { clearTimeout(shut); if (pop.hidden) { tall(true); pop.hidden = false; } };
+    // it closes when the pointer has left, unless the keyboard is using it
+    let mouseIn = false; // a phone's tap leaves :hover stuck, so only a mouse counts
+    const inUse = () => mouseIn || !!sound.querySelector(":focus-visible");
+    const closePop = (ms = 350) => { clearTimeout(shut); shut = setTimeout(() => { if (pop.hidden) return; if (inUse()) { closePop(1500); return; } if (sound.contains(document.activeElement)) document.activeElement.blur(); pop.hidden = true; tall(false); }, ms); };
+    sound.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") { mouseIn = true; openPop(); } });
+    sound.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") { mouseIn = false; closePop(); } });
+    sound.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") { openPop(); closePop(4000); } }); // a tap: up for a few seconds
+    vol.addEventListener("pointerdown", () => clearTimeout(shut));
+    vol.addEventListener("change", () => closePop(2500));
+    sound.addEventListener("focusin", openPop);
+    sound.addEventListener("focusout", () => closePop(200));
+    vol.addEventListener("keydown", (e) => { if (e.key === "Escape") { vol.blur(); $("emMute").focus(); pop.hidden = true; tall(false); } });
+    P.start(); // runs while it's open: the strip and the time move, muted
+    /** The screen above changed (the frame page or the app says so): the studio and Song prep mute the bar. */
+    const screen = (route) => { if (/^(studio|manage\/songprep)(\/|$)/.test(String(route || "")) && !muted) setMuted(true, true); };
+    window.SwBar = { screen, mute: (m) => setMuted(m), get muted() { return muted; }, volume: (v) => { if (v !== undefined) vol.value = Math.round(P.volume(v) * 100); return P.volume(); }, get open() { return !pop.hidden; },
+      // the Android app hides its bar's view without the page knowing: told, the bar stops drawing until it shows again
+      hide: (h) => { document.documentElement.style.display = h ? "none" : ""; } };
+    window.addEventListener("message", (e) => { if (e.origin === location.origin && e.data && e.data.sw === "screen") screen(e.data.route); });
+  }
   // for the tests: whether it plays, is heard, and how far behind the server's clock
   window.swEmbed = {
     get playing() { const b = on && P.heard(); return !!(b && !b.el.paused); },
@@ -132,6 +186,7 @@
     slip(s) { return P.slip(s); }, // the song heard slips s seconds
     poll: () => poll(),
     get note() { return note; },
+    get muted() { return BAR ? muted : false; },
     // the visuals: whether they run, the spectrum's state, how much of the strip is measured and planned
     get vis() {
       const s = P.state(), t = P.wave.now();

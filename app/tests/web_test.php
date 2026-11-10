@@ -289,6 +289,19 @@ try {
     check('  with the full layout’s parts for a tall frame: album art, the copyright line, the spectrum and the strip', str_contains($r['body'], 'id="emArt"') && str_contains($r['body'], 'class="cd-disc"') && str_contains($r['body'], 'id="emRights"') && str_contains($r['body'], 'id="emSpec"') && str_contains($r['body'], 'id="emWave"')
         && preg_match('~assets/spectrum\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1 && preg_match('~assets/outwave\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1);
     check('  ?look=light gives the light look', str_contains($e->go('embed?look=light')['body'], '<html lang="en" class="light">') && !str_contains($r['body'], 'class="light"'));
+    // round 61: the bar under the staff's screens (the embed's long, flat form) and the small Now playing card
+    $r = $e->go('bar');
+    check('the bar opens: the station page\'s player, long and flat, with a speaker and its volume slider, no play button', $r['status'] === 200 && str_contains($r['body'], 'class="em bar"')
+        && str_contains($r['body'], 'data-kind="bar"') && str_contains($r['body'], 'id="emMute"') && str_contains($r['body'], 'id="emVol"') && !str_contains($r['body'], 'id="emPlay"')
+        && preg_match('~assets/player\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1 && preg_match('~assets/embed\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1, (string) $r['status']);
+    check('  only the station itself may frame it', str_contains(implode(',', $r['headers']['content-security-policy'] ?? []), "frame-ancestors 'self'"), implode(',', $r['headers']['content-security-policy'] ?? []));
+    $r = $e->go('now?link=' . rawurlencode('https://radio.example.org/listen/'));
+    check('the Now playing card opens, with its link and no sound', $r['status'] === 200 && str_contains($r['body'], 'id="nwLink" href="https://radio.example.org/listen/" target="_top"')
+        && preg_match('~assets/now\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1 && !str_contains($r['body'], 'player.js') && !str_contains($r['body'], '<audio'), (string) $r['status']);
+    check('  any website may frame it', str_contains(implode(',', $r['headers']['content-security-policy'] ?? []), 'frame-ancestors *'));
+    $r = $e->go('now?link=' . rawurlencode('javascript:alert(1)') . '&target=new');
+    check('  a link that isn\'t http(s) is refused (the station page instead); ?target=new opens a new tab', str_contains($r['body'], 'id="nwLink" href="' . $basePath . '/" target="_blank" rel="noopener"'));
+    check('  signed out, a screen opened in a browser isn\'t framed: the sign-in page', !str_contains((new Browser($base))->go('manage/library', null, ['Sec-Fetch-Dest: document'])['body'], 'id="swScreen"'));
     check('the station page no longer has the embed-code card (the user, 2026-11-02)', !str_contains($page, 'id="lpEmbed"') && !str_contains($page, 'Put the player on your website'));
     echo "Listener count\n";
     $json = ['Content-Type: application/json'];
@@ -550,6 +563,19 @@ try {
             return (json_decode($r['body'], true)['results'] ?? [[]])[0] + ['status' => $r['status']];
         };
         $r = $m->go('manage/library');
+        // round 61: a browser opening a screen gets the frame page with the bar; the apps, ?bare and the sw_bare mark don't
+        $doc = ['Sec-Fetch-Dest: document'];
+        $sh = $m->go('manage/library?x=1', null, $doc);
+        check('a browser opening a screen gets the frame page: the screen in a frame, the bar under it', $sh['status'] === 200 && str_contains($sh['body'], 'id="swScreen"')
+            && str_contains($sh['body'], 'src="' . $basePath . '/manage/library?x=1"') && str_contains($sh['body'], 'id="swBar" src="' . $basePath . '/bar"') && str_contains($sh['body'], 'microphone')
+            && preg_match('~assets/shell\.js\?v=[0-9a-f]{10}"~', $sh['body']) === 1 && preg_match('~no-(store|cache)~', implode(',', $sh['headers']['cache-control'] ?? [])) === 1, $sh['status'] . ' ' . implode(',', $sh['headers']['cache-control'] ?? [])); // the station's .htaccess makes every page no-cache
+        check('  the studio and the account page too; not the station page', str_contains($m->go('studio', null, $doc)['body'], 'id="swScreen"') && str_contains($m->go('account', null, $doc)['body'], 'id="swScreen"')
+            && !str_contains($m->go('', null, $doc)['body'], 'id="swScreen"'));
+        check('  not for the apps (their own bar), for ?bare, or with the sw_bare mark', !str_contains($m->go('manage/library', null, [...$doc, 'User-Agent: Mozilla/5.0 StationwagonStudio/0.7.5 (Android)'])['body'], 'id="swScreen"')
+            && !str_contains($m->go('manage/library', null, [...$doc, 'User-Agent: Mozilla/5.0 Edg/157 StationwagonStudio/0.6.5 (Windows)'])['body'], 'id="swScreen"')
+            && !str_contains($m->go('manage/library?bare=1', null, $doc)['body'], 'id="swScreen"')
+            && (function () use ($m, $doc) { $m->cookies['sw_bare'] = '1'; $b = $m->go('manage/library', null, $doc)['body']; unset($m->cookies['sw_bare']); return !str_contains($b, 'id="swScreen"'); })());
+        check('  nor for the screen\'s own frame (a request for a frame)', !str_contains($m->go('manage/library', null, ['Sec-Fetch-Dest: iframe'])['body'], 'id="swScreen"'));
         check('the library opens with a drop zone', $r['status'] === 200 && str_contains($r['body'], 'id="drop"') && str_contains($r['body'], 'upload.js?v=') && preg_match('~data-worker="[^"]*prep-worker\.js\?v=[0-9a-f]{10}"~', $r['body']));
         // song prep's two switches and the loudness target: shown as stored, saved by a manager only
         $prepAll = fn() => Stationwagon\StationSettings::prep($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch());

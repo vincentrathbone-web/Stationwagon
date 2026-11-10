@@ -118,6 +118,8 @@ try {
     check(`/${p} is hi-fi too`, l.skin === "hifi" && l.amber === HIFI && l.bg !== "" && (p === "embed" ? l.pick === "Look: Hi-fi" : l.pick === "hifi"), JSON.stringify(l));
   }
   manager = helper("manager");
+  // the screens as they are, not inside the station's frame page with the bar (round 61; the shell test has that)
+  await A.call("Network.setCookie", { name: "sw_bare", value: "1", url: base + "/" });
   await A.go(`${base}/signin`);
   await A.evaluate(`(() => { const f = document.querySelector('main form'); f.email.value = ${JSON.stringify(manager.email)}; f.password.value = ${JSON.stringify(manager.password)}; f.submit(); })()`);
   for (let i = 0; i < 50 && !(await A.evaluate("location.pathname").catch(() => "")).endsWith("/manage"); i++) await sleep(100);

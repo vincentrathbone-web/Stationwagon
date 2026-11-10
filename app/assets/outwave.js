@@ -112,7 +112,8 @@
   /**
    * Draw the strip on `canvas` (about 30 frames a second while it is on screen). opts: colors (one
    * per series, the output last), measured() (Columns or null), plan() (render() result or null),
-   * now() (the context time in the middle), span() (seconds shown), marks() ([{ t, color }]).
+   * now() (the context time at the playhead), span() (seconds shown), marks() ([{ t, color }]), at (where the
+   * playhead is, 0 to 1 of the width: 0.5, the middle, by default; the bar's is near the right, round 61).
    */
   function strip(canvas, opts) {
     const c = canvas.getContext("2d"), css = (n, f) => getComputedStyle(canvas).getPropertyValue(n).trim() || f;
@@ -155,7 +156,7 @@
       const k = opts.colors.length, ns = k - 1, mid = h / 2, half = h / 2 - 1;
       const meas = opts.measured(), plan = opts.plan ? opts.plan() : null, now = opts.now(), span = opts.span();
       // one column per CSS pixel: on a phone's 2.75x screen that is a third of the work, and looks the same
-      const t0 = now - span / 2, pps = w / span, cw = 1, line = [], vals = new Float32Array(k);
+      const at = opts.at || 0.5, t0 = now - span * at, pps = w / span, cw = 1, line = [], vals = new Float32Array(k);
       if (meas || plan) {
         for (let xd = 0, nx = Math.round(w); xd < nx; xd++) {
           const x = xd * cw, ta = t0 + x / pps, ia = Math.floor(ta / STEP), ib = Math.max(ia, Math.floor((ta + cw / pps) / STEP));
@@ -203,7 +204,7 @@
         if (x < 0 || x >= w) continue;
         c.fillStyle = mk.color; c.fillRect(x, 0, 1, 6); c.fillRect(x, h - 6, 1, 6);
       }
-      c.fillStyle = ink; c.fillRect(Math.round(w / 2) - 1, 0, 2, h);
+      c.fillStyle = ink; c.fillRect(Math.round(w * at) - 1, 0, 2, h);
     }
     function loop() {
       raf = 0;

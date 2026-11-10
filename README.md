@@ -79,8 +79,14 @@ To build the files yourself: `python tools/build-wp-plugin.py` and `python tools
   original MP3s. Apache serves them, and Cloudflare caches them.
 - The station page's **player** follows the same timeline 20 seconds behind the server clock, so
   every listener hears the same moment. It mixes two decks for real crossfades and plays live shows
-  from the stream. A small **embed player** and a now-playing API (`api/nowplaying.php`) put the
-  station on other websites.
+  from the stream. A small **embed player**, a **Now playing card** (`now`: album art, the song and a
+  link to your Listen page, no sound) and a now-playing API (`api/nowplaying.php`) put the station on
+  other websites.
+- Under the staff's screens (the studio, the manager and the account page) runs **the bar**: what's on
+  air, a scrolling strip of the output and the song's progress, with a speaker button and a volume
+  slider. It opens muted, keeps playing with no gap while you move between screens, and goes quiet by
+  itself in the studio and Song prep. In a browser the screens open inside a frame page with the bar
+  under them; the Windows and Android apps have a bar area of their own.
 - Songs are **prepared in the browser** on upload: silence trimmed with short fades, **mastered**
   with the station's preset (optional), levelled to the loudness target (−16 LUFS by default) and
   encoded **once** with real **LAME 3.100** (160 kbps by default; sample rate, precision, dither and

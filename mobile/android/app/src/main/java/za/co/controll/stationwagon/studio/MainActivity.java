@@ -22,6 +22,11 @@ import com.getcapacitor.CapConfig;
  * (Capacitor gives its bridge to the app's own origin alone). Switching between the two starts the
  * activity again with the other address. Opening the app shows the start page first ("boot"): it
  * checks for an update, then opens the studio.
+ *
+ * Under the station's screens (the studio, the manager screens, the account page) a second WebView, the bar
+ * (round 61), shows the station's `bar` page: what's on air, with a mute button and a volume slider. It stays
+ * loaded while the screen above changes, so its sound has no gap. The browser gets the same from the
+ * station's frame page; the app's user agent mark tells the station not to send that.
  */
 public class MainActivity extends BridgeActivity {
     /** This start is the app opening (the start page checks for updates, then opens the studio). */
@@ -63,6 +68,13 @@ public class MainActivity extends BridgeActivity {
             public void onPageLoaded(WebView webView) {
                 keepSignIn(loadedStation, KEEP_SIGN_IN_MS);
                 offerToSave(webView.getUrl());
+            }
+        });
+
+        if (studio) bridge.addWebViewListener(new com.getcapacitor.WebViewListener() {
+            @Override
+            public void onPageLoaded(WebView webView) {
+                screenChanged(webView.getUrl());
             }
         });
 
@@ -117,6 +129,115 @@ public class MainActivity extends BridgeActivity {
             });
     }
 
+    // ---- The bar (round 61) -------------------------------------------------------------------------------
+
+    static final int BAR_DP = 64, BAR_TALL_DP = 214;
+    /** The bar's WebView (made the first time a screen opens), and its state. */
+    private WebView bar;
+    private boolean barOn, barTall, keyboard;
+    private String barRoute = "";
+
+    /** The screen at an address, if it is one of the station's screens with the bar under it (the same list as the station's App::shellRoute). */
+    static String barRoute(String base, String url) {
+        if (base == null || url == null) return null;
+        Uri b = Uri.parse(base), u = Uri.parse(url);
+        if (b.getScheme() == null || !b.getScheme().equals(u.getScheme()) || b.getHost() == null || !b.getHost().equals(u.getHost()) || b.getPort() != u.getPort()) return null;
+        String bp = b.getPath() == null ? "/" : b.getPath(), up = u.getPath() == null ? "/" : u.getPath();
+        if (!up.startsWith(bp)) return null;
+        String r = up.substring(bp.length()).replaceAll("/+$", "");
+        boolean screen = r.equals("studio") || r.equals("account") || r.equals("manage")
+            || (r.startsWith("manage/") && !r.equals("manage/skip") && !r.equals("manage/songprep/original"));
+        return screen ? r : null;
+    }
+
+    private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
+
+    /** The screen above changed: shows or hides the bar (making it the first time), and tells it the screen. */
+    private void screenChanged(String url) {
+        String route = barRoute(loadedStation, url);
+        barOn = route != null;
+        if (route != null) {
+            barRoute = route;
+            if (bar == null) makeBar(); else tellBar();
+        }
+        layOut();
+    }
+
+    @android.annotation.SuppressLint({ "SetJavaScriptEnabled", "AddJavascriptInterface" })
+    private void makeBar() {
+        WebView web = bridge.getWebView();
+        if (!(web.getParent() instanceof android.view.ViewGroup)) return;
+        android.view.ViewGroup parent = (android.view.ViewGroup) web.getParent();
+        bar = new WebView(this);
+        android.webkit.WebSettings ws = bar.getSettings();
+        ws.setJavaScriptEnabled(true);
+        ws.setDomStorageEnabled(true);
+        ws.setMediaPlaybackRequiresUserGesture(false); // it runs (muted) as soon as it opens
+        ws.setUserAgentString(ws.getUserAgentString() + " StationwagonStudio/" + BuildConfig.VERSION_NAME + " (Android)");
+        bar.setBackgroundColor(android.graphics.Color.TRANSPARENT); // the screen shows around the volume slider
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) bar.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
+        bar.addJavascriptInterface(new BarHost(), "SwBarHost");
+        final String page = loadedStation + "bar";
+        bar.setWebViewClient(new android.webkit.WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView v, android.webkit.WebResourceRequest req) {
+                // the bar stays the bar: its links (the station page) open in the phone's browser
+                if (req.getUrl().toString().startsWith(page)) return false;
+                try { startActivity(new Intent(Intent.ACTION_VIEW, req.getUrl())); } catch (Exception e) { /* no browser */ }
+                return true;
+            }
+
+            @Override
+            public void onPageFinished(WebView v, String url) {
+                tellBar();
+            }
+        });
+        androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams lp =
+            new androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, dp(BAR_DP));
+        lp.gravity = android.view.Gravity.BOTTOM;
+        parent.addView(bar, lp);
+        // the keyboard up: the bar steps aside, so the page keeps its room for typing
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(parent, (v, insets) -> {
+            boolean k = insets.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime());
+            if (k != keyboard) { keyboard = k; layOut(); }
+            return insets;
+        });
+        bar.loadUrl(page);
+    }
+
+    private void tellBar() {
+        if (bar != null) bar.evaluateJavascript("window.SwBar && (window.SwBar.screen(" + org.json.JSONObject.quote(barRoute) + "), window.SwBar.hide("
+            + (bar.getVisibility() != android.view.View.VISIBLE) + "))", null);
+    }
+
+    /** The screen above the bar (less the bar's 64 dp), and the bar along the foot: taller over the screen's foot while its slider is up. */
+    private void layOut() {
+        WebView web = bridge.getWebView();
+        boolean show = barOn && bar != null && !keyboard;
+        android.view.ViewGroup.MarginLayoutParams wl = (android.view.ViewGroup.MarginLayoutParams) web.getLayoutParams();
+        int bottom = show ? dp(BAR_DP) : 0;
+        if (wl.bottomMargin != bottom) { wl.bottomMargin = bottom; web.setLayoutParams(wl); }
+        if (bar == null) return;
+        int vis = show ? android.view.View.VISIBLE : android.view.View.GONE;
+        if (bar.getVisibility() != vis) {
+            bar.setVisibility(vis);
+            // a hidden WebView's page still thinks it's seen: tell it, so the strip stops drawing
+            bar.evaluateJavascript("window.SwBar && window.SwBar.hide(" + !show + ")", null);
+        }
+        android.view.ViewGroup.LayoutParams bl = bar.getLayoutParams();
+        int h = dp(barTall ? BAR_TALL_DP : BAR_DP);
+        if (bl.height != h) { bl.height = h; bar.setLayoutParams(bl); }
+        bar.bringToFront();
+    }
+
+    private class BarHost {
+        /** The bar's volume slider is up (or down again). */
+        @JavascriptInterface
+        public void tall(boolean t) {
+            runOnUiThread(() -> { barTall = t; layOut(); });
+        }
+    }
+
     private boolean onStudio() {
         String url = bridge.getWebView().getUrl();
         return url != null && Uri.parse(url).getPath() != null && Uri.parse(url).getPath().endsWith("/studio");
@@ -165,6 +286,11 @@ public class MainActivity extends BridgeActivity {
     public void onDestroy() {
         WebView web = bridge != null ? bridge.getWebView() : null;
         keepSignIn(loadedStation, KEEP_SIGN_IN_MS); // before the cookie plugin removes session cookies
+        if (bar != null) {
+            if (bar.getParent() instanceof android.view.ViewGroup) ((android.view.ViewGroup) bar.getParent()).removeView(bar);
+            bar.destroy();
+            bar = null;
+        }
         super.onDestroy();
         // A restart (recreate) keeps the window, so Capacitor never destroys the old page's WebView: it
         // would go on running (a studio page with its mic and sound). Stop it here.

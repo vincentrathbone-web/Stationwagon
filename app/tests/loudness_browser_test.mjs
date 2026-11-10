@@ -128,6 +128,8 @@ try {
   };
   await call("Page.enable"); await call("DOM.enable"); await call("Runtime.enable");
   user = helper("manager");
+  // the screens as they are, not inside the station's frame page with the bar (round 61; the shell test has that)
+  await call("Network.setCookie", { name: "sw_bare", value: "1", url: base + "/" });
   await go(`${base}/signin`);
   await evaluate(`(() => { const f = document.querySelector('main form'); f.email.value = ${JSON.stringify(user.email)}; f.password.value = ${JSON.stringify(user.password)}; f.submit(); })()`);
   await sleep(600); await loaded();

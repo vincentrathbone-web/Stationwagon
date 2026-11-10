@@ -96,6 +96,8 @@ try {
   minBefore = helper("podcast-min", "5").before; // the test show is shorter than an episode needs
   console.log("Signing in on the phone");
   dj = helper("dj", "block");
+  // the screens as they are, not inside the station's frame page with the bar (round 61; the shell test has that)
+  await page.call("Network.setCookie", { name: "sw_bare", value: "1", url: base + "/" });
   await go(`${base}/signin`);
   // the look picked on the sign-in page is the one the studio opens in (it's kept per device)
   priorSkin = await evaluate("localStorage.getItem('sw.skin')");

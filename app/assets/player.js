@@ -12,6 +12,7 @@
   const root = document.getElementById("player") || document.getElementById("embed");
   if (!root) return;
   const EMBED = root.id === "embed";
+  const BAR = EMBED && root.dataset.kind === "bar"; // the bar under the staff's screens (round 61): not counted as listening
   const BASE = new URL(root.dataset.base, location.href).href; // the app's full address, ending in "/"
   const SEEK_FROM = 1.2; // song deck drift (s) beyond which the deck seeks back into step
   // Android's Chrome skips bits of a song (5 jumps in 40 s on a Xiaomi) when a media element plays
@@ -211,7 +212,7 @@
       // element volume (read-only on iPhones, where this becomes a straight switch)
       clearInterval(this.fade);
       const from = this.vol, t0 = performance.now(), ms = Math.max(1, seconds * 1000);
-      const apply = (v) => { this.vol = v; try { this.el.volume = Math.max(0, Math.min(1, v * player.volume)); } catch (_) { /* fixed */ } };
+      const apply = (v) => { this.vol = v; try { this.el.volume = player.muted ? 0 : Math.max(0, Math.min(1, v * player.volume)); } catch (_) { /* fixed */ } };
       if (seconds <= 0.02) { apply(to); return; }
       this.fade = setInterval(() => { const x = Math.min(1, (performance.now() - t0) / ms); apply(from + (to - from) * x); if (x >= 1) clearInterval(this.fade); }, 50);
     }
@@ -227,7 +228,7 @@
     on: false, ctx: null, mix: null, master: null, analyser: null, wave: null, decks: [], stream: null, started: new Set(), tries: new Map(),
     // for the Diagnostics panel (diag.js): what each dropout was, and what the page costs
     dropLog: [], corrections: 0, stalls: 0, waits: 0, drift: null, cost: { strip: 0, spectrum: 0, mix: 0 },
-    drops: 0, lastDrop: 0, listeners: null, ping: null, engineAt: null, nudges: 0, nudging: false, volume: 0.8, timers: [], status: "Ready", lastKey: null, events: [],
+    drops: 0, lastDrop: 0, listeners: null, ping: null, engineAt: null, nudges: 0, nudging: false, volume: 0.8, muted: false, timers: [], status: "Ready", lastKey: null, events: [],
     /** The last 40 things the player did, with the heard time (for tests and support). */
     log(what) { this.events = [...this.events, ((clock.last ? this.heard() : 0) % 1000).toFixed(1) + " " + what].slice(-40); },
 
@@ -240,7 +241,7 @@
         this.ctx = new Ctx({ latencyHint: HANDHELD ? "balanced" : "playback" }); // bigger buffers on a PC; a phone skips with them
         // a locked phone never settles resume(): give it 2 s, then go on (play() then says it's blocked)
         if (this.ctx.state === "suspended") await Promise.race([this.ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
-        this.master = this.ctx.createGain(); this.master.gain.value = this.volume;
+        this.master = this.ctx.createGain(); this.master.gain.value = this.muted ? 0 : this.volume;
         this.master.connect(this.ctx.destination);
         this.mix = this.ctx.createGain(); this.mix.connect(this.master); // the station's output, before the listener's volume
         // the spectrum reads the station's output, so the listener's volume doesn't shrink it
@@ -276,7 +277,7 @@
       ];
       this.setPlaying(true); this.setStatus("Playing");
       // counted as listening while it plays: a ping a minute (assets/listeners.js)
-      if (window.SwListeners) this.ping = SwListeners.start(BASE, EMBED ? "embed" : "player", (n) => this.setListeners(n));
+      if (window.SwListeners && !BAR) this.ping = SwListeners.start(BASE, EMBED ? "embed" : "player", (n) => this.setListeners(n));
       if (this.analyser) spectrum.run(); // stream only: no Web Audio, so nothing to measure
     },
 
@@ -294,11 +295,17 @@
       this.setStatus("Stopped"); this.setPlaying(false);
     },
 
+    /** Quiet or heard again (the bar's mute): the mix, the strip and the timing carry on underneath. */
+    setMuted(m) {
+      this.muted = !!m;
+      if (this.master) this.master.gain.setTargetAtTime(this.muted ? 0 : this.volume, this.ctx.currentTime, 0.03);
+      if (this.stream && (!this.stream.gainNode || this.stream.native)) this.stream.setGain(this.stream.vol, 0);
+    },
     setVolume(v) {
       this.volume = v;
-      if (this.master) this.master.gain.value = v;
+      if (this.master) this.master.gain.value = this.muted ? 0 : v;
       if (this.stream && (!this.stream.gainNode || this.stream.native)) this.stream.setGain(this.stream.vol, 0);
-      try { localStorage.setItem("sw-volume", String(v)); } catch (_) { /* private window */ }
+      try { localStorage.setItem(VOL_KEY, String(v)); } catch (_) { /* private window */ }
     },
 
     /**
@@ -337,7 +344,8 @@
     /** A deck couldn't start: the browser blocked sound (say so), or the file failed (a dropout). */
     playFailed(e) {
       this.log("play failed: " + (e && (e.name + " " + e.message)));
-      if (e && e.name === "NotAllowedError") { this.setStatus("Blocked"); this.say("The browser blocked the sound. Tap Listen again."); this.stop(); this.setStatus("Blocked"); }
+      if (e && e.name === "NotAllowedError" && BAR) { this.stop(); this.setStatus("Blocked"); } // the bar says it in its own words
+      else if (e && e.name === "NotAllowedError") { this.setStatus("Blocked"); this.say("The browser blocked the sound. Tap Listen again."); this.stop(); this.setStatus("Blocked"); }
       else this.dropout("a song couldn’t start", e ? e.name : "");
     },
     online() { if (this.on && this.status !== "Playing") this.setStatus("Playing"); },
@@ -656,6 +664,7 @@
     plan: () => ahead.plan,
     now: outNow,
     span: () => 10,
+    at: BAR ? 0.9 : 0.5, // the bar: what went out fills the strip, the next second faint at its right end (round 61)
     cost: (ms) => { player.cost.strip += ms; },
     // where each entry starts (a handover), in its colour
     marks: () => {
@@ -737,7 +746,9 @@
   if ("mediaSession" in navigator) {
     try { navigator.mediaSession.setActionHandler("play", () => player.start()); navigator.mediaSession.setActionHandler("pause", () => player.stop()); navigator.mediaSession.setActionHandler("stop", () => player.stop()); } catch (_) { /* unsupported */ }
   }
-  if (EMBED) player.volume = 1; // no volume control in the embed: the website's visitor has their own
+  const VOL_KEY = BAR ? "sw-bar-volume" : "sw-volume"; // the bar keeps its own volume (round 61)
+  if (EMBED && !BAR) player.volume = 1; // no volume control in the embed: the website's visitor has their own
+  else if (BAR) { try { const v = parseFloat(localStorage.getItem(VOL_KEY)); if (v >= 0 && v <= 1) player.volume = v; } catch (_) { /* private window */ } }
   else {
     try { const v = parseFloat(localStorage.getItem("sw-volume")); if (v >= 0 && v <= 1) player.volume = v; } catch (_) { /* private window */ }
     $("lpVol").value = Math.round(player.volume * 100); $("lpVolOut").textContent = $("lpVol").value;
@@ -762,6 +773,8 @@
   window.SwPlayer = {
     start: () => player.start(), stop: () => player.stop(), state: () => player.state(), serverNow: () => (clock.last ? clock.now() : null),
     heard: () => heardBest(), // for the embed and its tests: { el, gain, lag }
+    mute: (m) => player.setMuted(m), muted: () => !!player.muted, // the bar's mute and volume (round 61)
+    volume: (v) => { if (v !== undefined) player.setVolume(Math.max(0, Math.min(1, Number(v)))); return player.volume; },
     timeline: () => clock.last, // the Diagnostics panel reads the current song's pieces
     // for tests of the Diagnostics panel: the song on air slips s seconds; the output goes silent for ms
     slip: (s) => { const d = player.decks.find((x) => x.playing && x.gain > 0.5); if (d) d.el.currentTime += s; return !!d; },

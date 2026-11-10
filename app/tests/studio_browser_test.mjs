@@ -58,6 +58,8 @@ const text = (sel) => evaluate(`(document.querySelector(${JSON.stringify(sel)}) 
 const click = (sel) => evaluate(`(() => { const b = document.querySelector(${JSON.stringify(sel)}); if (!b) return false; b.click(); return true; })()`);
 const clickText = (sel, label) => evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].find((x) => x.textContent.trim() === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`);
 async function signIn(user) {
+  // the screens as they are, not inside the station's frame page with the bar (round 61; the shell test has that)
+  await call("Network.setCookie", { name: "sw_bare", value: "1", url: base + "/" });
   await go(`${base}/signin`);
   await evaluate(`(() => { const f = document.querySelector('main form'); f.email.value = ${JSON.stringify(user.email)}; f.password.value = ${JSON.stringify(user.password)}; f.submit(); })()`);
   for (let i = 0; i < 50 && !(await evaluate("location.pathname").catch(() => "")).endsWith("/manage"); i++) await sleep(100);

@@ -5,7 +5,7 @@
 // in order, song titles, a short drop that carries on the show, Stop ending it (and its podcast from
 // the aired sound), Mixxx's and Shoutcast's ways of connecting, a DJ outside their slot, the close
 // question while on air, the settings window, what the station's page may not do, and finding the station from the website's
-// address (round 59).
+// address (round 59), and the bar under the station's screens (round 61).
 // Takes about 4 minutes.
 //   node desktop/tests/app_test.mjs [base url] [path to stationwagon-studio.exe]
 // Needs SW_PHP (php.exe) unless php is on PATH. Your own app settings are put back afterwards.
@@ -124,6 +124,19 @@ async function attach(match) {
   return null;
 }
 const path = () => evaluate("location.pathname").catch(() => "");
+/** The station's page in the main view (not the bar under it). */
+const isScreen = (x) => x.url.startsWith(base) && !/\/bar(\?|$)/.test(x.url);
+/** Runs an expression in the bar's view (round 61), over its own DevTools connection. */
+async function inBar(expression) {
+  const t = (await targets().catch(() => [])).find((x) => /\/bar(\?|$)/.test(x.url));
+  if (!t) return undefined;
+  const b = new WebSocket(t.webSocketDebuggerUrl);
+  await new Promise((ok, bad) => { b.onopen = ok; b.onerror = bad; });
+  const r = await new Promise((ok) => { b.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id === 1) ok(d); }; b.send(JSON.stringify({ id: 1, method: "Runtime.evaluate", params: { expression, returnByValue: true, awaitPromise: true } })); setTimeout(() => ok(null), 15000); });
+  b.close();
+  return r && r.result && r.result.result ? r.result.result.value : undefined;
+}
+const barTargets = async () => (await targets().catch(() => [])).filter((x) => /\/bar(\?|$)/.test(x.url));
 const go = async (url) => { await call("Page.navigate", { url }); for (let i = 0; i < 100; i++) { await sleep(100); if ((await evaluate("document.readyState").catch(() => "")) === "complete") return; } };
 const state = () => evaluate("window.SwStudio && SwStudio.state()");
 async function until(fn, seconds) {
@@ -186,6 +199,54 @@ try {
   check("the studio knows it runs in the app, and shows the bridge", s && s.app && !(await evaluate("document.getElementById('stBridge').hidden")) && (await text("#stBridgeState")).includes(`127.0.0.1:${BRIDGE_PORT}`),
     await text("#stBridgeState"));
   check("  without the 'Get the Windows app' link", await evaluate("document.getElementById('stGetApp').hidden"));
+
+  // ---- round 61: the bar, a second view under the station's screens -------------------------------------------
+  console.log("The bar under the screens");
+  check("the app marks itself in the user agent, so the station sends the studio itself (not its frame page)",
+    (await evaluate("navigator.userAgent")).includes("StationwagonStudio/") && !(await evaluate("!!window.swShell || !!document.getElementById('swScreen')")), await evaluate("navigator.userAgent"));
+  let bar = null;
+  for (let i = 0; i < 50 && !(bar && bar.playing); i++) { await sleep(200); bar = await inBar("({ playing: swEmbed.playing, muted: SwBar.muted, h: innerHeight, w: innerWidth, vis: document.visibilityState, play: !!document.getElementById('emPlay'), t: performance.timeOrigin })").catch(() => null); }
+  const winH = await evaluate("innerHeight"), winW = await evaluate("innerWidth");
+  check("the bar opens under the studio by itself: running, muted, with no play button", bar && bar.playing && bar.muted && !bar.play && bar.vis === "visible", JSON.stringify(bar));
+  check("  84 px tall, the window's width; the studio above it", bar && bar.h === 84 && Math.abs(bar.w - winW) <= 1, bar && `bar ${bar.w}×${bar.h}, studio ${winW}×${winH}`);
+  check("  the bar's look for its room (bigger art and strip), the strip using its width", (await inBar("document.getElementById('embed').classList.contains('roomy') && document.getElementById('emWave').getBoundingClientRect().width > 300")) === true);
+  check("  the bar is the station's own page (one view, not counted as a listener)", (await barTargets()).length === 1 && (await inBar("swEmbed.ping")) === null);
+  check("  the bar may make room for its slider, and nothing else", await inBar("Promise.all([window.__TAURI__.core.invoke('bar_tall', { tall: false }).then(() => true, () => false), ...['get_info', 'bridge_status', 'set_busy', 'quit_app'].map((c) => window.__TAURI__.core.invoke(c, { busy: false }).then(() => false, () => true))]).then((r) => r.every(Boolean))"));
+  check("  and the studio may not", await evaluate("window.__TAURI__.core.invoke('bar_tall', { tall: true }).then(() => false, () => true)"));
+  await inBar("SwBar.mute(false)");
+  await go(`${base}/manage/library`);
+  await sleep(1500);
+  let bar2 = await inBar("({ playing: swEmbed.playing, muted: SwBar.muted, t: performance.timeOrigin, h: innerHeight })");
+  check("going to the manager: the same bar plays on (not loaded again), still heard", bar2 && bar && bar2.t === bar.t && bar2.playing && !bar2.muted && bar2.h === 84, JSON.stringify(bar2));
+  check("  the manager's page has the window less the bar", Math.abs((await evaluate("innerHeight")) - winH) <= 1);
+  await go(`${base}/manage/songprep`);
+  await sleep(1500);
+  bar2 = await inBar("({ muted: SwBar.muted, t: performance.timeOrigin })");
+  check("  Song prep mutes the bar by itself", bar2 && bar2.muted && bar2.t === bar.t, JSON.stringify(bar2));
+  await inBar("(() => { const e = document.getElementById('emSound'); e.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' })); })()");
+  await sleep(700);
+  bar2 = await inBar("({ h: innerHeight, open: SwBar.open, tall: getComputedStyle(document.getElementById('emVolPop')).display })");
+  check("pointing at the speaker: the volume slider comes up, the bar grows over the page's foot", bar2 && bar2.open && bar2.h === 234, JSON.stringify(bar2));
+  check("  the page above keeps its size", Math.abs((await evaluate("innerHeight")) - winH) <= 1);
+  // SW_SHOT=<file.png>: a picture of the window now, to see the page through the bar around the slider
+  if (process.env.SW_SHOT) execFileSync("powershell", ["-NoProfile", "-Command",
+    `Add-Type -AssemblyName System.Drawing; Add-Type -Namespace W -Name P -MemberDefinition '[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string t); [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint f); [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r); public struct RECT { public int L, T, R, B; }';` +
+    ` $h = [W.P]::FindWindow([NullString]::Value, 'Stationwagon Studio'); $r = New-Object W.P+RECT; [W.P]::GetWindowRect($h, [ref]$r) | Out-Null;` +
+    ` $b = New-Object System.Drawing.Bitmap ($r.R - $r.L), ($r.B - $r.T); $g = [System.Drawing.Graphics]::FromImage($b); $dc = $g.GetHdc(); [W.P]::PrintWindow($h, $dc, 2) | Out-Null; $g.ReleaseHdc($dc); $b.Save('${process.env.SW_SHOT.replace(/'/g, "''")}')`], { encoding: "utf8" });
+  await inBar("(() => { const e = document.getElementById('emSound'); e.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' })); })()");
+  await sleep(1200);
+  bar2 = await inBar("({ h: innerHeight, open: SwBar.open })");
+  check("  and it goes down again when the pointer leaves", bar2 && !bar2.open && bar2.h === 84, JSON.stringify(bar2));
+  await inBar("SwBar.volume(0.5)");
+  await go(`${base}/`);
+  await sleep(1200);
+  bar2 = await inBar("({ vis: document.visibilityState })");
+  check("the station page (not a screen): the bar is hidden and the page has the whole window", bar2 && bar2.vis === "hidden" && Math.abs((await evaluate("innerHeight")) - (winH + 84)) <= 1, `${JSON.stringify(bar2)} ${await evaluate("innerHeight")}`);
+  await go(`${base}/studio`);
+  await sleep(1500);
+  bar2 = await inBar("({ vis: document.visibilityState, t: performance.timeOrigin, vol: SwBar.volume() })");
+  check("  back in the studio: the bar again, the same one, with the volume set", bar2 && bar2.vis === "visible" && bar2.t === bar.t && bar2.vol === 0.5 && Math.abs((await evaluate("innerHeight")) - winH) <= 1, JSON.stringify(bar2));
+  await until((x) => x.slot !== undefined, 10);
   // round 58: the app's own page and its update dialog follow the look picked in the studio
   const lookNow = () => { try { return JSON.parse(readFileSync(cfgFile, "utf8")).look || null; } catch { return null; } };
   const skin0 = await evaluate("SwSkin.current()"), accent0 = await evaluate("getComputedStyle(document.documentElement).getPropertyValue('--amber').trim()");
@@ -340,7 +401,7 @@ try {
     (await text("#portShow")) === String(BRIDGE_PORT) && (await text("#pw")) === PASSWORD);
   check("  and that the bridge is waiting", (await text("#bridgeState")).startsWith("Waiting for BUTT"), await text("#bridgeState"));
   check("  closing it leaves the studio open", closeWindow("Stationwagon Studio: settings") === "closed" && (await sleep(800), alive()) && !(await targets()).some((x) => x.url.includes("#settings")));
-  await attach((x) => x.url.startsWith(base));
+  await attach(isScreen);
 
   console.log("Remembering the password");
   await call("Network.clearBrowserCookies");
@@ -407,7 +468,7 @@ try {
   f = await waitFinder((x) => x.cls.includes("ok"));
   check(`the website's address typed again: the station found in its folder (${base}/)`, f && f.box === base + "/" && f.found === `✓ Found: ${NAME}`, f && `${f.box} · ${f.found}`);
   await evaluate(`document.getElementById("form").requestSubmit()`);
-  t = await attach((x) => x.url.startsWith(base));
+  t = await attach(isScreen);
   check("  Save and open: the station's studio opens, and the station's own address is saved", !!t && JSON.parse(readFileSync(cfgFile, "utf8")).station === base + "/", t ? t.url : "no studio");
   site.close();
 

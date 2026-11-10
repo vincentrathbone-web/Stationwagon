@@ -196,6 +196,8 @@ const MAP = {
       { text: "Now-playing API", note: "JSON for websites and apps, at the listener delay", v: "v0.4", state: "done" },
       { text: "Schedule, podcast and verse of the day as JSON", note: "for apps and other sites; a podcast episode comes with the presenter's notes placed at the second of the audio they belong to", v: "v0.8", state: "done" },
       { text: "Embeddable player with Copy code", note: "dark or light; plays at the same 20 s delay", v: "v0.4", state: "done" },
+      { text: "Now playing card for other websites", note: "album art, the song and a progress line, no sound; a click opens your Listen page (on wordwave.co.za's home page)", v: "v0.8", state: "done" },
+      { text: "The bar under the staff's screens", note: "what's on air with a scrolling strip; opens muted, a speaker and a volume slider; plays on with no gap between screens; quiet by itself in the studio and Song prep; in the browser and both apps", v: "v0.8", state: "done" },
       { text: "Listeners now, on the health line and in the studio", note: "a ping a minute, no cookies", v: "v0.4", state: "done" },
       { text: "Privacy page, linked under the player and in the embed", v: "v0.4", state: "done" },
       { text: "Spectrum in the display", note: "28 bars of what goes out, peak marks", v: "v0.4", state: "done" },
@@ -291,6 +293,7 @@ const MAP = {
   call: null,
   feedTitle: "Changed 20 Oct – 10 Nov",
   feed: [
+    { what: "The bar and the Now playing card", to: "a bar along the bottom of the studio, the manager and your account page shows what's on air (art, scrolling strip, progress), opens muted with a speaker and a volume slider, and plays on with no gap between screens, in the browser and in both apps; a small Now playing card for wordwave.co.za's home page. Live on wordwave.co.za; the apps released as Windows 0.6.5 and Android 0.7.5", at: "11 Nov" },
     { what: "The embed crossfades", to: "the player on wordwave.co.za/listen/ (the embed) now mixes the songs on two decks like the station page: crossfades instead of hard cuts, the strip blue and pink; live on wordwave.co.za", at: "10 Nov" },
     { what: "The apps find the station", to: "type the website's address (wordwave.co.za) and the Windows or Android app finds the station at /radio/, shows \"✓ Found: Radio WordWave\" and opens only then; a wrong address says why. Windows 0.6.4 and Android 0.7.4 released", at: "10 Nov" },
     { what: "Updates ask first now", to: "both studio apps show \"Version X is now available\" with the release's notes (New features, Improvements, Fixes, Warning), Remind me later or Update now, in the look picked in the studio; modelled on the KDOHC app. Windows 0.6.3 and Android 0.7.3 released", at: "10 Nov" },

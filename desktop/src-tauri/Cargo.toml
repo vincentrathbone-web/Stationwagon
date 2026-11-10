@@ -1,6 +1,6 @@
 [package]
 name = "stationwagon-studio"
-version = "0.6.4"
+version = "0.6.5"
 description = "Stationwagon Studio for Windows: the station's studio, with a bridge for BUTT and Mixxx"
 edition = "2021"
 publish = false
@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["unstable"] } # unstable: the bar, a second view in the window (round 61)
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"

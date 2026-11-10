@@ -14,7 +14,9 @@
 //     later and its notice); a download that doesn't match refused there, then the newer version
 //     downloaded, confirmed in Android's dialog, installed, and the app opened again by itself;
 //   - opening the app: it checks for updates, then goes straight to the studio;
-//   - a show with the screen off for 60 s: pieces keep reaching the station.
+//   - a show with the screen off for 60 s: pieces keep reaching the station;
+//   - the bar under the station's screens (round 61): its own WebView, running muted, the same one across
+//     screens, taller while its volume slider is up, hidden on pages that aren't screens.
 // Uninstalls the app afterwards and leaves no Do Not Disturb set by hand (a schedule that was on, like
 // Bedtime, is paused for 30 minutes from its notification and comes back by itself). About 6 minutes.
 //   bash tools/build-android.sh 0.7.0 test && bash tools/build-android.sh 0.7.1 test
@@ -125,6 +127,8 @@ const connect = async (url) => {
   return { ws, call };
 };
 let page = null;
+/** The bar's page (round 61): never the page a test attaches to. */
+const BAR_URL = /\/bar(\?|$)/;
 /** The app's page whose address matches; reconnects after the app starts its page again. */
 async function attach(match, seconds = 20) {
   try { page && page.ws.close(); } catch { /* gone */ }
@@ -132,7 +136,7 @@ async function attach(match, seconds = 20) {
   for (let i = 0; i < seconds * 4; i++) {
     forward();
     const list = await fetch(`http://localhost:${CDP}/json`).then((r) => r.json()).catch(() => []);
-    const t = list.find((p) => p.type === "page" && match.test(p.url));
+    const t = list.find((p) => p.type === "page" && match.test(p.url) && !BAR_URL.test(p.url));
     if (t) {
       page = await connect(t.webSocketDebuggerUrl).catch(() => null);
       // a page still loading may be replaced: only one that answers, loaded, counts
@@ -184,7 +188,19 @@ async function waitFor(fn, seconds) {
   return null;
 }
 /** The app's open pages (only one should be left after it switches pages). */
-const pages = async () => (await fetch(`http://localhost:${CDP}/json`).then((r) => r.json()).catch(() => [])).filter((p) => p.type === "page");
+const pages = async () => (await fetch(`http://localhost:${CDP}/json`).then((r) => r.json()).catch(() => [])).filter((p) => p.type === "page" && !BAR_URL.test(p.url));
+/** Runs an expression in the bar's WebView (round 61), over its own DevTools connection. */
+async function inBar(expression) {
+  forward();
+  const list = await fetch(`http://localhost:${CDP}/json`).then((r) => r.json()).catch(() => []);
+  const t = list.find((p) => p.type === "page" && BAR_URL.test(p.url));
+  if (!t) return undefined;
+  const c = await connect(t.webSocketDebuggerUrl).catch(() => null);
+  if (!c) return undefined;
+  const r = await c.call("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, 8000);
+  try { c.ws.close(); } catch { /* gone */ }
+  return r.timeout || r.result?.exceptionDetails ? undefined : r.result?.result?.value;
+}
 const start = (extras = []) => adb("am", "start", "-n", `${PKG}/.MainActivity`, ...extras);
 /** Taps the button with this text (or description) on the phone's screen (Android's own dialogs). */
 function tapText(re, pkg = null) {
@@ -401,6 +417,35 @@ try {
   check("  once allowed: Do Not Disturb turns on when you go live, and back when you end", !!b, b || await text("#stBannerText"));
   s = await until((x) => x.mic !== null && x.mic > -100, 8);
   check("  the mic meter reads the room", !!s, s && s.mic.toFixed(1) + " dB");
+
+  // ---- round 61: the bar, a second WebView under the station's screens -------------------------------------------
+  console.log("The bar under the screens");
+  check("the station sends the studio itself (the app's own bar, not the station's frame page)", !(await evaluate("!!window.swShell || !!document.getElementById('swScreen')")));
+  let bar = await waitFor(() => inBar("(() => { const x = { playing: swEmbed.playing, muted: SwBar.muted, h: innerHeight, vis: document.visibilityState, play: !!document.getElementById('emPlay'), t: performance.timeOrigin }; return x.playing && x; })()"), 20);
+  check("the bar opens under the studio by itself: running, muted, with no play button", bar && bar.muted && !bar.play && bar.vis === "visible", JSON.stringify(bar));
+  check("  64 px tall (64 dp)", bar && Math.abs(bar.h - 64) <= 1, bar && String(bar.h));
+  const studioH = await evaluate("innerHeight");
+  await inBar("document.getElementById('emSound').dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true }))");
+  let b2 = await waitFor(async () => { const x = await inBar("({ h: innerHeight, open: SwBar.open })"); return x && x.h > 200 && x; }, 4);
+  check("a tap on the speaker: the volume slider comes up, the bar grows over the page's foot", b2 && b2.open, JSON.stringify(b2 || await inBar("({ h: innerHeight, open: SwBar.open })")));
+  check("  the studio above keeps its size", Math.abs((await evaluate("innerHeight")) - studioH) <= 1);
+  b2 = await waitFor(async () => { const x = await inBar("({ h: innerHeight, open: SwBar.open })"); return x && !x.open && Math.abs(x.h - 64) <= 1 && x; }, 8);
+  check("  and it goes down again by itself a few seconds later", !!b2, JSON.stringify(await inBar("({ h: innerHeight, open: SwBar.open })")));
+  await inBar("SwBar.mute(false)");
+  await go(`${base}/manage/library`);
+  b2 = await waitFor(() => inBar("(() => { const x = { playing: swEmbed.playing, muted: SwBar.muted, t: performance.timeOrigin }; return x; })()"), 5);
+  check("the manager: the same bar plays on (not loaded again), still heard", b2 && bar && b2.t === bar.t && b2.playing && !b2.muted, JSON.stringify(b2));
+  await go(`${base}/`);
+  await sleep(1500);
+  // Android doesn't tell a hidden WebView's page (it stays "visible"): the app tells the bar, which stops drawing its strip
+  b2 = await inBar("(() => { const c = document.querySelector('.em-wave canvas, canvas'); return document.documentElement.style.display === 'none' && (!c || c.offsetParent === null) ? 'hidden' : 'shown'; })()");
+  const fullH = await evaluate("innerHeight");
+  check("the station page (not a screen): the bar is hidden (its strip stops drawing) and the page has its room", b2 === "hidden" && Math.abs(fullH - studioH - 64) <= 2, `${b2} ${studioH} → ${fullH}`);
+  await go(`${base}/studio`);
+  b2 = await waitFor(async () => { const x = await inBar("({ vis: document.documentElement.style.display === 'none' ? 'hidden' : 'shown', t: performance.timeOrigin, muted: SwBar.muted })"); return x && x.vis === "shown" && x; }, 8);
+  check("  back in the studio: the same bar again (drawing), muted by itself there", b2 && bar && b2.t === bar.t && b2.muted && Math.abs((await evaluate("innerHeight")) - studioH) <= 1, JSON.stringify(b2));
+  s = await until((x) => x.on || x.slot, 15);
+  if (s && !s.on) { await clickText("#stBannerActs button", "Switch on the studio"); await until((x) => x.on, 15); }
 
   console.log("On air");
   check("Do Not Disturb is off before the show", zen() === "0", zen());

@@ -65,6 +65,8 @@ try {
 
   manager = helper("manager");
   songs = helper("lib-songs", 30);
+  // the screens as they are, not inside the station's frame page with the bar (round 61; the shell test has that)
+  await A.call("Network.setCookie", { name: "sw_bare", value: "1", url: base + "/" });
   await A.go(`${base}/signin`);
   await A.evaluate(`(() => { const f = document.querySelector('main form'); f.email.value = ${JSON.stringify(manager.email)}; f.password.value = ${JSON.stringify(manager.password)}; f.submit(); })()`);
   await sleep(1500);

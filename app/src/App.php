@@ -30,6 +30,10 @@ final class App
                 Schema::ensure(Db::fromConfig(), SW_ROOT); // brings an older database up to date
                 Jobs::afterVisit(); // the background jobs, when due, once this page is out
             }
+            if (self::shellRoute($route) && self::wantsShell()) {
+                self::shell($route);
+                return;
+            }
             if (preg_match('#^studio/api/([a-z-]+)$#', $route, $m) === 1) {
                 (new StudioPage())->api($m[1]);
                 return;
@@ -69,6 +73,8 @@ final class App
                 'podcast/feed' => PodcastPage::feed(),
                 'studio' => (new StudioPage())->page(),
                 'embed' => self::embed(),
+                'now' => self::now(),
+                'bar' => self::embed(true),
                 'api/me' => self::meJson(),
                 'privacy' => self::privacy(),
                 default => self::notFound(),
@@ -219,11 +225,15 @@ final class App
     /**
      * The small player other websites put in an iframe: its own page, no site header, no session.
      * Any site may frame it; `?look=light` suits a light website.
+     *
+     * $bar: the same player as a long, flat bar (`bar`, round 61) under the manager screens, the studio and
+     * the account page (the browser's frame page, views/shell.php, or the apps' own bar area), with a mute
+     * button; only this station's own pages may frame it, and its listening isn't counted (it's the staff).
      */
-    private static function embed(): void
+    private static function embed(bool $bar = false): void
     {
         $station = self::station();
-        $light = ($_GET['look'] ?? '') === 'light';
+        $light = !$bar && ($_GET['look'] ?? '') === 'light';
         $delay = 20; // the listener delay, which the embed's player holds as the station's page does (round 60)
         try {
             $delay = (int) Planner::forFirstStation()->setting('listener_delay_seconds');
@@ -231,9 +241,69 @@ final class App
             error_log('Stationwagon embed: ' . $ex);
         }
         header_remove('X-Frame-Options');
-        header('Content-Security-Policy: frame-ancestors *');
+        header('Content-Security-Policy: frame-ancestors ' . ($bar ? "'self'" : '*'));
         header('Content-Type: text/html; charset=utf-8');
         require SW_ROOT . '/views/embed.php';
+    }
+
+    /** A screen that gets the bar under it (round 61): the manager screens, the studio and the account page. */
+    public static function shellRoute(string $route): bool
+    {
+        return in_array($route, ['studio', 'account', 'manage'], true)
+            || (str_starts_with($route, 'manage/') && !in_array($route, ['manage/skip', 'manage/songprep/original'], true));
+    }
+
+    /**
+     * Whether this request gets the frame page (views/shell.php) instead of the screen: a browser opening the
+     * screen as a page of its own (`Sec-Fetch-Dest: document`; the frame's own request says `iframe`), signed in.
+     * Not the apps (they have their own bar area; an older app is caught by shell.js, which sets `sw_bare`),
+     * nor `?bare=1` or the `sw_bare` cookie (the screens on their own, as the tests open them), nor a browser
+     * too old to say where a page goes (it gets the screen without the bar).
+     */
+    private static function wantsShell(): bool
+    {
+        $ua = (string) ($_SERVER['HTTP_USER_AGENT'] ?? '');
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET' || ($_SERVER['HTTP_SEC_FETCH_DEST'] ?? '') !== 'document'
+            || isset($_GET['bare']) || !empty($_COOKIE['sw_bare'])
+            || str_contains($ua, 'StationwagonStudio/') || str_contains($ua, 'Stationwagon Studio/')) {
+            return false;
+        }
+        try {
+            Session::start(); // before asking: Auth keeps its first answer for the rest of the request
+            return Auth::fromConfig()->user() !== null;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /** The frame page: the screen asked for, in a frame, with the bar under it. */
+    private static function shell(string $route): void
+    {
+        $names = ['studio' => 'Studio', 'account' => 'Your account', 'manage' => 'Manage'];
+        $title = $names[$route] ?? ucfirst(str_replace('-', ' ', basename($route)));
+        $screen = (string) ($_SERVER['REQUEST_URI'] ?? self::url($route));
+        header('Content-Type: text/html; charset=utf-8');
+        header('Cache-Control: private, no-store');
+        require SW_ROOT . '/views/shell.php';
+    }
+
+    /**
+     * The small Now playing card other websites frame (round 61): no sound, a link to where people listen.
+     * `?link=` an http(s) address (else the station page), `?target=new` a new tab, `?look=light`.
+     */
+    private static function now(): void
+    {
+        $station = self::station();
+        $light = ($_GET['look'] ?? '') === 'light';
+        $link = (string) ($_GET['link'] ?? '');
+        if (!preg_match('#^https?://[^\s"<>]+$#i', $link) || strlen($link) > 500) {
+            $link = self::url('');
+        }
+        $newTab = ($_GET['target'] ?? '') === 'new';
+        header_remove('X-Frame-Options');
+        header('Content-Security-Policy: frame-ancestors *');
+        header('Content-Type: text/html; charset=utf-8');
+        require SW_ROOT . '/views/now.php';
     }
 
     /** What the station keeps about listeners, and why (linked under the player and in the embed). */
