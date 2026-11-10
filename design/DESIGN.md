@@ -6,7 +6,7 @@ browser.
 
 | Screen | Who uses it | Hi-fi skin | Green skin |
 |---|---|---|---|
-| Listener player | The public, and the embed on a church website | [hifi/player.html](skins/hifi/player.html) | [green/player.html](skins/green/player.html) |
+| Listener player | The public, and the embed on a church website (the same two-deck player since round 60) | [hifi/player.html](skins/hifi/player.html) | [green/player.html](skins/green/player.html) |
 | DJ studio | DJs and preachers going live (browser, Windows app or Android app) | [hifi/studio.html](skins/hifi/studio.html) | [green/studio.html](skins/green/studio.html) |
 | Station manager | The station admin | [hifi/manager.html](skins/hifi/manager.html) | [green/manager.html](skins/green/manager.html) |
 

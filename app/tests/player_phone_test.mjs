@@ -153,7 +153,7 @@ try {
   await evaluate(em("(e, d) => { d.getElementById('emPlay').click(); return true; }"));
   let lag = null;
   for (let i = 0; i < 60 && !lag; i++) { await sleep(500); lag = await evaluate(em("(e) => e.heard && Math.abs(e.lag - 20) < 0.6 && e.lag")); }
-  check("  Listen plays the stream at the same 20 s delay", !!lag, lag ? lag.toFixed(2) + " s" : String(await evaluate(em("(e) => e.lag"))));
+  check("  Listen plays at the same 20 s delay (the station page's decks, round 60)", !!lag, lag ? lag.toFixed(2) + " s" : String(await evaluate(em("(e) => e.lag"))));
   check("  and counts itself as listening", /^[0-9a-f]{16}$/.test((await evaluate(em("(e) => e.ping"))) || ""));
 
   console.log("Screen locked (2 minutes)");

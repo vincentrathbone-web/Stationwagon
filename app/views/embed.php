@@ -1,5 +1,5 @@
 <?php use function Stationwagon\h; use Stationwagon\App; use Stationwagon\Skins;
-/** @var ?array $station @var bool $light: the light look for websites with a light background (?look=light) */
+/** @var ?array $station @var bool $light: the light look for websites with a light background (?look=light) @var int $delay: the listener delay */
 $name = $station['name'] ?? 'Stationwagon';
 ?>
 <!doctype html>
@@ -15,7 +15,7 @@ $name = $station['name'] ?? 'Stationwagon';
 <link rel="stylesheet" href="<?= h(App::asset('assets/app.css')) ?>">
 </head>
 <body class="embed">
-<div class="em" id="embed" data-base="<?= h(App::url('')) ?>" data-meter="<?= h(App::asset('assets/outwave-meter.js')) ?>">
+<div class="em" id="embed" data-base="<?= h(App::url('')) ?>" data-delay="<?= (int) $delay ?>" data-station="<?= h($name) ?>" data-meter="<?= h(App::asset('assets/outwave-meter.js')) ?>">
   <?php /* shown when the frame is tall enough (280 px and up, app.css): the album art, the copyright line, the spectrum and the output strip */ ?>
   <div class="em-art" id="emArt" role="img" aria-label="Album art (a CD in its case when the song has none)">
     <img id="emArtImg" alt="" hidden>
@@ -41,7 +41,7 @@ $name = $station['name'] ?? 'Stationwagon';
     <button class="em-rights" id="emRights" type="button" hidden aria-haspopup="dialog"></button>
     <canvas class="em-spec" id="emSpec" aria-hidden="true"></canvas>
   </div>
-  <canvas class="em-wave" id="emWave" role="img" aria-label="What you hear: the sound scrolling past the white line (now), the coming seconds dimmed on the right"></canvas>
+  <canvas class="em-wave" id="emWave" role="img" aria-label="What you hear: the sound scrolling past the white line (now), each song in its own colour, and the coming seconds dimmed on the right"></canvas>
   <div class="em-prog">
     <div class="em-bar" aria-hidden="true"><div id="emFill"></div></div>
     <p class="em-meta"><span id="emState">Press play to listen</span><span id="emNext"></span></p>
@@ -57,10 +57,13 @@ $name = $station['name'] ?? 'Stationwagon';
   </div>
 </div>
 <script src="<?= h(App::asset('assets/skin.js')) ?>" defer></script>
+<script src="<?= h(App::asset('assets/fades.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/listeners.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/outwave.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/spectrum.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/rights.js')) ?>" defer></script>
+<?php /* the station page's player: the songs on two decks with their crossfades, live shows from the stream (round 60) */ ?>
+<script src="<?= h(App::asset('assets/player.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/embed.js')) ?>" defer></script>
 </body>
 </html>

@@ -5,10 +5,13 @@
 // or ?mode=stream, get the stream alone at the same delay. Under the display, the output strip
 // (outwave.js) shows what goes out: measured left of now, and to the right the coming output, which
 // the player mixes from audio it reads about 20 s ahead. window.SwPlayer exposes state for tests.
+// The embed (views/embed.php) runs this same engine (round 60: it played the stream before, with no
+// crossfades); embed.js shows what's on there and hears from it through "sw:player" events.
 (() => {
   "use strict";
-  const root = document.getElementById("player");
+  const root = document.getElementById("player") || document.getElementById("embed");
   if (!root) return;
+  const EMBED = root.id === "embed";
   const BASE = new URL(root.dataset.base, location.href).href; // the app's full address, ending in "/"
   const SEEK_FROM = 1.2; // song deck drift (s) beyond which the deck seeks back into step
   // Android's Chrome skips bits of a song (5 jumps in 40 s on a Xiaomi) when a media element plays
@@ -55,12 +58,28 @@
   class Deck {
     constructor(ctx, out, name) {
       this.ctx = ctx; this.name = name;
-      this.el = new Audio(); this.el.preload = "auto";
       this.gainNode = ctx.createGain(); this.gainNode.gain.value = 0;
-      ctx.createMediaElementSource(this.el).connect(this.gainNode).connect(out);
+      this.gainNode.connect(out);
       this.key = null; this.entry = null; this.busyUntil = 0; this.correcting = false; this.joinedAt = 0; this.seekedAt = 0;
+      this.moved = { pos: -1, at: 0 };
+      this.fresh();
+    }
+    /** A new element under the deck's gain (also when the old one's sound stopped moving: round 60). */
+    fresh() {
+      if (this.el) { this.el.pause(); this.el.removeAttribute("src"); this.el.load(); try { this.src.disconnect(); } catch (_) { /* gone */ } }
+      const el = this.el = new Audio(); el.preload = "auto";
+      this.src = this.ctx.createMediaElementSource(el); this.src.connect(this.gainNode);
       // a stall after the first seconds is a dropout; waiting while a song loads is not
-      this.el.addEventListener("waiting", () => { if (this.key && performance.now() - this.joinedAt > 3000 && performance.now() - this.seekedAt > 2000) { player.log(`${name} waiting`); player.waits++; player.dropout("waiting for data", `deck ${name}, ${this.bufferedAhead().toFixed(1)} s buffered`); } });
+      el.addEventListener("waiting", () => { if (el === this.el && this.key && performance.now() - this.joinedAt > 3000 && performance.now() - this.seekedAt > 2000) { player.log(`${this.name} waiting`); player.waits++; player.dropout("waiting for data", `deck ${this.name}, ${this.bufferedAhead().toFixed(1)} s buffered`); } });
+      this.moved = { pos: -1, at: performance.now() };
+    }
+    /** Playing but its position hasn't moved for 8 s (a sound output stopped under it). */
+    stuck() {
+      // (a timing correction moves it, so it doesn't hide a stuck one: those would repeat every 2 s)
+      if (!this.playing) { this.moved = { pos: -1, at: performance.now() }; return false; }
+      const t = this.el.currentTime;
+      if (t !== this.moved.pos) { this.moved = { pos: t, at: performance.now() }; return false; }
+      return performance.now() - this.moved.at > 8000;
     }
     /** Seconds of this song the browser holds ahead of where it plays. */
     bufferedAhead() {
@@ -257,7 +276,7 @@
       ];
       this.setPlaying(true); this.setStatus("Playing");
       // counted as listening while it plays: a ping a minute (assets/listeners.js)
-      if (window.SwListeners) this.ping = SwListeners.start(BASE, "player", (n) => this.setListeners(n));
+      if (window.SwListeners) this.ping = SwListeners.start(BASE, EMBED ? "embed" : "player", (n) => this.setListeners(n));
       if (this.analyser) spectrum.run(); // stream only: no Web Audio, so nothing to measure
     },
 
@@ -323,10 +342,13 @@
     },
     online() { if (this.on && this.status !== "Playing") this.setStatus("Playing"); },
     offline() { if (this.on) { this.setStatus("Reconnecting"); this.dropout("no answer from the station"); } },
-    setStatus(s) { this.status = s; $("lpConn").textContent = s; },
-    setListeners(n) { this.listeners = n; $("lpListeners").textContent = String(n); },
-    say(text) { $("lpNote").textContent = text; $("lpNote").hidden = !text; },
+    // the embed shows these itself (embed.js): it hears of each change through an event
+    tell() { root.dispatchEvent(new CustomEvent("sw:player", { detail: { status: this.status, note: this.note, on: this.on } })); },
+    setStatus(s) { this.status = s; if (EMBED) this.tell(); else $("lpConn").textContent = s; },
+    setListeners(n) { this.listeners = n; if (!EMBED) $("lpListeners").textContent = String(n); },
+    say(text) { this.note = text; if (EMBED) { this.tell(); return; } $("lpNote").textContent = text; $("lpNote").hidden = !text; },
     setPlaying(on) {
+      if (EMBED) { this.tell(); return; }
       const b = $("lpPlay");
       b.setAttribute("aria-pressed", on ? "true" : "false");
       b.querySelector("span").textContent = on ? "Listening" : "Listen";
@@ -376,6 +398,14 @@
           this.decks.forEach((d) => { if (d.playing) { d.ramp(0, 0.5); setTimeout(() => d.unload(), 700); } });
         }
       }
+
+      // A deck whose sound stopped moving (its output stopped under it): a new element, which joins again below
+      this.decks.forEach((d) => {
+        if (!d.stuck()) return;
+        this.log(`${d.name} stopped moving: starting it again`); this.dropout("the sound stopped moving", `deck ${d.name}`);
+        const k = d.key; d.fresh(); d.key = null; d.entry = null; d.busyUntil = 0; d.gainNode.gain.cancelScheduledValues(this.ctx.currentTime); d.gainNode.gain.value = 0;
+        if (k) this.tries.delete(k);
+      });
 
       // Safety nets, whatever went wrong before: nothing plays past its own end (fade included),
       // and a live show doesn't keep an old song going while the stream gets ready
@@ -451,7 +481,7 @@
         on: this.on, mode: STREAM_ONLY ? "stream" : "decks", status: this.status, drops: this.drops, delay: DELAY, heard: h,
         listeners: this.listeners, ping: this.ping ? this.ping.sid : null,
         current: cur ? { key: key(cur), type: cur.type, title: cur.title, start: cur.start } : null,
-        decks: this.decks.map((d) => ({ name: d.name, key: d.key, playing: d.playing, gain: +d.gain.toFixed(3), pos: d.el.currentTime, title: d.entry && d.entry.title })),
+        decks: this.decks.map((d) => ({ name: d.name, key: d.key, playing: d.playing, gain: +d.gain.toFixed(3), pos: d.el.currentTime, title: d.entry && d.entry.title, start: d.entry ? d.entry.start : null })),
         events: this.events, hidden: document.hidden,
         diag: {
           dropLog: this.dropLog, corrections: this.corrections, stalls: this.stalls, waits: this.waits, gaps: ahead.gaps,
@@ -616,7 +646,7 @@
     const ts = c.getOutputTimestamp ? c.getOutputTimestamp() : null;
     return ts && ts.contextTime > 0 ? ts.contextTime : c.currentTime;
   };
-  const waveCv = $("lpWave"), tok = (n) => getComputedStyle(root).getPropertyValue(n).trim();
+  const waveCv = $(EMBED ? "emWave" : "lpWave"), tok = (n) => getComputedStyle(root).getPropertyValue(n).trim();
   const COLORS = [], colours = () => COLORS.splice(0, 4, tok("--src-a"), tok("--src-b"), tok("--src-live"), tok("--src-out"));
   colours();
   window.addEventListener("sw:skin", colours); // the viewer changed the look
@@ -649,15 +679,25 @@
     b.textContent = rightsOf ? rightsOf.rights.line : "";
     b.title = rightsOf ? "Copyright details" : "";
   }
-  $("lpRights").addEventListener("click", () => {
-    const dlg = $("lpRDlg");
-    if (!rightsOf || !dlg || typeof dlg.showModal !== "function" || !window.SwRights) return;
-    $("lpRSong").textContent = label(rightsOf);
-    $("lpRBody").replaceChildren(SwRights.details(rightsOf.rights));
-    dlg.showModal();
-  });
-  $("lpRClose").addEventListener("click", () => $("lpRDlg").close());
+  if (!EMBED) {
+    $("lpRights").addEventListener("click", () => {
+      const dlg = $("lpRDlg");
+      if (!rightsOf || !dlg || typeof dlg.showModal !== "function" || !window.SwRights) return;
+      $("lpRSong").textContent = label(rightsOf);
+      $("lpRBody").replaceChildren(SwRights.details(rightsOf.rights));
+      dlg.showModal();
+    });
+    $("lpRClose").addEventListener("click", () => $("lpRDlg").close());
+  }
+  /** The phone's lock screen and notification: what is heard. */
+  function session(cur) {
+    if (!("mediaSession" in navigator) || !window.MediaMetadata) return;
+    const live = cur.type === "live";
+    navigator.mediaSession.metadata = new MediaMetadata({ title: live ? "LIVE · " + cur.title : cur.title, artist: live ? root.dataset.station : (cur.artist || root.dataset.station), album: (!live && cur.album) || root.dataset.station,
+      artwork: !live && cur.art ? [{ src: new URL(cur.art, BASE).href }] : [] });
+  }
   function show(cur, next, h, list) {
+    if (EMBED) { if (cur && player.on && key(cur) !== shownKey) { shownKey = key(cur); session(cur); } return; } // embed.js shows the rest
     $("lpBehind").textContent = DELAY + " s behind live";
     $("lpDrops").textContent = player.drops;
     if (!cur) {
@@ -677,10 +717,7 @@
       shownKey = key(cur);
       $("lpTitle").textContent = label(cur);
       showRights(live ? null : cur);
-      if ("mediaSession" in navigator && window.MediaMetadata) {
-        navigator.mediaSession.metadata = new MediaMetadata({ title: live ? "LIVE · " + cur.title : cur.title, artist: live ? root.dataset.station : (cur.artist || root.dataset.station), album: (!live && cur.album) || root.dataset.station,
-          artwork: !live && cur.art ? [{ src: new URL(cur.art, BASE).href }] : [] });
-      }
+      session(cur);
     }
     const around = list.filter((e) => e.end > h - 600).slice(0, 8);
     const at = around.indexOf(cur);
@@ -692,26 +729,39 @@
   }
 
   // ---- Spectrum in the display (spectrum.js), read from the station's output before the listener's volume
-  const spectrum = SwSpectrum.create({ canvas: $("lpSpec"), analyser: () => player.analyser, on: () => player.on, cost: (ms) => { player.cost.spectrum += ms; }, root });
+  // (in the embed, only while the frame is tall enough to show it: app.css hides the canvas otherwise)
+  const spectrum = SwSpectrum.create({ canvas: $(EMBED ? "emSpec" : "lpSpec"), analyser: () => player.analyser, on: () => player.on, cost: (ms) => { player.cost.spectrum += ms; }, root });
 
   // ---- Controls ---------------------------------------------------------------------------------
-  try { const v = parseFloat(localStorage.getItem("sw-volume")); if (v >= 0 && v <= 1) player.volume = v; } catch (_) { /* private window */ }
-  $("lpVol").value = Math.round(player.volume * 100); $("lpVolOut").textContent = $("lpVol").value;
-  $("lpVol").addEventListener("input", (e) => { $("lpVolOut").textContent = e.target.value; player.setVolume(e.target.value / 100); });
-  $("lpPlay").addEventListener("click", () => player.start());
   document.addEventListener("visibilitychange", () => { if (player.on) player.log("page " + (document.hidden ? "hidden" : "shown")); });
-  // "Listening now" on the health line, from every timeline fetch (and each ping's answer)
-  document.addEventListener("sw:timeline", (e) => { if (typeof e.detail.listeners === "number") player.setListeners(e.detail.listeners); });
-  $("lpStop").addEventListener("click", () => player.stop());
   if ("mediaSession" in navigator) {
     try { navigator.mediaSession.setActionHandler("play", () => player.start()); navigator.mediaSession.setActionHandler("pause", () => player.stop()); navigator.mediaSession.setActionHandler("stop", () => player.stop()); } catch (_) { /* unsupported */ }
   }
-  // show what's on before anyone presses Listen
-  clock.fetch().then(() => { const tl = clock.last, h = clock.now() - DELAY; const i = tl.entries.findIndex((e) => e.start <= h && (h < e.end || (e.type === "live" && e.open))); show(tl.entries[i] || null, tl.entries[i + 1] || null, h, tl.entries); }).catch(() => {});
-  setInterval(() => { if (!player.on && clock.last) { const tl = clock.last, h = clock.now() - DELAY; const i = tl.entries.findIndex((e) => e.start <= h && (h < e.end || (e.type === "live" && e.open))); show(tl.entries[i] || null, tl.entries[i + 1] || null, h, tl.entries); } }, 1000);
-  setInterval(() => { if (!player.on) clock.fetch().catch(() => {}); }, 10000);
+  if (EMBED) player.volume = 1; // no volume control in the embed: the website's visitor has their own
+  else {
+    try { const v = parseFloat(localStorage.getItem("sw-volume")); if (v >= 0 && v <= 1) player.volume = v; } catch (_) { /* private window */ }
+    $("lpVol").value = Math.round(player.volume * 100); $("lpVolOut").textContent = $("lpVol").value;
+    $("lpVol").addEventListener("input", (e) => { $("lpVolOut").textContent = e.target.value; player.setVolume(e.target.value / 100); });
+    $("lpPlay").addEventListener("click", () => player.start());
+    // "Listening now" on the health line, from every timeline fetch (and each ping's answer)
+    document.addEventListener("sw:timeline", (e) => { if (typeof e.detail.listeners === "number") player.setListeners(e.detail.listeners); });
+    $("lpStop").addEventListener("click", () => player.stop());
+    // show what's on before anyone presses Listen (the embed shows it from now playing)
+    clock.fetch().then(() => { const tl = clock.last, h = clock.now() - DELAY; const i = tl.entries.findIndex((e) => e.start <= h && (h < e.end || (e.type === "live" && e.open))); show(tl.entries[i] || null, tl.entries[i + 1] || null, h, tl.entries); }).catch(() => {});
+    setInterval(() => { if (!player.on && clock.last) { const tl = clock.last, h = clock.now() - DELAY; const i = tl.entries.findIndex((e) => e.start <= h && (h < e.end || (e.type === "live" && e.open))); show(tl.entries[i] || null, tl.entries[i + 1] || null, h, tl.entries); } }, 1000);
+    setInterval(() => { if (!player.on) clock.fetch().catch(() => {}); }, 10000);
+  }
+  /** The element heard most now (a song deck, else the stream), and what it lags the server's clock by. */
+  const heardBest = () => {
+    const d = player.decks.filter((x) => x.playing && x.entry).sort((a, b) => b.gain - a.gain)[0];
+    if (d && d.gain > 0.01) return { el: d.el, gain: d.gain, lag: clock.now() - (d.entry.start + d.el.currentTime) };
+    const s = player.stream;
+    if (s && s.active && !s.el.paused) return { el: s.el, gain: s.gain, lag: s.lag };
+    return d ? { el: d.el, gain: d.gain, lag: null } : null;
+  };
   window.SwPlayer = {
     start: () => player.start(), stop: () => player.stop(), state: () => player.state(), serverNow: () => (clock.last ? clock.now() : null),
+    heard: () => heardBest(), // for the embed and its tests: { el, gain, lag }
     timeline: () => clock.last, // the Diagnostics panel reads the current song's pieces
     // for tests of the Diagnostics panel: the song on air slips s seconds; the output goes silent for ms
     slip: (s) => { const d = player.decks.find((x) => x.playing && x.gain > 0.5); if (d) d.el.currentTime += s; return !!d; },

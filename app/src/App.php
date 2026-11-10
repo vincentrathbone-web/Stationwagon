@@ -224,6 +224,12 @@ final class App
     {
         $station = self::station();
         $light = ($_GET['look'] ?? '') === 'light';
+        $delay = 20; // the listener delay, which the embed's player holds as the station's page does (round 60)
+        try {
+            $delay = (int) Planner::forFirstStation()->setting('listener_delay_seconds');
+        } catch (\Throwable $ex) {
+            error_log('Stationwagon embed: ' . $ex);
+        }
         header_remove('X-Frame-Options');
         header('Content-Security-Policy: frame-ancestors *');
         header('Content-Type: text/html; charset=utf-8');

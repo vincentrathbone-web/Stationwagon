@@ -3,7 +3,7 @@
 // show (made here, with generated 6 s pieces) and back to the AutoDJ, with a presenter note that
 // appears when listeners reach it, and the stream-only mode
 // holds the same delay; the embed (framed by another page) shows what's on and plays at that
-// delay too. Takes about four minutes.
+// delay too, on the same two decks with the same crossfades (round 60). Takes about five minutes.
 //   node app/tests/player_browser_test.mjs http://localhost:8080/stationwagon-app
 //   node app/tests/player_browser_test.mjs https://wordwave.controll.co.za/stationwagon-app --listen-only
 // Needs SW_PHP (php.exe) unless php is on PATH. The live part goes live on the station (through the
@@ -444,7 +444,7 @@ try {
   check("the embed shows what's on air, from the now-playing data", !!(np && np.on_air) && shown.startsWith(np.on_air.title), shown);
   await evaluate("document.getElementById('emPlay').click()");
   const lag = await waitFor("swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);
-  check("Listen plays the stream at the same 20 s delay (silent until then)", !!lag, lag ? lag.toFixed(2) + " s" : String(await evaluate("swEmbed.lag + ' s, page ' + document.visibilityState")));
+  check("Listen plays the songs at the same 20 s delay (silent until then), on the station page's player", !!lag && (await evaluate("SwPlayer.state().decks.length")) === 2, lag ? lag.toFixed(2) + " s" : String(await evaluate("swEmbed.lag + ' s, page ' + document.visibilityState")));
   check("  and it counts itself as listening too", /^[0-9a-f]{16}$/.test((await evaluate("swEmbed.ping")) || ""), String(await evaluate("swEmbed.ping")));
   const meta = await waitFor("/^\\d+:\\d\\d \\/ \\d+:\\d\\d$|^Live for /.test(document.getElementById('emState').textContent) && document.getElementById('emState').textContent", 3);
   check("  with the time in the song", !!meta, meta || await evaluate("document.getElementById('emState').textContent"));
@@ -452,10 +452,10 @@ try {
   await evaluate("window.__rates = new Set(); window.__rateTimer = setInterval(() => swEmbed.media && __rates.add(swEmbed.media.playbackRate), 100); 1");
   await evaluate("swEmbed.slip(-0.6)");
   await sleep(4000);
-  check("  a small slip (0.6 s) is left alone: no jump", !(await evaluate("swEmbed.events.some((e) => / seek /.test(e))")), JSON.stringify(await evaluate("swEmbed.events.slice(-4)")));
+  check("  a small slip (0.6 s) is left alone: no jump", !(await evaluate("swEmbed.events.some((e) => /timing correction/.test(e))")), JSON.stringify(await evaluate("swEmbed.events.slice(-4)")));
   await evaluate("swEmbed.slip(-2)");
-  const back = await waitFor("swEmbed.events.some((e) => / seek /.test(e)) && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.9 && swEmbed.lag", 6);
-  check("  a real slip (2 s) is put back with one jump", !!back && (await evaluate("swEmbed.events.filter((e) => / seek /.test(e)).length")) === 1, back ? back.toFixed(2) + " s" : JSON.stringify(await evaluate("swEmbed.events.slice(-4)")));
+  const back = await waitFor("swEmbed.events.some((e) => /timing correction/.test(e)) && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.9 && swEmbed.lag", 6);
+  check("  a real slip (2 s) is put back with one jump", !!back && (await evaluate("swEmbed.events.filter((e) => /timing correction/.test(e)).length")) === 1, back ? back.toFixed(2) + " s" : JSON.stringify(await evaluate("swEmbed.events.slice(-4)")));
   // the shared now-playing answer is cached at Cloudflare for 2 s, so its server time can be up to 2 s old: made 2 s old here
   onPaused = async (p) => {
     const b = (await call("Fetch.getResponseBody", { requestId: p.requestId })).result;
@@ -472,7 +472,7 @@ try {
   const rates = await evaluate("clearInterval(__rateTimer); [...__rates]");
   check("  and it never played faster or slower", rates.length === 1 && rates[0] === 1, JSON.stringify(rates));
   // a tall frame (the website's Listen page; this test's whole window) shows the album art, the copyright line,
-  // the spectrum and the output strip; the sound itself still plays from the element, not through Web Audio
+  // the spectrum and the output strip, each song in its own colour as on the station's page
   const parts = await evaluate("['emArt', 'emSpec', 'emWave'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return r.width > 0 && r.height > 0; })");
   // the copyright line shows only for a song that has copyright details (library_browser_test.mjs checks it with
   // them); a live station's song may have them, so it follows what is on air (read with the line, in one go)
@@ -482,18 +482,34 @@ try {
       cd: !!document.querySelector('#emArt .cd-disc'), img: !document.getElementById('emArtImg').hidden }; })()`);
   check("  a tall frame shows the album art (a CD in its case when the song has none), the spectrum and the strip; the copyright line only with copyright details",
     parts.every(Boolean) && look.shown === look.rights && look.line === look.want && (look.art ? look.img : look.cd), JSON.stringify({ parts, ...look }));
-  const vis = await waitFor("(() => { const v = swEmbed.vis; return v.attached && v.spectrum && v.spectrum.lit > 0 && v.measured && v.measured[1] > 0.01 && v.planned && v.planned[1] > 0.01 && v; })()", 15);
+  const vis = await waitFor("(() => { const v = swEmbed.vis, o = (r) => r && r[r.length - 1]; return v.on && v.spectrum && v.spectrum.lit > 0 && o(v.measured) > 0.01 && o(v.planned) > 0.01 && v; })()", 15);
   check("  the spectrum lights and the strip shows the measured sound and the coming seconds", !!vis, JSON.stringify(await evaluate("swEmbed.vis")));
+  // the reason for round 60: the embed crossfades from one song into the next, on its two decks (the strip's blue and pink)
+  {
+    const elog = [], efirst = (await state()).current.key;
+    let ewait = 75;
+    if (!tones) {
+      const tl = await (await fetch(`${base}/api/timeline.php`)).json(), cur = (await state()).current;
+      const e = tl.entries.find((x) => Math.abs(x.start - cur.start) < 0.01);
+      if (e) ewait = Math.max(15, e.end - (tl.server_now - tl.settings.listener_delay_seconds) + 15);
+      console.log(`  (waiting ${Math.round(ewait)} s for this song's end)`);
+    }
+    const nx = await until((x) => x.current && x.current.key !== efirst, ewait, elog);
+    const blend = (await until((x) => x.decks.filter((d) => d.playing && d.gain > 0.05 && d.gain < 0.95).length === 2, 3, elog)) || elog.find((x) => x && x.decks.filter((d) => d.playing && d.gain > 0.05 && d.gain < 0.95).length === 2);
+    check("the embed crossfades into the next song: both decks blending, not a cut", !!nx && !!blend, blend ? blend.decks.map((d) => d.gain).join(" / ") : nx ? "no blend" : "no next song");
+    const after = await until((x) => audible(x).length === 1 && audible(x)[0].key === x.current.key && x.decks.filter((d) => d.playing).length === 1, 12);
+    check("  then only the new song plays", !!after, after ? `${after.current.title} on ${audible(after)[0].name}` : "");
+  }
   const pingBefore = await evaluate("swEmbed.ping");
   await evaluate("swEmbed.pauseFromOutside()");
-  const again = await waitFor("swEmbed.events.some((e) => e.includes('starting again: paused from outside')) && swEmbed.playing && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);
+  // the player joins the song again where it should be (its first try comes 4 s after the last one)
+  const again = await waitFor("swEmbed.events.slice(-4).some((e) => / join /.test(' ' + e)) && swEmbed.playing && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);
   check("paused from outside (as a phone's power manager does), it starts again by itself, back at 20 s", !!again, again ? again.toFixed(2) + " s" : JSON.stringify(await evaluate("swEmbed.events.slice(-6)")));
   check("  still counted as the same listener", (await evaluate("swEmbed.ping")) === pingBefore && !!pingBefore);
-  // the sound stops moving without a pause (a sound output stopped under it): after 8 s it starts again
-  await sleep(5500); // past the 5 s between restarts
+  // the sound stops moving without a pause (a sound output stopped under it): after 8 s the deck gets a new element
+  await sleep(5500); // past the 4 s between joins
   await evaluate("(() => { const el = swEmbed.media, t = el.currentTime; Object.defineProperty(el, 'currentTime', { configurable: true, get: () => t, set: () => {} }); return 1; })()");
-  // either watcher may notice first: the embed's own (8 s without moving) or hls.js's stall check
-  const moving = await waitFor("swEmbed.events.some((e) => /starting again: the sound (stopped moving|stalled)/.test(e)) && swEmbed.playing && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);
+  const moving = await waitFor("swEmbed.events.some((e) => /stopped moving: starting it again/.test(e)) && swEmbed.playing && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);
   check("  and when the sound stops moving while it should play, it starts again (within 8 s)", !!moving, moving ? moving.toFixed(2) + " s" : JSON.stringify(await evaluate("swEmbed.events.slice(-6)")));
   await evaluate("document.getElementById('emPlay').click()");
   check("  and stops again", !(await evaluate("swEmbed.playing")) && (await evaluate("document.getElementById('emPlay').getAttribute('aria-pressed')")) === "false");

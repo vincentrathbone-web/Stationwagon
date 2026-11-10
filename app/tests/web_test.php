@@ -188,7 +188,9 @@ try {
     }
     $r = $s->go('api/timeline.php');
     $j = json_decode($r['body'], true);
-    check('player feed gives the server clock and settings', $r['status'] === 200 && is_float($j['server_now'] ?? null) && abs($j['server_now'] - microtime(true)) < 30 && ($j['settings']['crossfade_seconds'] ?? 0) == 6, (string) $r['status']);
+    // a real station may have its own crossfade (wordwave.co.za: 8 s); a test install has the default 6 s
+    $xf = $j['settings']['crossfade_seconds'] ?? null;
+    check('player feed gives the server clock and settings', $r['status'] === 200 && is_float($j['server_now'] ?? null) && abs($j['server_now'] - microtime(true)) < 30 && ($public ? is_numeric($xf) && $xf >= 0 && $xf <= 30 : $xf == 6), $r['status'] . ', crossfade ' . var_export($xf, true));
     check('player feed is never cached', str_contains(implode(',', $r['headers']['cache-control'] ?? []), 'no-store'));
     // the player reads its songs ahead for the output strip: songs near now come with their pieces,
     // and a piece is a byte range the web server serves on its own
@@ -279,6 +281,8 @@ try {
     $e = new Browser($base);
     $r = $e->go('embed');
     check('the embed page opens', $r['status'] === 200 && str_contains($r['body'], 'id="embed"') && preg_match('~assets/embed\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1, (string) $r['status']);
+    check('  with the station page\'s player (two decks, crossfades: round 60) and the listener delay', preg_match('~assets/player\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1 && preg_match('~assets/fades\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1
+        && preg_match('~id="embed"[^>]*data-delay="\d+"~', $r['body']) === 1 && strpos($r['body'], 'assets/player.js') < strpos($r['body'], 'assets/embed.js'));
     check('  without the site header, and no cookie', !str_contains($r['body'], 'class="brand"') && $e->setCookies === []);
     check('  any website may frame it', !isset($r['headers']['x-frame-options']) && str_contains(implode(',', $r['headers']['content-security-policy'] ?? []), 'frame-ancestors *'),
         implode(',', $r['headers']['x-frame-options'] ?? []) . ' | ' . implode(',', $r['headers']['content-security-policy'] ?? []));

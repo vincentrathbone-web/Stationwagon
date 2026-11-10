@@ -1,13 +1,13 @@
 // Songs at 44.1 and 48 kHz one after another (round 51: a station may keep each song's own rate), in
 // headless Edge (or Firefox, with --firefox) on Laragon: three songs (44.1, 48, 44.1 kHz) play in order through the listener player's
-// decks, the stream-only player (?mode=stream, hls.js) and the embed, all three at once. Each song is a
+// decks, the stream-only player (?mode=stream, hls.js) and the embed (the player's decks too since round 60), all three at once. Each song is a
 // 600 Hz tone that turns to 900 Hz at exactly 20 s. A song played at the wrong rate would sound at
 // 551 or 653 Hz, and a timing slip would move the turn. On each page an analyser on the page's own
 // output reads the pitch every 50 ms beside the moment the player says is being heard:
 //   - the tone's pitch in every song (within 3 Hz);
 //   - the turn at 20 s heard on time (within 0.35 s), in the 48 kHz song and in the songs around it;
 //   - no dropouts, stalls or waits in any of them.
-// In Firefox the stream-only page and the embed (hls.js) go quiet for about 5 s where the rate changes and then
+// In Firefox the stream-only page (hls.js; the embed too before round 60) goes quiet for about 5 s where the rate changes and then
 // play that much late (Firefox's media pipeline; the same stream is exact in Edge). That limit was agreed with
 // the user (2026-11-09) and is why stations default to 44.1 kHz for every song: there, songs after the change
 // are checked for pitch only and their lateness is reported as a note.
@@ -300,9 +300,9 @@ try {
   await sleep(1500);
 
   for (const [name, sid] of Object.entries(pages)) {
-    console.log(`The ${name === "decks" ? "player's decks" : name === "stream" ? "stream-only player (hls.js)" : "embed (hls.js)"}`);
+    console.log(`The ${name === "decks" ? "player's decks" : name === "stream" ? "stream-only player (hls.js)" : "embed (the player's decks, round 60)"}`);
     const log = await evaluate(sid, "window.__rateLog");
-    const st = name === "embed" ? await evaluate(sid, "({ events: swEmbed.events, heardAt: window.__heardAt })") : await evaluate(sid, "SwPlayer.state()");
+    const st = await evaluate(sid, "SwPlayer.state()");
     for (const [i, s] of songs.entries()) {
       const e = at[i], rel = log.filter(([h]) => h !== null).map(([h, hz, db]) => [h - e.start, hz, db]);
       const loud = (from, to) => rel.filter(([t, , db]) => t >= from && t <= to && db > -80);
@@ -310,7 +310,7 @@ try {
       // away from the crossfades: the 600 Hz part after the song before has faded out, the 900 Hz part before the next fades in
       const fadeOut = e.fade_out || 6, low = loud(fadeOut + 0.8, TURN - 1.5), high = loud(TURN + 0.8, SECONDS - fadeOut - 0.4);
       const lowHz = median(low), highHz = median(high);
-      if (FIREFOX && name !== "decks" && i > 0) {
+      if (FIREFOX && name === "stream" && i > 0) {
         // the agreed Firefox limit: after a rate change these pages run late, so only the pitch is checked
         const all = loud(fadeOut + 0.8, SECONDS + 8), near = (hz) => all.filter(([, h]) => Math.abs(h - hz) < 10).length;
         check(`song ${s.name} (${s.rate / 1000} kHz) sounds at ${LOW} Hz (and no other pitch)`, lowHz !== null && Math.abs(lowHz - LOW) < 3 && near(LOW) + near(HIGH) >= all.length * 0.97,
@@ -325,15 +325,11 @@ try {
       check(`  the turn at ${TURN} s is heard on time`, !!turn && turn[0] - TURN > -0.15 && turn[0] - TURN < 0.35, turn ? `${(turn[0] - TURN).toFixed(2)} s` : "never heard");
     }
     if (!log.some(([h, , db]) => h !== null && db > -80)) { // nothing heard at all: what the page itself says
-      const why = name === "embed" ? st.events : { status: st.status, stream: st.stream, events: st.events, diag: st.diag && { waits: st.diag.waits, dropLog: st.diag.dropLog } };
+      const why = { status: st.status, stream: st.stream, events: st.events, diag: st.diag && { waits: st.diag.waits, dropLog: st.diag.dropLog } };
       console.log(`  (nothing was heard on this page: ${log.length} readings, all quiet; ${JSON.stringify(why).slice(0, 1500)})`);
       console.log(`  (the tap: ${JSON.stringify(await evaluate(sid, "window.__tapInfo && __tapInfo()").catch((e) => String(e)))})`);
     }
-    if (name === "embed") {
-      // before it is heard it is silent and seeking to the delay (waiting is expected there)
-      const bad = (st.events || []).filter((x) => /stall|waiting|error/i.test(x) && parseFloat(x) > (st.heardAt || 0) + 0.5);
-      check("no stalls, waits or errors once it is heard", bad.length === 0, bad.slice(0, 3).join(" | "));
-    } else {
+    {
       const d = st.diag;
       const wallLessHeard = await evaluate(sid, "Date.now() / 1000 - SwPlayer.state().heard"); // the page's clock against the moment heard
       check("no dropouts, stalls or waits", st.drops === 0 && d.stalls === 0 && d.waits === 0 && (d.dropLog || []).length === 0,
