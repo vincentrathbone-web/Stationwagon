@@ -1,6 +1,6 @@
 {
   "name": "stationwagon-studio-android",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "private": true,
   "description": "Stationwagon Studio for Android: the station's studio page with Do Not Disturb on air, background audio and in-app updates",
   "scripts": {
