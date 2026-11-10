@@ -45,7 +45,7 @@ async function decodeFile(buffer) {
       return r ? m.UTF8ToString(r) : "";
     };
     const tags = {};
-    for (const k of ["title", "artist", "album", "album_artist", "genre", "track", "date", "composer", "publisher", "copyright"]) {
+    for (const k of ["title", "artist", "album", "album_artist", "genre", "track", "date", "composer", "publisher", "copyright", "lyricist", "isrc", "label", "iswc"]) {
       const v = tag(k);
       if (v) tags[k] = v;
     }

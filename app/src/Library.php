@@ -164,13 +164,14 @@ final class Library
         return null;
     }
 
-    /** Copyright details from a file's tags: the © text without its © and year, the year, publisher and composers. */
+    /** Copyright details from a file's tags: the © text without its © and year, the year, publisher, composers, ISRC, lyricists, track number. */
     public static function rightsFromTags(array $tags): array
     {
         $c = trim((string) ($tags['copyright'] ?? ''));
         $owner = trim((string) preg_replace('/^(?:©|\(c\))?\s*\d{4}\s*/iu', '', (string) preg_replace('/^\s*(?:©|\(c\)|copyright)\s*/iu', '', $c)));
         return ['owner' => $owner, 'year' => $tags['year'] ?? (preg_match('/\d{4}/', $c, $y) ? $y[0] : ''),
-                'publisher' => $tags['publisher'] ?? '', 'writers' => $tags['writers'] ?? ''];
+                'publisher' => $tags['publisher'] ?? '', 'writers' => $tags['writers'] ?? '',
+                'isrc' => $tags['isrc'] ?? '', 'lyricists' => $tags['lyricists'] ?? '', 'track' => $tags['track'] ?? ''];
     }
 
     /** Schema 14: read every song's tags once for its album art and copyright details (where it has none). */
@@ -267,6 +268,9 @@ final class Library
     {
         if ($this->get($id) === null) {
             return 'That song isn’t in this library.';
+        }
+        if (($problem = Rights::problem($in)) !== null) {
+            return $problem;
         }
         $this->db->run('UPDATE ' . $this->db->table('tracks') . ' SET rights = ? WHERE id = ?', [Rights::encode(Rights::normalize($in)), $id]);
         return null;

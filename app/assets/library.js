@@ -2,7 +2,7 @@
 // art and the copyright window talk to the server in the background and change only that row, so
 // the page never reloads or jumps and your place stays. Remove asks in the row too. Without
 // JavaScript the same forms and links still work (the page reloads then).
-// The copyright window's "More information" is rich text of one kind: text, line breaks and links.
+// The song details window's "More information" is rich text of one kind: text, line breaks and links.
 // Pasting and dropping insert plain text (line breaks kept, web addresses made links); the server
 // cleans it again (Rights::cleanHtml), so nothing else can get in.
 (() => {
@@ -134,20 +134,43 @@
     else if (a.dataset.act === "remove") askRemove(tr);
   });
 
-  // ---- The copyright window --------------------------------------------------------------------
+  // ---- The song details window (round 45; round 56: the upload window too) -----------------------
+  // For a song in the library it is the copyright and licence window (Save / Clear all / Cancel). Before
+  // an upload (upload.js, through SwSongDetails.ask) it also has the album art, title, artist and album,
+  // and Add song / Skip this song / Cancel the rest. A missing songwriter, licence type or publisher is
+  // pointed out (radio returns ask for them) but never stops a save (the user's choice).
   const dlg = $("rightsDlg"), form = $("rightsForm"), notes = $("rtNotes"), linkBar = $("rtLink"), url = $("rtUrl"), rmsg = $("rightsMsg");
   if (!dlg || typeof dlg.showModal !== "function") return;
-  let current = null, after = null;
-  const FIELDS = ["owner", "year", "licence", "publisher", "writers"];
+  let current = null, after = null, asking = null;
+  const FIELDS = ["owner", "year", "licence", "publisher", "writers", "track", "label", "isrc", "pline", "lyricists", "iswc",
+    "licence_ref", "licence_url", "licence_until", "terms"];
   const say = (text, bad) => { rmsg.textContent = text || ""; rmsg.classList.toggle("bad", !!bad); };
+  const WANTED = [["writers", "songwriter"], ["licence", "licence type"], ["publisher", "publisher"]];
+  function warn() {
+    const missing = WANTED.filter(([k]) => !form.elements[k].value.trim()).map(([, w]) => w);
+    const w = $("sdWarn");
+    w.hidden = !missing.length;
+    w.textContent = missing.length ? "No " + (missing.length > 1 ? missing.slice(0, -1).join(", ") + " or " + missing[missing.length - 1] : missing[0])
+      + " yet: radio returns ask for " + (missing.length > 1 ? "them" : "it") + ". You can still " + (asking ? "add the song" : "save") + " and fill " + (missing.length > 1 ? "them" : "it") + " in later." : "";
+  }
+  form.addEventListener("input", (e) => { if (e.target.name) { e.target.dataset.touched = "1"; delete e.target.dataset.fromName; } if (WANTED.some(([k]) => k === e.target.name)) warn(); });
+  const mode = (upload) => {
+    $("sdTop").hidden = !upload; $("sdBtns").hidden = !upload; $("rightsBtns").hidden = upload;
+    $("rightsTitle").textContent = upload ? "Before it’s added" : "Copyright and licence";
+  };
+  const fill = (r) => {
+    for (const k of FIELDS) { form.elements[k].value = r[k] || ""; delete form.elements[k].dataset.touched; }
+    notes.innerHTML = r.notes || "";
+    linkBar.hidden = true; say(""); warn();
+  };
 
   function openRights(tr, done) {
+    if (asking) return;
     current = tr; after = done;
     const t = track(tr), r = t.rights && !Array.isArray(t.rights) ? t.rights : {};
+    mode(false);
     $("rightsSong").textContent = t.title + (t.artist ? " · " + t.artist : "");
-    for (const k of FIELDS) form.elements[k].value = r[k] || "";
-    notes.innerHTML = r.notes || "";
-    linkBar.hidden = true; say("");
+    fill(r);
     dlg.showModal();
     form.elements.owner.focus({ preventScroll: true });
   }
@@ -157,11 +180,15 @@
   });
   $("rightsCancel").addEventListener("click", () => dlg.close());
 
+  const collect = (clear) => {
+    const r = {};
+    for (const k of FIELDS) r[k] = clear ? "" : form.elements[k].value;
+    r.notes = clear ? "" : notes.innerHTML;
+    return r;
+  };
   async function saveRights(clear) {
     const t = track(current);
-    const fields = { action: "rights", id: t.id };
-    for (const k of FIELDS) fields[k] = clear ? "" : form.elements[k].value;
-    fields.notes = clear ? "" : notes.innerHTML;
+    const fields = Object.assign({ action: "rights", id: t.id }, collect(clear));
     say("Saving…");
     try {
       const j = await send(fields);
@@ -170,8 +197,91 @@
       dlg.close();
     } catch (ex) { say(ex.message, true); }
   }
-  form.addEventListener("submit", (e) => { e.preventDefault(); saveRights(false); });
+  form.addEventListener("submit", (e) => { e.preventDefault(); if (asking) finish("add"); else saveRights(false); });
   $("rightsClear").addEventListener("click", () => { if (confirm("Clear all copyright details from this song?")) saveRights(true); });
+
+  // ---- Before an upload ----------------------------------------------------------------------------
+  // The file's own tags fill the window first (an MP3's ID3 tag at once; another format's tags once the
+  // browser has decoded it); a field you've typed in is never overwritten. The art is the file's own
+  // ("keep"), one you chose ("new") or none ("remove").
+  let art = { how: "keep", file: null, url: null };
+  const showArt = (blob) => {
+    const pic = $("sdPic");
+    if (art.url) { URL.revokeObjectURL(art.url); art.url = null; }
+    pic.textContent = "";
+    if (blob) { art.url = URL.createObjectURL(blob); const i = new Image(); i.alt = "Album art"; i.src = art.url; pic.appendChild(i); }
+    else pic.textContent = "No art";
+    $("sdUnpick").hidden = !blob;
+  };
+  let fileArt = null; // the picture in the file's own tag
+  $("sdPick").addEventListener("click", () => $("sdFile").click());
+  $("sdFile").addEventListener("change", () => {
+    const f = $("sdFile").files[0];
+    $("sdFile").value = "";
+    if (!f) return;
+    if (!/^image\/(jpeg|png)$/.test(f.type) || f.size > 3 * 1024 * 1024) { say("The album art must be a JPEG or PNG picture of up to 3 MB.", true); return; }
+    say("");
+    art = Object.assign(art, { how: "new", file: f });
+    showArt(f);
+  });
+  $("sdUnpick").addEventListener("click", () => { art = Object.assign(art, { how: "remove", file: null }); showArt(null); });
+
+  /** Fill empty, untouched fields from a file's tags ({title, artist, album, year, track, writers, lyricists, publisher, copyright, isrc, label}). */
+  function fromTags(tags, picture) {
+    // a title made from the file's name gives way to the file's own (it can arrive later, once decoded)
+    const set = (k, v) => {
+      const el = form.elements[k];
+      if (v && el && !el.dataset.touched && (!el.value.trim() || el.dataset.fromName)) { el.value = String(v).trim(); delete el.dataset.fromName; }
+    };
+    if (tags) {
+      set("title", tags.title); set("artist", tags.artist); set("album", tags.album);
+      const c = String(tags.copyright || "").trim();
+      set("year", tags.year || (c.match(/\d{4}/) || [])[0]);
+      set("owner", c.replace(/^\s*(©|\(c\)|copyright)\s*/i, "").replace(/^(©|\(c\))?\s*\d{4}\s*/i, "").trim());
+      for (const k of ["track", "writers", "lyricists", "publisher", "isrc", "label"]) set(k, tags[k]);
+    }
+    if (picture && art.how === "keep" && !fileArt) { fileArt = picture; showArt(picture); }
+    warn();
+  }
+
+  let settle = null;
+  function finish(action) {
+    if (!asking) return;
+    if (action === "add") {
+      const title = form.elements.title.value.trim();
+      if (!title) { say("A song needs a title.", true); form.elements.title.focus(); return; }
+    }
+    const out = { action, title: form.elements.title.value.trim(), artist: form.elements.artist.value.trim(), album: form.elements.album.value.trim(),
+      rights: collect(false), art: art.how, artFile: art.how === "new" ? art.file : null };
+    asking = null;
+    dlg.close();
+    showArt(null);
+    settle(out);
+  }
+  $("sdSkip").addEventListener("click", () => finish("skip"));
+  $("sdStop").addEventListener("click", () => finish("stop"));
+  dlg.addEventListener("cancel", (e) => { if (asking) { e.preventDefault(); finish("skip"); } }); // Esc skips this song
+
+  /**
+   * Ask about one song before it's uploaded. Returns { status(text), tags(tags, picture), done }:
+   * `done` gives { action: "add" | "skip" | "stop", title, artist, album, rights, art: "keep" | "new" | "remove", artFile }.
+   */
+  function ask(name, n, of, tags, picture) {
+    asking = name; fileArt = null; art = { how: "keep", file: null, url: null };
+    mode(true);
+    $("rightsSong").textContent = name + (of > 1 ? " · song " + n + " of " + of : "");
+    $("sdStop").hidden = of <= 1 || n >= of;
+    for (const k of ["title", "artist", "album"]) { form.elements[k].value = ""; delete form.elements[k].dataset.touched; delete form.elements[k].dataset.fromName; }
+    fill({});
+    showArt(null);
+    fromTags(tags, picture);
+    if (!form.elements.title.value) { form.elements.title.value = name.replace(/\.[^.]+$/, "").replace(/[_]+/g, " ").trim(); form.elements.title.dataset.fromName = "1"; }
+    const done = new Promise((ok) => { settle = ok; });
+    dlg.showModal();
+    form.elements.title.focus({ preventScroll: true });
+    return { status: (text) => { $("sdPrep").textContent = text; }, tags: (t, p) => { if (asking === name) fromTags(t, p); }, done };
+  }
+  window.SwSongDetails = { ask };
 
   // ---- Text and links only ---------------------------------------------------------------------
   const URL_RE = /\bhttps?:\/\/[^\s<>"']+/gi;

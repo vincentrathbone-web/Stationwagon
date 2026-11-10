@@ -593,6 +593,31 @@ try {
         // other formats are converted in the browser (round 54): sent as they are, the server says so
         $wav = $upload("$tmpDir/fake.mp3", 'song.wav');
         check('  a WAV sent without the browser is refused, saying it is converted there', !($wav['ok'] ?? true) && str_contains((string) $wav['error'], 'converted to MP3 in your browser'), (string) ($wav['error'] ?? ''));
+        // the upload window's details (round 56): they win over the file's own tag; a wrong code keeps the song out
+        make_mp3("$tmpDir/details.mp3", 20, ['title' => "Tag Title " . strrev($tag), 'artist' => 'Tag Artist', 'writers' => 'Tag Writer'], random_int(0, 255));
+        $im = imagecreatetruecolor(300, 300); imagefill($im, 0, 0, imagecolorallocate($im, 30, 140, 90)); imagejpeg($im, "$tmpDir/cover.jpg", 85);
+        $details = ['title' => "Window Title " . strrev($tag), 'artist' => 'Window Artist', 'album' => 'Window Album', 'art' => 'new',
+            'rights' => ['writers' => 'A. Writer', 'publisher' => 'Grace Publishing', 'licence' => 'CCLI Streaming Licence', 'licence_ref' => 'CCLI 7123456',
+                'licence_url' => 'https://example.test/licence', 'licence_until' => '2027-12-31', 'isrc' => 'ZA-ABC-24-00009', 'label' => 'Grace Records', 'terms' => "Line one\nLine two"]];
+        $bad = $details; $bad['rights']['isrc'] = 'not an isrc';
+        $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'upload', 'files[0]' => new CURLFile("$tmpDir/details.mp3", 'audio/mpeg', 'details.mp3'),
+            'details[0]' => json_encode($bad)], ['Accept: application/json']);
+        $bu = (json_decode($r['body'], true)['results'] ?? [[]])[0];
+        check('an upload whose window has a wrong ISRC is refused with the reason, and not kept', !($bu['ok'] ?? true) && str_contains((string) ($bu['error'] ?? ''), 'ISRC')
+            && !$db->run('SELECT id FROM ' . $db->table('tracks') . ' WHERE title = ?', ["Tag Title " . strrev($tag)])->fetch(), $r['body']);
+        $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'upload', 'files[0]' => new CURLFile("$tmpDir/details.mp3", 'audio/mpeg', 'details.mp3'),
+            'details[0]' => json_encode($details), 'art_0' => new CURLFile("$tmpDir/cover.jpg", 'image/jpeg', 'cover.jpg')], ['Accept: application/json']);
+        $du = (json_decode($r['body'], true)['results'] ?? [[]])[0];
+        $tracks[] = (int) ($du['id'] ?? 0);
+        $drow = $db->run('SELECT title, artist, album, art, rights FROM ' . $db->table('tracks') . ' WHERE id = ?', [(int) ($du['id'] ?? 0)])->fetch();
+        $dr = $drow ? Stationwagon\Rights::decode($drow['rights']) : null;
+        check('an upload with the window’s details keeps them over its tag: title, artist, album, licensing', ($du['ok'] ?? false) && ($du['title'] ?? '') === "Window Title " . strrev($tag)
+            && $drow['artist'] === 'Window Artist' && $drow['album'] === 'Window Album' && ($dr['writers'] ?? '') === 'A. Writer' && ($dr['licence_ref'] ?? '') === 'CCLI 7123456'
+            && ($dr['terms'] ?? '') === "Line one\nLine two" && ($dr['isrc'] ?? '') === 'ZA-ABC-24-00009', json_encode([$du, $drow]));
+        check('  and the album art chosen in the window', $drow && $drow['art'] !== null && (new Browser($base))->go('storage/art/' . $drow['art'])['status'] === 200, (string) ($drow['art'] ?? 'none'));
+        $r = $m->go('manage/library?q=' . rawurlencode("Window Title " . strrev($tag)));
+        check('  the library page has the window with its three groups and the licence types', substr_count($r['body'], 'class="rgroup"') === 3 && str_contains($r['body'], 'id="sdAdd"')
+            && str_contains($r['body'], '<datalist id="licenceTypes">') && str_contains($r['body'], 'name="terms"') && str_contains($r['body'], '© Copyright</button>'));
         $file = $db->run('SELECT file FROM ' . $db->table('tracks') . ' WHERE id = ?', [$trackId])->fetchColumn();
         check('the song is served from storage', (new Browser($base))->go("storage/media/$file", null, ['Range: bytes=0-1'])['status'] === 206);
         $r = $m->go('manage/library?q=' . rawurlencode($tag));

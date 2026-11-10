@@ -530,6 +530,29 @@ try {
     check('  a song with only a publisher or a licence still has a line', Stationwagon\Rights::line(Stationwagon\Rights::normalize(['publisher' => 'Grace'])) === '© Grace' && Stationwagon\Rights::line(Stationwagon\Rights::normalize(['licence' => 'CC0'])) === 'CC0');
     check('  clearing them takes the © away', $lib->setRights($tid, []) === null && $lib->get($tid)['rights'] === null);
     check('a song that isn’t here is refused', $lib->setRights(999999, ['owner' => 'x']) !== null && $lib->setArt(999999, $jpg) !== null);
+
+    echo "The recording, the composition and the licence (round 56)\n";
+    $full = ['owner' => 'Grace Music', 'year' => '2024', 'licence' => 'CCLI Streaming Licence', 'publisher' => 'Grace Publishing', 'writers' => 'A. Smith',
+        'track' => '3/12', 'label' => 'Grace Records', 'isrc' => 'za-abc-24-00001', 'pline' => 'Grace Records', 'lyricists' => 'B. Jones', 'iswc' => 'T0345246801',
+        'licence_ref' => 'CCLI 7123456', 'licence_url' => 'https://ccli.com/licence/1', 'licence_until' => '2027-12-31', 'terms' => "Clause 1.\r\n\r\n\r\n\r\nClause 2.\t \n"];
+    check('every new field is saved', $lib->setRights($tid, $full) === null && ($r3 = Stationwagon\Rights::decode($lib->get($tid)['rights'])) !== null
+        && $r3['track'] === '3/12' && $r3['label'] === 'Grace Records' && $r3['pline'] === 'Grace Records' && $r3['lyricists'] === 'B. Jones'
+        && $r3['licence_ref'] === 'CCLI 7123456' && $r3['licence_url'] === 'https://ccli.com/licence/1' && $r3['licence_until'] === '2027-12-31', json_encode($r3 ?? null));
+    check('  the codes in their usual written form', $r3['isrc'] === 'ZA-ABC-24-00001' && $r3['iswc'] === 'T-034.524.680-1', $r3['isrc'] . ' ' . $r3['iswc']);
+    check('  the terms as plain text, line breaks kept (at most one blank line)', $r3['terms'] === "Clause 1.\n\nClause 2.", json_encode($r3['terms']));
+    check('  listeners get all of it (the user: both public)', ($fl = Stationwagon\Rights::forListeners($lib->get($tid)['rights'])) !== null && $fl['terms'] === $r3['terms'] && $fl['licence_url'] === $r3['licence_url'] && $fl['isrc'] === $r3['isrc']);
+    $bad = ['isrc' => 'ZA123' , 'iswc' => 'T12', 'licence_url' => 'javascript:alert(1)', 'licence_until' => '2027-02-30'];
+    $said = [];
+    foreach ($bad as $k => $v) { $said[$k] = $lib->setRights($tid, [$k => $v]); }
+    check('a wrong ISRC, ISWC, link or date is refused with a reason, and nothing changes', count(array_filter($said, fn($v) => is_string($v) && $v !== '')) === 4
+        && Stationwagon\Rights::decode($lib->get($tid)['rights'])['isrc'] === 'ZA-ABC-24-00001', json_encode($said));
+    check('  a mail link is no licence link', $lib->setRights($tid, ['licence_url' => 'mailto:a@b.test']) !== null);
+    check('  terms past 20,000 characters are cut', mb_strlen((string) Stationwagon\Rights::normalize(['terms' => str_repeat('é', 25000)])['terms']) === 20000);
+    make_mp3("$root/in/tagged2", 60, ['title' => 'Tagged Two', 'isrc' => 'ZAABC2400002', 'lyricists' => 'C. Lyric', 'track' => '7', 'writers' => 'D. Writer'], 32);
+    $t2 = $lib->get($lib->import("$root/in/tagged2", null, null, 'tagged2.mp3')['id']);
+    $r4 = Stationwagon\Rights::decode($t2['rights']);
+    check('an upload reads its ISRC, lyricists and track number from its tag', ($r4['isrc'] ?? '') === 'ZA-ABC-24-00002' && ($r4['lyricists'] ?? '') === 'C. Lyric' && ($r4['track'] ?? '') === '7', json_encode($r4));
+    $lib->setRights($tid, []);
     $db->pdo->exec('ALTER TABLE ' . $db->table('tracks') . ' DROP COLUMN art, DROP COLUMN rights');
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '13' WHERE name = 'schema_version'");
     check('the upgrade to 14 adds the columns', Schema::upgrade($db, $root) === [14, 15] && $db->run('SHOW COLUMNS FROM ' . $db->table('tracks') . " LIKE 'rights'")->fetch() !== false);

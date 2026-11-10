@@ -105,6 +105,7 @@ async function upload(files) {
   await go(`${base}/manage/library`);
   const doc = await call("DOM.getDocument", {});
   const input = await call("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: "#files" });
+  await evaluate("window.swUploadNoWindow = true"); // the upload window (round 56) has its own test
   await call("DOM.setFileInputFiles", { nodeId: input.result.nodeId, files });
   for (let i = 0; i < 600; i++) {
     const rows = await evaluate(`[...document.querySelectorAll('#uplist li')].map((li) => ({ cls: li.className, text: li.querySelector('.s').textContent, warn: li.querySelector('.w') && !li.querySelector('.w').hidden ? li.querySelector('.w').textContent : '' }))`).catch(() => null);
@@ -115,6 +116,123 @@ async function upload(files) {
     await sleep(100);
   }
   return null;
+}
+
+// ---- The upload window (round 56, goal 10) ------------------------------------------------------------
+// Five songs picked at once, a window each in turn: an MP3 whose own tag (with a cover) fills the window
+// at once, changed and added with its licence; a FLAC whose tags come once it's decoded, sent with a wrong
+// ISRC (the server refuses it and says why); a WAV skipped with Esc; then Cancel the rest, which leaves the
+// last one out too. Then the song's details in the library window (edit mode) and for listeners.
+const winTitle = `Window Test ${tag}`, winEdited = `Window Edited ${tag}`;
+function taggedMp3(tags, picture) {
+  const a = mp3([[0, 0.5], [0.3, 12], [0, 0.5]], "x");
+  const size = 10 + (((a[6] & 0x7f) << 21) | ((a[7] & 0x7f) << 14) | ((a[8] & 0x7f) << 7) | (a[9] & 0x7f));
+  return Buffer.concat([Buffer.from(core.id3(tags, picture)), a.subarray(size)]);
+}
+async function windowTest() {
+  const cover = formats && existsSync(join(formats, "cover.jpg")) ? new Uint8Array(readFileSync(join(formats, "cover.jpg"))) : null;
+  const tagged = join(dir, "window song.mp3"), skip1 = join(dir, "skip me.mp3"), skip2 = join(dir, "never asked.mp3");
+  writeFileSync(tagged, taggedMp3({ title: winTitle, artist: "Tag Artist", album: "Tag Album", composer: "Tag Writer", publisher: "Tag Publisher",
+    copyright: "© 2023 Tag Owner", isrc: "ZA-ABC-23-00042", track: "4/10" }, cover ? { mime: "image/jpeg", data: cover } : null));
+  writeFileSync(skip1, mp3([[0.2, 5]], `Window Skip ${tag}`));
+  writeFileSync(skip2, mp3([[0.2, 5]], `Window Never ${tag}`));
+  const flac = formats ? join(formats, "flac24.flac") : null, wav = formats ? join(formats, "wav16.wav") : null;
+  if (!flac) { check("the format samples are here for the window test", false); return; }
+  helper("cleanup-like", TAGS.title);
+  await go(`${base}/manage/library`);
+  const doc = await call("DOM.getDocument", {});
+  const input = await call("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: "#files" });
+  await call("DOM.setFileInputFiles", { nodeId: input.result.nodeId, files: [tagged, flac, wav, skip1, skip2] });
+  const FORM = `document.getElementById('rightsForm').elements`;
+  const state = () => evaluate(`(() => { const f = ${FORM}, d = document.getElementById('rightsDlg');
+    return { open: d.open, song: document.getElementById('rightsSong').textContent, heading: document.getElementById('rightsTitle').textContent,
+      title: f.title.value, artist: f.artist.value, album: f.album.value, writers: f.writers.value, publisher: f.publisher.value, owner: f.owner.value,
+      year: f.year.value, isrc: f.isrc.value, track: f.track.value, licence: f.licence.value, art: !!document.querySelector('#sdPic img'),
+      warn: document.getElementById('sdWarn').hidden ? '' : document.getElementById('sdWarn').textContent, prep: document.getElementById('sdPrep').textContent,
+      stop: !document.getElementById('sdStop').hidden, top: !document.getElementById('sdTop').hidden, rows: [...document.querySelectorAll('#uplist li')].map((li) => li.className + ': ' + li.querySelector('.s').textContent) }; })()`);
+  const waitFor = async (fn, sec = 30) => { for (let i = 0; i < sec * 10; i++) { const s = await state().catch(() => null); if (s && fn(s)) return s; await sleep(100); } return state().catch(() => null); };
+  const type = (name, value) => evaluate(`(() => { const el = ${FORM}[${JSON.stringify(name)}]; el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('input', { bubbles: true })); return 1; })()`);
+  const click = (id) => evaluate(`document.getElementById(${JSON.stringify(id)}).click()`);
+
+  // 1: the MP3, filled from its tag at once
+  let s = await waitFor((x) => x.open && x.song.includes("window song.mp3"), 10);
+  check("picking five songs opens the window for the first, before anything is uploaded", s && s.open && s.top && s.heading === "Before it’s added" && s.song.includes("song 1 of 5")
+    && s.rows.every((r) => !r.startsWith("ok")), s && JSON.stringify({ song: s.song, rows: s.rows }));
+  check("  filled from the MP3's own tag: title, artist, album, songwriter, publisher, © owner and year, ISRC, track", s && s.title === winTitle && s.artist === "Tag Artist"
+    && s.album === "Tag Album" && s.writers === "Tag Writer" && s.publisher === "Tag Publisher" && s.owner === "Tag Owner" && s.year === "2023" && s.isrc === "ZA-ABC-23-00042" && s.track === "4/10",
+    s && JSON.stringify(s));
+  check("  with its cover as the album art", s && s.art === !!cover);
+  check("  the missing licence type is pointed out (the songwriter and publisher are there)", s && /^No licence type yet/.test(s.warn) && !s.warn.includes("songwriter"), s && s.warn);
+  s = await waitFor((x) => /ready to add/.test(x.prep), 60);
+  check("  it is prepared in the background meanwhile", s && /Prepared: ready to add/.test(s.prep), s && s.prep);
+  await type("title", winEdited); await type("artist", "Window Artist");
+  await type("licence", "CCLI Streaming Licence"); await type("licence_ref", "CCLI 7123456"); await type("licence_url", "https://example.test/licence");
+  await type("licence_until", "2027-12-31"); await type("terms", "Clause one.\nClause two."); await type("label", "Grace Records"); await type("lyricists", "Window Lyricist");
+  s = await state();
+  check("  the warning goes once the licence type is filled in", s && s.warn === "", s && s.warn);
+  await click("sdAdd");
+
+  // 2: the FLAC, its tags once decoded; a wrong ISRC typed in
+  s = await waitFor((x) => x.open && x.song.includes("flac24.flac"), 30);
+  check("then the window for the second song", s && s.open && s.song.includes("song 2 of 5"), s && s.song);
+  s = await waitFor((x) => /ready to add/.test(x.prep) && x.title === TAGS.title, 90);
+  check("  a FLAC's tags fill it once the browser has decoded it: title, artist, album, songwriter, cover", s && s.title === TAGS.title && s.artist === TAGS.artist
+    && s.album === TAGS.album && s.writers === TAGS.composer && s.art, s && JSON.stringify({ t: s.title, a: s.artist, w: s.writers, art: s.art, prep: s.prep }));
+  check("  a missing licence type and publisher are pointed out, and Add still works", s && /licence type/.test(s.warn) && /publisher/.test(s.warn) && /can still add/.test(s.warn), s && s.warn);
+  await type("isrc", "not an isrc");
+  await click("sdAdd");
+
+  // 3: skipped with Esc; 4: Cancel the rest (5 is never asked about)
+  s = await waitFor((x) => x.open && x.song.includes("wav16.wav"), 60);
+  check("Esc on the third song's window skips it", !!s && s.open);
+  await call("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await call("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  s = await waitFor((x) => x.open && x.song.includes("skip me.mp3"), 30);
+  check("  and the fourth asks next, with Cancel the rest", s && s.stop && s.song.includes("song 4 of 5"), s && s.song);
+  await click("sdStop");
+  let rows = null;
+  for (let i = 0; i < 300; i++) {
+    rows = await evaluate(`[...document.querySelectorAll('#uplist li')].map((li) => ({ cls: li.className, text: li.querySelector('.s').textContent }))`).catch(() => null);
+    if (rows && rows.length === 5 && rows.every((r) => (r.cls === "ok" || r.cls === "bad") && !r.text.includes("keeping the original"))) break;
+    await sleep(200);
+  }
+  check("the first is added with what the window said", rows && rows[0].cls === "ok" && rows[0].text.startsWith("Added,"), rows && rows[0].text);
+  check("the second is refused by the station for its ISRC, saying so", rows && rows[1].cls === "bad" && rows[1].text.includes("ISRC"), rows && rows[1].text);
+  check("the third and fourth are skipped, the fifth cancelled; none sent", rows && rows[2].text === "Not added: skipped" && rows[3].text === "Not added: skipped" && rows[4].text === "Not added: cancelled",
+    rows && rows.slice(2).map((r) => r.text).join(" | "));
+  await sleep(1500);
+  const t = helper("track", winEdited), r = t && JSON.parse(t.rights || "{}");
+  check("  stored with the window's title and artist (over its tag), the tag's album, and its cover", t && t.artist === "Window Artist" && t.album === "Tag Album" && (!!t.art) === !!cover, t && `${t.title} / ${t.artist} / ${t.album} / ${t.art}`);
+  check("  and the licensing: type, number, link, until, terms, label, lyricist, with the tag's songwriter, publisher and ISRC", r && r.licence === "CCLI Streaming Licence"
+    && r.licence_ref === "CCLI 7123456" && r.licence_url === "https://example.test/licence" && r.licence_until === "2027-12-31" && r.terms === "Clause one.\nClause two."
+    && r.label === "Grace Records" && r.lyricists === "Window Lyricist" && r.writers === "Tag Writer" && r.publisher === "Tag Publisher" && r.isrc === "ZA-ABC-23-00042", JSON.stringify(r));
+  check("  nothing else was kept", !helper("track", TAGS.title) && !helper("track", `Window Skip ${tag}`) && !helper("track", `Window Never ${tag}`));
+
+  // the same window for a song in the library (edit mode): the new fields, a wrong link refused
+  await go(`${base}/manage/library?q=${encodeURIComponent(winEdited)}`);
+  await evaluate(`document.querySelector('#libBody .pill.rights').click()`);
+  s = await waitFor((x) => x.open, 5);
+  const ed = await evaluate(`(() => { const f = ${FORM}; return { ref: f.licence_ref.value, until: f.licence_until.value, terms: f.terms.value, label: f.label.value }; })()`);
+  check("the library's © window shows the new fields, without the upload part", s && s.open && !s.top && s.heading === "Copyright and licence" && ed.ref === "CCLI 7123456"
+    && ed.until === "2027-12-31" && ed.terms === "Clause one.\nClause two." && ed.label === "Grace Records", JSON.stringify(ed));
+  await type("licence_url", "ftp://nope.test/x");
+  await click("rightsSave");
+  await sleep(800);
+  const msg = await evaluate(`document.getElementById('rightsMsg').textContent`);
+  check("  a link that isn't a web address is refused there, saying why", /must be a web address/.test(msg), msg);
+  await type("licence_url", "https://example.test/licence2"); await type("pline", "Window Records");
+  await click("rightsSave");
+  await sleep(1000);
+  const r2 = JSON.parse(helper("track", winEdited).rights || "{}");
+  check("  a good one is saved, with the ℗ owner", r2.licence_url === "https://example.test/licence2" && r2.pline === "Window Records", JSON.stringify(r2));
+
+  // listeners see it all (the user's choice): the details window's rows, the terms as text
+  await go(`${base}/`);
+  const shown = await evaluate(`(() => { const box = document.createElement('div'); box.appendChild(SwRights.details(${JSON.stringify(r2)}));
+    return { dts: [...box.querySelectorAll('dt')].map((d) => d.textContent), link: (box.querySelector('dd a') || {}).href || '', terms: (box.querySelector('.rights-terms') || {}).textContent || '' }; })()`);
+  check("listeners' details show the recording, the composition and the licence, with its link and terms", ["Copyright", "Sound recording", "Record label", "Songwriter(s)", "Lyricist(s)", "Publishing house",
+    "Licence", "Licence number", "Licence link", "Valid until", "ISRC", "Track"].every((k) => shown.dts.includes(k)) && shown.link === "https://example.test/licence2" && shown.terms === "Clause one.\nClause two.",
+    JSON.stringify(shown));
 }
 
 let user = null, prepBefore = null;
@@ -249,10 +367,13 @@ try {
     rows = await upload([join(formats, SAMPLES[SAMPLES.length - 1].file)]); // still in the library
     check(`the same ${SAMPLES[SAMPLES.length - 1].kind} again is caught as a duplicate (converted the same way twice)`, rows && rows[0].cls === "ok" && rows[0].text === "Already there", rows && rows[0].text);
   }
+
+  console.log("The upload window (round 56)");
+  await windowTest();
 } finally {
   if (prepBefore) helper("prep", prepBefore.master ? "1" : "0", prepBefore.level ? "1" : "0", String(prepBefore.target ?? -16));
   if (user) {
-    const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle, oddTitle, TAGS.title);
+    const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle, oddTitle, TAGS.title, winTitle, winEdited);
     console.log(`Cleanup: throwaway manager and test songs removed${r.hidden ? ` (${r.hidden} on air, hidden)` : ""}`);
   }
   try { ws && ws.close(); } catch { /* closed */ }

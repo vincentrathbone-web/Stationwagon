@@ -251,12 +251,29 @@ dialog.rightsdlg::backdrop { background: color-mix(in srgb, var(--ground) 75%, t
 dialog.rightsdlg h2 { margin: 0 0 4px; }
 .rgrid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; margin: 14px 0; }
 .rgrid .wide { grid-column: 1 / -1; }
+/* the song details window's groups and its upload part (round 56) */
+.rgroup { border: 1px solid var(--edge); border-radius: var(--r-box); padding: 4px 14px 2px; margin: 14px 0 0; min-width: 0; }
+.rgroup legend { font-weight: 700; font-size: 14px; padding: 0 6px; }
+.rgroup .rgrid { margin: 10px 0 12px; }
+.rgrid textarea { background: var(--raised); color: var(--ink); border: 1px solid transparent; border-radius: var(--r-field); font: 500 15px/1.5 var(--f-ui);
+  padding: 10px 12px; width: 100%; min-height: 96px; resize: vertical; }
+.rgrid textarea:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.sdtop .artbox { display: flex; gap: 14px; align-items: center; margin-top: 12px; }
+.sdtop .artpic { width: 96px; height: 96px; flex: none; border-radius: var(--r-box); background: var(--raised); border: 1px dashed var(--edge); overflow: hidden;
+  display: grid; place-items: center; color: var(--faint); font-size: 12px; text-align: center; }
+.sdtop .artpic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sdtop .artbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+.sdprep { margin: 6px 0 0; min-height: 1.3em; }
+.sdwarn { margin: 14px 0 0; padding: 8px 12px; border-radius: var(--r-field); background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--ink); font-size: 14px; }
 .rgrid input, .rtlink input { background: var(--raised); color: var(--ink); border: 1px solid transparent; border-radius: var(--r-field); font: 500 15px var(--f-ui); padding: 10px 12px; width: 100%; }
 .rtbar, .rtlink { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
 .rtlink input { flex: 1 1 240px; width: auto; }
 .rtedit { min-height: 140px; max-height: 40vh; overflow: auto; background: var(--raised); border-radius: var(--r-field); padding: 10px 12px; font: 500 15px/1.5 var(--f-ui); white-space: pre-wrap; overflow-wrap: anywhere; }
 .rtedit:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
 .rtedit a, .rights-notes a { color: var(--cue); text-decoration: underline; }
+.rights-sub { font-weight: 700; font-size: 13px; margin: 12px 0 2px; }
+.rights-terms { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; overflow: auto; font-size: 13px; color: var(--muted); margin: 0; }
+.rights-list dd a { color: var(--cue); text-decoration: underline; overflow-wrap: anywhere; }
 .dlgbtns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
 @media (max-width: 700px) {
   .rgrid { grid-template-columns: minmax(0, 1fr); }

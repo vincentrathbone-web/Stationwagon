@@ -124,17 +124,60 @@ $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 
     </form>
   </td></tr>
 </template>
+<?php /* The song details window (round 56, goal 10): before each upload (upload.js, with the top part: art, title,
+  artist, album, and Add / Skip / Cancel the rest) and for a song in the library (library.js: copyright and licence).
+  The fields are what radio returns (SAMRO, PRS) and distributors ask for, in three groups; see Rights. */ ?>
 <dialog class="rightsdlg" id="rightsDlg" aria-labelledby="rightsTitle">
   <form method="dialog" id="rightsForm" novalidate>
     <h2 id="rightsTitle">Copyright and licence</h2>
     <p class="muted2" id="rightsSong"></p>
-    <div class="rgrid">
-      <label class="field"><span class="lbl">Copyright owner</span><input name="owner" maxlength="200" autocomplete="off"></label>
-      <label class="field"><span class="lbl">Year</span><input name="year" maxlength="20" autocomplete="off" inputmode="numeric"></label>
-      <label class="field"><span class="lbl">Licence</span><input name="licence" maxlength="200" placeholder="All rights reserved, CC BY 4.0…" autocomplete="off"></label>
-      <label class="field"><span class="lbl">Publishing house</span><input name="publisher" maxlength="200" autocomplete="off"></label>
-      <label class="field wide"><span class="lbl">Songwriter(s)</span><input name="writers" maxlength="500" autocomplete="off"></label>
+    <div class="sdtop" id="sdTop" hidden>
+      <p class="sdprep muted2" id="sdPrep" role="status" aria-live="polite"></p>
+      <div class="artbox">
+        <div class="artpic" id="sdPic">No art</div>
+        <div class="artbtns">
+          <button class="btn sm" type="button" id="sdPick">Choose album art</button>
+          <button class="btn sm" type="button" id="sdUnpick">Remove art</button>
+          <input type="file" accept="image/jpeg,image/png" id="sdFile" hidden>
+        </div>
+      </div>
+      <div class="rgrid">
+        <label class="field wide"><span class="lbl">Title</span><input name="title" maxlength="255" autocomplete="off"></label>
+        <label class="field"><span class="lbl">Artist</span><input name="artist" maxlength="255" autocomplete="off"></label>
+        <label class="field"><span class="lbl">Album</span><input name="album" maxlength="255" autocomplete="off"></label>
+      </div>
     </div>
+    <fieldset class="rgroup">
+      <legend>The recording</legend>
+      <div class="rgrid">
+        <label class="field"><span class="lbl">Record label</span><input name="label" maxlength="200" autocomplete="off"></label>
+        <label class="field"><span class="lbl">Track number</span><input name="track" maxlength="10" autocomplete="off" placeholder="3 or 3/12"></label>
+        <label class="field"><span class="lbl">℗ Sound recording owner</span><input name="pline" maxlength="200" autocomplete="off" placeholder="Usually the artist or label"></label>
+        <label class="field"><span class="lbl">Year</span><input name="year" maxlength="20" autocomplete="off" inputmode="numeric"></label>
+        <label class="field wide"><span class="lbl">ISRC <span class="muted2">(the recording’s code)</span></span><input name="isrc" maxlength="20" autocomplete="off" placeholder="ZA-ABC-24-00001"></label>
+      </div>
+    </fieldset>
+    <fieldset class="rgroup">
+      <legend>The song (composition)</legend>
+      <div class="rgrid">
+        <label class="field wide"><span class="lbl">Songwriter(s) / composer(s)</span><input name="writers" maxlength="500" autocomplete="off"></label>
+        <label class="field wide"><span class="lbl">Lyricist(s)</span><input name="lyricists" maxlength="500" autocomplete="off" placeholder="When not the songwriters"></label>
+        <label class="field"><span class="lbl">Publisher(s)</span><input name="publisher" maxlength="200" autocomplete="off"></label>
+        <label class="field"><span class="lbl">© Copyright owner</span><input name="owner" maxlength="200" autocomplete="off"></label>
+        <label class="field wide"><span class="lbl">ISWC <span class="muted2">(the composition’s code)</span></span><input name="iswc" maxlength="20" autocomplete="off" placeholder="T-034.524.680-1"></label>
+      </div>
+    </fieldset>
+    <fieldset class="rgroup">
+      <legend>Licence</legend>
+      <div class="rgrid">
+        <label class="field wide"><span class="lbl">Licence type</span><input name="licence" maxlength="200" autocomplete="off" list="licenceTypes" placeholder="Pick one or type your own"></label>
+        <label class="field"><span class="lbl">Licence number or reference</span><input name="licence_ref" maxlength="100" autocomplete="off" placeholder="CCLI song number, contract…"></label>
+        <label class="field"><span class="lbl">Valid until</span><input name="licence_until" type="date"></label>
+        <label class="field wide"><span class="lbl">Licence link</span><input name="licence_url" type="url" maxlength="500" autocomplete="off" placeholder="https://…"></label>
+        <label class="field wide"><span class="lbl">Licence terms</span><textarea name="terms" rows="4" maxlength="20000" placeholder="The terms, pasted as text"></textarea></label>
+      </div>
+      <datalist id="licenceTypes"><option value="All rights reserved (permission from the owner)"><option value="SAMRO / SAMPRA blanket licence"><option value="CCLI Streaming Licence"><option value="Creative Commons BY 4.0"><option value="Creative Commons BY-SA 4.0"><option value="Creative Commons BY-NC 4.0"><option value="Royalty-free (production music)"><option value="Public domain"><option value="The station's own work"></datalist>
+    </fieldset>
     <div class="field">
       <span class="lbl" id="notesLbl">More information</span>
       <div class="rtbar" role="toolbar" aria-label="Link tools">
@@ -149,11 +192,17 @@ $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 
       <div class="rtedit" id="rtNotes" contenteditable="true" role="textbox" aria-multiline="true" aria-labelledby="notesLbl" spellcheck="true"></div>
       <span class="hint">Text and links only. A YouTube link, the artist’s page, anything listeners may want. Pasting removes all formatting but keeps line breaks.</span>
     </div>
+    <p class="sdwarn" id="sdWarn" role="status" aria-live="polite" hidden></p>
     <p class="muted2 editmsg" role="status" aria-live="polite" id="rightsMsg"></p>
-    <div class="dlgbtns">
+    <div class="dlgbtns" id="rightsBtns">
       <button class="btn primary" type="submit" id="rightsSave">Save</button>
       <button class="btn" type="button" id="rightsClear">Clear all</button>
       <button class="btn" type="button" id="rightsCancel">Cancel</button>
+    </div>
+    <div class="dlgbtns" id="sdBtns" hidden>
+      <button class="btn primary" type="submit" id="sdAdd">Add song</button>
+      <button class="btn" type="button" id="sdSkip">Skip this song</button>
+      <button class="btn" type="button" id="sdStop">Cancel the rest</button>
     </div>
   </form>
 </dialog>

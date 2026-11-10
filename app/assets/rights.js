@@ -26,7 +26,10 @@
     walk(doc.body, into);
   }
 
-  /** The full details as a fragment: who owns it, the licence, publisher, writers, then the notes. */
+  /**
+   * The full details as a fragment: the copyright, the recording, the composition and the licence (round 56:
+   * all public, the user's choice), then the licence terms and the notes.
+   */
   function details(r) {
     const frag = document.createDocumentFragment();
     const dl = document.createElement("dl");
@@ -34,14 +37,35 @@
     const row = (label, value) => {
       if (!value) return;
       const dt = document.createElement("dt"), dd = document.createElement("dd");
-      dt.textContent = label; dd.textContent = value;
+      dt.textContent = label;
+      if (value instanceof Node) dd.appendChild(value); else dd.textContent = value;
       dl.append(dt, dd);
     };
-    row("Copyright", ((r.year ? r.year + " " : "") + (r.owner || "")).trim() && "© " + ((r.year ? r.year + " " : "") + (r.owner || "")).trim());
-    row("Licence", r.licence);
-    row("Publishing house", r.publisher);
+    const c = ((r.year ? r.year + " " : "") + (r.owner || "")).trim();
+    row("Copyright", c && "© " + c);
+    row("Sound recording", r.pline && "℗ " + r.pline);
+    row("Record label", r.label);
     row("Songwriter(s)", r.writers);
+    row("Lyricist(s)", r.lyricists);
+    row("Publishing house", r.publisher);
+    row("Licence", r.licence);
+    row("Licence number", r.licence_ref);
+    if (r.licence_url && /^https?:\/\/[^\s<>"']+$/i.test(r.licence_url)) {
+      const a = document.createElement("a");
+      a.href = r.licence_url; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = r.licence_url.replace(/^https?:\/\//i, "");
+      row("Licence link", a);
+    }
+    row("Valid until", r.licence_until);
+    row("ISRC", r.isrc);
+    row("ISWC", r.iswc);
+    row("Track", r.track);
     if (dl.children.length) frag.appendChild(dl);
+    if (r.terms) {
+      const h = document.createElement("p"), t = document.createElement("p");
+      h.className = "rights-sub"; h.textContent = "Licence terms";
+      t.className = "rights-terms"; t.textContent = r.terms; // plain text: its line breaks show (white-space)
+      frag.append(h, t);
+    }
     if (r.notes) {
       const p = document.createElement("p");
       p.className = "rights-notes";

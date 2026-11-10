@@ -99,7 +99,8 @@ final class Mp3
 
     /**
      * Title, artist and album from an ID3v2.3/2.4 tag, when there is one; also its copyright text
-     * (`copyright`), publisher, composers (`writers`), year, and the attached picture (`art`: mime
+     * (`copyright`), publisher, composers (`writers`), year, ISRC, lyricists and track number (round 56),
+     * and the attached picture (`art`: mime
      * and bytes of the front cover, or the first picture). The picture may be up to 3 MB.
      */
     public static function tags(string $path): array
@@ -113,7 +114,7 @@ final class Mp3
         $end = min(strlen($head), self::id3Size($head));
         $pos = 10;
         $names = ['TIT2' => 'title', 'TPE1' => 'artist', 'TALB' => 'album', 'TCOP' => 'copyright', 'TPUB' => 'publisher',
-                  'TCOM' => 'writers', 'TYER' => 'year', 'TDRC' => 'year'];
+                  'TCOM' => 'writers', 'TYER' => 'year', 'TDRC' => 'year', 'TSRC' => 'isrc', 'TEXT' => 'lyricists', 'TRCK' => 'track'];
         $pictures = [];
         while ($pos + 10 <= $end) {
             $id = substr($head, $pos, 4);

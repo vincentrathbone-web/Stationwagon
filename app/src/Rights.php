@@ -9,12 +9,58 @@ namespace Stationwagon;
  * `tracks.rights`; a song with any of it gets the © badge in the library and the line under its
  * title in the players. The notes are rich text of one kind only: text, line breaks and links, so
  * everything pasted or posted is cleaned here, on the server, whatever the browser sent.
+ *
+ * Round 56 (goal 10, the upload window) adds what radio returns (SAMRO, PRS) and distributors ask for,
+ * in three groups: the recording (track number, record label, ISRC, the ℗ owner), the composition
+ * (lyricists, ISWC; the songwriters, publisher and © owner were there) and the licence (its type in
+ * `licence`, a number or reference such as a CCLI song number, a link, the date it runs to, and its
+ * terms as plain text). All of it is public, like the rest (the user's choice).
  */
 final class Rights
 {
-    public const FIELDS = ['owner', 'year', 'licence', 'publisher', 'writers'];
-    private const LIMITS = ['owner' => 200, 'year' => 20, 'licence' => 200, 'publisher' => 200, 'writers' => 500];
+    public const FIELDS = ['owner', 'year', 'licence', 'publisher', 'writers',
+        'track', 'label', 'isrc', 'pline', 'lyricists', 'iswc', 'licence_ref', 'licence_url', 'licence_until'];
+    private const LIMITS = ['owner' => 200, 'year' => 20, 'licence' => 200, 'publisher' => 200, 'writers' => 500,
+        'track' => 10, 'label' => 200, 'isrc' => 20, 'pline' => 200, 'lyricists' => 500, 'iswc' => 20,
+        'licence_ref' => 100, 'licence_url' => 500, 'licence_until' => 10];
     private const NOTES_TEXT = 4000;
+    /** The licence terms: plain text with its line breaks, up to this many characters. */
+    public const TERMS_TEXT = 20000;
+
+    /**
+     * What's wrong with posted details, or null: a link that isn't http(s), a date that isn't one,
+     * an ISRC or ISWC that isn't one (spaces and dashes are allowed in both).
+     */
+    public static function problem(array $in): ?string
+    {
+        $v = fn(string $k) => trim((string) ($in[$k] ?? ''));
+        if ($v('licence_url') !== '' && self::safeHref($v('licence_url')) === null || str_starts_with(strtolower($v('licence_url')), 'mailto:')) {
+            return 'The licence link must be a web address starting with http:// or https://.';
+        }
+        if ($v('licence_until') !== '' && self::date($v('licence_until')) === null) {
+            return 'The licence’s end date must be a date, like 2027-12-31.';
+        }
+        if ($v('isrc') !== '' && !preg_match('/^[A-Z]{2}[A-Z0-9]{3}\d{7}$/', self::code($v('isrc')))) {
+            return 'An ISRC has 12 characters, like ZA-ABC-24-00001.';
+        }
+        if ($v('iswc') !== '' && !preg_match('/^T\d{10}$/', self::code($v('iswc')))) {
+            return 'An ISWC is a T and 10 digits, like T-034.524.680-1.';
+        }
+        return null;
+    }
+
+    /** A code as typed (ZA-ABC-24-00001, T-034.524.680-1) without its dashes, dots and spaces, in capitals. */
+    private static function code(string $s): string
+    {
+        return strtoupper((string) preg_replace('/[\s.\-]+/', '', $s));
+    }
+
+    /** A date as YYYY-MM-DD, or null. */
+    private static function date(string $s): ?string
+    {
+        $d = \DateTimeImmutable::createFromFormat('!Y-m-d', $s);
+        return $d !== false && $d->format('Y-m-d') === $s ? $s : null;
+    }
 
     /** The details from a posted form (or decoded JSON): trimmed, limited, the notes cleaned. Null when nothing is set. */
     public static function normalize(array $in): ?array
@@ -24,8 +70,34 @@ final class Rights
             $v = trim((string) preg_replace('/\s+/u', ' ', (string) ($in[$f] ?? '')));
             $out[$f] = mb_substr($v, 0, self::LIMITS[$f]);
         }
+        // the codes kept in their usual written form; a link, date or code that isn't one is dropped
+        // (forms check first with problem(), so this only meets old or hand-made data)
+        $isrc = self::code($out['isrc']);
+        $out['isrc'] = preg_match('/^[A-Z]{2}[A-Z0-9]{3}\d{7}$/', $isrc) ? substr($isrc, 0, 2) . '-' . substr($isrc, 2, 3) . '-' . substr($isrc, 5, 2) . '-' . substr($isrc, 7) : '';
+        $iswc = self::code($out['iswc']);
+        $out['iswc'] = preg_match('/^T\d{10}$/', $iswc) ? 'T-' . substr($iswc, 1, 3) . '.' . substr($iswc, 4, 3) . '.' . substr($iswc, 7, 3) . '-' . substr($iswc, 10) : '';
+        $out['licence_url'] = self::safeHref($out['licence_url']) !== null && !str_starts_with(strtolower($out['licence_url']), 'mailto:') ? $out['licence_url'] : '';
+        $out['licence_until'] = self::date($out['licence_until']) ?? '';
+        $out['terms'] = self::plain((string) ($in['terms'] ?? ''), self::TERMS_TEXT);
         $out['notes'] = self::cleanHtml((string) ($in['notes'] ?? ''));
         return array_filter($out, fn($v) => $v !== '') ? $out : null;
+    }
+
+    /** Plain text with its line breaks (at most two blank lines), control characters dropped, limited. */
+    private static function plain(string $s, int $limit): string
+    {
+        $s = str_replace(["
+", ""], "
+", $s);
+        $s = (string) preg_replace('/[\x00-\x08\x0b-\x1f\x7f]/u', '', $s);
+        $s = (string) preg_replace('/[ 	]+
+/', "
+", $s);
+        $s = trim((string) preg_replace('/
+{3,}/', "
+
+", $s));
+        return mb_substr($s, 0, $limit);
     }
 
     /** Decode what the column holds. */

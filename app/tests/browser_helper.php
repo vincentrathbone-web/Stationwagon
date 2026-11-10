@@ -202,8 +202,12 @@ if ($cmd === 'manager') {
     $lib = new Library($db, $station, SW_ROOT);
     $removed = $hidden = 0;
     foreach (array_slice($argv, 2) as $like) {
-        foreach ($db->run('SELECT id FROM ' . $db->table('tracks') . " WHERE station_id = ? AND title LIKE ? AND title NOT LIKE '[test] %'", [$station['id'], $like])->fetchAll(PDO::FETCH_COLUMN) as $id) {
+        // also one an earlier run hid because it was on air then (its file would make this one "already there")
+        foreach ($db->run('SELECT id, title FROM ' . $db->table('tracks') . " WHERE station_id = ? AND (title LIKE ? AND title NOT LIKE '[test] %' OR title LIKE ?)",
+            [$station['id'], $like, '[test] Web Test Song ' . $like])->fetchAll() as $row) {
+            $id = $row['id'];
             if ($lib->delete((int) $id, $planner, microtime(true)) === null) { $removed++; continue; }
+            if (str_starts_with((string) $row['title'], '[test] ')) { continue; } // still on air: already hidden
             // on air right now: hidden like 'cleanup' does; web_test.php's next run removes it
             $db->run('UPDATE ' . $db->table('tracks') . " SET status = 'error', title = CONCAT('[test] Web Test Song ', title) WHERE id = ?", [$id]);
             $hidden++;

@@ -50,6 +50,7 @@ async function tab(wsUrl) {
   const files = async (selector, paths) => {
     const doc = await call("DOM.getDocument", { depth: 0 });
     const q = await call("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector });
+    if (selector === "#files") await evaluate("window.swUploadNoWindow = true"); // the upload window has its own test
     await call("DOM.setFileInputFiles", { nodeId: q.result.nodeId, files: paths });
   };
   await call("Page.enable"); await call("Runtime.enable"); await call("DOM.enable");

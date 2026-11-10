@@ -387,7 +387,7 @@
     };
     const year = String(t.date || t.year || "").match(/\d{4}/);
     const text = { TIT2: t.title, TPE1: t.artist, TALB: t.album, TPE2: t.album_artist, TCON: t.genre, TRCK: t.track,
-      TDRC: year ? year[0] : "", TCOM: t.composer, TPUB: t.publisher, TCOP: t.copyright };
+      TDRC: year ? year[0] : "", TCOM: t.composer, TPUB: t.publisher, TCOP: t.copyright, TSRC: t.isrc || t.ISRC, TEXT: t.lyricist };
     for (const [id, v] of Object.entries(text)) {
       const s = String(v || "").replace(/\0/g, " ").trim();
       if (s) { const b = utf8(s), body = new Uint8Array(b.length + 1); body[0] = 3; body.set(b, 1); add(id, body); }
@@ -429,13 +429,70 @@
     return null;
   }
 
+  /**
+   * An MP3's ID3v2.3/2.4 tag read for the upload window (round 56): { title, artist, album, year, track,
+   * writers, lyricists, publisher, copyright, isrc, label, iswc } (only those it has) and its picture
+   * ({ mime, data }: the front cover, or the first one), or null without a tag. The same frames the server
+   * reads (Mp3::tags), plus TXXX LABEL and ISWC.
+   */
+  function readTags(bytes) {
+    if (bytes.length < 10 || bytes[0] !== 0x49 || bytes[1] !== 0x44 || bytes[2] !== 0x33 || (bytes[3] !== 3 && bytes[3] !== 4)) return null;
+    const v4 = bytes[3] === 4;
+    const safe = (i) => ((bytes[i] & 0x7f) << 21) | ((bytes[i + 1] & 0x7f) << 14) | ((bytes[i + 2] & 0x7f) << 7) | (bytes[i + 3] & 0x7f);
+    const plain = (i) => ((bytes[i] << 24) | (bytes[i + 1] << 16) | (bytes[i + 2] << 8) | bytes[i + 3]) >>> 0;
+    const end = Math.min(bytes.length, 10 + safe(6));
+    let at = 10;
+    if (bytes[5] & 0x40) at += v4 ? safe(10) : 4 + plain(10); // an extended header
+    const NAMES = { TIT2: "title", TPE1: "artist", TALB: "album", TCOP: "copyright", TPUB: "publisher", TCOM: "writers",
+      TYER: "year", TDRC: "year", TSRC: "isrc", TEXT: "lyricists", TRCK: "track" };
+    const decode = (enc, b) => {
+      if (enc === 0) return Array.from(b, (c) => String.fromCharCode(c)).join("");
+      if (enc === 3) return new TextDecoder("utf-8").decode(b);
+      let le = enc === 1, s = 0;
+      if (enc === 1 && b.length >= 2) { le = !(b[0] === 0xfe && b[1] === 0xff); s = b[0] === 0xff && b[0 + 1] === 0xfe || b[0] === 0xfe && b[1] === 0xff ? 2 : 0; }
+      return new TextDecoder(le ? "utf-16le" : "utf-16be").decode(b.subarray(s, s + ((b.length - s) & ~1)));
+    };
+    // a text frame: its encoding, then the text (several values split by NULs: joined with ", ")
+    const text = (b) => b.length < 2 ? "" : decode(b[0], b.subarray(1)).split("\0").map((x) => x.trim()).filter(Boolean).join(", ");
+    const out = {}, pictures = {};
+    while (at + 10 <= end) {
+      const id = String.fromCharCode(bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]);
+      if (!/^[A-Z0-9]{4}$/.test(id)) break; // padding
+      const size = v4 ? safe(at + 4) : plain(at + 4);
+      const body = bytes.subarray(at + 10, Math.min(end, at + 10 + size));
+      if (NAMES[id]) { const t = text(body); if (t && !out[NAMES[id]]) out[NAMES[id]] = t; }
+      else if (id === "TXXX" && body.length > 2) {
+        const [desc, ...rest] = decode(body[0], body.subarray(1)).split("\0");
+        const key = { LABEL: "label", ISWC: "iswc", PUBLISHER: "publisher" }[desc.trim().toUpperCase()];
+        const val = rest.filter(Boolean).join(", ").trim();
+        if (key && val && !out[key]) out[key] = val;
+      } else if (id === "APIC" && body.length > 20) {
+        const enc = body[0];
+        let p = body.indexOf(0, 1); // the mime type ends in a NUL
+        if (p > 0) {
+          const type = body[p + 1];
+          p += 2;
+          if (enc === 1 || enc === 2) { while (p + 1 < body.length && (body[p] || body[p + 1])) p += 2; p += 2; }
+          else { const z = body.indexOf(0, p); p = z < 0 ? body.length : z + 1; }
+          const data = body.slice(p);
+          const mime = data[0] === 0xff && data[1] === 0xd8 ? "image/jpeg" : data[0] === 0x89 && data[1] === 0x50 ? "image/png" : null;
+          if (mime && !(type in pictures)) pictures[type] = { mime, data };
+        }
+      }
+      at += 10 + size;
+    }
+    if (out.year) { const y = out.year.match(/\d{4}/); out.year = y ? y[0] : out.year; }
+    const pic = pictures[3] || Object.values(pictures)[0] || null;
+    return { tags: out, picture: pic };
+  }
+
   /** The MP3 the station keeps as a converted upload's original (round 54): 320 kbps at its own rate when
    *  that is 44.1 or 48 kHz, otherwise at the nearest of the two. */
   const ORIGINAL = { kbps: 320, rate: (source) => targetRate(source, 0) };
 
   function round(v, d) { const f = Math.pow(10, d); return Math.round(v * f) / f; }
 
-  const api = { P, kFilters, loudness, outro, peakDb, soundSpan, prepare, encode, tags, levelTags, id3, sniff, ORIGINAL,
+  const api = { P, kFilters, loudness, outro, peakDb, soundSpan, prepare, encode, tags, levelTags, id3, sniff, readTags, ORIGINAL,
     targetRate, rateNote, resampler, resample, rng, quantize, toInt16, encodeLame, mp3Rate };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.SwPrepCore = api;

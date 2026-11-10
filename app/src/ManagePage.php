@@ -310,14 +310,24 @@ final class ManagePage
                 $outro = json_decode((string) (((array) ($_POST['prep_outro'] ?? []))[$i] ?? ''), true);
                 $mastered = (string) (((array) ($_POST['prep_mastered'] ?? []))[$i] ?? '') === '1';
                 $preset = ((array) ($_POST['prep_preset'] ?? []))[$i] ?? null;
+                // the upload window's details (round 56), checked before the song is kept
+                $details = self::detailsPosted($i);
+                if (is_string($details)) {
+                    throw new RuntimeException($details);
+                }
                 $r = $library->import($tmp, null, null, $name, is_string($source) ? strtolower($source) : null,
                     is_numeric($lufs) ? (float) $lufs : null, is_array($outro) ? $outro : null, $mastered, is_string($preset) ? $preset : null, self::levelPosted($i));
                 $added = $added || !$r['duplicate'];
+                $note = null;
+                if ($details !== null && !$r['duplicate']) {
+                    $note = $this->applyDetails($library, (int) $r['id'], $details, $i);
+                    $r['title'] = (string) ($library->get((int) $r['id'])['title'] ?? $r['title']);
+                }
                 // original: whether the station has the file the song was made from (the page sends it
                 // when not, a song uploaded again included, so older songs get theirs for Song prep)
                 $track = $library->get((int) $r['id']);
                 $out[] = ['name' => $name, 'ok' => true, 'duplicate' => $r['duplicate'], 'title' => $r['title'], 'id' => $r['id'],
-                    'original' => $track !== null && $library->original($track) !== null];
+                    'original' => $track !== null && $library->original($track) !== null] + ($note !== null ? ['note' => $note] : []);
             } catch (RuntimeException $ex) {
                 $out[] = ['name' => $name, 'ok' => false, 'error' => $ex->getMessage()];
             }
@@ -326,6 +336,54 @@ final class ManagePage
             $this->planner->replan(microtime(true));
         }
         return $out;
+    }
+
+    /**
+     * The upload window's details for upload $i (round 56): `details[]` holds JSON with the title,
+     * artist, album, the copyright details (`rights`, see Rights) and what to do with the album art
+     * (`art`: "keep" the file's own, "remove" it, or "new", sent as the file `art_<i>`). Null when
+     * none were sent (the form without JavaScript, older pages); a string says what's wrong.
+     * @return array{title:string,artist:string,album:string,rights:array,art:string}|string|null
+     */
+    private static function detailsPosted(int $i): array|string|null
+    {
+        $raw = ((array) ($_POST['details'] ?? []))[$i] ?? null;
+        if (!is_string($raw) || $raw === '') {
+            return null;
+        }
+        $d = json_decode($raw, true);
+        if (!is_array($d)) {
+            return 'The song’s details didn’t arrive whole. Try again.';
+        }
+        $title = trim((string) ($d['title'] ?? ''));
+        if ($title === '') {
+            return 'A song needs a title.';
+        }
+        $rights = is_array($d['rights'] ?? null) ? $d['rights'] : [];
+        if (($problem = Rights::problem($rights)) !== null) {
+            return $problem;
+        }
+        $art = in_array($d['art'] ?? 'keep', ['keep', 'remove', 'new'], true) ? (string) ($d['art'] ?? 'keep') : 'keep';
+        return ['title' => $title, 'artist' => (string) ($d['artist'] ?? ''), 'album' => (string) ($d['album'] ?? ''), 'rights' => $rights, 'art' => $art];
+    }
+
+    /**
+     * Put the upload window's details on a song just added (its tags gave the first values; these win).
+     * Returns what couldn't be kept (an unusable picture), or null.
+     */
+    private function applyDetails(Library $library, int $id, array $d, int $i): ?string
+    {
+        $library->update($id, $d['title'], $d['artist'], $d['album']);
+        $library->setRights($id, $d['rights']);
+        if ($d['art'] === 'remove') {
+            return $library->setArt($id, null);
+        }
+        if ($d['art'] === 'new') {
+            $file = $_FILES['art_' . $i] ?? null;
+            $ok = is_array($file) && (int) $file['error'] === UPLOAD_ERR_OK && (is_uploaded_file((string) $file['tmp_name']) || PHP_SAPI === 'cli');
+            return $ok ? $library->setArt($id, (string) file_get_contents((string) $file['tmp_name'])) : 'The album art didn’t arrive. Try a smaller picture (up to 3 MB).';
+        }
+        return null;
     }
 
     private function uploadTooBig(bool $json): never

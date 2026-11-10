@@ -98,7 +98,8 @@ function make_mp3(string $path, float $seconds, array $tags = [], int $salt = 0)
     $frame = "\xFF\xFB\x90\x00" . str_repeat("\0", 413); // 417 bytes, 1152 samples
     $id3 = '';
     foreach (['TIT2' => $tags['title'] ?? null, 'TPE1' => $tags['artist'] ?? null, 'TCOP' => $tags['copyright'] ?? null,
-              'TPUB' => $tags['publisher'] ?? null, 'TCOM' => $tags['writers'] ?? null, 'TYER' => $tags['year'] ?? null] as $id => $text) {
+              'TPUB' => $tags['publisher'] ?? null, 'TCOM' => $tags['writers'] ?? null, 'TYER' => $tags['year'] ?? null,
+              'TSRC' => $tags['isrc'] ?? null, 'TEXT' => $tags['lyricists'] ?? null, 'TRCK' => $tags['track'] ?? null, 'TALB' => $tags['album'] ?? null] as $id => $text) {
         if ($text !== null) {
             $body = "\x03" . $text; // UTF-8
             $id3 .= $id . pack('N', strlen($body)) . "\0\0" . $body;

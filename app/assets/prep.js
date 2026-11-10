@@ -70,7 +70,7 @@
     const song = new Blob([C.levelTags(head, r.info), ...r.chunks], { type: "audio/mpeg" });
     const name = file.name.replace(/\.[^.\/]*$/, "") + ".mp3";
     r.info.converted.kind = kind === "ogg" && r.source.codec === "opus" ? "Opus" : NAMES[kind] || kind;
-    return { file: song, prepared: true, info: r.info, sourceSha1: await sha1(original), original, name, kind };
+    return { file: song, prepared: true, info: r.info, sourceSha1: await sha1(original), original, name, kind, tags: r.tags || {}, picture: r.picture || null };
   }
 
   async function prepare(file, onStage = () => {}, opts = {}) {

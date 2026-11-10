@@ -81,6 +81,7 @@ async function upload(files) {
   await go(`${base}/manage/library`);
   const doc = await call("DOM.getDocument", {});
   const input = await call("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: "#files" });
+  await evaluate("window.swUploadNoWindow = true"); // the upload window (round 56) has its own test
   await call("DOM.setFileInputFiles", { nodeId: input.result.nodeId, files });
   for (let i = 0; i < 900; i++) {
     const rows = await evaluate(`[...document.querySelectorAll('#uplist li')].map((li) => ({ cls: li.className, text: li.querySelector('.s').textContent }))`).catch(() => null);
