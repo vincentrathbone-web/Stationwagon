@@ -497,7 +497,7 @@ rejoining always starts a continuation show instead (see Decisions).
    **launch (`v1.0`)** with the optional relay to an outside Icecast. A new app release: raise the version in
    `tauri.conf.json` and `Cargo.toml`, `bash tools/build-desktop.sh`, then a GitHub release `v<version>` with
    both files from `desktop/dist/` (`gh release create v<version> <exe> <exe>.sig --target <full commit id>`).
-9. ~~**Mastering in song prep, copying the user's Audition chain**~~ (round 34). **Next in the pilot (`v0.8`)**: fill the pilot station (now wordwave.co.za/radio; the controll host is cancelled) with test music, run it beside AzuraCast for a week, and copy WordWave's AzuraCast library once its owner agrees.
+9. ~~**Mastering in song prep, copying the user's Audition chain**~~ (round 34). ~~Next in the pilot (`v0.8`): fill the pilot station with test music, run it beside AzuraCast for a week, and copy WordWave's AzuraCast library once its owner agrees.~~ **No longer required** (the user, 2026-11-10): wordwave.co.za has already been running live music on Stationwagon for the past week, so there is no week beside AzuraCast and no copy of AzuraCast's library.
 10. ~~**The Android studio app (`v0.7`)**~~ (round 35; the user's choices of 2026-10-23: the studio like the
    Windows app, updates through the plugin, Android 8+). iPhones and iPads keep the browser studio (no Apple
    Developer account). **To release it:** `bash tools/build-android.sh`, then a GitHub release `android-v<version>`
@@ -760,6 +760,7 @@ Newest last. Don't rewrite old entries; add a new one that overrides.
 | 2026-11-10 | **The upload window** (goal 10): several songs picked at once get **a window each, in turn**; its fields are the music industry's usual ones: the recording (album, track, year, label, ISRC, ℗), the composition (songwriters, lyricists, publisher, ©, ISWC), the licence (type, number or reference, link, valid until, terms) and the notes; missing songwriters, licence type or publisher **warn but don't block**; **listeners see all of it** | The user's choices, from a list drawn from what labels, collecting societies (SAMRO, SAMPRA, CCLI) and distributors ask for |
 | 2026-11-10 | **The Stationwagon Updates plugin's new home is controll.co.za on vmcloud1** (the same address the apps already ask, so no app change) | The user's choice; the old token was to be reused but didn't survive the move, so a new read-only token is needed |
 | 2026-11-10 | **New signing keys for both studio apps** (the old ones were lost with this PC's rebuild) | The user's choice: only the user's own devices had the apps, so uninstalling the old copy once is acceptable. **Back up the new keys** (Open issues) |
+| 2026-11-10 | **The pilot beside AzuraCast is no longer required**: no week running beside AzuraCast and no copy of its library | The user: the WordWave site has already been running live music on Stationwagon for the past week |
 
 ## Scope changes
 
@@ -901,6 +902,8 @@ Every item from before round 28 was fixed, checked, decided with the user or mov
 
 - **Live** on wordwave.co.za since 2026-11-10 (the user's OK). Signed in on the live site was not tried (that needs the user's own password); the window was tested on Laragon in Edge and WebKit at 390 and 1280 px.
 - ~~The Updates plugin has no token~~: the user saved a new one (2026-11-10); the plugin offers the releases again.
+- **Old backups on vmcloud1**: the 15 from 1–9 Nov deleted (the user's OK, 2026-11-10); today's five kept for a few days (`/home/wordwaveco/pre-deploy-20261110-0302.sql`, `pre-privacy-plugin-20261110-0318.sql`, `radio-code-before-20261110-0302.tar.gz`, `radio-code-before-20261110-header.tar.gz`, `/home/controll1/pre-updates-plugin-20261110-0305.sql`).
+- **Real Safari** (iPhone, iPad, Mac) stays untested for listening (the user, 2026-11-10: leave it open until a real Apple device is at hand).
 - **Back up the new signing keys** (round 57): `~/.tauri-keys/stationwagon.key` (with `.pub`) and `~/.android-keys/stationwagon-release.jks`, with their password files `tools/deploy/updater-key.local.txt` and `android-key.local.txt`, somewhere safe off this PC. Losing them again means every installed copy must be uninstalled once more.
 - **An older studio app installed somewhere** (Windows 0.6.1 or earlier, Android 0.7.1 or earlier, old keys) is offered the new version but refuses it (Windows opens the studio as it is; Android's installer says the app conflicts): uninstall it once and install the new one from the studio's Get the app link.
 - Online lookups for a song's details (MusicBrainz and others) are for later: Next steps 18.

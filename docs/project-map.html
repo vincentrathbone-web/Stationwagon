@@ -270,23 +270,24 @@ const MAP = {
       { text: "A new station's app from one config file", note: "name, address, colours, logo, texts; README explains it", v: "v0.8", state: "done" },
       { text: "Chat for listeners", note: "planned only: a placeholder screen behind a switch, nothing built", v: "v1.0", state: "later" }
     ]},
-    { name: "Pilot & launch", blurb: "WordWave runs beside AzuraCast first, then switches over.", features: [
+    { name: "Pilot & launch", blurb: "WordWave already runs live music on Stationwagon; no week beside AzuraCast needed.", features: [
       { text: "The pilot station, installed for real", note: "live at wordwave.co.za/radio; the website plays it through the embed", v: "v0.8", state: "progress" },
-      { text: "Copy WordWave's library from AzuraCast", note: "needs your friend's OK first", v: "v0.8", state: "later" },
-      { text: "Run beside AzuraCast for a week", v: "v0.8", state: "later" },
+      { text: "Copy WordWave's library from AzuraCast", note: "no longer needed (10 Nov): the live station has its own music", v: "v0.8", state: "done" },
+      { text: "Run beside AzuraCast for a week", note: "no longer needed (10 Nov): wordwave.co.za has played live music on Stationwagon for a week", v: "v0.8", state: "done" },
       { text: "Guides for station managers and DJs", v: "v1.0", state: "later" },
       { text: "Release package and upgrade path", note: "the releases repo and setup.php are done; upgrades without WordPress still by hand", v: "v1.0", state: "later" },
       { text: "Switch WordWave over", v: "v1.0", state: "later" }
     ]}
   ],
   next: {
-    title: "The pilot beside AzuraCast (v0.8)",
-    text: "The upload window, uploads in every format and both studio apps are out. Next: back up the new signing keys, enter the real line-up, then run WordWave beside AzuraCast for a week (with the station owner's OK).",
-    order: ["Back up the new app keys", "Enter the real line-up and privacy details", "A week beside AzuraCast", "Online song lookups (to investigate)"]
+    title: "Launch steps (v1.0)",
+    text: "The upload window, uploads in every format and both studio apps are out, and WordWave already plays live music on Stationwagon, so the week beside AzuraCast is no longer needed. Next: back up the new signing keys, enter the real line-up and privacy details, then the launch steps.",
+    order: ["Back up the new app keys", "Enter the real line-up and privacy details", "Guides for station managers and DJs", "Online song lookups (to investigate)"]
   },
   call: null,
   feedTitle: "Changed 20 Oct – 10 Nov",
   feed: [
+    { what: "No pilot week needed", to: "WordWave has already played live music on Stationwagon for a week, so running beside AzuraCast and copying its library are dropped; old server backups from 1–9 Nov deleted", at: "10 Nov", kind: "info" },
     { what: "Studio apps released", to: "Windows 0.6.2 and Android 0.7.2 with the new logo; signed with new keys (the old ones were lost with the PC rebuild), so uninstall an older copy once; then updates come by themselves again", at: "10 Nov" },
     { what: "WordWave listener app checked live", to: "on your phone against wordwave.co.za: now playing, the verse, the stream starts in 3 s; its privacy paragraph is on the live site", at: "10 Nov" },
     { what: "A details window before each upload", to: "for each song in turn: art, title, artist, album, the recording (label, ISRC), the song (songwriters, publisher, ISWC) and the licence (type, number, link, valid until, terms); filled from the file's own tags; a warning when songwriters, licence or publisher are missing; listeners see it all. Live on wordwave.co.za", at: "10 Nov" },
