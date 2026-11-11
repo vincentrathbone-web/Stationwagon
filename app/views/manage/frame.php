@@ -3,6 +3,7 @@
 $rail = [
     'overview' => ['manage', 'Overview', 'dj'],
     'library' => ['manage/library', 'Music library', 'library'],
+    'ads' => ['manage/ads', 'Ads', 'library'],
     'playlists' => ['manage/playlists', 'Playlists', 'playlists'],
     'schedule' => ['manage/schedule', 'Schedule', 'schedule'],
     'people' => ['manage/people', 'People', 'people'],
@@ -20,7 +21,7 @@ $post = function (string $route, string $label, array $fields = [], string $clas
     }
     return '<form method="post" action="' . h(App::url($route)) . '" class="inline">' . $hidden . '<button class="' . h($class) . '" type="submit">' . h($label) . '</button></form>';
 };
-$label = fn(array $e): string => $e['type'] === 'live' ? 'LIVE · ' . $e['title'] : trim(($e['artist'] ? $e['artist'] . ' – ' : '') . $e['title']);
+$label = fn(array $e): string => $e['type'] === 'live' ? 'LIVE · ' . $e['title'] : (!empty($e['ad']) ? 'Ad · ' . $e['ad_title'] : trim(($e['artist'] ? $e['artist'] . ' – ' : '') . $e['title']));
 ?>
 <div class="mgr">
   <div class="mhdr">

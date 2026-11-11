@@ -386,7 +386,7 @@ final class Studio
             return [];
         }
         $rows = $this->db->run('SELECT id, file, title, artist, duration_s FROM ' . $this->db->table('tracks') .
-            " WHERE station_id = ? AND status = 'ready' AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')', [$this->station['id'], ...$ids])->fetchAll();
+            " WHERE station_id = ? AND status = 'ready' AND kind = 'song' AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')', [$this->station['id'], ...$ids])->fetchAll();
         $out = [];
         foreach ($rows as $r) {
             $out[(int) $r['id']] = $this->track($r);

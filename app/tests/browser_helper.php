@@ -9,6 +9,7 @@
 //   php browser_helper.php cleanup-like <SQL LIKE pattern> ...   (songs a killed run left, e.g. "Loudness %"; one on air is hidden) -> {removed, hidden}
 //   php browser_helper.php lib-songs <n>    -> n throwaway songs "Web Test Lib NN" and one tagged with a cover and copyright: {"ids", "tagged"}
 //   php browser_helper.php lib-info <id>    -> the song's title, art file and rights
+//   php browser_helper.php ads-info <title> -> an ad's track and plan (or null);  ads-clean (every "Web Test Ad")
 //   php browser_helper.php lib-clean        (every "Web Test Lib" song, and their art)
 //   php browser_helper.php rate-fixture "<mp3>|<title>" ...  -> the songs imported, in order in a "[ww-test] Rate switch" playlist that a block plays from now: {ids, playlist, block, tracks}
 //   php browser_helper.php rate-fixture-clean                 (the block, the playlist and the "[ww-test] Rate" songs)
@@ -181,6 +182,23 @@ if ($cmd === 'manager') {
     foreach ($db->run('SELECT id FROM ' . $db->table('tracks') . ' WHERE station_id = ? AND title LIKE ?', [$station['id'], '[test] Web Test Lib%'])->fetchAll(PDO::FETCH_COLUMN) as $id) {
         $lib->delete((int) $id, $planner, microtime(true));
     }
+    echo json_encode(['cleaned' => $n]);
+} elseif ($cmd === 'ads-info') {
+    // an ad by its title: its track and its plan
+    $r = $db->run('SELECT t.id, t.title, t.kind, t.art, t.artist, t.album, t.rights, t.loudness_lufs, t.mastered, t.file, t.sha1, a.* FROM ' . $db->table('tracks') . ' t LEFT JOIN ' . $db->table('ads') . ' a ON a.track_id = t.id WHERE t.station_id = ? AND t.title = ? ORDER BY t.id DESC LIMIT 1',
+        [$station['id'], $argv[2] ?? ''])->fetch();
+    echo json_encode($r ? $r + ['original' => is_file(SW_ROOT . '/storage/originals/' . $r['sha1'] . '.mp3') || $r['file'] === $r['sha1'] . '.mp3'] : null);
+} elseif ($cmd === 'ads-clean') {
+    // every "Web Test Ad" the tests made (one on air right now is hidden and removed by the next run)
+    $lib = new Library($db, $station, SW_ROOT);
+    $n = 0;
+    foreach ($db->run('SELECT id FROM ' . $db->table('tracks') . ' WHERE station_id = ? AND kind = ? AND (title LIKE ? OR title LIKE ?)', [$station['id'], 'ad', 'Web Test Ad%', '[test] Web Test Ad%'])->fetchAll(PDO::FETCH_COLUMN) as $id) {
+        if ($lib->delete((int) $id, $planner, microtime(true)) !== null) {
+            $db->run('UPDATE ' . $db->table('tracks') . " SET status = 'error', title = CONCAT('[test] ', title) WHERE id = ? AND title NOT LIKE '[test] %'", [$id]);
+        }
+        $n++;
+    }
+    $planner->replan(microtime(true));
     echo json_encode(['cleaned' => $n]);
 } elseif ($cmd === 'cleanup') {
     $db->run('DELETE FROM ' . $db->table('users') . ' WHERE id = ? AND email LIKE ?', [(int) ($argv[2] ?? 0), 'web-test-%']);

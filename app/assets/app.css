@@ -276,6 +276,33 @@ table.lib.dense td.c-title .arts, table.lib.dense td.c-title .arts img { width: 
 .toolbar select { background: var(--raised); color: var(--ink); border: 1px solid transparent; border-radius: var(--r-pill); font: 600 14px var(--f-ui); padding: 10px 14px; }
 .libnote { margin: 0; min-height: 1.3em; }
 .libnote.bad { color: var(--onair); font-weight: 600; }
+/* the Ads screen (round 63) */
+.adsettings .field { flex: 0 1 190px; }
+.adsettings input[type=number], .adedit input[type=number], .adedit input[type=date], .adedit input[type=time], .adedit textarea { background: var(--raised); color: var(--ink); border: 1px solid transparent; border-radius: var(--r-field); font: 500 15px var(--f-ui); padding: 10px 12px; width: 100%; }
+.adedit textarea { resize: vertical; }
+.adedit .wide { flex: 1 1 100%; }
+.adedit .daypick { border: 0; padding: 0; margin: 0; flex: 1 1 100%; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.adedit .daypick legend { padding: 0; width: 100%; }
+.adedit .daypick .swrow { padding-bottom: 0; }
+table.ads td.today, table.ads td.when, table.ads td.dates { color: var(--muted); font-size: 13px; white-space: nowrap; }
+table.ads tr.off td.c-title b { color: var(--muted); }
+table.ads td .sub { margin: 2px 0 0; }
+@media (max-width: 700px) {
+  .tablewrap table.ads { min-width: 0; }
+  table.ads thead { display: none; }
+  table.ads, table.ads tbody { display: block; }
+  table.ads tbody tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 10px 14px; border-bottom: 1px solid var(--edge-soft); }
+  table.ads tbody tr:last-child { border-bottom: 0; }
+  table.ads td { display: block; padding: 2px 0; border-bottom: 0; white-space: normal; }
+  table.ads td.c-plays { display: none; }
+  table.ads td.c-status { grid-column: 2; grid-row: 1; text-align: right; }
+  table.ads td.c-title, table.ads td.c-advertiser, table.ads td.today, table.ads td.when, table.ads td.dates { grid-column: 1 / -1; }
+  table.ads td.c-title { grid-column: 1; grid-row: 1; }
+  table.ads td.acts { grid-column: 1 / -1; text-align: left; }
+  table.ads td.acts > * { margin: 6px 4px 0 0; }
+  table.ads tr.editing, table.ads tr.empty { display: block; padding: 0; }
+  table.ads tr.editing td, table.ads tr.empty td { display: block; padding: 10px 14px; }
+}
 /* a phone: each song is a card (title, artist, badges, stars, buttons) */
 @media (max-width: 700px) {
   .tablewrap.lib { max-height: none; overflow: visible; }

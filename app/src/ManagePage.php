@@ -290,7 +290,7 @@ final class ManagePage
     }
 
     /** @return list<array{name:string,ok:bool,duplicate?:bool,title?:string,error?:string}> */
-    private function upload(Library $library): array
+    private function upload(Library $library, string $kind = 'song'): array
     {
         $files = $_FILES['files'] ?? null;
         if (!is_array($files) || !isset($files['name'])) {
@@ -329,13 +329,16 @@ final class ManagePage
                 $mastered = (string) (((array) ($_POST['prep_mastered'] ?? []))[$i] ?? '') === '1';
                 $preset = ((array) ($_POST['prep_preset'] ?? []))[$i] ?? null;
                 // the upload window's details (round 56), checked before the song is kept
-                $details = self::detailsPosted($i);
+                $details = $kind === 'song' ? self::detailsPosted($i) : null; // an ad has no details window
                 if (is_string($details)) {
                     throw new RuntimeException($details);
                 }
                 $r = $library->import($tmp, null, null, $name, is_string($source) ? strtolower($source) : null,
-                    is_numeric($lufs) ? (float) $lufs : null, is_array($outro) ? $outro : null, $mastered, is_string($preset) ? $preset : null, self::levelPosted($i));
+                    is_numeric($lufs) ? (float) $lufs : null, is_array($outro) ? $outro : null, $mastered, is_string($preset) ? $preset : null, self::levelPosted($i), $kind);
                 $added = $added || !$r['duplicate'];
+                if ($kind === 'ad' && !$r['duplicate']) {
+                    (new Ads($this->db, $this->station))->create((int) $r['id']); // its plan: 5 plays a day, every day, all day
+                }
                 $note = null;
                 if ($details !== null && !$r['duplicate']) {
                     $note = $this->applyDetails($library, (int) $r['id'], $details, $i);
@@ -404,7 +407,7 @@ final class ManagePage
         return null;
     }
 
-    private function uploadTooBig(bool $json): never
+    private function uploadTooBig(bool $json, string $back = 'manage/library'): never
     {
         $msg = 'That upload was bigger than the server accepts (' . megabytes(self::maxUploadBytes()) . '). Send fewer or smaller files at a time.';
         if ($json) {
@@ -412,7 +415,7 @@ final class ManagePage
             $this->json(['error' => $msg]);
         }
         Session::flash('bad', $msg);
-        App::redirect('manage/library');
+        App::redirect($back);
     }
 
     public static function maxUploadBytes(): int
@@ -422,6 +425,87 @@ final class ManagePage
             return (int) match (strtolower(substr(trim($v), -1))) { 'g' => $n * 1073741824, 'm' => $n * 1048576, 'k' => $n * 1024, default => $n };
         };
         return min($bytes((string) ini_get('upload_max_filesize')), $bytes((string) ini_get('post_max_size')));
+    }
+
+    // ---- Ads (round 63) --------------------------------------------------------------------
+
+    /** The Ads screen: the ad-break settings, uploads, and each ad's plan (plays a day, days, hours, dates). */
+    public function ads(): void
+    {
+        $library = new Library($this->db, $this->station, SW_ROOT);
+        $ads = new Ads($this->db, $this->station);
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+            $wantsJson = str_contains((string) ($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json');
+            if (empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+                $this->uploadTooBig($wantsJson, 'manage/ads');
+            }
+            $this->postAs('library', 'manage/ads', $wantsJson);
+            $action = (string) ($_POST['action'] ?? '');
+            $id = (int) ($_POST['id'] ?? 0);
+            $edit = 0;
+            if ($action === 'upload') {
+                $results = $this->upload($library, 'ad');
+                if ($wantsJson) {
+                    $this->json(['results' => $results]);
+                }
+                foreach ($results as $r) {
+                    Session::flash($r['ok'] ? 'ok' : 'bad', $r['ok'] ? ($r['duplicate'] ? "Already in the ads: {$r['title']}" : "Added: {$r['title']}. Set how often it plays below.") : "{$r['name']}: {$r['error']}");
+                }
+            } elseif ($action === 'original') {
+                // after an upload: the file the ad was prepared from (the same as for songs)
+                $file = $_FILES['original'] ?? null;
+                $problem = $ads->get($id) === null ? 'That ad isn’t here.'
+                    : (is_array($file) && (int) $file['error'] === UPLOAD_ERR_OK && (is_uploaded_file((string) $file['tmp_name']) || PHP_SAPI === 'cli')
+                        ? $library->keepOriginal($id, (string) $file['tmp_name']) : 'The original didn’t arrive.');
+                if ($wantsJson) {
+                    $this->json(['ok' => $problem === null, 'error' => $problem]);
+                }
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Original kept.');
+            } elseif ($action === 'prep') {
+                // the same two switches and loudness target as the Music library: they are the station's
+                $target = isset($_POST['target']) && is_numeric($_POST['target']) ? (float) $_POST['target'] : null;
+                $this->station = (new StationSettings($this->db, $this->station))->savePrep(!empty($_POST['master']), !empty($_POST['level']), $target);
+                if ($wantsJson) {
+                    $this->json(['ok' => true, 'master' => !empty($_POST['master']), 'level' => !empty($_POST['level']), 'target' => StationSettings::prep($this->station)[2]]);
+                }
+                Session::flash('ok', 'Song prep choices saved.');
+            } elseif ($action === 'settings') {
+                [$updated, $problem] = $ads->saveSettings($_POST);
+                if ($updated !== null) {
+                    $this->station = $updated;
+                    $this->planner->replan(microtime(true)); // the coming songs and ads follow the new settings
+                }
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Saved. Ad breaks follow this from the next song planned.');
+            } elseif ($action === 'update') {
+                $problem = $ads->update($id, $_POST);
+                if ($problem === null) {
+                    $this->planner->replan(microtime(true));
+                } else {
+                    $edit = $id; // back to the form, with what was wrong
+                }
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Saved.');
+            } elseif ($action === 'delete') {
+                $problem = $ads->get($id) === null ? 'That ad isn’t here.' : $library->delete($id, $this->planner, microtime(true));
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Ad removed.');
+            }
+            App::redirect('manage/ads' . ($edit ? '?edit=' . $edit : ''));
+        }
+        $me = App::requireRole('library');
+        $now = microtime(true);
+        $ads->logAired($now);
+        $this->render('ads', 'Ads', $me, [
+            'ads' => $ads->all($now),
+            'adSettings' => Ads::settings($this->station),
+            'edit' => (int) ($_GET['edit'] ?? 0),
+            'confirm' => (int) ($_GET['confirm'] ?? 0),
+            'now' => $now,
+            'songs' => count($library->tracks()),
+            'maxUpload' => self::maxUploadBytes(),
+            'prepQuality' => StationSettings::prepQuality($this->station),
+            'prep' => StationSettings::prep($this->station),
+            'preset' => (new PrepPresets($this->db, $this->station))->forImport(),
+            'relevel' => null,
+        ]);
     }
 
     // ---- Playlists -----------------------------------------------------------------------

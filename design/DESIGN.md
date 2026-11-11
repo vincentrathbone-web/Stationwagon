@@ -382,7 +382,12 @@ A scrolling picture of **what goes out** (the wet mix, never the inputs), settle
 
 - **Header:** station name and a live "on air" readout.
 - **Side rail** (becomes a scrolling tab row on phones): Overview, Music library, Playlists,
-  Schedule, DJs, Sound & safety, Song prep (round 40), Listeners, Podcast.
+  Schedule, DJs, Sound & safety, Song prep (round 40), Listeners, Podcast. Round 63 adds **Ads**
+  after Music library: an "Ad breaks" card (Play ads, after every N songs, ads in a break, minutes
+  between breaks), the Music library's drop zone, and a table (title and length, advertiser, plays a
+  day, today, when, dates, status pill: Running in `--amber`) with Edit and Remove; Edit opens the
+  plan under the ad (dates, From and Until, a switch per day, Active, notes). On a phone each ad is
+  a card.
 - **Overview:** on air now with progress and next song; listeners, next live show, "planned
   until"; **Needs attention** (hidden song titles, duplicates); **Health** (timeline planned,
   storage, live input).

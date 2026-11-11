@@ -583,7 +583,7 @@ try {
     $lib->setRating($s2, 2);
     $db->pdo->exec('ALTER TABLE ' . $db->table('tracks') . ' DROP COLUMN rating');
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '15' WHERE name = 'schema_version'");
-    check('the upgrade to 16 adds the rating column (songs start unrated)', Schema::upgrade($db, $root) === [16]
+    check('the upgrade to 16 adds the rating column (songs start unrated)', Schema::upgrade($db, $root) === range(16, Schema::VERSION)
         && $db->run('SHOW COLUMNS FROM ' . $db->table('tracks') . " LIKE 'rating'")->fetch() !== false && $starsOf($s2) === null);
     check('  and a second upgrade has nothing to do', Schema::upgrade($db, $root) === []);
     $lib->delete($s1, $p, $now);

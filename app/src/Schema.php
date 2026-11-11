@@ -33,10 +33,11 @@ namespace Stationwagon;
  *   v14 tracks.art (album art) and tracks.rights (copyright details)
  *   v15 presenter notes can be slides
  *   v16 tracks.rating (1 to 5 stars; NULL = not rated, counts as 3)
+ *   v17 ads: tracks.kind ('song' or 'ad': an ad is a track the Ads screen owns), ads (how often each plays) and ad_plays (a log of ads that aired)
  */
 final class Schema
 {
-    public const VERSION = 16;
+    public const VERSION = 17;
 
     /** Where the station's storage is, for upgrade steps that read files (the app's folder unless a test says otherwise). */
     private static ?string $root = null;
@@ -47,6 +48,7 @@ final class Schema
         'schedule', 'live_shows', 'live_pieces', 'timeline', 'presenter_notes', 'running_orders',
         'listeners', 'listener_hours', 'listener_tally', 'listener_visitors',
         'episodes', 'episode_takes', 'episode_chunks', 'remember_tokens', 'prep_presets', 'roles',
+        'ads', 'ad_plays',
     ];
 
     /** @return array<string,string> table name => CREATE TABLE statement */
@@ -125,12 +127,14 @@ final class Schema
                 `art` VARCHAR(40) NULL COMMENT 'album art file under storage/art',
                 `rights` TEXT NULL COMMENT 'JSON: copyright details (Rights)',
                 `rating` TINYINT UNSIGNED NULL COMMENT 'stars 1-5; NULL = not rated yet (counts as 3)',
+                `kind` ENUM('song','ad') NOT NULL DEFAULT 'song' COMMENT 'an ad belongs to the Ads screen, not the Music library',
                 `outro` MEDIUMTEXT NULL COMMENT 'JSON: loudness (LUFS) of each second of the last minute, from song prep',
                 `status` ENUM('processing','ready','error') NOT NULL DEFAULT 'ready',
                 `created_at` DATETIME NOT NULL,
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `{$p}tracks_station_sha1` (`station_id`, `sha1`),
                 KEY `{$p}tracks_station_status` (`station_id`, `status`),
+                KEY `{$p}tracks_station_kind` (`station_id`, `kind`, `status`),
                 {$fk('tracks_station', 'station_id', 'stations')}
             ) $opts",
 
@@ -262,6 +266,8 @@ final class Schema
             'remember_tokens' => self::rememberTokens($p, $opts),
             'roles' => self::roles($p, $opts),
             'prep_presets' => self::prepPresets($p, $opts),
+            'ads' => self::ads($p, $opts),
+            'ad_plays' => self::adPlays($p, $opts),
         ];
     }
 
@@ -456,6 +462,54 @@ final class Schema
             ) $opts";
     }
 
+    /**
+     * How often each ad plays (v17). An ad's audio is a `tracks` row with kind = 'ad' (so uploading, song
+     * prep, the stream and the timeline all work as they do for songs); this row is its plan: a target
+     * per day, the days and hours it may play, and the dates it runs. days is a bitmask (Monday = 1 ..
+     * Sunday = 64); window_start and window_end are 'HH:MM' on the station's clock (NULL = all day).
+     */
+    private static function ads(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}ads` (
+                `track_id` INT UNSIGNED NOT NULL,
+                `station_id` INT UNSIGNED NOT NULL,
+                `advertiser` VARCHAR(190) NULL,
+                `active` TINYINT(1) NOT NULL DEFAULT 1,
+                `daily_target` SMALLINT UNSIGNED NOT NULL DEFAULT 5 COMMENT 'plays per day; 0 = paused',
+                `start_date` DATE NULL,
+                `end_date` DATE NULL,
+                `days` TINYINT UNSIGNED NOT NULL DEFAULT 127,
+                `window_start` CHAR(5) NULL,
+                `window_end` CHAR(5) NULL,
+                `priority` TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '1 = plays first when two are equally due',
+                `notes` TEXT NULL,
+                `created_at` DATETIME NOT NULL,
+                PRIMARY KEY (`track_id`),
+                KEY `{$p}ads_station` (`station_id`),
+                CONSTRAINT `{$p}fk_ads_track` FOREIGN KEY (`track_id`) REFERENCES `{$p}tracks` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `{$p}fk_ads_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE
+            ) $opts";
+    }
+
+    /** The ads that aired (v17): one row per timeline entry once it has ended; kept after the ad is removed. */
+    private static function adPlays(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}ad_plays` (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `station_id` INT UNSIGNED NOT NULL,
+                `n` BIGINT UNSIGNED NOT NULL COMMENT 'the timeline entry',
+                `track_id` INT UNSIGNED NULL,
+                `title` VARCHAR(255) NOT NULL,
+                `advertiser` VARCHAR(190) NULL,
+                `started_at` DECIMAL(15,3) NOT NULL,
+                `played_s` DECIMAL(10,3) NOT NULL DEFAULT 0,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `{$p}ad_plays_n` (`station_id`, `n`),
+                KEY `{$p}ad_plays_track` (`track_id`, `started_at`),
+                CONSTRAINT `{$p}fk_adplays_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE
+            ) $opts";
+    }
+
     /** Song prep's mastering presets (the Song prep screen): the chain's settings as JSON. */
     private static function prepPresets(string $p, string $opts): string
     {
@@ -542,6 +596,15 @@ final class Schema
             16 => [
                 fn(Db $db) => $db->run("SHOW COLUMNS FROM `{$p}tracks` LIKE 'rating'")->fetch() ? null
                     : $db->pdo->exec("ALTER TABLE `{$p}tracks` ADD COLUMN `rating` TINYINT UNSIGNED NULL COMMENT 'stars 1-5; NULL = not rated yet (counts as 3)' AFTER `rights`"),
+            ],
+            // ads: a kind on every track, and the tables for how often each ad plays and the log of ads that aired
+            17 => [
+                fn(Db $db) => $db->run("SHOW COLUMNS FROM `{$p}tracks` LIKE 'kind'")->fetch() ? null
+                    : $db->pdo->exec("ALTER TABLE `{$p}tracks` ADD COLUMN `kind` ENUM('song','ad') NOT NULL DEFAULT 'song' COMMENT 'an ad belongs to the Ads screen, not the Music library' AFTER `rating`"),
+                fn(Db $db) => $db->run("SHOW INDEX FROM `{$p}tracks` WHERE Key_name = '{$p}tracks_station_kind'")->fetch() ? null
+                    : $db->pdo->exec("ALTER TABLE `{$p}tracks` ADD KEY `{$p}tracks_station_kind` (`station_id`, `kind`, `status`)"),
+                self::ads($p, $opts),
+                self::adPlays($p, $opts),
             ],
         ];
     }

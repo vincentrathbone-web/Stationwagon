@@ -59,6 +59,7 @@ final class App
                 'manage' => (new ManagePage())->overview(),
                 'manage/skip' => (new ManagePage())->skip(),
                 'manage/library' => (new ManagePage())->library(),
+                'manage/ads' => (new ManagePage())->ads(),
                 'manage/playlists' => (new ManagePage())->playlists(),
                 'manage/schedule' => (new ManagePage())->schedule(),
                 'manage/people' => (new ManagePage())->people(),
@@ -319,7 +320,7 @@ final class App
         try {
             $planner = Planner::forFirstStation();
             $db = Db::fromConfig();
-            $songs = (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('tracks') . " WHERE station_id = ? AND status = 'ready'", [$planner->station()['id']])->fetchColumn();
+            $songs = (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('tracks') . " WHERE station_id = ? AND status = 'ready' AND kind = 'song'", [$planner->station()['id']])->fetchColumn();
             return $planner->nowPlaying(microtime(true)) + ['songs' => $songs, 'tz' => $planner->station()['timezone']];
         } catch (\Throwable $ex) {
             error_log('Stationwagon on air: ' . $ex);

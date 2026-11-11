@@ -93,7 +93,7 @@ final class Playlists
         $pt = $this->db->table('playlist_tracks');
         $next = (int) $this->db->run("SELECT COALESCE(MAX(position), -1) + 1 FROM $pt WHERE playlist_id = ?", [$id])->fetchColumn();
         foreach (array_unique(array_map('intval', $trackIds)) as $trackId) {
-            $ok = $this->db->run("SELECT COUNT(*) FROM $tr WHERE id = ? AND station_id = ?", [$trackId, $this->station['id']])->fetchColumn();
+            $ok = $this->db->run("SELECT COUNT(*) FROM $tr WHERE id = ? AND station_id = ? AND kind = 'song'", [$trackId, $this->station['id']])->fetchColumn();
             $there = $this->db->run("SELECT COUNT(*) FROM $pt WHERE playlist_id = ? AND track_id = ?", [$id, $trackId])->fetchColumn();
             if ((int) $ok && !(int) $there) {
                 $this->db->insert('playlist_tracks', ['playlist_id' => $id, 'track_id' => $trackId, 'position' => $next++]);

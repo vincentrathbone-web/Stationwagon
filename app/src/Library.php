@@ -31,12 +31,14 @@ final class Library
      * @param ?float $lufs the levelled copy's loudness
      * @param bool $mastered song prep mastered the copy
      * @param ?array $level song prep's normalization: source_lufs, gain_db, target, settings (see levelColumns)
+     * @param string $kind 'song' (the Music library) or 'ad' (the Ads screen: the same file handling, but no album art or copyright details)
      * @return array{id:int,duplicate:bool,title:string}
      */
     public function import(string $path, ?string $title = null, ?string $artist = null, ?string $name = null,
                            ?string $sourceSha1 = null, ?float $lufs = null, ?array $outro = null, bool $mastered = false,
-                           ?string $preset = null, ?array $level = null): array
+                           ?string $preset = null, ?array $level = null, string $kind = 'song'): array
     {
+        $kind = $kind === 'ad' ? 'ad' : 'song';
         $name = basename($name ?? $path);
         if (!is_file($path)) {
             throw new RuntimeException("No file at $path");
@@ -44,8 +46,11 @@ final class Library
         $content = (string) sha1_file($path);
         $sha1 = $sourceSha1 !== null && preg_match('/^[0-9a-f]{40}$/', $sourceSha1) === 1 ? $sourceSha1 : $content;
         $t = $this->db->table('tracks');
-        $existing = $this->db->run("SELECT id, title FROM $t WHERE station_id = ? AND (sha1 = ? OR sha1 = ? OR file = ?) ORDER BY id LIMIT 1",
+        $existing = $this->db->run("SELECT id, title, kind FROM $t WHERE station_id = ? AND (sha1 = ? OR sha1 = ? OR file = ?) ORDER BY id LIMIT 1",
             [$this->station['id'], $sha1, $content, "$content.mp3"])->fetch();
+        if ($existing && $existing['kind'] !== $kind) {
+            throw new RuntimeException('“' . $existing['title'] . '” is already in the ' . ($existing['kind'] === 'ad' ? 'Ads' : 'Music library') . ' with this same recording.');
+        }
         if ($existing) {
             return ['id' => (int) $existing['id'], 'duplicate' => true, 'title' => $existing['title']];
         }
@@ -71,8 +76,8 @@ final class Library
             'file' => $file,
             'sha1' => $sha1,
             'title' => mb_substr($title, 0, 255),
-            'artist' => ($a = trim((string) ($artist ?? $tags['artist'] ?? ''))) !== '' ? mb_substr($a, 0, 255) : null,
-            'album' => isset($tags['album']) ? mb_substr($tags['album'], 0, 255) : null,
+            'artist' => $kind === 'song' && ($a = trim((string) ($artist ?? $tags['artist'] ?? ''))) !== '' ? mb_substr($a, 0, 255) : null,
+            'album' => $kind === 'song' && isset($tags['album']) ? mb_substr($tags['album'], 0, 255) : null,
             'duration_s' => $scan['duration'],
             'bitrate_kbps' => $scan['bitrate'],
             'sample_rate' => $scan['sample_rate'],
@@ -82,8 +87,10 @@ final class Library
             'mastered' => $mastered && $sourceSha1 !== null ? 1 : 0,
             'preset' => $mastered && $sourceSha1 !== null && $preset !== null && trim($preset) !== '' ? mb_substr(trim($preset), 0, 60) : null,
             'outro' => self::outro($outro),
-            'art' => isset($tags['art']) ? $this->storeArt($tags['art']['data']) : null,
-            'rights' => Rights::encode(Rights::normalize(self::rightsFromTags($tags))),
+            // an ad has no album art and no copyright details
+            'art' => $kind === 'song' && isset($tags['art']) ? $this->storeArt($tags['art']['data']) : null,
+            'rights' => $kind === 'song' ? Rights::encode(Rights::normalize(self::rightsFromTags($tags))) : null,
+            'kind' => $kind,
             'status' => 'ready',
             'created_at' => gmdate('Y-m-d H:i:s'),
         ]);
@@ -127,7 +134,7 @@ final class Library
     {
         $t = $this->db->table('tracks');
         $pt = $this->db->table('playlist_tracks');
-        $where = "t.station_id = ? AND t.status = 'ready'";
+        $where = "t.station_id = ? AND t.status = 'ready' AND t.kind = 'song'";
         $args = [$this->station['id']];
         if (trim($search) !== '') {
             $where .= ' AND (t.title LIKE ? OR t.artist LIKE ?)';
@@ -482,10 +489,10 @@ HT);
         return null;
     }
 
-    /** Space the station's songs take, in bytes. */
+    /** Space the station's songs take, in bytes (the ads are counted on the Ads screen). */
     public function bytes(): int
     {
-        return (int) $this->db->run('SELECT COALESCE(SUM(bytes), 0) FROM ' . $this->db->table('tracks') . ' WHERE station_id = ?', [$this->station['id']])->fetchColumn();
+        return (int) $this->db->run('SELECT COALESCE(SUM(bytes), 0) FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND kind = 'song'", [$this->station['id']])->fetchColumn();
     }
 
     public static function titleFromFilename(string $file): string

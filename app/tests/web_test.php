@@ -399,6 +399,7 @@ try {
         check('manager page greets the DJ', $r['status'] === 200 && preg_match('/Good (morning|afternoon|evening), Web</', $r['body']) === 1, (string) $r['status']);
         check('a DJ sees the overview but not the library', str_contains($r['body'], '>Overview</a>') && !str_contains($r['body'], '>Music library</a>'));
         check('a DJ can’t open the library', $a->go('manage/library')['status'] === 403);
+        check('or the Ads', $a->go('manage/ads')['status'] === 403);
         check('or Sound & safety', $a->go('manage/sound')['status'] === 403);
         check('or Listeners', $a->go('manage/listeners')['status'] === 403);
         check('or Song prep, or a song’s original', $a->go('manage/songprep')['status'] === 403 && $a->go('manage/songprep/original?id=1')['status'] === 403);
@@ -677,6 +678,70 @@ try {
         check('  an empty rating clears it', ($j['ok'] ?? false) && array_key_exists('rating', $j) && $j['rating'] === null && $stored() === null, json_encode($j));
         $r = (new Browser($base))->go('manage/library', ['csrf' => 'x', 'action' => 'rate', 'id' => $trackId, 'rating' => '5'], ['Accept: application/json']);
         check('  someone signed out can’t rate', $r['status'] !== 200 && $stored() === null, (string) $r['status']);
+
+        // round 63: the Ads screen, kept apart from the Music library
+        $r = $m->go('manage/ads');
+        check('a manager opens the Ads: the ad-break settings, the drop zone, the list and a link in the side rail', $r['status'] === 200 && str_contains($r['body'], 'id="adsTable"') && str_contains($r['body'], 'name="every"')
+            && str_contains($r['body'], 'name="per_break"') && str_contains($r['body'], 'name="gap_minutes"') && str_contains($r['body'], 'id="drop"') && str_contains($r['body'], '<b>Add ads</b>')
+            && str_contains($r['body'], 'action="' . $basePath . '/manage/ads"') && str_contains($r['body'], '>Ads</a>') && str_contains($r['body'], 'upload.js?v='), (string) $r['status']);
+        check('  with no copyright window and no album art in it', !str_contains($r['body'], 'id="rightsDlg"') && !str_contains($r['body'], 'library.js'));
+        $adUpload = function (string $file, string $name) use ($m, $csrf): array {
+            $r = $m->go('manage/ads', ['csrf' => $csrf, 'action' => 'upload', 'files[0]' => new CURLFile($file, 'audio/mpeg', $name)], ['Accept: application/json']);
+            return (json_decode($r['body'], true)['results'] ?? [[]])[0] + ['status' => $r['status']];
+        };
+        $adTitle = "Web Test Ad " . strrev($tag);
+        make_mp3("$tmpDir/ad.mp3", 20, ['title' => $adTitle, 'artist' => 'Some Artist', 'album' => 'Some Album'], random_int(0, 255));
+        $au = $adUpload("$tmpDir/ad.mp3", 'ad.mp3');
+        $adId = (int) ($au['id'] ?? 0);
+        $arow = $db->run('SELECT kind, art, artist, album, rights FROM ' . $db->table('tracks') . ' WHERE id = ?', [$adId])->fetch();
+        check('an MP3 uploads as an ad: its title from the file, kind “ad”, no artist, album, art or copyright', ($au['ok'] ?? false) && !$au['duplicate'] && $au['title'] === $adTitle
+            && $arow && $arow['kind'] === 'ad' && $arow['art'] === null && $arow['artist'] === null && $arow['album'] === null && $arow['rights'] === null, json_encode([$au, $arow]));
+        $plan = $db->run('SELECT * FROM ' . $db->table('ads') . ' WHERE track_id = ?', [$adId])->fetch();
+        check('  with a plan of 5 plays a day, every day, all day', $plan && (int) $plan['daily_target'] === 5 && (int) $plan['days'] === 127 && $plan['window_start'] === null && (int) $plan['active'] === 1);
+        $again = $adUpload("$tmpDir/ad.mp3", 'copy.mp3');
+        check('  the same file again is “already there”', ($again['ok'] ?? false) && $again['duplicate'] && (int) $again['id'] === $adId);
+        $r = $m->go('manage/ads');
+        check('  the Ads list shows it, with its plan in words', str_contains($r['body'], 'id="a' . $adId . '"') && str_contains($r['body'], htmlspecialchars($adTitle)) && str_contains($r['body'], 'Every day · all day') && str_contains($r['body'], '>Running<'));
+        $r = $m->go('manage/library?q=' . rawurlencode($adTitle));
+        check('  the Music library does not list it', !str_contains($r['body'], 'id="t' . $adId . '"') && str_contains($r['body'], 'No songs match'));
+        $asSong = $upload("$tmpDir/ad.mp3", 'ad-as-song.mp3');
+        check('  and the same recording as a song is refused, saying where it is', !($asSong['ok'] ?? true) && str_contains((string) ($asSong['error'] ?? ''), 'already in the Ads'), (string) ($asSong['error'] ?? ''));
+
+        $r = $m->go('manage/ads?edit=' . $adId);
+        check('Edit opens the plan: plays a day, dates, hours, days, active and notes', str_contains($r['body'], 'id="adEdit"') && str_contains($r['body'], 'name="daily_target"') && str_contains($r['body'], 'name="start_date"')
+            && str_contains($r['body'], 'name="window_start"') && substr_count($r['body'], 'name="days[]"') === 7 && str_contains($r['body'], 'name="active"') && str_contains($r['body'], 'name="notes"'));
+        $planned = ['csrf' => $csrf, 'action' => 'update', 'id' => $adId, 'title' => "$adTitle (edited)", 'advertiser' => 'Acme Ltd', 'daily_target' => '12', 'active' => '1',
+            'start_date' => '2027-01-01', 'end_date' => '2027-12-31', 'window_start' => '06:00', 'window_end' => '18:00', 'days[0]' => '1', 'days[1]' => '2', 'days[2]' => '3', 'days[3]' => '4', 'days[4]' => '5', 'notes' => 'Weekday mornings'];
+        $r = $m->go('manage/ads', $planned);
+        $p = $after($m, $r);
+        $plan = $db->run('SELECT * FROM ' . $db->table('ads') . ' WHERE track_id = ?', [$adId])->fetch();
+        check('a manager saves the plan', $flashed($p, 'Saved.') && $plan && (int) $plan['daily_target'] === 12 && (int) $plan['days'] === 31 && $plan['window_start'] === '06:00' && $plan['start_date'] === '2027-01-01'
+            && $plan['advertiser'] === 'Acme Ltd' && $plan['notes'] === 'Weekday mornings' && $db->run('SELECT title FROM ' . $db->table('tracks') . ' WHERE id = ?', [$adId])->fetchColumn() === "$adTitle (edited)");
+        check('  and the list says it: Mon–Fri, 06:00–18:00, the dates, the advertiser', str_contains($p['body'], 'Mon–Fri · 06:00–18:00') && str_contains($p['body'], '1 Jan 2027 – 31 Dec 2027') && str_contains($p['body'], 'Acme Ltd'));
+        $r = $m->go('manage/ads', ['daily_target' => '999'] + $planned);
+        $p = $after($m, $r);
+        check('  a wrong value is refused with the reason, back at the form, and nothing changes', $flashed($p, 'Plays per day: choose a whole number from 0 to 500') && str_contains($p['body'], 'id="adEdit"')
+            && (int) $db->run('SELECT daily_target FROM ' . $db->table('ads') . ' WHERE track_id = ?', [$adId])->fetchColumn() === 12);
+        $r = (new Browser($base))->go('manage/ads', ['csrf' => 'x', 'daily_target' => '7'] + $planned);
+        check('  someone signed out can’t', $r['status'] !== 200 && (int) $db->run('SELECT daily_target FROM ' . $db->table('ads') . ' WHERE track_id = ?', [$adId])->fetchColumn() === 12, (string) $r['status']);
+
+        $origAds = Stationwagon\Ads::settings($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch());
+        $putBack = fn() => $m->go('manage/ads', ['csrf' => $csrf, 'action' => 'settings', 'every' => (string) $origAds['every'], 'per_break' => (string) $origAds['per_break'], 'gap_minutes' => (string) $origAds['gap_minutes']] + ($origAds['enabled'] ? ['enabled' => '1'] : []));
+        $r = $m->go('manage/ads', ['csrf' => $csrf, 'action' => 'settings', 'enabled' => '1', 'every' => '5', 'per_break' => '2', 'gap_minutes' => '20']);
+        $p = $after($m, $r);
+        check('the ad-break settings are saved and shown', $flashed($p, 'Saved.') && str_contains($p['body'], 'id="adsEvery" min="1" max="20" step="1" value="5"') && str_contains($p['body'], 'After every 5 songs the AutoDJ plays up to 2'));
+        $r = $m->go('manage/ads', ['csrf' => $csrf, 'action' => 'settings', 'enabled' => '1', 'every' => '25', 'per_break' => '2', 'gap_minutes' => '20']);
+        check('  25 songs is refused, and 5 stays', $flashed($after($m, $r), 'choose 1 to 20 songs') && Stationwagon\Ads::settings($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch())['every'] === 5);
+        $putBack();
+        check('  (put back as they were)', Stationwagon\Ads::settings($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch()) === $origAds);
+
+        $r = $m->go('manage/ads?confirm=' . $adId);
+        check('Remove asks first', str_contains($r['body'], 'Remove this ad?') && str_contains($r['body'], 'Yes, remove'));
+        $r = $m->go('manage/ads', ['csrf' => $csrf, 'action' => 'delete', 'id' => $adId]);
+        check('  and Yes removes the ad and its plan', $flashed($after($m, $r), 'Ad removed.') && !$db->run('SELECT id FROM ' . $db->table('tracks') . ' WHERE id = ?', [$adId])->fetch()
+            && !$db->run('SELECT track_id FROM ' . $db->table('ads') . ' WHERE track_id = ?', [$adId])->fetch());
+        $r = $m->go('manage/ads', ['csrf' => $csrf, 'action' => 'delete', 'id' => $trackId]);
+        check('  a song can’t be removed from here', !$flashed($after($m, $r), 'Ad removed.') && $db->run('SELECT id FROM ' . $db->table('tracks') . ' WHERE id = ?', [$trackId])->fetch() !== false);
 
         // Playlists and schedule
         $r = $m->go('manage/playlists', ['csrf' => $csrf, 'name' => "Web test list $tag", 'mode' => 'in_order']);

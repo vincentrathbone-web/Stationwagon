@@ -94,7 +94,7 @@ final class Planner
         $tr = $this->db->table('tracks');
         $ls = $this->db->table('live_shows');
         $rows = $this->db->run(
-            "SELECT tl.*, tr.file, tr.title AS track_title, tr.artist, tr.album, tr.art, tr.rights, tr.duration_s,
+            "SELECT tl.*, tr.file, tr.kind AS track_kind, tr.title AS track_title, tr.artist, tr.album, tr.art, tr.rights, tr.duration_s,
                     ls.public_id, ls.`open`, ls.last_piece_at, ls.closed_reason, ls.title AS live_title
              FROM $tl tl LEFT JOIN $tr tr ON tr.id = tl.track_id LEFT JOIN $ls ls ON ls.id = tl.live_show_id
              WHERE tl.station_id = ? AND (tl.start_at + tl.play_s >= ? OR ls.`open` = 1
@@ -119,7 +119,11 @@ final class Planner
             'cut' => (bool) $r['cut'],
         ];
         $e['end'] = $e['start'] + $e['play'];
-        if ($r['type'] === 'song') {
+        if ($r['type'] === 'song' && ($r['track_kind'] ?? 'song') === 'ad') {
+            // an ad: listeners and the apps see only "Advertisement" (no art, no copyright line); the station sees its title
+            $e += ['track_id' => (int) $r['track_id'], 'file' => $r['file'], 'title' => Ads::PUBLIC_TITLE, 'ad' => true, 'ad_title' => $r['track_title'],
+                   'artist' => null, 'album' => null, 'art' => null, 'rights' => null, 'full' => (float) $r['full_s']];
+        } elseif ($r['type'] === 'song') {
             $e += ['track_id' => (int) $r['track_id'], 'file' => $r['file'], 'title' => $r['track_title'] ?? 'Removed song',
                    'artist' => $r['artist'], 'album' => $r['album'], 'art' => Library::artPath($r['art']),
                    'rights' => Rights::forListeners($r['rights']), 'full' => (float) $r['full_s']];
@@ -448,26 +452,58 @@ final class Planner
             $this->closeLive($last, 'timeout');
         }
 
+        $ads = new Ads($this->db, $this->station);
+        $ads->logAired($now);
+        $breaks = Ads::settings($this->station);
+        $state = $breaks['enabled'] ? $ads->state() : null;
         $recent = $this->recentTrackIds();
         $until = $now + $this->settings['plan_ahead_seconds'];
         while ($last === null || $last['end'] < $until) {
+            // an ad break: after every N songs (and the minutes since the last one), the ads that are due now
+            if ($state !== null && $last !== null && $state['since'] >= $breaks['every']
+                && ($state['last_end'] === null || $this->startAfter($last, $now) - $state['last_end'] >= $breaks['gap_minutes'] * 60)) {
+                $in = [];
+                for ($i = 0; $i < $breaks['per_break']; $i++) {
+                    $id = $ads->pick($this->startAfter($last, $now), $in);
+                    $track = $id !== null ? $ads->track($id) : null;
+                    if ($track === null) {
+                        break;
+                    }
+                    $last = $this->appendSong($last, $now, $recent, $track);
+                    $in[] = $id;
+                }
+                if ($in) {
+                    $state = ['since' => 0, 'last_end' => $last['end']];
+                    continue;
+                }
+            }
             $next = $this->appendSong($last, $now, $recent);
             if ($next === null) {
                 return; // empty library
             }
             $recent[] = $next['track_id'];
+            if ($state !== null) {
+                $state['since']++;
+            }
             $last = $next;
         }
     }
 
-    private function appendSong(?array $prev, float $now, array $recent): ?array
+    /** When the entry after $prev starts: straight after it (see appendSong), or now after a quiet spell. */
+    private function startAfter(?array $prev, float $now): float
+    {
+        return $prev && $prev['end'] >= $now - self::RESTART_AFTER_SECONDS ? round($prev['end'], 3) : floor($now * 1000) / 1000;
+    }
+
+    /** @param ?array $forced the track to place (an ad); null picks a song */
+    private function appendSong(?array $prev, float $now, array $recent, ?array $forced = null): ?array
     {
         // Carry on straight after the previous entry, even if it ended a few seconds ago (an ended
         // live show: listeners are ~20 s behind and must hear no gap). But after a quiet spell (no
         // listeners, no cron) start again at "now" rather than fill the gap with songs nobody
         // heard. Numbering carries on either way.
-        $start = $prev && $prev['end'] >= $now - self::RESTART_AFTER_SECONDS ? round($prev['end'], 3) : floor($now * 1000) / 1000;
-        $track = $this->pickTrack($start, $recent);
+        $start = $this->startAfter($prev, $now);
+        $track = $forced ?? $this->pickTrack($start, $recent);
         if ($track === null) {
             return null;
         }
@@ -577,7 +613,7 @@ final class Planner
     /** Songs that played most recently, oldest first (what's planned counts as played). */
     private function recentTrackIds(): array
     {
-        $ids = $this->db->run('SELECT track_id FROM ' . $this->db->table('timeline') . " WHERE station_id = ? AND type = 'song' AND track_id IS NOT NULL ORDER BY n DESC LIMIT 50", [$this->station['id']])->fetchAll(\PDO::FETCH_COLUMN);
+        $ids = $this->db->run('SELECT tl.track_id FROM ' . $this->db->table('timeline') . ' tl JOIN ' . $this->db->table('tracks') . " t ON t.id = tl.track_id AND t.kind = 'song' WHERE tl.station_id = ? AND tl.type = 'song' ORDER BY tl.n DESC LIMIT 50", [$this->station['id']])->fetchAll(\PDO::FETCH_COLUMN);
         return array_reverse(array_map('intval', $ids));
     }
 
@@ -590,7 +626,7 @@ final class Planner
     private function tracks(): array
     {
         if ($this->tracks === null) {
-            $rows = $this->db->run('SELECT id, duration_s, outro FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND status = 'ready'", [$this->station['id']])->fetchAll();
+            $rows = $this->db->run('SELECT id, duration_s, outro FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND status = 'ready' AND kind = 'song'", [$this->station['id']])->fetchAll();
             $this->tracks = [];
             foreach ($rows as $r) {
                 $this->tracks[(int) $r['id']] = ['id' => (int) $r['id'], 'duration' => (float) $r['duration_s'], 'outro' => $r['outro']];
