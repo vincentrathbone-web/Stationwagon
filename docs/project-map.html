@@ -59,6 +59,17 @@ code{font:500 13px var(--f-mono)}
 .stop .cnt{font:600 13px var(--f-ui);color:var(--muted);font-variant-numeric:tabular-nums}
 .stop .mini{height:5px;border-radius:5px;background:var(--line);overflow:hidden;margin-top:4px}
 .stop .mini b{display:block;height:100%;background:var(--accent)}
+.donestops{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}
+.donestops .stop{flex:0 0 auto}
+.stop.full{padding:8px 14px;gap:0;grid-template-columns:auto minmax(0,1fr);column-gap:8px;align-items:baseline;background:transparent;border:1px solid var(--line)}
+.stop.full .name{font-size:14px;font-weight:600;color:var(--muted)}
+.stop.full .name::after{content:" \2713";color:var(--accent);font-weight:700}
+.stop.full .when,.stop.full .cnt,.stop.full .mini{display:none}
+.stop .steps{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px}
+.stop .steps li{display:grid;grid-template-columns:10px minmax(0,1fr);gap:8px;align-items:start;font-size:13px;line-height:1.35;color:var(--ink)}
+.stop .steps li i{width:8px;height:8px;border-radius:50%;margin-top:5px;border:1.5px solid var(--faint)}
+.stop .steps li.done i{background:var(--accent);border-color:var(--accent)}
+.stop .steps li.next i{border-color:var(--warn)}
 .stop.now{background:var(--panel);border:2px solid var(--ink);box-shadow:0 0 0 4px var(--accent-soft)}
 .stop.now .when{color:var(--ink);font-weight:600}
 .stop.now .when::before{content:"Now · ";color:var(--onair);font-weight:700}
@@ -101,6 +112,9 @@ code{font:500 13px var(--f-mono)}
 .feats li.done .dot{border:0;width:14px;height:14px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;transform:translateY(2px)}
 .feats li.done .dot svg{width:10px;height:10px}
 .feats li.done .what{color:var(--muted)}
+.area.full{gap:6px;padding-block:12px}
+.area.full .ahead p,.area.full .abar{display:none}
+.area.full .ahead h2{font-size:15px;color:var(--muted)}
 details.built summary{cursor:pointer;font:600 13px var(--f-ui);color:var(--accent);list-style:none;padding:4px 6px;border-radius:8px}
 details.built summary::-webkit-details-marker{display:none}
 details.built summary::before{content:"▸";display:inline-block;margin-right:6px;transition:transform .15s}
@@ -173,263 +187,158 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "10 Nov",
-  commits: 67,
+  updated: "11 Nov",
+  commits: 89,
   version: "0.9.11-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
     { v: "v0.4", name: "Player & studio", when: "done 22 Oct" },
     { v: "v0.6", name: "Windows studio app", when: "done 22 Oct" },
     { v: "v0.7", name: "Android studio app", when: "done 29 Oct" },
-    { v: "v0.8", name: "WordWave pilot", when: "est. Dec", state: "now" },
-    { v: "v1.0", name: "Launch", when: "est. Jan–Feb" }
+    { v: "v0.8", name: "WordWave pilot", when: "live early Nov" },
+    { v: "v0.9", name: "Station tools", when: "done 11 Nov" },
+    { v: "v1.0", name: "Launch", when: "done early Nov" },
+    { v: "v1.0.1", name: "Post-launch", when: "now", state: "now" },
+    { v: "v1.1", name: "Jingles library", when: "planned" },
+    { v: "v1.2", name: "Downloads", when: "planned" },
+    { v: "v1.3", name: "Multi-stream stations", when: "planned" },
+    { v: "v1.4", name: "Mini-player per stream", when: "planned" },
+    { v: "v1.5", name: "Stream selector in the bar", when: "planned" },
+    { v: "v1.6", name: "Compact libraries", when: "planned" },
+    { v: "v1.7", name: "Ads and jingles like the music library", when: "planned" },
+    { v: "v1.8", name: "Gansbaai Community Radio", when: "planned" },
+    { v: "v1.9", name: "Gansbaai branding", when: "planned" },
+    { v: "v1.10", name: "Gansbaai Android app", when: "planned" },
+    { v: "v1.11", name: "Many stations in the studio apps", when: "planned" },
+    { v: "v1.12", name: "Stream quality for listeners", when: "planned" }
   ],
   areas: [
-    { name: "Listener player", blurb: "The station page: two decks, live shows 20 s behind, notes from the presenter.", features: [
-      { text: "Two-deck player with real crossfades", v: "v0.4", state: "done" },
-      { text: "Live shows from the stream, in step at 20 s", v: "v0.4", state: "done" },
-      { text: "Plays on with an Android phone locked", v: "v0.4", state: "done" },
-      { text: "Notes from the presenter beside the player", v: "v0.4", state: "done" },
-      { text: "Output strip (what goes out, per source)", v: "v0.4", state: "done" },
-      { text: "Recent, now and next; today's schedule", v: "v0.4", state: "done" },
-      { text: "Stream-only mode", v: "v0.4", state: "done" },
-      { text: "Now-playing API", note: "JSON for websites and apps, at the listener delay", v: "v0.4", state: "done" },
-      { text: "Schedule, podcast and verse of the day as JSON", note: "for apps and other sites; a podcast episode comes with the presenter's notes placed at the second of the audio they belong to", v: "v0.8", state: "done" },
-      { text: "Embeddable player with Copy code", note: "dark or light; plays at the same 20 s delay", v: "v0.4", state: "done" },
-      { text: "Now playing card for other websites", note: "album art, the song and a progress line, no sound; a click opens your Listen page (on wordwave.co.za's home page)", v: "v0.8", state: "done" },
-      { text: "The bar under the staff's screens", note: "what's on air with a scrolling strip; opens muted, a speaker and a volume slider; plays on with no gap between screens; quiet by itself in the studio and Song prep; in the browser and both apps", v: "v0.8", state: "done" },
-      { text: "Listeners now, on the health line and in the studio", note: "a ping a minute, no cookies", v: "v0.4", state: "done" },
-      { text: "Privacy page, linked under the player and in the embed", v: "v0.4", state: "done" },
-      { text: "Spectrum in the display", note: "28 bars of what goes out, peak marks", v: "v0.4", state: "done" },
-      { text: "Diagnostics panel under the player", note: "screen, player, sound, song and network, the likely cause of dropouts; Send report or Copy", v: "v0.8", state: "done" },
-      { text: "Podcast page of past shows", v: "v0.4", state: "done" },
-      { text: "Skins: Green or Hi-fi, picked per device", note: "every screen follows; the embed has its own Look button", v: "v0.4", state: "done" }
+    { name: "Listener player", blurb: "The station page, the embed and the data for other sites and apps.", features: [
+      { text: "Two-deck player with crossfades, live shows in step", v: "v0.4", state: "done" },
+      { text: "Notes and slides from the presenter", v: "v0.8", state: "done" },
+      { text: "Output strip and spectrum", v: "v0.4", state: "done" },
+      { text: "Now playing, schedule, podcast and verse as JSON", v: "v0.8", state: "done" },
+      { text: "Embeddable player and Now playing card", v: "v0.8", state: "done" },
+      { text: "The bar under the staff's screens", v: "v0.8", state: "done" },
+      { text: "Listeners now, privacy page, Diagnostics panel", v: "v0.8", state: "done" },
+      { text: "Podcast page and skins", v: "v0.4", state: "done" }
     ]},
     { name: "Live studio", blurb: "Go live from a browser: decks, mixer, mic chain, running order, notes.", features: [
-      { text: "Go live in step with the AutoDJ", v: "v0.4", state: "done" },
-      { text: "Two decks, mixer and crossfader", v: "v0.4", state: "done" },
+      { text: "Go live in step with the AutoDJ, decks and mixer", v: "v0.4", state: "done" },
       { text: "Mic chain with presets and ducking", v: "v0.4", state: "done" },
-      { text: "Running order for the show", v: "v0.4", state: "done" },
-      { text: "Notes drawer for listeners", v: "v0.4", state: "done" },
-      { text: "Slides: pictures with a caption as a note", note: "up to 30 pictures, shrunk in the studio; listeners page through them, in the player and in the app", v: "v0.8", state: "done" },
-      { text: "Output strip above the decks, resizable", v: "v0.4", state: "done" },
-      { text: "Rejoin your show after a reload or a drop", note: "carries on as a new show with its notes", v: "v0.4", state: "done" },
-      { text: "Dead-air warning after 10 s of silence", v: "v0.4", state: "done" },
-      { text: "Record the show for the podcast", note: "two tracks on the device, music and mic, uploaded after End show", v: "v0.4", state: "done" },
-      { text: "Do Not Disturb reminder on phones and tablets", v: "v0.4", state: "done" },
-      { text: "Headphone (cue) output picker", note: "everything the DJ hears, on the chosen output", v: "v0.4", state: "done" },
-      { text: "Edit a posted note", note: "listeners get it again as new", v: "v0.4", state: "done" },
-      { text: "Talk items mark themselves \"now\"", note: "when the mic opens, or with Now", v: "v0.4", state: "done" }
+      { text: "Running order, notes drawer and slides", v: "v0.8", state: "done" },
+      { text: "Rejoin, dead-air warning, headphone output", v: "v0.4", state: "done" },
+      { text: "Record the show for the podcast", v: "v0.4", state: "done" }
     ]},
-    { name: "Station manager", blurb: "Library, playlists, schedule, people, sound and safety, for the station's staff.", features: [
-      { text: "Installer, sign-in and roles", v: "v0.1", state: "done" },
-      { text: "People: add, block, passwords and roles", note: "blocking signs them out and ends their live show; also in WordPress → Stationwagon → People", v: "v0.8", state: "done" },
-      { text: "Look up details with MusicBrainz", note: "a button in the song details window suggests the album, year, track, label, ISRC, writers, publishers and ISWC from MusicBrainz (free, open); you tick what to keep; a cover only for a song with none; researched in docs/metadata-lookup-research.md; live", v: "v0.9", state: "done" },
-      { text: "Crossfade for ads; loudness settings on Sound & safety", note: "ads blend over their own shorter crossfade (2 s); mastering, levelling and the loudness target are global settings for songs and ads; the file chooser is a normal button", v: "v0.9", state: "done" },
-      { text: "Ads: uploads, a plan per ad, ad breaks in the AutoDJ", note: "a new Ads screen; plays a day, days, hours and dates per ad; a break after every N songs with the ad furthest behind its pace; listeners see only Advertisement; schema 17; live", v: "v0.9", state: "done" },
-      { text: "Wide manager, library table and star ratings", note: "the manager uses the whole window; sortable columns you can choose, compact rows, a card per song on a phone; 1 to 5 stars per song (saved, not used by the AutoDJ yet; the setting says coming soon); several songs rated at once; schema 16", v: "v0.9", state: "done" },
-      { text: "Library: album art, copyright, saving in place", note: "art from the MP3 or added in the library; © badge and a window for owner, licence, publisher, writers and notes with links; the player shows the line; no page jumping", v: "v0.8", state: "done" },
-      { text: "Roles set centrally, with your own roles", note: "each role's ticks apply to all its people; Go live any time vs only in their own block", v: "v0.8", state: "done" },
-      { text: "Staff sign-in in the website's header", note: "the station's own accounts, not WordPress users; shows the name with Studio, Manage and Sign out", v: "v0.8", state: "done" },
-      { text: "Music library with song prep on upload", v: "v0.1", state: "done" },
-      { text: "Playlists, schedule and DJs", v: "v0.1", state: "done" },
-      { text: "Skip, and the overview", v: "v0.1", state: "done" },
-      { text: "Sound & safety: crossfade, fades, live timeout, repeats", v: "v0.1", state: "done" },
-      { text: "Sound & safety: fade shape, music under the voice, silence, rejoin, quality, delay", v: "v0.4", state: "done" },
-      { text: "Listener stats", note: "unique listeners; device, browser, app; country and city", v: "v0.4", state: "done" },
-      { text: "Podcast episodes: edit, hide, feed", note: "two-track editor: zoom, cut clips, mix down, publish", v: "v0.4", state: "done" },
-      { text: "Mastering in song prep, as your Audition chain", note: "Broadcast1 + Master1, matched by measuring; off by default since 30 Oct (it squeezed real music), levelling stays on", v: "v0.8", state: "done" },
-      { text: "Song prep screen: mastering presets tried on a whole song", note: "EQ curve, simple and full dynamics, original/processed A/B, meters; presets, one for new uploads; Apply to a song from its kept original", v: "v0.8", state: "done" },
-      { text: "Best-quality song prep, with quality settings", note: "real LAME 3.100 at full level, 160 kbps; 44.1 kHz by default (48 kHz or each song's own as choices); precision, dither and an encoding-quality slider; the original kept when nothing changes; the uploader told about a forced conversion; measured against lossless music: 4–6 dB closer to the original than before", v: "v0.8", state: "done" },
-      { text: "Upload one song at a time, with a details window first", note: "like YouTube's: album art (when the MP3 has none), title, artist and licensing: songwriters, publisher, licence number or link, licence terms; a window for each song in turn, filled from its tags; live", v: "v0.8", state: "done" },
-      { text: "Loudness target with a slider, and re-levelling the library", note: "−23 to −8 LUFS, the usual levels marked; each song's normalization kept with it and in its MP3 tag", v: "v0.8", state: "done" }
+    { name: "Station manager", blurb: "Library, playlists, schedule, people, sound and ads, for the station's staff.", features: [
+      { text: "Installer, sign-in, People and roles", v: "v0.8", state: "done" },
+      { text: "Music library, playlists, schedule, skip", v: "v0.1", state: "done" },
+      { text: "Song prep: best-quality LAME, mastering, loudness, any format", v: "v0.8", state: "done" },
+      { text: "Upload window with licensing; copyright and album art", v: "v0.8", state: "done" },
+      { text: "Sound & safety settings", v: "v0.4", state: "done" },
+      { text: "Listener stats and podcast episodes", v: "v0.4", state: "done" },
+      { text: "Ads and ad breaks in the AutoDJ", v: "v0.9", state: "done" },
+      { text: "Wide manager, library table and star ratings", v: "v0.9", state: "done" },
+      { text: "Look up details with MusicBrainz", v: "v0.9", state: "done" },
+      { text: "About screen with Check for updates", v: "v0.9", state: "done" },
+      { text: "AutoDJ uses the star ratings", note: "ratings are saved; the setting says coming soon", v: "v1.0.1", state: "later" }
     ]},
-    { name: "Streaming & hosting", blurb: "Runs on shared cPanel hosting with Cloudflare in front: PHP and Apache only.", features: [
-      { text: "Timeline planned on request, with a cron", v: "v0.1", state: "done" },
-      { text: "Setup as a WordPress plugin, with a wizard", note: "a folder or a subdomain; this site's database or a new one; station updates with the plugin", v: "v0.8", state: "done" },
-      { text: "One-file setup.php for sites without WordPress", note: "downloads the station from the public releases, hands over to its installer", v: "v0.8", state: "done" },
-      { text: "Background jobs without cron", note: "they run during visits; a cron job is optional", v: "v0.8", state: "done" },
-      { text: "HLS stream as byte ranges of the MP3s", v: "v0.1", state: "done" },
-      { text: "Cloudflare caching (97 % from cache at 100 listeners)", note: "now playing too", v: "v0.1", state: "done" },
-      { text: "Database that upgrades itself", v: "v0.4", state: "done" },
-      { text: "Test server with a deploy script", v: "v0.1", state: "done" },
-      { text: "Podcast RSS feed (Apple, Spotify)", v: "v0.4", state: "done" },
-      { text: "Relay to an outside Icecast for classic radio apps", note: "optional, off by default", v: "v1.0", state: "later" }
+    { name: "Libraries & downloads", blurb: "Jingles, downloads and a matching look for every library.", features: [
+      { text: "Jingles: upload and prepare tiny station-name clips like songs", v: "v1.1", state: "later" },
+      { text: "Jingles: AutoDJ plays one between songs on its own rule", v: "v1.1", state: "later" },
+      { text: "Jingles: listeners see the station name, stats leave them out", v: "v1.1", state: "later" },
+      { text: "Jingles: tests, deploy", v: "v1.1", state: "later" },
+      { text: "Download the processed version of a song, ad or jingle", v: "v1.2", state: "later" },
+      { text: "Choose the processed or the original file", v: "v1.2", state: "later" },
+      { text: "A permission for who may download", v: "v1.2", state: "later" },
+      { text: "Smaller font and tighter rows in every library", v: "v1.6", state: "later" },
+      { text: "Badges column as symbols only, with a key", v: "v1.6", state: "later" },
+      { text: "Ads and jingles use the music library's exact layout", v: "v1.7", state: "later" },
+      { text: "Same columns, sorting, filters, choosing several, phone cards", v: "v1.7", state: "later" }
     ]},
-    { name: "Windows studio app", blurb: "The same studio in a desktop window, for DJs who use BUTT or Mixxx.", features: [
-      { text: "Studio in WebView2 (Tauri)", note: "the station's own studio page, always the server's version", v: "v0.6", state: "done" },
-      { text: "Local Icecast bridge for BUTT and Mixxx", note: "BUTT connecting goes live by itself; tested with the real BUTT", v: "v0.6", state: "done" },
-      { text: "Signed installer with auto-update", note: "v0.6.2 released on GitHub (new key, 10 Nov); updates come through the Stationwagon Updates plugin", v: "v0.6", state: "done" },
-      { text: "An update window that asks first", note: "0.6.3: \"Version X is now available\" with what it brings, Remind me later or Update now; in the studio's look", v: "v0.6", state: "done" },
-      { text: "Finds the station from the website's address", note: "0.6.4: \"✓ Found\" before Open; a wrong saved address shows the settings, not a dead page", v: "v0.6", state: "done" }
+    { name: "Multi-stream", blurb: "Several radio streams on one installation, each with its own AutoDJ.", features: [
+      { text: "Streams: a stream table, the current station becomes stream 1", v: "v1.3", state: "later" },
+      { text: "One AutoDJ engine and one timeline per stream", v: "v1.3", state: "later" },
+      { text: "Per stream: play this playlist, run the AutoDJ or take a DJ's broadcast", v: "v1.3", state: "later" },
+      { text: "Playlists and the schedule can be used by any stream", v: "v1.3", state: "later" },
+      { text: "Streams screen in the manager", v: "v1.3", state: "later" },
+      { text: "Roles: a DJ is allocated to chosen streams only", v: "v1.3", state: "later" },
+      { text: "Per stream: the studio, stats, now playing and podcast", v: "v1.3", state: "later" },
+      { text: "Tests, deploy, upgrade of the live station", v: "v1.3", state: "later" },
+      { text: "Embed and Now playing card take a stream parameter", v: "v1.4", state: "later" },
+      { text: "Copy code and the JSON APIs follow the stream", v: "v1.4", state: "later" },
+      { text: "Stream selector in the bottom bar", v: "v1.5", state: "later" },
+      { text: "Studio goes live on the chosen stream, only those you may use", v: "v1.5", state: "later" },
+      { text: "Listener picks a stream quality to save data", v: "v1.12", state: "later" },
+      { text: "Lower-bitrate versions made on the server or at upload", note: "to decide: shared hosting cannot transcode", v: "v1.12", state: "later" },
+      { text: "The choice is kept per device, in the embed and the apps", v: "v1.12", state: "later" }
     ]},
-    { name: "Android app", blurb: "The studio as an installed Android app; iPhones and iPads keep the browser studio.", features: [
-      { text: "Studio as an Android app (Capacitor, Android 8+)", note: "the station's own studio page, always the server's version", v: "v0.7", state: "done" },
-      { text: "Do Not Disturb on air, with a warning first", note: "alarms only; on at Go live, back at End show; yours is left alone", v: "v0.7", state: "done" },
-      { text: "The show goes on with the screen off", note: "an On air notification keeps the mic, sound and Wi-Fi awake", v: "v0.7", state: "done" },
-      { text: "In-app updates from GitHub", note: "through the Stationwagon Updates plugin; checked when the app opens", v: "v0.7", state: "done" },
-      { text: "An update window that asks first", note: "0.7.3: the same window as on Windows, sized for a phone", v: "v0.7", state: "done" },
-      { text: "Finds the station from the website's address", note: "0.7.4: \"✓ Found\" before Open", v: "v0.7", state: "done" }
+    { name: "Gansbaai Community Radio", blurb: "A second station: its own site, installation, stream, branding and app.", features: [
+      { text: "A site and a hosting account for the station", v: "v1.8", state: "later" },
+      { text: "Its own Stationwagon installation and stream", v: "v1.8", state: "later" },
+      { text: "Line-up, privacy details, staff and first music", v: "v1.8", state: "later" },
+      { text: "Go live: tests, backups, the website's player", v: "v1.8", state: "later" },
+      { text: "Branding package: logo, icons, favicon, colours", v: "v1.9", state: "later" },
+      { text: "Applied to the station and the site", v: "v1.9", state: "later" },
+      { text: "Listener app from the config file", v: "v1.10", state: "later" },
+      { text: "Test on the phone, release", v: "v1.10", state: "later" }
     ]},
-    { name: "Listener app (Android)", blurb: "A listener-only app per station, made from one config file; lives in the station's own repo (WordWave's android-app/). Chat is planned, not built.", features: [
-      { text: "Live stream with lock-screen and notification controls", note: "Media3; keeps playing with the screen off; tested on the phone", v: "v0.8", state: "done" },
-      { text: "Schedule with show reminders", note: "a native reminder per show, repeats weekly, survives a restart, tapping it opens the show; Listen live button", v: "v0.8", state: "done" },
-      { text: "Podcasts with the presenter's notes and slides", note: "they appear below the player as the audio reaches them", v: "v0.8", state: "done" },
-      { text: "Prayer and support requests", note: "the website's contact form", v: "v0.8", state: "done" },
-      { text: "Verse of the day, English and Afrikaans", note: "on the home screen and an optional daily notification; Afrikaans is the reference and a link", v: "v0.8", state: "done" },
-      { text: "A new station's app from one config file", note: "name, address, colours, logo, texts; README explains it", v: "v0.8", state: "done" },
-      { text: "Chat for listeners", note: "planned only: a placeholder screen behind a switch, nothing built", v: "v1.0", state: "later" }
+    { name: "Streaming & hosting", blurb: "Shared cPanel or HestiaCP hosting with Cloudflare in front.", features: [
+      { text: "Timeline planned on request; HLS stream; Cloudflare caching", v: "v0.1", state: "done" },
+      { text: "Self-upgrading database; podcast RSS feed", v: "v0.4", state: "done" },
+      { text: "Setup as a WordPress plugin or one-file setup.php", v: "v0.8", state: "done" },
+      { text: "Background jobs without cron", v: "v0.8", state: "done" },
+      { text: "Relay to an outside Icecast for classic radio apps", note: "optional, off by default", v: "v1.0.1", state: "later" }
     ]},
-    { name: "Pilot & launch", blurb: "WordWave already runs live music on Stationwagon; no week beside AzuraCast needed.", features: [
-      { text: "The pilot station, installed for real", note: "live at wordwave.co.za/radio; the website plays it through the embed", v: "v0.8", state: "progress" },
-      { text: "Copy WordWave's library from AzuraCast", note: "no longer needed (10 Nov): the live station has its own music", v: "v0.8", state: "done" },
-      { text: "Run beside AzuraCast for a week", note: "no longer needed (10 Nov): wordwave.co.za has played live music on Stationwagon for a week", v: "v0.8", state: "done" },
-      { text: "Guides for station managers and DJs", v: "v1.0", state: "later" },
-      { text: "Release package and upgrade path", note: "the releases repo and setup.php are done; upgrades without WordPress still by hand", v: "v1.0", state: "later" },
-      { text: "Switch WordWave over", v: "v1.0", state: "later" }
+    { name: "Windows studio app", blurb: "The studio in a desktop window, for DJs who use BUTT or Mixxx.", features: [
+      { text: "Studio in WebView2 with the BUTT / Mixxx bridge", v: "v0.6", state: "done" },
+      { text: "Signed installer with updates that ask first", v: "v0.6", state: "done" },
+      { text: "Finds the station from the website's address", v: "v0.6", state: "done" },
+      { text: "About screen with Check for updates (0.6.8)", v: "v0.9", state: "done" },
+      { text: "Windows: several stations and streams in one app", v: "v1.11", state: "later" },
+      { text: "Windows: station and stream picker, a sign-in for each", v: "v1.11", state: "later" },
+      { text: "Windows: tests and release", v: "v1.11", state: "later" }
+    ]},
+    { name: "Android app", blurb: "The studio as an Android app; iPhones keep the browser studio.", features: [
+      { text: "Studio app with Do Not Disturb on air", v: "v0.7", state: "done" },
+      { text: "Shows go on with the screen off", v: "v0.7", state: "done" },
+      { text: "Updates that ask first; finds the station", v: "v0.7", state: "done" },
+      { text: "Android: several stations and streams in one app", v: "v1.11", state: "later" },
+      { text: "Android: station and stream picker, a sign-in for each", v: "v1.11", state: "later" },
+      { text: "Android: tests on the phone and release", v: "v1.11", state: "later" }
+    ]},
+    { name: "Listener app (Android)", blurb: "A listener-only app per station, made from one config file (in WordWave's repo).", features: [
+      { text: "Live stream, schedule with reminders, podcasts with notes", v: "v0.8", state: "done" },
+      { text: "Prayer requests and verse of the day", v: "v0.8", state: "done" },
+      { text: "A new station's app from one config file", v: "v0.8", state: "done" },
+      { text: "Chat for listeners", note: "planned only", v: "v1.0.1", state: "later" }
+    ]},
+    { name: "Pilot & launch", blurb: "WordWave already runs live music on Stationwagon.", features: [
+      { text: "The pilot station, live at wordwave.co.za/radio", v: "v0.8", state: "done" },
+      { text: "Launch: WordWave on air on Stationwagon, playing non-stop", v: "v1.0", state: "done" },
+      { text: "Switch WordWave over", v: "v1.0", state: "done" },
+      { text: "Back up the new app keys", v: "v1.0.1", state: "next" },
+      { text: "Enter the real line-up and privacy details", v: "v1.0.1", state: "next" },
+      { text: "Guides for station managers and DJs", v: "v1.0.1", state: "later" },
+      { text: "Release package and upgrade path", note: "upgrades without WordPress still by hand", v: "v1.0.1", state: "later" }
     ]}
   ],
   next: {
-    title: "Launch steps (v1.0)",
-    text: "The upload window, uploads in every format and both studio apps are out, and WordWave already plays live music on Stationwagon, so the week beside AzuraCast is no longer needed. Next: back up the new signing keys, enter the real line-up and privacy details, then the launch steps.",
-    order: ["Back up the new app keys", "Enter the real line-up and privacy details", "Guides for station managers and DJs", "Online song lookups (to investigate)"]
+    title: "Post-launch (v1.0.1)",
+    text: "WordWave launched on Stationwagon in early November and has played non-stop since. Next: back up the app keys, enter the real line-up and privacy details, then the guides, the upgrade path and the other post-launch items. Twelve new phases (v1.1 to v1.12) follow: jingles, downloads, several streams, a second station and the apps for it.",
+    order: ["Back up the new app keys", "Enter the real line-up and privacy details", "Guides for station managers and DJs", "v1.1 Jingles library"]
   },
   call: null,
-  feedTitle: "Changed 20 Oct – 10 Nov",
+  feedTitle: "Recent changes",
   feed: [
-    { what: "Look up details", to: "the song details window can look a song up on MusicBrainz and suggest its album, year, label, ISRC, writers, publishers and ISWC, which you tick and save; the research on the other databases (PROs, MLC, SoundExchange, Spotify and the rest) is kept in docs; tested on Laragon with saved answers, live on wordwave.co.za", at: "11 Nov" },
-    { what: "Ads crossfade and loudness settings", to: "Sound & safety has a Crossfade for ads (2 s by default) and a Loudness group (pre-processing, normalization and the target, with the usual levels marked) for all songs and ads; the Music library and Ads upload areas just say what is set; the file chooser looks like the other buttons; tested on Laragon and live on wordwave.co.za", at: "11 Nov" },
-    { what: "Ads", to: "a new Ads screen and ad breaks in the AutoDJ: upload ads like songs, say how many times a day each plays and on which days, hours and dates; the AutoDJ plays a break after every N songs; listeners see only Advertisement; tested on Laragon and live on wordwave.co.za", at: "11 Nov" },
-    { what: "Wide manager and star ratings", to: "the manager uses the whole window width; the Music library table has Album, Added, Loudness and Badges columns, sorting, a Columns menu, compact rows and star ratings (1 to 5) in the right-hand column; ratings are saved but the AutoDJ does not use them yet; tested on Laragon, not deployed", at: "11 Nov" },
-    { what: "The bar and the Now playing card", to: "a bar along the bottom of the studio, the manager and your account page shows what's on air (art, scrolling strip, progress), opens muted with a speaker and a volume slider, and plays on with no gap between screens, in the browser and in both apps; a small Now playing card for wordwave.co.za's home page. Live on wordwave.co.za; the apps released as Windows 0.6.5 and Android 0.7.5", at: "11 Nov" },
-    { what: "The embed crossfades", to: "the player on wordwave.co.za/listen/ (the embed) now mixes the songs on two decks like the station page: crossfades instead of hard cuts, the strip blue and pink; live on wordwave.co.za", at: "10 Nov" },
-    { what: "The apps find the station", to: "type the website's address (wordwave.co.za) and the Windows or Android app finds the station at /radio/, shows \"✓ Found: Radio WordWave\" and opens only then; a wrong address says why. Windows 0.6.4 and Android 0.7.4 released", at: "10 Nov" },
-    { what: "Updates ask first now", to: "both studio apps show \"Version X is now available\" with the release's notes (New features, Improvements, Fixes, Warning), Remind me later or Update now, in the look picked in the studio; modelled on the KDOHC app. Windows 0.6.3 and Android 0.7.3 released", at: "10 Nov" },
-    { what: "No pilot week needed", to: "WordWave has already played live music on Stationwagon for a week, so running beside AzuraCast and copying its library are dropped; old server backups from 1–9 Nov deleted", at: "10 Nov", kind: "info" },
-    { what: "Studio apps released", to: "Windows 0.6.2 and Android 0.7.2 with the new logo; signed with new keys (the old ones were lost with the PC rebuild), so uninstall an older copy once; then updates come by themselves again", at: "10 Nov" },
-    { what: "WordWave listener app checked live", to: "on your phone against wordwave.co.za: now playing, the verse, the stream starts in 3 s; its privacy paragraph is on the live site", at: "10 Nov" },
-    { what: "A details window before each upload", to: "for each song in turn: art, title, artist, album, the recording (label, ISRC), the song (songwriters, publisher, ISWC) and the licence (type, number, link, valid until, terms); filled from the file's own tags; a warning when songwriters, licence or publisher are missing; listeners see it all. Live on wordwave.co.za", at: "10 Nov" },
-    { what: "Stationwagon Updates plugin back", to: "installed again on controll.co.za (now on the new server); it needs a new GitHub token from you before the apps can update", at: "10 Nov", kind: "info" },
-    { what: "Tested in Safari's engine; top bar fixed on phones", to: "Uploads in every format work in WebKit (the engine inside Safari); on a phone the top bar no longer pushes Look and Sign in off the screen", at: "10 Nov" },
-    { what: "Upload songs in any common format", to: "WAV, FLAC, M4A, AAC, Ogg, Opus and WMA are turned into MP3s in your browser, keeping their title, artist, songwriter and cover; a 320 kbps MP3 is kept as the original", at: "9 Nov" },
-    { what: "Tidier caching on the live site", to: "songs are now kept a year by browsers and Cloudflare, and private pages say \"never keep\" once instead of twice", at: "9 Nov" },
-    { what: "Better song prep is live", to: "wordwave.co.za now has the new song prep and quality settings; older songs show under Re-level in the Music library. The old cPanel servers are cancelled", at: "9 Nov" },
-    { what: "Song prep on your phone", to: "the player, the studio and songs at 44.1 and 48 kHz one after another all pass on your phone in Brave; the stream-only player no longer counts its own start-up seeks as dropouts", at: "9 Nov" },
-    { what: "Your choices on song prep", to: "44.1 kHz the default rate (in Firefox the website player went quiet ~5 s at a 44.1/48 kHz change); older songs offered for re-levelling; untouched uploads stay untouched; tested on Laragon and now in Firefox too; the server waits", at: "9 Nov" },
-    { what: "Best-quality song prep", to: "real LAME 3.100 at full level, 160 kbps by default, each song's own rate or 44.1/48 kHz, precision, dither and a quality slider in Sound & safety; an untouched upload is kept as it came; uploaders told about a forced rate change", at: "8 Nov" },
-    { what: "Measured on lossless music", to: "EBU test recordings and a 24-bit techno track: a prepared song is now 4–6 dB closer to the original than with lamejs, within 0.3 dB of a single encode; songs at 44.1 and 48 kHz play one after another with no gap", at: "8 Nov", kind: "info" },
-    { what: "Quality choices made", to: "real LAME 3.100 in the browser; 160 kbps as the default setting; other sample rates to 44.1 or 48 kHz, whichever is nearest; tests on free lossless music", at: "8 Nov" },
-    { what: "Laragon rebuilt", to: "it had gone from this PC: Laragon 8.8.0 with the station, the test WordPress and test databases made again; every test passes there", at: "8 Nov", kind: "info" },
-    { what: "Sound quality reviewed", to: "one encode from the kept original today; lamejs fixed at quality 3 with its bit reservoir off; your goals written down as the next step", at: "8 Nov", kind: "info" },
-    { what: "Listener app for Android", to: "built in WordWave's android-app/: live stream, schedule with native reminders, podcasts with the presenter's notes and slideshows, prayer requests, verse of the day, English and Afrikaans; one config file makes another station's app; tested on the phone, not released; chat is planned only", at: "3 Nov" },
-    { what: "Slides in the studio", to: "a new note kind: up to 30 pictures with a caption; listeners page through them in the player and the app", at: "3 Nov" },
-    { what: "Schedule, podcast and verse JSON", to: "api/schedule.php, api/podcast.php (an episode with its notes placed in the audio) and api/verse.php; database 15; the live station needs a deploy before the app can use them", at: "3 Nov", kind: "info" },
-    { what: "Brand package", to: "a logo (a station wagon with speaker-cone wheels and a signal from its roof), the lowercase wordmark and Station green: 16 editable logo files, 21 PNGs, a favicon, an overview page and a README in brand/; the station's pages now show it in the header and as the tab icon and so do the setup page, the embed and the WordPress plugin", at: "3 Nov" },
-    { what: "App icons", to: "the Windows and Android studio apps have the new Stationwagon icon (the wagon with speaker wheels on the green tile) and the logo on their start pages; test builds 0.6.2 and 0.7.2 are tested, not yet released", at: "3 Nov" },
-    { what: "Music library", to: "edits, album art and copyright save in place: the page no longer jumps to the top", at: "2 Nov" },
-    { what: "Copyright", to: "a © badge on songs with details; the player and embed show the line and, on a click, the owner, licence, publisher, writers and links", at: "2 Nov" },
-    { what: "Album art", to: "read from the MP3's tags, or added in the library; shown in the embed and on the phone's lock screen", at: "2 Nov" },
-    { what: "Roles", to: "set once under Manage → Roles (and in WordPress): change what a role may do, add your own; people just get a role", at: "2 Nov" },
-    { what: "Going live", to: "two ticks: Go live any time, or only in their own scheduled block; and Run the on-air desk (skip, run anyone's show)", at: "2 Nov" },
-    { what: "Per-person ticks", to: "removed: anyone who had their own moves to a matching role", at: "2 Nov", kind: "info" },
-    { what: "People and permissions", to: "the DJs screen is now People: change name and email, role, what each person may do (8 ticks), set a password, block and unblock, remove", at: "2 Nov" },
-    { what: "Blocking someone", to: "signs them out everywhere at once, forgets their Keep me signed in, and ends their live show (the AutoDJ takes over)", at: "2 Nov" },
-    { what: "People in WordPress", to: "Stationwagon → People in the WordPress admin, the same list and actions", at: "2 Nov" },
-    { what: "Sign in from the website", to: "a Sign in link in wordwave.co.za's header; signed in, your name with Studio, Manage, Your account and Sign out", at: "2 Nov" },
-    { what: "People and the header sign-in", to: "live on wordwave.co.za (database backed up first); try Sign in at the top of the site", at: "2 Nov", kind: "info" },
-    { what: "The website's player, full size", to: "album art (a CD placeholder), a copyright line (placeholder), the spectrum and the running waveform on the website's Listen page (its frame now 300 px)", at: "2 Nov" },
-    { what: "The station page's embed-code card", to: "removed", at: "2 Nov" },
-    { what: "The website's player sounded squeezed, then skipped", to: "fixed: the embed never plays faster or slower, and takes its clock only from uncached answers (live on wordwave.co.za: steady at 20.18 s for 3 minutes)", at: "2 Nov" },
-    { what: "Live shows in the station's player", to: "the same fix for its stream deck (and stream-only mode)", at: "2 Nov" },
-    { what: "A stream time just short of a second", to: "fixed: it was written a second early", at: "2 Nov" },
-    { what: "End show could wait 15 s on the new host", to: "fixed: its firewall refused a show's tiny last piece; short audio now goes as text (base64), checked on the live host", at: "2 Nov" },
-    { what: "Unfinished multi-station Windows app work", to: "dropped at your request; back to round 41", at: "2 Nov", kind: "info" },
-    { what: "Round 41 (loudness target)", to: "committed (d6ecdab)", at: "31 Oct", kind: "info" },
-    { what: "Loudness target", to: "a slider in the Music library with the usual levels marked; a change offers to re-level the library or only new uploads", at: "31 Oct" },
-    { what: "Each song's normalization", to: "kept with it: its loudness before levelling, the gain and the target, in the database and in its MP3's tag", at: "31 Oct" },
-    { what: "Where the sound is processed", to: "checked: never on the server; at upload in your browser, live in the DJ's studio, crossfades and volume in each listener's player", at: "31 Oct", kind: "info" },
-    { what: "Round 40 (Song prep)", to: "committed and pushed (2c15831)", at: "30 Oct", kind: "info" },
-    { what: "Song prep screen", to: "built and tested: whole-song preview with A/B, EQ and dynamics, meters, presets, a default for new uploads, Apply to a song", at: "30 Oct" },
-    { what: "Originals kept", to: "every prepared upload keeps the file you chose (never served); uploading an older song again adds its original", at: "30 Oct" },
-    { what: "After Apply, plays could have been cut at the old file's points", to: "fixed: the planner reads songs afresh when it changes the plan", at: "30 Oct" },
-    { what: "Radio WordWave", to: "updated to the Song prep version (database 10); all tests pass on the server", at: "30 Oct", kind: "info" },
-    { what: "Round 39 (Diagnostics and phone playback)", to: "committed and pushed (eb444a0)", at: "30 Oct", kind: "info" },
-    { what: "Phone tests", to: "now run in Brave, your default browser on the phone; all pass", at: "30 Oct", kind: "info" },
-    { what: "Phone playback fixed", to: "no more skips or underruns on your Xiaomi (balanced sound buffers, no speed changes); joins land on time", at: "30 Oct" },
-    { what: "Song prep mastering", to: "off by default (it squeezed real music flat); the 8 tracks uploaded again, levelled only", at: "30 Oct" },
-    { what: "Diagnostics panel", to: "under the player: what the device, sound, song and network are doing, with Send report", at: "30 Oct" },
-    { what: "Radio WordWave, a real installation", to: "live at wordwave.controll.co.za/radio, installed with setup.php, 8 of your Alruin tracks; plays in browsers and VLC", at: "30 Oct" },
-    { what: "Old test installs on the server", to: "wiped: test station, prototype, test WordPress, their databases and logins", at: "30 Oct", kind: "info" },
-    { what: "Round 38 (setup.php)", to: "committed and pushed (fd6c7a9)", at: "30 Oct", kind: "info" },
-    { what: "One-file setup without WordPress", to: "built and tested: setup.php checks the server, asks where the station lives (/radio picked), downloads it and hands over; tested on Laragon and the server", at: "30 Oct" },
-    { what: "The station's own installer", to: "the same easy choices: a database made through cPanel, jobs during visits or a cron job added for you", at: "30 Oct" },
-    { what: "Real cPanel try with you", to: "passed: a database, a cron job and a subdomain made by setup; all removed afterwards", at: "30 Oct", kind: "info" },
-    { what: "A subdomain of a subdomain behind Cloudflare failed its certificate", to: "setup now says to set it to DNS only (the plugin too)", at: "30 Oct" },
-    { what: "Public releases repo", to: "stationwagon-releases: setup.php, the WordPress plugin and the station zip", at: "30 Oct", kind: "info" },
-    { what: "Hand-over right after setup sometimes showed 'not found'", to: "fixed: the web server took a few seconds to see the new folder's settings", at: "30 Oct" },
-    { what: "Setup as a WordPress plugin", to: "built and tested on Laragon: a wizard (folder or subdomain, this site's database or a new one, background jobs), station updates with the plugin, the player shortcode; tested on Laragon and the server", at: "29 Oct" },
-    { what: "Background jobs without cron", to: "built: they run during visits; cron optional, with a version-free PHP path", at: "29 Oct" },
-    { what: "Getting started guide and README", to: "rewritten for the plugin", at: "29 Oct", kind: "info" },
-    { what: "Windows app 0.6.1 and Android app 0.7.1", to: "released; the plugin offers them to installed apps (checked live)", at: "29 Oct", kind: "info" },
-    { what: "Round 37 (WordPress plugin and jobs without cron)", to: "committed and pushed (694430b)", at: "29 Oct", kind: "info" },
-    { what: "Round 36 (remember my password)", to: "committed and pushed", at: "29 Oct", kind: "info" },
-    { what: "Remember my password", to: "built: Keep me signed in (30 days), and saving it in browsers, the Windows and Android apps", at: "29 Oct" },
-    { what: "Android app: a wrong password showed the offline page", to: "fixed", at: "29 Oct" },
-    { what: "Android app 0.7.0", to: "released on GitHub; the plugin hands it out (checked live)", at: "29 Oct", kind: "info" },
-    { what: "Round 35 (the Android app)", to: "committed and pushed", at: "29 Oct", kind: "info" },
-    { what: "Android app: stays signed in", to: "up to 12 hours after you last used it", at: "29 Oct" },
-    { what: "Android app: opens again after an update", to: "working (Display over other apps, and Autostart on Xiaomi)", at: "29 Oct" },
-    { what: "Android app: Back on the studio", to: "fixed (closes the app)", at: "29 Oct" },
-    { what: "Android studio app (v0.7)", to: "built; all 61 tests pass on the phone", at: "29 Oct" },
-    { what: "Do Not Disturb on air and screen-off shows", to: "working on the phone (Android 16)", at: "02:10" },
-    { what: "Stationwagon Updates plugin 1.1.0", to: "live on controll.co.za: Windows and Android", at: "01:55", kind: "info" },
-    { what: "Android app: old page left running after switching", to: "fixed (the app now closes it)", at: "01:45" },
-    { what: "Android app: signed out at every page switch", to: "fixed (the sign-in is kept)", at: "02:10" },
-    { what: "Round 34 (mastering in song prep)", to: "committed and pushed", at: "03:40", kind: "info" },
-    { what: "Mastering in song prep, as your Audition chain", to: "matched (blind test: no difference), on the test server", at: "03:30" },
-    { what: "Library switches: pre-processing and loudness normalization", to: "on the test server, saved for every upload", at: "03:30" },
-    { what: "Windows studio app v0.6.0", to: "released on GitHub; download and update links work live", at: "22:20" },
-    { what: "Round 33", to: "committed and pushed", at: "22:05", kind: "info" },
-    { what: "Windows studio app: the app, the BUTT bridge, signed updates", to: "built, all tests pass (real BUTT too)", at: "21:50" },
-    { what: "Stationwagon Updates plugin", to: "installed on controll.co.za, token saved", at: "22:15", kind: "info" },
-    { what: "Studio crackle on a busy phone", to: "fixed with bigger buffers on phones (listeners never heard it)", at: "21:50" },
-    { what: "Round 32 (skins)", to: "committed and pushed", at: "05:00", kind: "info" },
-    { what: "Skins: a Look menu on every screen, kept per device", to: "on the test server, all tests pass", at: "02:06" },
-    { what: "Presenter notes at the end of a show", to: "stay Live until listeners hear the end (bug fixed)", at: "02:06" },
-    { what: "Player & studio (v0.4)", to: "complete", at: "02:06", kind: "info" },
-    { what: "Embed on a locked Xiaomi phone", to: "starts itself again if the phone pauses it (bug fixed)", at: "04:30" },
-    { what: "Round 31 (spectrum)", to: "committed and pushed", at: "00:39", kind: "info" },
-    { what: "Spectrum in the player's display", to: "on the test server, all tests pass", at: "00:40" },
-    { what: "Round 30 (small studio items)", to: "committed and pushed", at: "23:26", kind: "info" },
-    { what: "Small studio items: headphones, edit a note, talk items", to: "on the test server, all tests pass", at: "22:50" },
-    { what: "A quick Stop on a slow server", to: "no longer leaves a listener counted (bug fixed)", at: "22:50" },
-    { what: "Output strip look-ahead", to: "no longer downloads a song twice (bug fixed)", at: "22:50" },
-    { what: "Round 29 (podcasts)", to: "committed and pushed", at: "21:22", kind: "info" },
-    { what: "Podcasts: record, edit, mix down, page, feed", to: "on the test server, all tests pass", at: "17:10" },
-    { what: "Do Not Disturb reminder in the studio", to: "on phones and tablets", at: "17:10" },
-    { what: "Go live just as a song ends", to: "starts at least 1 s ahead (bug fixed)", at: "17:10" },
-    { what: "Test server PHP", to: "8.4 with 8.1's extensions and limits", at: "16:25", kind: "info" },
-    { what: "Android app", to: "planned, with Do Not Disturb on air", at: "15:40", kind: "info" },
-    { what: "Every open limit addressed: analytics, Privacy page, phone studio", to: "on the test server, all tests pass", at: "02:23" },
-    { what: "Listener count and stats", to: "on the test server, all tests pass", at: "01:03" },
-    { what: "Listeners screen", to: "built: 48-hour and 30-day charts", at: "01:00" },
-    { what: "Listening now", to: "built: player health line and overview", at: "01:00" },
-    { what: "Sound & safety screen", to: "two readable columns (layout fix)", at: "00:01" },
-    { what: "Round 25 on the test server", to: "deployed, all server tests pass", at: "00:01" },
-    { what: "Now-playing API", to: "built, tested on Laragon", at: "23:39" },
-    { what: "Embeddable player with Copy code", to: "built, tested on Laragon", at: "23:39" },
-    { what: "Round 25", to: "committed", at: "23:39", kind: "info" },
-    { what: "Skip just after Go live", to: "no longer drops the show (bug fixed)", at: "23:39" },
-    { what: "Rejoin your show", to: "continues as a new show (safer for listeners)", at: "22:05" },
-    { what: "Sound & safety (v0.4)", to: "built, all Laragon tests pass", at: "22:05" },
-    { what: "Project map", to: "now shows the final app, area by area", at: "21:30", kind: "info" },
-    { what: "Build order for the rest", to: "v0.4, then Windows app, then pilot", at: "21:30", kind: "info" },
-    { what: "Album song changes", to: "21 mixed, no clipping, no dead air", at: "21:05" },
-    { what: "Mastering plugins (oXygen, master_me)", to: "installed in Audition to compare", at: "21:05", kind: "info" },
-    { what: "Output strip in the player and studio", to: "built, all tests pass", at: "18:31" },
-    { what: "Live studio in the app", to: "built, 104 checks", at: "15:55" },
-    { what: "Presenter notes for listeners", to: "built, 50 checks", at: "04:43" },
-    { what: "Listener player", to: "built, plays on a locked phone", at: "04:15" }
+    { what: "About screen", to: "version, Check for updates and links; Windows 0.6.8 released", at: "11 Nov" },
+    { what: "The output strip's white line", to: "now sits on the sound you hear, in the middle at every width", at: "11 Nov" },
+    { what: "Windows app and bar fixes", to: "no more focus loop or flicker; mute drops the slider", at: "11 Nov" },
+    { what: "Look up details", to: "MusicBrainz suggestions in the song window", at: "11 Nov" },
+    { what: "Ads", to: "an Ads screen, ad breaks, a shorter crossfade for ads", at: "11 Nov" },
+    { what: "Wide manager and star ratings", to: "full-width screens, a better library table", at: "11 Nov" },
+    { what: "The bar and the Now playing card", to: "what's on air along the bottom of the staff's screens", at: "11 Nov" },
+    { what: "No pilot week needed", to: "WordWave already plays live music on Stationwagon", at: "10 Nov", kind: "info" }
   ]
 };
 
@@ -447,20 +356,24 @@ scale.style.setProperty("--n", all.length);
 scale.setAttribute("aria-label", `${built} of ${all.length} features built`);
 scale.innerHTML = MAP.areas.flatMap((a) => a.features.map((f) => `<i class="${f.state}" title="${esc(a.name + ": " + f.text)}"></i>`)).join("");
 
-$("road").innerHTML = MAP.road.map((r) => {
+const rank = { progress: 0, waiting: 1, next: 2, later: 3 };
+const stops = MAP.road.map((r) => {
   const fs = all.filter((f) => f.v === r.v), d = fs.filter((f) => f.state === "done").length;
-  return `<div class="stop ${r.state || ""}"><span class="ver">${esc(r.v)}</span><span class="name">${esc(r.name)}</span><span class="when">${esc(r.when)}</span>` +
-    `<span class="cnt">${d} of ${fs.length} built</span><span class="mini"><b style="width:${fs.length ? (100 * d / fs.length) : 0}%"></b></span></div>`;
-}).join("");
+  const full = fs.length > 0 && d === fs.length;
+  return { full, html: `<div class="stop ${r.state || ""}${full ? " full" : ""}"><span class="ver">${esc(r.v)}</span><span class="name">${esc(r.name)}</span><span class="when">${esc(r.when)}</span>` +
+    `<span class="cnt">${d} of ${fs.length} built</span><span class="mini"><b style="width:${fs.length ? (100 * d / fs.length) : 0}%"></b></span>${full ? "" : `<ul class="steps">${fs.slice().sort((x, y) => (rank[x.state] ?? -1) - (rank[y.state] ?? -1)).map((f) => `<li class="${f.state}"><i></i>${esc(f.text)}</li>`).join("")}</ul>`}</div>` };
+});
+const doneStops = stops.filter((x) => x.full);
+$("road").innerHTML = (doneStops.length ? `<div class="donestops">${doneStops.map((x) => x.html).join("")}</div>` : "") + stops.filter((x) => !x.full).map((x) => x.html).join("");
 
 const row = (f) => `<li class="${f.state}"><span class="dot">${f.state === "done" ? CHECK : ""}</span><span class="what">${esc(f.text)}${f.note ? `<small>${esc(f.note)}</small>` : ""}</span><span class="tag">${f.state === "progress" ? "now · " : f.state === "waiting" ? "you · " : ""}${esc(f.v)}</span></li>`;
-const rank = { progress: 0, waiting: 1, next: 2, later: 3 };
-$("areas").innerHTML = MAP.areas.map((a) => {
+$("areas").innerHTML = MAP.areas.slice().sort((a, b) => (a.features.every((f) => f.state === "done") ? 1 : 0) - (b.features.every((f) => f.state === "done") ? 1 : 0)).map((a) => {
   const open = a.features.filter((f) => f.state !== "done").sort((x, y) => rank[x.state] - rank[y.state]), done = a.features.filter((f) => f.state === "done");
-  return `<section class="box area"><div class="ahead"><h2>${esc(a.name)}</h2><span class="cnt">${done.length} of ${a.features.length}</span><p>${esc(a.blurb)}</p></div>` +
+  const full = !open.length;
+  return `<section class="box area${full ? " full" : ""}"><div class="ahead"><h2>${esc(a.name)}</h2><span class="cnt">${done.length} of ${a.features.length}</span><p>${esc(a.blurb)}</p></div>` +
     `<div class="abar">${a.features.map((f) => `<i class="${f.state}"></i>`).join("")}</div>` +
     (open.length ? `<ul class="feats">${open.map(row).join("")}</ul>` : "") +
-    (done.length ? `<details class="built"${open.length ? "" : " open"}><summary>Built (${done.length})</summary><ul class="feats">${done.map(row).join("")}</ul></details>` : "") +
+    (done.length ? `<details class="built"><summary>Built (${done.length})</summary><ul class="feats">${done.map(row).join("")}</ul></details>` : "") +
     `</section>`;
 }).join("");
 
