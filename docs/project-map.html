@@ -224,7 +224,7 @@ const MAP = {
     { name: "Station manager", blurb: "Library, playlists, schedule, people, sound and safety, for the station's staff.", features: [
       { text: "Installer, sign-in and roles", v: "v0.1", state: "done" },
       { text: "People: add, block, passwords and roles", note: "blocking signs them out and ends their live show; also in WordPress → Stationwagon → People", v: "v0.8", state: "done" },
-      { text: "Ads: uploads, a plan per ad, ad breaks in the AutoDJ", note: "a new Ads screen; plays a day, days, hours and dates per ad; a break after every N songs with the ad furthest behind its pace; listeners see only Advertisement; schema 17; not deployed yet", v: "v0.9", state: "done" },
+      { text: "Ads: uploads, a plan per ad, ad breaks in the AutoDJ", note: "a new Ads screen; plays a day, days, hours and dates per ad; a break after every N songs with the ad furthest behind its pace; listeners see only Advertisement; schema 17; live", v: "v0.9", state: "done" },
       { text: "Wide manager, library table and star ratings", note: "the manager uses the whole window; sortable columns you can choose, compact rows, a card per song on a phone; 1 to 5 stars per song (saved, not used by the AutoDJ yet; the setting says coming soon); several songs rated at once; schema 16", v: "v0.9", state: "done" },
       { text: "Library: album art, copyright, saving in place", note: "art from the MP3 or added in the library; © badge and a window for owner, licence, publisher, writers and notes with links; the player shows the line; no page jumping", v: "v0.8", state: "done" },
       { text: "Roles set centrally, with your own roles", note: "each role's ticks apply to all its people; Go live any time vs only in their own block", v: "v0.8", state: "done" },
@@ -295,7 +295,7 @@ const MAP = {
   call: null,
   feedTitle: "Changed 20 Oct – 10 Nov",
   feed: [
-    { what: "Ads", to: "a new Ads screen and ad breaks in the AutoDJ: upload ads like songs, say how many times a day each plays and on which days, hours and dates; the AutoDJ plays a break after every N songs; listeners see only Advertisement; tested on Laragon, not deployed", at: "11 Nov" },
+    { what: "Ads", to: "a new Ads screen and ad breaks in the AutoDJ: upload ads like songs, say how many times a day each plays and on which days, hours and dates; the AutoDJ plays a break after every N songs; listeners see only Advertisement; tested on Laragon and live on wordwave.co.za", at: "11 Nov" },
     { what: "Wide manager and star ratings", to: "the manager uses the whole window width; the Music library table has Album, Added, Loudness and Badges columns, sorting, a Columns menu, compact rows and star ratings (1 to 5) in the right-hand column; ratings are saved but the AutoDJ does not use them yet; tested on Laragon, not deployed", at: "11 Nov" },
     { what: "The bar and the Now playing card", to: "a bar along the bottom of the studio, the manager and your account page shows what's on air (art, scrolling strip, progress), opens muted with a speaker and a volume slider, and plays on with no gap between screens, in the browser and in both apps; a small Now playing card for wordwave.co.za's home page. Live on wordwave.co.za; the apps released as Windows 0.6.5 and Android 0.7.5", at: "11 Nov" },
     { what: "The embed crossfades", to: "the player on wordwave.co.za/listen/ (the embed) now mixes the songs on two decks like the station page: crossfades instead of hard cuts, the strip blue and pink; live on wordwave.co.za", at: "10 Nov" },
