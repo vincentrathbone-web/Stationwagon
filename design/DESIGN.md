@@ -373,7 +373,11 @@ A scrolling picture of **what goes out** (the wet mix, never the inputs), settle
 2026-10-20 from the prototype at https://claude.ai/artifact/7B369bBNhrMkKLBLrv1Ssa. Built once in
 `app/assets/outwave.js` and used by both screens.
 
-- **Now is a white line in the middle**; the sound moves right to left past it.
+- **Now is a white line in the middle**, always (the player, the studio and the bar, at any width: the strip
+  always shows the same 10 seconds, 5 past on the left and 5 coming on the right, and a wider strip only stretches
+  the wave; the bar's line was near the right until round 67). The sound moves right to left past it. It sits on
+  what is heard when the picture is on screen (`SwOutWave.now`: the sound card's position carried on to this
+  instant, plus 30 ms for the screen). A Bluetooth link adds a delay no browser can know; nothing guesses it.
 - **One colour per source**, stacked and mirrored around the middle: Deck A / song A blue
   (`--src-a` `#4da3ff`), Deck B / song B pink (`--src-b` `#ff5fa8`), the mic (studio) or the live
   show (player) yellow (`--src-live` `#f7d23e`). The output itself is a thin white line

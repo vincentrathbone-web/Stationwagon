@@ -106,6 +106,16 @@ try {
   const first = b;
   await evaluate("swShell.bar.contentWindow.SwBar.mute(false)");
   check("the bar may be unmuted (the speaker)", !!(await waitFor(async () => { const x = await bar(); return x && !x.muted && x.heard; }, 10)));
+  // the strip's white line is in the middle, however wide the bar is (round 67)
+  const lineAt = () => evaluate(`(() => { const c = swShell.bar.contentWindow.document.getElementById('emWave'); if (!c || !c.width) return null; const g = c.getContext('2d').getImageData(0, 0, c.width, c.height), best = { n: 0, x: 0 };
+    for (let x = 0; x < c.width; x++) { let n = 0; for (let y = 0; y < c.height; y++) { const o = (y * c.width + x) * 4; if (g.data[o + 3] > 200 && g.data[o] > 230 && g.data[o + 1] > 230 && g.data[o + 2] > 230) n++; } if (n > best.n) { best.n = n; best.x = x; } }
+    return { share: best.x / c.width, full: best.n >= c.height * 0.9, w: c.width }; })()`);
+  const wide = await waitFor(async () => { const x = await lineAt(); return x && x.full && x; }, 8);
+  check("the bar's white line is in the middle of its strip", !!wide && Math.abs(wide.share - 0.5) < 0.02, JSON.stringify(wide));
+  await call("Emulation.setDeviceMetricsOverride", { width: 900, height: 700, deviceScaleFactor: 1, mobile: false });
+  const narrow = await waitFor(async () => { const x = await lineAt(); return x && x.full && x.w !== wide.w && x; }, 8);
+  check("  and stays there when the window is narrower (the same 10 seconds, stretched less)", !!narrow && Math.abs(narrow.share - 0.5) < 0.02, JSON.stringify(narrow));
+  await call("Emulation.clearDeviceMetricsOverride");
 
   await clickInScreen('a[href$="/manage/library"]');
   s = await routeIs("manage/library");

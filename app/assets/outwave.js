@@ -10,6 +10,31 @@
   const KEEP = 45;                    // seconds of measured history kept
   const LEVELS = [-1, -6, -12, -20];  // level lines; −1 dB is song prep's peak ceiling
 
+  // ---- Where "now" is (round 67) -------------------------------------------------------------------
+  // The white line is meant to sit on the sound coming out of the speakers right now. The sound engine
+  // knows when it hands a moment to the output device (getOutputTimestamp, which already allows for the
+  // device's buffers: checked against a recording of Windows' own output, within 4 ms), but the device
+  // reports its position only every callback (about 20 ms), so it is carried on to this instant here;
+  // the picture also reaches the screen a frame or two after it is drawn. (A Bluetooth link adds a delay
+  // that no browser can know; nothing here guesses it.)
+  const SHOWN_LATE = 0.03;
+  const lastOut = new WeakMap();
+  /** The context time being output right now (before the screen's delay). */
+  function outputTime(ctx) {
+    if (!ctx) return 0;
+    const ts = ctx.getOutputTimestamp ? ctx.getOutputTimestamp() : null;
+    let t;
+    if (ts && ts.contextTime > 0 && ts.performanceTime > 0) t = ts.contextTime + Math.min(0.25, Math.max(0, (performance.now() - ts.performanceTime) / 1000));
+    else t = ctx.currentTime - (ctx.outputLatency || ctx.baseLatency || 0); // no output position (an older Safari): the latency it admits to
+    t = Math.min(t, ctx.currentTime);
+    const prev = lastOut.get(ctx);
+    if (prev !== undefined && t < prev && prev - t < 0.5) t = prev; // never backwards
+    lastOut.set(ctx, t);
+    return t;
+  }
+  /** Where the white line goes on a strip: what is heard at the moment its picture is on screen. */
+  const now = (ctx) => (ctx ? outputTime(ctx) + SHOWN_LATE : 0);
+
   /** Peaks per 10 ms column for k series (the sources, then the output), in a ring. */
   class Columns {
     constructor(k, seconds) {
@@ -113,7 +138,7 @@
    * Draw the strip on `canvas` (about 30 frames a second while it is on screen). opts: colors (one
    * per series, the output last), measured() (Columns or null), plan() (render() result or null),
    * now() (the context time at the playhead), span() (seconds shown), marks() ([{ t, color }]), at (where the
-   * playhead is, 0 to 1 of the width: 0.5, the middle, by default; the bar's is near the right, round 61).
+   * playhead is, 0 to 1 of the width: 0.5, the middle, by default).
    */
   function strip(canvas, opts) {
     const c = canvas.getContext("2d"), css = (n, f) => getComputedStyle(canvas).getPropertyValue(n).trim() || f;
@@ -224,5 +249,5 @@
     };
   }
 
-  window.SwOutWave = { STEP, Columns, range, meter, render, strip };
+  window.SwOutWave = { STEP, Columns, range, meter, render, strip, now, outputTime };
 })();

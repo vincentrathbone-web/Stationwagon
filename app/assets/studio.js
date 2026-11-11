@@ -428,7 +428,7 @@ registerProcessor("sw-tap", SwTap);`;
     colors: WAVE_COLORS,
     measured: () => (wave ? wave.cols : null),
     plan: () => wavePlan,
-    now: () => { if (!ctx) return 0; const ts = ctx.getOutputTimestamp ? ctx.getOutputTimestamp() : null; return ts && ts.contextTime > 0 ? ts.contextTime : ctx.currentTime; },
+    now: () => SwOutWave.now(ctx),
     span: () => 20,
     marks: () => waveMarks,
   }) : null;

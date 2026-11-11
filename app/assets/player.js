@@ -530,7 +530,7 @@
     checkGaps() {
       const p = this.plan, m = player.wave && player.wave.cols, c = player.ctx;
       if (!p || !m || !c || player.wave.kind !== "sample-exact") return;
-      const STEP = SwOutWave.STEP, end = Math.min(Math.floor((outNow() - 0.15) / STEP), p.i0 + p.n);
+      const STEP = SwOutWave.STEP, end = Math.min(Math.floor((SwOutWave.outputTime(c) - 0.15) / STEP), p.i0 + p.n);
       let i = Math.max(this.checked, p.i0), run = 0;
       for (; i < end; i++) {
         const want = p.get(i, p.k - 1), got = m.get(i, m.k - 1);
@@ -648,12 +648,8 @@
   };
 
   // ---- The output strip ---------------------------------------------------------------------------
-  const outNow = () => {
-    const c = player.ctx;
-    if (!c) return 0;
-    const ts = c.getOutputTimestamp ? c.getOutputTimestamp() : null;
-    return ts && ts.contextTime > 0 ? ts.contextTime : c.currentTime;
-  };
+  // where the white line goes: what is heard when the picture is on screen (outwave.js)
+  const outNow = () => (window.SwOutWave ? SwOutWave.now(player.ctx) : 0);
   const waveCv = $(EMBED ? "emWave" : "lpWave"), tok = (n) => getComputedStyle(root).getPropertyValue(n).trim();
   const COLORS = [], colours = () => COLORS.splice(0, 4, tok("--src-a"), tok("--src-b"), tok("--src-live"), tok("--src-out"));
   colours();
@@ -664,7 +660,6 @@
     plan: () => ahead.plan,
     now: outNow,
     span: () => 10,
-    at: BAR ? 0.9 : 0.5, // the bar: what went out fills the strip, the next second faint at its right end (round 61)
     cost: (ms) => { player.cost.strip += ms; },
     // where each entry starts (a handover), in its colour
     marks: () => {
@@ -781,6 +776,7 @@
     hush: (ms) => { if (!player.mix) return false; player.mix.gain.value = 0; setTimeout(() => { if (player.mix) player.mix.gain.value = 1; }, ms); return true; },
     // the output strip, for tests: context time now, and the highest peaks (A, B, live, output)
     // measured or planned between two context times
+    ctx: () => player.ctx, mixNode: () => player.mix, // for the strip's timing test (round 67)
     wave: {
       now: () => (player.ctx ? player.ctx.currentTime : null),
       measured: (t0, t1) => (player.wave ? SwOutWave.range(player.wave.cols, t0, t1) : null),

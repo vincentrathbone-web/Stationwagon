@@ -210,6 +210,27 @@ try {
   }
   check("  the strip draws the songs in their colours", px.w > 0 && px.a + px.b > 100, `${px.w}×${px.h}, ${px.a} blue and ${px.b} pink pixels`);
 
+  // The white line (round 67): where the sound is heard, in the middle of every strip
+  console.log("White line");
+  const wt = await evaluate(`(() => {
+    const c = SwPlayer.ctx ? SwPlayer.ctx() : null; if (!c) return null;
+    const a = [], b = [];
+    for (let i = 0; i < 40; i++) { a.push(SwOutWave.now(c)); }
+    const out = SwOutWave.outputTime(c), cur = c.currentTime;
+    return { mono: a.every((v, i) => i === 0 || v >= a[i - 1]), behind: cur - out, line: SwOutWave.now(c) - out };
+  })()`);
+  check("the white line follows the sound being output, never backwards", !!wt && wt.mono, wt && JSON.stringify(wt));
+  check("  which is the output delay behind the engine's clock (0 to 0.5 s), and the line is a frame or two ahead of that", !!wt && wt.behind >= 0 && wt.behind < 0.5 && wt.line > 0.01 && wt.line < 0.06, wt && `${(wt.behind * 1000).toFixed(0)} ms behind, line +${(wt.line * 1000).toFixed(0)} ms`);
+  // a tick scheduled for a known moment shows on the measured output at that moment (sample-exact meter)
+  const tick = await evaluate(`(async () => {
+    const c = SwPlayer.ctx(), W = SwPlayer.wave, rate = c.sampleRate, n = Math.round(rate * 0.004), buf = c.createBuffer(1, n, rate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = 0.9;
+    const s = c.createBufferSource(); s.buffer = buf; s.connect(SwPlayer.mixNode()); const T = Math.ceil((c.currentTime + 0.6) * 100) / 100 + 0.005; s.start(T);
+    await new Promise((r) => setTimeout(r, 1500));
+    const col = (i) => { const r = W.measured(i * 0.01 + 0.001, i * 0.01 + 0.009); return r ? r[3] : null; }, i0 = Math.floor(T / 0.01);
+    return { at: col(i0), before: col(i0 - 3), after: col(i0 + 3) };
+  })()`);
+  check("  a click scheduled for a known moment lands in that 10 ms column of the strip's data", tick.at > tick.before + 0.1 && tick.at > tick.after + 0.1, JSON.stringify(tick));
   console.log("Frozen sound engine (as a Xiaomi phone does some seconds after locking)");
   await evaluate(`(() => {
     const real = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, "currentTime"), held = new WeakMap();
