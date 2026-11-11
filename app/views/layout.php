@@ -14,7 +14,7 @@
 </head>
 <body>
 <header class="top<?= !empty($wide) ? ' wide' : '' ?><?= !empty($fluid) ? ' fluid' : '' ?>">
-  <a class="brand" href="<?= h(App::url('')) ?>" aria-label="Stationwagon home"><?= App::logo() ?></a><span class="ver"><?= h(Config::version()) ?></span>
+  <a class="brand" href="<?= h(App::url('')) ?>" aria-label="Stationwagon home"><?= App::logo() ?></a>
   <nav class="who">
     <?= Skins::picker() ?>
     <?php if (!empty($me)): ?>

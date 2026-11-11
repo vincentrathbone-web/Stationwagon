@@ -274,7 +274,11 @@ fn allow_station(app: &AppHandle, base: &url::Url) -> Result<(), String> {
         .permission("allow-set-busy")
         .permission("allow-quit-app")
         .permission("allow-open-settings")
-        .permission("allow-set-look");
+        .permission("allow-set-look")
+        // the station's About screen: the app's version and Check for updates (round 68)
+        .permission("allow-app-version")
+        .permission("allow-check-update")
+        .permission("allow-install-update");
     app.add_capability(cap).map_err(|e| e.to_string())?;
     allowed.push(origin);
     Ok(())
@@ -487,6 +491,12 @@ async fn install_update(app: AppHandle, state: State<'_, App>) -> Result<(), Str
 
 // ---- Commands the station's studio page may also use ---------------------------------------------
 
+/// Just the app's version, for the station's About screen (get_info carries the settings too).
+#[tauri::command]
+fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
 #[tauri::command]
 fn bridge_status(state: State<App>) -> bridge::Status {
     state.bridge.status()
@@ -631,7 +641,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_info, save_settings, renew_password, open_station, check_update, install_update, find_station,
-            bridge_status, set_busy, quit_app, open_settings, set_look, bar_tall
+            bridge_status, set_busy, quit_app, open_settings, set_look, bar_tall, app_version
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stationwagon Studio");

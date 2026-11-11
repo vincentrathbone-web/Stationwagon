@@ -342,6 +342,7 @@ try {
     $r = $pc->go('podcast/api/episode?id=1');
     check('the podcast API needs a signed-in DJ, and is never kept by caches', $r['status'] === 401 && implode(',', $r['headers']['cache-control'] ?? []) === 'private, no-store', implode(',', $r['headers']['cache-control'] ?? []));
     check('  and so does the podcast screen', $pc->go('manage/podcast')['status'] === 303);
+    check('the About screen needs a sign-in too', $pc->go('manage/about')['status'] === 303);
 
     echo "Skins (the look, picked per device)\n";
     $sk = new Browser($base);
@@ -435,6 +436,9 @@ try {
         $pp = $a->go('manage/podcast');
         check('a DJ has the Podcast screen, with their own episodes', $pp['status'] === 200 && str_contains($pp['body'], '<h1>Podcast</h1>') && str_contains($pp['body'], '>Podcast</a>') && str_contains($pp['body'], 'You see your own shows.'), (string) $pp['status']);
         check('  but not the podcast’s details', !str_contains($pp['body'], 'class="card newform podform"'));
+        $ab = $a->go('manage/about');
+        check('a DJ has the About screen, last in the menu, with the station software version and the GitHub link', $ab['status'] === 200 && str_contains($ab['body'], '<h1>About</h1>') && str_contains($ab['body'], '>About</a>') && str_contains($ab['body'], 'id="aboutStation">' . Config::version() . '<') && str_contains($ab['body'], 'https://github.com/vincentrathbone-web/Stationwagon') && strrpos($ab['body'], '>About</a>') > strrpos($ab['body'], '>Podcast</a>'));
+        check('  the version is no longer in the header next to the logo, and the Windows app part waits for the app', !str_contains($ab['body'], 'class="ver"') && str_contains($ab['body'], 'id="aboutCheck"') && str_contains($ab['body'], 'id="aboutUpd" hidden'));
         $other = $db->run('SELECT id FROM ' . $db->table('episodes') . " WHERE status <> 'skipped' AND (dj_user_id IS NULL OR dj_user_id <> ?) ORDER BY id DESC LIMIT 1", [$created])->fetchColumn();
         check('  an episode that isn’t theirs doesn’t open', $a->go('manage/podcast/' . ($other ?: 999999999))['status'] === 404 && $a->go('podcast/api/episode?id=' . ($other ?: 999999999))['status'] === ($other ? 403 : 404));
         check('  nor does sending a recording for a show that isn’t there', $a->go('podcast/api/rec-chunk?show=live-nope&track=music&n=0&samples=1152', "\xFF\xFB\x90\x00" . str_repeat("\0", 413), ['Content-Type: audio/mpeg', 'X-CSRF: ' . ($sk[1] ?? '')])['status'] === 404);

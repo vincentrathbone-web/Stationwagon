@@ -698,6 +698,13 @@ final class ManagePage
     // ---- Sound & safety ------------------------------------------------------------------
 
     /** Listeners: how many now, and charts of the last 48 hours and 30 days. */
+    /** The About screen (round 68): the software, its version, and (in the Windows app) the app's version and Check for updates. */
+    public function about(): void
+    {
+        $me = App::requireRole('dj');
+        $this->render('about', 'About', $me, ['version' => Config::version()]);
+    }
+
     public function listeners(): void
     {
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {

@@ -206,6 +206,26 @@ try {
   await call("Network.deleteCookies", { name: "sw_bare", url: base + "/" });
   await go(`${base}/studio`);
   check("  (the mark gone, the browser gets the frame page again)", !!(await waitFor(async () => (await screen())?.route === "studio", 10)));
+  console.log("The About screen (round 68)");
+  // in a browser the update button waits for the app; with the app's commands (faked here) it checks and installs
+  await go(`${base}/manage/about`);
+  const plain = await waitFor(async () => { const x = await screen(); return x && x.route === "manage/about" && x; }, 10);
+  const inFrame = (code) => evaluate(`(() => { const d = swShell.screen.contentWindow.document; ${code} })()`);
+  check("About opens in the manager, last in the menu, with the station software version", !!plain && await inFrame("const a = [...d.querySelectorAll('.rail a')]; return a.length > 1 && a[a.length - 1].textContent === 'About' && !!d.getElementById('aboutStation').textContent;"));
+  check("  and in a browser the Windows app's version and update button stay hidden", await inFrame("return d.getElementById('aboutUpd').hidden && !d.getElementById('aboutBrowser').hidden;"));
+  const stub = await call("Page.addScriptToEvaluateOnNewDocument", { source: "window.__calls = []; window.__found = null; window.__TAURI__ = { core: { invoke: async (c) => { window.__calls.push(c); if (c === 'app_version') return '0.6.7'; if (c === 'check_update') return window.__found; return null; } } };" });
+  await go(`${base}/manage/about`);
+  const appReady = await waitFor(() => evaluate("!document.getElementById('aboutUpd').hidden && document.getElementById('aboutAppVer').textContent === '0.6.7'"), 10);
+  check("in the Windows app it shows the app's version and a Check for updates button", !!appReady && await evaluate("!document.getElementById('aboutAppVer').hidden && document.getElementById('aboutBrowser').hidden"));
+  await evaluate("document.getElementById('aboutCheck').click()");
+  check("  with nothing newer it says so", !!(await waitFor(() => evaluate("document.getElementById('aboutMsg').textContent === 'You have the latest version.' && document.getElementById('aboutFound').hidden"), 5)));
+  await evaluate("window.__found = { version: '0.6.8', notes: 'Fixes: Something fixed' }; document.getElementById('aboutCheck').click()");
+  check("  with a newer one it shows the version and what it brings", !!(await waitFor(() => evaluate("!document.getElementById('aboutFound').hidden && document.getElementById('aboutNew').textContent === '0.6.8' && document.getElementById('aboutNotes').textContent.includes('Something fixed')"), 5)));
+  await evaluate("document.getElementById('aboutInstall').click()");
+  check("  Update now asks the app to install it", !!(await waitFor(() => evaluate("window.__calls.includes('install_update') && /Downloading/.test(document.getElementById('aboutMsg').textContent)"), 5)));
+  await call("Page.removeScriptToEvaluateOnNewDocument", { identifier: stub.result.identifier });
+  await call("Network.deleteCookies", { name: "sw_bare", url: base + "/" });
+
 } catch (e) {
   failed++;
   console.log("  FAIL " + (e.stack || e.message));

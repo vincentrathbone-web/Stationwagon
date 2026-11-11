@@ -70,6 +70,7 @@ final class App
                 'manage/songprep/original' => (new ManagePage())->songprepOriginal(),
                 'manage/listeners' => (new ManagePage())->listeners(),
                 'manage/podcast' => (new ManagePage())->podcast(),
+                'manage/about' => (new ManagePage())->about(),
                 'podcast' => PodcastPage::page(),
                 'podcast/feed' => PodcastPage::feed(),
                 'studio' => (new StudioPage())->page(),

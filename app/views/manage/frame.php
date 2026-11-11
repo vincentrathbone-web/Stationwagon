@@ -12,6 +12,7 @@ $rail = [
     'songprep' => ['manage/songprep', 'Song prep', 'library'],
     'listeners' => ['manage/listeners', 'Listeners', 'listeners'],
     'podcast' => ['manage/podcast', 'Podcast', 'dj'],
+    'about' => ['manage/about', 'About', 'dj'], // last: the bottom of the rail (round 68)
 ];
 // A small POST form around one button; $fields are hidden inputs
 $post = function (string $route, string $label, array $fields = [], string $class = 'btn sm') use ($csrf): string {

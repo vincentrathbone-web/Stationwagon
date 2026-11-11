@@ -231,6 +231,12 @@ try {
   await sleep(1500);
   bar2 = await inBar("({ muted: SwBar.muted, t: performance.timeOrigin })");
   check("  Song prep mutes the bar by itself", bar2 && bar2.muted && bar2.t === bar.t, JSON.stringify(bar2));
+  // round 68: the station's About screen shows the app's version and may check for updates (and nothing else of the app's)
+  await go(`${base}/manage/about`);
+  await sleep(1500);
+  const about = await evaluate("({ ver: document.getElementById('aboutAppVer').textContent, shown: !document.getElementById('aboutUpd').hidden, plain: document.getElementById('aboutBrowser').hidden })");
+  check("the About screen shows this app's version and a Check for updates button", /^\d+\.\d+\.\d+/.test(about.ver) && about.shown && about.plain, JSON.stringify(about));
+  check("  and may call only the version and the update commands (not the app's settings)", await evaluate("Promise.all([window.__TAURI__.core.invoke('app_version').then(() => true, () => false), window.__TAURI__.core.invoke('get_info').then(() => false, () => true), window.__TAURI__.core.invoke('save_settings', { station: 'x', port: 8000 }).then(() => false, () => true)]).then((r) => r.every(Boolean))"));
   await inBar("(() => { const e = document.getElementById('emSound'); e.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' })); })()");
   await sleep(700);
   bar2 = await inBar("({ h: innerHeight, open: SwBar.open, tall: getComputedStyle(document.getElementById('emVolPop')).display })");
