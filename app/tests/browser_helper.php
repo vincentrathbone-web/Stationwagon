@@ -168,7 +168,7 @@ if ($cmd === 'manager') {
     echo json_encode(['cleaned' => $n]);
 } elseif ($cmd === 'lib-info') {
     $r = (new Library($db, $station, SW_ROOT))->get((int) ($argv[2] ?? 0));
-    echo json_encode($r ? ['title' => $r['title'], 'artist' => $r['artist'], 'album' => $r['album'], 'art' => $r['art'], 'rights' => $r['rights'] === null ? null : json_decode($r['rights'], true)] : null);
+    echo json_encode($r ? ['title' => $r['title'], 'artist' => $r['artist'], 'album' => $r['album'], 'art' => $r['art'], 'rating' => $r['rating'] === null ? null : (int) $r['rating'], 'rights' => $r['rights'] === null ? null : json_decode($r['rights'], true)] : null);
 } elseif ($cmd === 'lib-clean') {
     $lib = new Library($db, $station, SW_ROOT);
     $n = 0;

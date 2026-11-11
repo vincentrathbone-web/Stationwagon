@@ -100,6 +100,24 @@ final class ManagePage
                         'target' => StationSettings::prep($this->station)[2], 'relevel' => $this->relevelList($library)]);
                 }
                 Session::flash('ok', 'Song prep choices saved.');
+            } elseif ($action === 'rate') {
+                // stars from the library row; one song (id) or several (ids[], the bulk bar). "" or 0 clears.
+                $raw = trim((string) ($_POST['rating'] ?? ''));
+                $stars = $raw === '' || $raw === '0' ? null : (ctype_digit($raw) ? (int) $raw : -1);
+                $ids = isset($_POST['ids']) && is_array($_POST['ids']) ? array_slice($_POST['ids'], 0, 2000) : [$_POST['id'] ?? 0];
+                $problem = null;
+                $rated = [];
+                foreach ($ids as $one) {
+                    $problem = $library->setRating((int) $one, $stars);
+                    if ($problem !== null) {
+                        break;
+                    }
+                    $rated[] = (int) $one;
+                }
+                if ($wantsJson) {
+                    $this->json($problem === null ? ['ok' => true, 'rating' => $stars, 'ids' => $rated] : ['ok' => false, 'error' => $problem]);
+                }
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Rating saved.');
             } elseif (in_array($action, ['update', 'art', 'art_remove', 'rights'], true)) {
                 // saved without leaving the page (library.js asks for JSON and updates the row); the forms still work without it
                 $id = (int) ($_POST['id'] ?? 0);
@@ -712,6 +730,7 @@ final class ManagePage
             'nowPlaying' => $view === 'overview' ? null : $this->planner->nowPlaying(microtime(true))['current'],
             'csrf' => Session::csrf(),
             'wide' => true,
+            'fluid' => true, // the manager uses the whole window (round 62); the player and the studio keep their width
         ]);
     }
 

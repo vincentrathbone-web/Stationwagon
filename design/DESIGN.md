@@ -387,7 +387,15 @@ A scrolling picture of **what goes out** (the wet mix, never the inputs), settle
   until"; **Needs attention** (hidden song titles, duplicates); **Health** (timeline planned,
   storage, live input).
 - **Music library:** drop zone ("checked, levelled and given short fades in your browser before
-  upload"), search, playlist filter, table, duplicate warnings.
+  upload"), search, playlist filter, duplicate warnings, and (round 62) a full-width table: select
+  box, Title (art and name; sticky), Artist, Album, Length, Badges (© licence, Mastered, Levelled),
+  Playlists, Added, Loudness, then Bitrate, Size and Mastering preset (hidden until chosen in the
+  Columns menu), **Rating** (five star buttons, `--amber` when filled, dim `--faint` when not) and
+  the buttons. Headings sort (a small ▲ or ▼), the heading row and the Title column stay in view
+  while the table scrolls inside its card, rows can be made compact, a filter shows one rating,
+  and ticked songs get a bar to rate them together. Below 700 px each song is a card (title,
+  artist, badges, stars, buttons). The manager (`.top.fluid`, `.page.fluid`) has no maximum width;
+  the player and the studio keep 1240 px.
 - **Playlists:** songs, length, weight, **Show song titles** switch.
 - **Schedule:** week grid 06:00–24:00, live blocks (red edge) and AutoDJ blocks (accent edge),
   station time zone.

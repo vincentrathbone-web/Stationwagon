@@ -173,6 +173,91 @@ try {
   await A.evaluate(`[...${rowOf(victim)}.querySelectorAll("td.acts button")].find((b) => /Yes/.test(b.textContent)).click(); 1`);
   check("  Yes removes the row and updates the count, without a reload", await A.until(`!${rowOf(victim)} && document.getElementById("libCount").textContent !== ${JSON.stringify(countBefore)} && window.__marker === "same page"`));
 
+  // ---- round 62: the whole window wide, stars, sorting, the column menu, compact rows, the phone's cards ----
+  console.log("The wide table, stars, sorting and columns (round 62)");
+  await A.call("Emulation.setDeviceMetricsOverride", { width: 1700, height: 900, deviceScaleFactor: 1, mobile: false });
+  await A.evaluate(`try { localStorage.removeItem("sw.library.cols"); localStorage.removeItem("sw.library.dense"); } catch (e) {} 1`);
+  await A.go(`${base}/manage/library`);
+  const [s0, s1, s2] = songs.ids;
+  const star = (id, n) => `document.querySelector('#t${id} .star[data-stars="${n}"]')`;
+  const disp = (sel) => `getComputedStyle(document.querySelector(${JSON.stringify(sel)})).display`;
+  check("the manager takes the whole window's width", await A.evaluate(`document.querySelector("main.page").getBoundingClientRect().width > 1640`));
+  check("  the album, loudness and added columns show; bitrate, size and preset start hidden", await A.evaluate(`[${disp('#t' + s0 + ' td[data-col="album"]')}, ${disp('#t' + s0 + ' td[data-col="loudness"]')}, ${disp('#t' + s0 + ' td[data-col="added"]')}].every((d) => d !== "none")
+    && [${disp('#t' + s0 + ' td[data-col="bitrate"]')}, ${disp('#t' + s0 + ' td[data-col="size"]')}, ${disp('#t' + s0 + ' td[data-col="preset"]')}].every((d) => d === "none")`));
+  check("  the stars are the last column before the buttons", await A.evaluate(`(() => { const c = [...document.querySelectorAll("#t${s0} > td")]; return c[c.length - 2].classList.contains("c-rating") && c[c.length - 1].classList.contains("acts"); })()`));
+  check("the sticky heading stays at the top of the table while it scrolls", await (async () => {
+    await A.evaluate(`document.getElementById("libWrap").scrollTop = 500; 1`);
+    await sleep(200);
+    return await A.evaluate(`(() => { const w = document.getElementById("libWrap"); return w.scrollTop > 100 && Math.abs(document.querySelector("#libTable th[data-col=length]").getBoundingClientRect().top - w.getBoundingClientRect().top) < 3; })()`);
+  })());
+  await A.evaluate(`document.getElementById("libWrap").scrollTop = 0; 1`);
+
+  await A.evaluate(`${star(s0, 4)}.click(); 1`);
+  check("a click on the 4th star rates the song at once", await A.until(`document.querySelectorAll("#t${s0} .star.on").length === 4 && ${star(s0, 4)}.getAttribute("aria-checked") === "true"`));
+  check("  and it is saved on the server, with the row's own record updated", await A.until(`JSON.parse(document.getElementById("t${s0}").dataset.track).rating === 4`) && helper("lib-info", s0).rating === 4);
+  await A.evaluate(`${star(s0, 4)}.click(); 1`);
+  check("  the star it already has takes the rating off", await A.until(`document.querySelectorAll("#t${s0} .star.on").length === 0`) && await A.until(`JSON.parse(document.getElementById("t${s0}").dataset.track).rating === null`) && helper("lib-info", s0).rating === null);
+  await A.evaluate(`${star(s0, 1)}.focus(); ${star(s0, 1)}.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })); 1`);
+  const moved = await A.evaluate(`document.activeElement.dataset.stars === "2"`);
+  await A.evaluate(`document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "5", bubbles: true })); 1`);
+  const five = await A.until(`document.querySelectorAll("#t${s0} .star.on").length === 5 && JSON.parse(document.getElementById("t${s0}").dataset.track).rating === 5`);
+  check("the arrow keys move between the stars, the number keys rate", moved && five && helper("lib-info", s0).rating === 5);
+
+  await A.evaluate(`${star(s1, 2)}.click(); ${star(s2, 3)}.click(); 1`);
+  await A.until(`JSON.parse(document.getElementById("t${s2}").dataset.track).rating === 3`);
+  const order = async (key, dir) => {
+    await A.evaluate(`document.querySelector('#libTable .sortb[data-key="${key}"]').click(); 1`);
+    return A.evaluate(`[...document.querySelectorAll("#libBody tr[id^=t]")].map((tr) => tr.id)`);
+  };
+  const byRating = await order("rating");
+  const ratingOf = (id) => (id === `t${s0}` ? 5 : id === `t${s1}` ? 2 : id === `t${s2}` ? 3 : 3);
+  check("a click on Rating sorts by it (unrated counts as 3), a second click turns it round", byRating.length >= 28 && ratingOf(byRating[0]) === 2 && ratingOf(byRating[byRating.length - 1]) === 5
+    && await A.evaluate(`document.querySelector('#libTable th[data-col=rating]').getAttribute("aria-sort")`) === "ascending"
+    && (await order("rating"))[0] === `t${s0}` && await A.evaluate(`document.querySelector('#libTable th[data-col=rating]').getAttribute("aria-sort")`) === "descending");
+  const lens = async () => A.evaluate(`[...document.querySelectorAll("#libBody tr[id^=t]")].map((tr) => parseFloat(tr.querySelector('[data-col=length]').dataset.sort))`);
+  await order("length");
+  const l1 = await lens();
+  check("Length sorts as numbers, smallest first, and again largest first", l1.every((v, i) => i === 0 || v >= l1[i - 1]) && (await order("length"), (await lens()).every((v, i, a) => i === 0 || v <= a[i - 1])));
+  await order("title");
+  const titles = await A.evaluate(`[...document.querySelectorAll("#libBody .tt")].map((e) => e.textContent)`);
+  check("Title sorts the songs by name", titles.every((v, i) => i === 0 || new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }).compare(titles[i - 1], v) <= 0));
+
+  const filterTo = (v) => A.evaluate(`(() => { const f = document.getElementById("ratingFilter"); f.value = ${JSON.stringify(v)}; f.dispatchEvent(new Event("change", { bubbles: true })); return 1; })()`);
+  await filterTo("5");
+  check("the rating filter shows only the songs with that many stars", await A.evaluate(`[...document.querySelectorAll("#libBody tr[id^=t]")].filter((tr) => !tr.hidden).map((tr) => tr.id).join() === "t${s0}"`)
+    && /Showing 1 of/.test(await A.evaluate(`document.getElementById("libNote").textContent`)));
+  await filterTo("none");
+  check("  “Not rated yet” hides the rated ones", await A.evaluate(`[${s0}, ${s1}, ${s2}].every((id) => document.getElementById("t" + id).hidden) && [...document.querySelectorAll("#libBody tr[id^=t]")].some((tr) => !tr.hidden)`));
+  await filterTo("");
+  check("  All ratings shows everything again", await A.evaluate(`[...document.querySelectorAll("#libBody tr[id^=t]")].every((tr) => !tr.hidden)`));
+
+  await A.evaluate(`document.querySelector("#t${s1} .sel").click(); document.querySelector("#t${s2} .sel").click(); 1`);
+  check("choosing songs shows the bar with how many", await A.evaluate(`!document.getElementById("bulkBar").hidden && document.getElementById("bulkCount").textContent === "2 selected"`));
+  await A.evaluate(`document.querySelector('#bulkStars .star[data-stars="4"]').click(); 1`);
+  check("  a star in the bar rates them all, on screen and on the server", await A.until(`document.querySelectorAll("#t${s1} .star.on").length === 4 && document.querySelectorAll("#t${s2} .star.on").length === 4`)
+    && helper("lib-info", s1).rating === 4 && helper("lib-info", s2).rating === 4);
+  await A.evaluate(`document.getElementById("bulkClear").click(); 1`);
+  check("  Clear rating takes them off", await A.until(`document.querySelectorAll("#t${s1} .star.on").length === 0 && document.querySelectorAll("#t${s2} .star.on").length === 0`) && helper("lib-info", s1).rating === null);
+  await A.evaluate(`document.getElementById("bulkNone").click(); 1`);
+  check("  Deselect puts the bar away", await A.evaluate(`document.getElementById("bulkBar").hidden`));
+
+  await A.evaluate(`document.querySelector('#colMenu input[data-col="album"]').click(); document.querySelector('#colMenu input[data-col="bitrate"]').click(); 1`);
+  check("the Columns menu hides and shows columns at once", await A.evaluate(`${disp('#t' + s0 + ' td[data-col="album"]')} === "none" && ${disp('#t' + s0 + ' td[data-col="bitrate"]')} !== "none" && ${disp('#libTable th[data-col="album"]')} === "none"`));
+  await A.evaluate(`document.getElementById("denseToggle").click(); 1`);
+  check("  Compact rows make them shorter", await A.evaluate(`document.getElementById("libTable").classList.contains("dense")`));
+  await A.go(`${base}/manage/library`);
+  check("  the choices are still there after a reload", await A.evaluate(`${disp('#t' + s0 + ' td[data-col="album"]')} === "none" && ${disp('#t' + s0 + ' td[data-col="bitrate"]')} !== "none" && document.getElementById("libTable").classList.contains("dense") && document.querySelector('#colMenu input[data-col="album"]').checked === false`));
+  await A.evaluate(`try { localStorage.removeItem("sw.library.cols"); localStorage.removeItem("sw.library.dense"); } catch (e) {} 1`);
+
+  await A.call("Emulation.setDeviceMetricsOverride", { width: 390, height: 800, deviceScaleFactor: 1, mobile: true });
+  await A.go(`${base}/manage/library`);
+  const phone = await A.evaluate(`(() => { const r = document.querySelector("#t${s0}"); const st = r.querySelector(".star").getBoundingClientRect(); return {
+    wide: document.documentElement.scrollWidth <= innerWidth + 1, headHidden: getComputedStyle(document.querySelector("#libTable thead")).display === "none",
+    card: [".c-title", ".c-artist", ".c-rating", ".acts"].every((s) => getComputedStyle(r.querySelector(s)).display !== "none"), star: st.width >= 18 && st.height >= 18,
+    plain: getComputedStyle(r.querySelector("td[data-col=length]")).display === "none" }; })()`);
+  check("on a phone each song is a card with its stars and buttons, and nothing scrolls sideways", phone.wide && phone.headHidden && phone.card && phone.star && phone.plain, JSON.stringify(phone));
+  await A.call("Emulation.clearDeviceMetricsOverride");
+
   console.log("After a reload");
   await A.go(`${base}/manage/library`);
   check("the changes are still there", await A.evaluate(`document.getElementById("t${plain}").querySelector(".tt").textContent === "Web Test Lib Renamed" && !document.getElementById("t${victim}")`));

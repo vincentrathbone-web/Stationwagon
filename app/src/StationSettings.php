@@ -33,6 +33,8 @@ final class StationSettings
         'silence_db' => ['group' => 'Songs', 'label' => 'Move on when a song goes quiet', 'help' => 'The next song starts once the music stays below this level to the end, so long quiet endings don’t become dead air. Works for songs prepared on upload from now on.',
             'choices' => [0 => 'Off: play every song to its end', -50 => 'Below −50 dB: only near-silence', -40 => 'Below −40 dB: fade-outs and silence', -30 => 'Below −30 dB: quiet endings too']],
         'recent_tracks' => ['group' => 'Songs', 'label' => 'Songs not to repeat', 'help' => 'Shuffle never picks one of the last this many songs.', 'min' => 0, 'max' => 20, 'step' => 1, 'unit' => 'songs'],
+        'ratings_influence' => ['group' => 'Songs', 'label' => 'Let ratings influence how often songs play', 'help' => 'Coming soon: stars are saved in the Music library now, but they do not change the playing order yet. Later, with this on, songs with fewer stars play less often and songs with more stars play more often (a song with no stars counts as 3).',
+            'choices' => [0 => 'Off: every song is equally likely', 1 => 'On: more stars play more often']],
         'live_kbps' => ['group' => 'Sound quality', 'label' => 'Live shows', 'help' => 'The studio sends live shows at this quality.', 'choices' => self::QUALITY],
         'prep_kbps' => ['group' => 'Sound quality', 'label' => 'Prepared songs', 'help' => 'Songs are saved at this quality when they’re prepared on upload. Songs already in the library keep theirs.', 'choices' => self::PREP_QUALITY],
         // round 51: how songs are prepared. They apply to songs prepared from now on (uploads, Song prep's Apply, re-levelling).

@@ -47,22 +47,70 @@ $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 
   <ol class="uplist" id="uplist" hidden></ol>
 </form>
 
+<?php
+// The table (round 62): full width, sortable, columns to choose, star ratings. $cols: key => label; the ones in
+// $hiddenCols start hidden (the person's choice is kept in the browser, assets/library.js).
+$cols = ['artist' => 'Artist', 'album' => 'Album', 'length' => 'Length', 'badges' => 'Badges', 'playlists' => 'Playlists', 'added' => 'Added',
+    'loudness' => 'Loudness', 'bitrate' => 'Bitrate', 'size' => 'Size', 'preset' => 'Mastering preset'];
+$hiddenCols = ['bitrate', 'size', 'preset'];
+$ncols = 14;
+$tz = new DateTimeZone((string) ($station['timezone'] ?? 'UTC') ?: 'UTC');
+// a song's stars are a radio group (arrow keys move, 1 to 5 and 0 rate); $action: plain buttons that rate the selected songs
+$stars = function (?int $r, string $label, bool $action = false): string {
+    $o = '<span class="stars" role="' . ($action ? 'group' : 'radiogroup') . '" aria-label="' . ($action ? '' : 'Rating for ') . h($label) . '">';
+    for ($i = 1; $i <= 5; $i++) {
+        $word = $i . ($i === 1 ? ' star' : ' stars');
+        $o .= '<button type="button" class="star' . ($r !== null && $i <= $r ? ' on' : '') . '"'
+            . ($action ? ' tabindex="0"' : ' role="radio" aria-checked="' . ($r === $i ? 'true' : 'false') . '" tabindex="' . ($r === $i || ($r === null && $i === 1) ? '0' : '-1') . '"')
+            . ' data-stars="' . $i . '" title="' . $word . '" aria-label="' . $word . '">★</button>';
+    }
+    return $o . '</span>';
+};
+?>
 <form class="toolbar" method="get" action="<?= h(App::url('manage/library')) ?>" role="search">
   <input type="search" name="q" value="<?= h($q) ?>" placeholder="Search title or artist" aria-label="Search the library">
   <button class="btn" type="submit">Search</button>
   <?php if ($q !== ''): ?><a class="btn" href="<?= h(App::url('manage/library')) ?>">Show all</a><?php endif ?>
+  <select id="ratingFilter" aria-label="Show songs by rating" hidden>
+    <option value="">All ratings</option>
+    <option value="none">Not rated yet</option>
+    <?php for ($i = 5; $i >= 1; $i--): ?><option value="<?= $i ?>"><?= str_repeat('★', $i) ?> <?= $i ?> star<?= $i === 1 ? '' : 's' ?></option><?php endfor ?>
+  </select>
+  <details class="colmenu" id="colMenu" hidden>
+    <summary class="btn">Columns</summary>
+    <div class="colpanel" role="group" aria-label="Columns to show">
+      <?php foreach ($cols as $key => $label): ?><label class="swrow"><input class="sw" type="checkbox" data-col="<?= h($key) ?>"<?= in_array($key, $hiddenCols, true) ? '' : ' checked' ?>> <?= h($label) ?></label><?php endforeach ?>
+      <label class="swrow dense"><input class="sw" type="checkbox" id="denseToggle"> Compact rows</label>
+    </div>
+  </details>
 </form>
+<div class="bulkbar" id="bulkBar" hidden>
+  <b id="bulkCount">0 selected</b>
+  <span class="muted2">Rate them:</span> <span id="bulkStars"><?= $stars(null, 'Rate the selected songs', true) ?></span>
+  <button class="btn sm" type="button" id="bulkClear">Clear rating</button>
+  <button class="btn sm" type="button" id="bulkNone">Deselect</button>
+</div>
+<p class="muted2 libnote" id="libNote" role="status" aria-live="polite"></p>
 
-<div class="tablewrap" id="libWrap" data-action="<?= h(App::url('manage/library')) ?>" data-csrf="<?= h($csrf) ?>" data-base="<?= h(App::url('')) ?>">
-  <table>
-    <thead><tr><th>Title</th><th>Artist</th><th class="num">Length</th><th class="num">Playlists</th><th class="num">Size</th><th></th></tr></thead>
+<div class="tablewrap lib" id="libWrap" data-action="<?= h(App::url('manage/library')) ?>" data-csrf="<?= h($csrf) ?>" data-base="<?= h(App::url('')) ?>">
+  <table class="lib" id="libTable" data-hidden="<?= h(implode(' ', $hiddenCols)) ?>">
+    <thead><tr>
+      <th class="c-sel" data-col="sel"><input type="checkbox" id="selAll" aria-label="Select every song shown"></th>
+      <th data-col="title" aria-sort="ascending"><button type="button" class="sortb" data-key="title">Title</button></th>
+      <?php foreach ($cols as $key => $label): $num = in_array($key, ['length', 'playlists', 'loudness', 'bitrate', 'size'], true); ?>
+        <th data-col="<?= h($key) ?>"<?= $num ? ' class="num"' : '' ?>><?php if ($key === 'badges'): ?><?= h($label) ?><?php else: ?><button type="button" class="sortb" data-key="<?= h($key) ?>"<?= $num ? ' data-type="num"' : '' ?>><?= h($label) ?></button><?php endif ?></th>
+      <?php endforeach ?>
+      <th data-col="rating"><button type="button" class="sortb" data-key="rating" data-type="num">Rating</button></th>
+      <th data-col="acts"><span class="vh">Actions</span></th>
+    </tr></thead>
     <tbody id="libBody">
     <?php if (!$tracks): ?>
-      <tr><td colspan="6" class="muted2"><?= $q !== '' ? 'No songs match “' . h($q) . '”.' : 'No songs yet. Add some above.' ?></td></tr>
+      <tr class="empty"><td colspan="<?= $ncols ?>" class="muted2"><?= $q !== '' ? 'No songs match “' . h($q) . '”.' : 'No songs yet. Add some above.' ?></td></tr>
     <?php endif ?>
-    <?php foreach ($tracks as $t): $id = (int) $t['id']; $row = Stationwagon\Library::row($t); $line = Stationwagon\Rights::line(Stationwagon\Rights::decode($t['rights'])); ?>
+    <?php foreach ($tracks as $t): $id = (int) $t['id']; $row = Stationwagon\Library::row($t); $line = Stationwagon\Rights::line(Stationwagon\Rights::decode($t['rights']));
+      $added = ''; try { $added = (new DateTimeImmutable((string) $t['created_at'], new DateTimeZone('UTC')))->setTimezone($tz)->format('j M Y'); } catch (Throwable) {} ?>
       <?php if ($edit === $id): ?>
-        <tr class="editing"><td colspan="6">
+        <tr class="editing"><td colspan="<?= $ncols ?>">
           <form method="post" action="<?= h(App::url('manage/library')) ?>" class="editrow">
             <input type="hidden" name="csrf" value="<?= h($csrf) ?>"><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="<?= $id ?>"><input type="hidden" name="q" value="<?= h($q) ?>">
             <label class="field"><span class="lbl">Title</span><input name="title" value="<?= h($t['title']) ?>" required></label>
@@ -74,14 +122,22 @@ $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 
         </td></tr>
       <?php else: ?>
         <tr id="t<?= $id ?>" data-track="<?= h(json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?>">
-          <td class="c-title"><span class="arts"><?php if ($row['art']): ?><img src="<?= h(App::url($row['art'])) ?>" alt="Album art" width="40" height="40" loading="lazy"><?php endif ?></span><span class="tx"><b class="tt"><?= h($t['title']) ?></b><span class="cb"><?php if ($line !== ''): ?> <button type="button" class="pill rights" title="<?= h($line) ?>">© Copyright</button><?php endif ?></span><?php if ((int) ($t['mastered'] ?? 0)): ?> <span class="pill auto" title="Mastered with “<?= h($t['preset'] ?? 'Audition chain') ?>”">Mastered</span><?php endif ?><?php if ($t['loudness_lufs'] !== null): ?> <span class="pill auto" title="<?= h('Levelled to ' . $lufs((float) $t['loudness_lufs']) . ' LUFS'
+          <td class="c-sel" data-col="sel"><input type="checkbox" class="sel" aria-label="Select <?= h($t['title']) ?>"></td>
+          <td class="c-title" data-col="title"><div class="tcell"><span class="arts"><?php if ($row['art']): ?><img src="<?= h(App::url($row['art'])) ?>" alt="Album art" width="40" height="40" loading="lazy"><?php endif ?></span><b class="tt"><?= h($t['title']) ?></b></div></td>
+          <td class="c-artist" data-col="artist"><?= h($t['artist'] ?? '') ?></td>
+          <td class="c-album alb" data-col="album"><?= h($t['album'] ?? '') ?></td>
+          <td class="num" data-col="length" data-sort="<?= h((string) (float) $t['duration_s']) ?>"><?= h(duration((float) $t['duration_s'])) ?></td>
+          <td class="c-badges" data-col="badges"><span class="cb"><?php if ($line !== ''): ?><button type="button" class="pill rights" title="<?= h($line) ?>">© Copyright</button><?php endif ?></span><?php if ((int) ($t['mastered'] ?? 0)): ?> <span class="pill auto" title="Mastered with “<?= h($t['preset'] ?? 'Audition chain') ?>”">Mastered</span><?php endif ?><?php if ($t['loudness_lufs'] !== null): ?> <span class="pill auto" title="<?= h('Levelled to ' . $lufs((float) $t['loudness_lufs']) . ' LUFS'
             . ($t['level_target'] !== null ? ' (target ' . $lufs((float) $t['level_target']) . ')' : '')
-            . ($t['level_gain_db'] !== null ? ': ' . ((float) $t['level_gain_db'] >= 0 ? '+' : '') . $lufs((float) $t['level_gain_db']) . ' dB from ' . $lufs((float) $t['source_lufs']) . ' LUFS' : '')) ?>">Levelled</span><?php endif ?><span class="sub alb"><?= h($t['album'] ?? '') ?></span></span></td>
-          <td class="c-artist"><?= h($t['artist'] ?? '') ?></td>
-          <td class="num"><?= h(duration((float) $t['duration_s'])) ?></td>
-          <td class="num"><?= (int) $t['playlists'] ?></td>
-          <td class="num"><?= h(megabytes((int) $t['bytes'])) ?><span class="sub"><?= (int) $t['bitrate_kbps'] ?> kbps</span></td>
-          <td class="acts">
+            . ($t['level_gain_db'] !== null ? ': ' . ((float) $t['level_gain_db'] >= 0 ? '+' : '') . $lufs((float) $t['level_gain_db']) . ' dB from ' . $lufs((float) $t['source_lufs']) . ' LUFS' : '')) ?>">Levelled</span><?php endif ?></td>
+          <td class="num" data-col="playlists"><?= (int) $t['playlists'] ?></td>
+          <td class="num" data-col="added" data-sort="<?= h((string) $t['created_at']) ?>"><?= h($added) ?></td>
+          <td class="num" data-col="loudness" data-sort="<?= $t['loudness_lufs'] !== null ? h((string) (float) $t['loudness_lufs']) : '' ?>"><?= $t['loudness_lufs'] !== null ? h($lufs((float) $t['loudness_lufs'])) : '—' ?></td>
+          <td class="num" data-col="bitrate" data-sort="<?= (int) $t['bitrate_kbps'] ?>"><?= (int) $t['bitrate_kbps'] ?> kbps</td>
+          <td class="num" data-col="size" data-sort="<?= (int) $t['bytes'] ?>"><?= h(megabytes((int) $t['bytes'])) ?></td>
+          <td class="c-preset" data-col="preset"><?= (int) ($t['mastered'] ?? 0) ? h((string) ($t['preset'] ?? 'Audition chain')) : '—' ?></td>
+          <td class="c-rating" data-col="rating" data-sort="<?= $row['rating'] ?? 3 ?>"><?= $stars($row['rating'], $t['title']) ?></td>
+          <td class="acts" data-col="acts">
             <?php if ($confirm === $id): ?>
               <span class="warn2">Remove from the library?</span>
               <?= $post('manage/library', 'Yes, remove', ['action' => 'delete', 'id' => $id, 'q' => $q], 'btn sm danger') ?>
@@ -102,7 +158,7 @@ $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 
 <script src="<?= h(App::asset('assets/prep.js')) ?>" data-kbps="<?= $prepQuality['kbps'] ?>" data-rate="<?= $prepQuality['rate'] ?>" data-precision="<?= $prepQuality['precision'] ?>" data-dither="<?= $prepQuality['dither'] ? 1 : 0 ?>" data-quality="<?= $prepQuality['q'] ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js', 'assets/master-core.js', 'assets/vendor/lame-3.100.js', 'assets/vendor/ffmpeg-decode-7.1.js'])) ?>" defer></script>
 <script src="<?= h(App::asset('assets/upload.js')) ?>" defer></script>
 <template id="libEditTpl">
-  <tr class="editing"><td colspan="6">
+  <tr class="editing"><td colspan="<?= $ncols ?>">
     <form class="editrow libedit" novalidate>
       <div class="artbox">
         <div class="artpic" data-role="pic"></div>

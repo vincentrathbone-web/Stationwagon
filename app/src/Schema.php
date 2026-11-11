@@ -31,10 +31,12 @@ namespace Stationwagon;
  *   v12 users.blocked_at (and per-person ticks, gone again in v13)
  *   v13 roles: the station's roles and what each may do; users.role holds a role's key
  *   v14 tracks.art (album art) and tracks.rights (copyright details)
+ *   v15 presenter notes can be slides
+ *   v16 tracks.rating (1 to 5 stars; NULL = not rated, counts as 3)
  */
 final class Schema
 {
-    public const VERSION = 15;
+    public const VERSION = 16;
 
     /** Where the station's storage is, for upgrade steps that read files (the app's folder unless a test says otherwise). */
     private static ?string $root = null;
@@ -122,6 +124,7 @@ final class Schema
                 `preset_settings` TEXT NULL COMMENT 'JSON: the mastering settings it was made with',
                 `art` VARCHAR(40) NULL COMMENT 'album art file under storage/art',
                 `rights` TEXT NULL COMMENT 'JSON: copyright details (Rights)',
+                `rating` TINYINT UNSIGNED NULL COMMENT 'stars 1-5; NULL = not rated yet (counts as 3)',
                 `outro` MEDIUMTEXT NULL COMMENT 'JSON: loudness (LUFS) of each second of the last minute, from song prep',
                 `status` ENUM('processing','ready','error') NOT NULL DEFAULT 'ready',
                 `created_at` DATETIME NOT NULL,
@@ -534,6 +537,11 @@ final class Schema
             // presenter notes can be slides (pictures)
             15 => [
                 "ALTER TABLE `{$p}presenter_notes` MODIFY `kind` ENUM('verse','refs','video','note','slides') NOT NULL",
+            ],
+            // star ratings per song (nothing plays by them yet; unrated counts as 3)
+            16 => [
+                fn(Db $db) => $db->run("SHOW COLUMNS FROM `{$p}tracks` LIKE 'rating'")->fetch() ? null
+                    : $db->pdo->exec("ALTER TABLE `{$p}tracks` ADD COLUMN `rating` TINYINT UNSIGNED NULL COMMENT 'stars 1-5; NULL = not rated yet (counts as 3)' AFTER `rights`"),
             ],
         ];
     }

@@ -149,6 +149,8 @@ h2 { font-weight: 700; font-size: 18px; margin: 0 0 10px; }
 
 /* ---- Station manager (design/skins/green/manager.html) ---- */
 .top.wide, .page.wide { max-width: 1240px; }
+/* the manager takes the whole window (round 62): the music library has many columns */
+.top.fluid, .page.fluid { max-width: none; }
 .inline { display: inline; margin: 0; }
 .toast { margin: 0; }
 .mgr { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 14px; align-items: start; }
@@ -230,11 +232,68 @@ td.cando { font-size: 13px; color: var(--muted); max-width: 260px; }
   table.people.roles td.acts { display: block; grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 }
 /* music library: album art, the © badge, saving in place, the copyright window (round 45) */
-td.c-title .tx { display: block; min-width: 0; }
-td.c-title { display: flex; gap: 10px; align-items: center; }
+td.c-title .tcell { display: flex; gap: 10px; align-items: center; min-width: 0; }
 td.c-title .arts { flex: none; width: 40px; height: 40px; border-radius: var(--r-small); background: var(--raised); overflow: hidden; display: block; }
 td.c-title .arts img { width: 40px; height: 40px; object-fit: cover; display: block; }
 td .sub.alb:empty { display: none; }
+/* the music library table (round 62): the whole window wide, sticky header and title, sortable, columns to choose, stars */
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.tablewrap.lib { max-height: calc(100vh - 24px); overflow: auto; }
+.tablewrap table.lib { min-width: 1020px; }
+table.lib thead th { position: sticky; top: 0; z-index: 3; background: var(--panel); white-space: nowrap; }
+table.lib th.num { text-align: right; }
+table.lib th[data-col="title"], table.lib td.c-title { position: sticky; left: 0; z-index: 2; background: var(--panel); min-width: 240px; max-width: 360px; }
+table.lib thead th[data-col="title"] { z-index: 4; }
+table.lib td.c-title b.tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.lib td.c-artist, table.lib td.c-album, table.lib td.c-preset { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+table.lib td.c-badges { white-space: nowrap; }
+table.lib td.c-badges .cb { display: inline; }
+table.lib th.c-sel, table.lib td.c-sel { width: 36px; padding-inline: 10px 0; }
+table.lib input[type=checkbox]:not(.sw) { accent-color: var(--amber); width: 16px; height: 16px; margin: 0; cursor: pointer; }
+.sortb { appearance: none; border: 0; background: none; padding: 0; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; cursor: pointer; }
+.sortb:hover { color: var(--ink); }
+.sortb:focus-visible, .star:focus-visible, .colmenu summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+th[aria-sort] .sortb { color: var(--amber); }
+th[aria-sort="ascending"] .sortb::after { content: " ▲"; font-size: 9px; }
+th[aria-sort="descending"] .sortb::after { content: " ▼"; font-size: 9px; }
+table.lib[data-hidden~="artist"] [data-col="artist"], table.lib[data-hidden~="album"] [data-col="album"], table.lib[data-hidden~="length"] [data-col="length"],
+table.lib[data-hidden~="badges"] [data-col="badges"], table.lib[data-hidden~="playlists"] [data-col="playlists"], table.lib[data-hidden~="added"] [data-col="added"],
+table.lib[data-hidden~="loudness"] [data-col="loudness"], table.lib[data-hidden~="bitrate"] [data-col="bitrate"], table.lib[data-hidden~="size"] [data-col="size"],
+table.lib[data-hidden~="preset"] [data-col="preset"] { display: none !important; }
+table.lib.dense td { padding-block: 4px; }
+table.lib.dense td.c-title .arts, table.lib.dense td.c-title .arts img { width: 26px; height: 26px; }
+.stars { display: inline-flex; gap: 1px; white-space: nowrap; }
+.star { appearance: none; border: 0; background: none; padding: 2px 1px; font: 400 18px/1 var(--f-ui); color: var(--faint); cursor: pointer; border-radius: var(--r-small); opacity: .55; }
+.star.on { color: var(--amber); opacity: 1; }
+.star:hover { color: var(--amber); opacity: 1; }
+.colmenu { position: relative; }
+.colmenu summary { list-style: none; }
+.colmenu summary::-webkit-details-marker { display: none; }
+.colpanel { position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; background: var(--panel); border: 1px solid var(--edge); box-shadow: var(--card-shadow); border-radius: var(--r-box); padding: 12px 14px 4px; width: 230px; max-height: 70vh; overflow: auto; }
+.colpanel .swrow { padding-bottom: 8px; }
+.colpanel .dense { border-top: 1px solid var(--edge-soft); padding-top: 8px; }
+.bulkbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 14px; background: var(--panel); border: 1px solid var(--edge); border-radius: var(--r-box); }
+.toolbar select { background: var(--raised); color: var(--ink); border: 1px solid transparent; border-radius: var(--r-pill); font: 600 14px var(--f-ui); padding: 10px 14px; }
+.libnote { margin: 0; min-height: 1.3em; }
+.libnote.bad { color: var(--onair); font-weight: 600; }
+/* a phone: each song is a card (title, artist, badges, stars, buttons) */
+@media (max-width: 700px) {
+  .tablewrap.lib { max-height: none; overflow: visible; }
+  .tablewrap table.lib { min-width: 0; }
+  table.lib thead { display: none; }
+  table.lib, table.lib tbody { display: block; }
+  table.lib tbody tr { display: grid; grid-template-columns: 42px minmax(0, 1fr); border-bottom: 1px solid var(--edge-soft); padding: 8px 0; }
+  table.lib tbody tr:last-child { border-bottom: 0; }
+  table.lib td { display: none; border-bottom: 0; padding: 2px 14px 2px 0; }
+  table.lib td.c-sel, table.lib td.c-title, table.lib td.c-artist, table.lib td.c-badges, table.lib td.c-rating, table.lib td.acts { display: block; grid-column: 2; }
+  table.lib td.c-sel { grid-column: 1; grid-row: 1; padding: 10px 0 0 14px; }
+  table.lib td.c-title { position: static; min-width: 0; max-width: none; background: transparent; }
+  table.lib td.acts { text-align: left; white-space: normal; }
+  table.lib td.acts > * { margin: 4px 4px 0 0; }
+  table.lib tr.editing, table.lib tr.empty { display: block; }
+  table.lib tr.editing td, table.lib tr.empty td { display: block; padding: 10px 14px; }
+  .star { padding: 6px 4px; font-size: 22px; }
+}
 .pill.rights { color: var(--cue); background: var(--raised); letter-spacing: .04em; text-transform: none; font-size: 11px; border: 0; cursor: pointer; }
 .pill.rights:hover { background: var(--raised-hover); }
 tr.saved td { animation: rowSaved 1.2s ease-out; }

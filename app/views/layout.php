@@ -13,7 +13,7 @@
 <script src="<?= h(App::asset('assets/skin.js')) ?>" defer></script>
 </head>
 <body>
-<header class="top<?= !empty($wide) ? ' wide' : '' ?>">
+<header class="top<?= !empty($wide) ? ' wide' : '' ?><?= !empty($fluid) ? ' fluid' : '' ?>">
   <a class="brand" href="<?= h(App::url('')) ?>" aria-label="Stationwagon home"><?= App::logo() ?></a><span class="ver"><?= h(Config::version()) ?></span>
   <nav class="who">
     <?= Skins::picker() ?>
@@ -27,7 +27,7 @@
     <?php endif ?>
   </nav>
 </header>
-<main class="page<?= !empty($wide) ? ' wide' : '' ?>">
+<main class="page<?= !empty($wide) ? ' wide' : '' ?><?= !empty($fluid) ? ' fluid' : '' ?>">
 <?php foreach ($flash as [$kind, $message]): ?><p class="alert <?= $kind === 'ok' ? 'ok' : 'bad' ?> toast" role="<?= $kind === 'ok' ? 'status' : 'alert' ?>"><?= h($message) ?></p><?php endforeach ?>
 <?= $content ?></main>
 </body>

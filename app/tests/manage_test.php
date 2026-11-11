@@ -296,15 +296,15 @@ try {
     $fresh = fn() => $db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$station['id']])->fetch();
     $set = new StationSettings($db, $fresh());
     $defaults = ['crossfade_seconds' => 6, 'fade_shape' => 'equal_power', 'skip_fade_seconds' => 2.0, 'live_fade_seconds' => 6.0, 'duck_db' => -12,
-        'live_timeout_seconds' => 8, 'rejoin_minutes' => 10, 'silence_db' => -40, 'recent_tracks' => 5, 'live_kbps' => 192, 'prep_kbps' => 160,
+        'live_timeout_seconds' => 8, 'rejoin_minutes' => 10, 'silence_db' => -40, 'recent_tracks' => 5, 'ratings_influence' => 0, 'live_kbps' => 192, 'prep_kbps' => 160,
         'prep_rate' => 44100, 'prep_precision' => 32, 'prep_dither' => 1, 'prep_quality' => 9];
     check('the defaults are the values the POC proved', $set->values() === $defaults, json_encode($set->values()));
     check('with 6 s pieces a DJ gets at least 8 s', $set->minLiveTimeout() === 8);
     $good = ['crossfade_seconds' => '4', 'fade_shape' => 'linear', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '3', 'duck_db' => '-18',
-        'live_timeout_seconds' => '12', 'rejoin_minutes' => '0', 'silence_db' => '0', 'recent_tracks' => '1', 'live_kbps' => '128', 'prep_kbps' => '256',
+        'live_timeout_seconds' => '12', 'rejoin_minutes' => '0', 'silence_db' => '0', 'recent_tracks' => '1', 'ratings_influence' => '1', 'live_kbps' => '128', 'prep_kbps' => '256',
         'prep_rate' => '48000', 'prep_precision' => '24', 'prep_dither' => '0', 'prep_quality' => '7'];
     [, $errs] = $set->save(['crossfade_seconds' => '13', 'fade_shape' => 'wobbly', 'skip_fade_seconds' => '0.3', 'live_fade_seconds' => 'soon', 'duck_db' => '3',
-        'live_timeout_seconds' => '5', 'rejoin_minutes' => '31', 'silence_db' => '-45', 'live_kbps' => '320', 'prep_kbps' => '',
+        'live_timeout_seconds' => '5', 'rejoin_minutes' => '31', 'silence_db' => '-45', 'ratings_influence' => '2', 'live_kbps' => '320', 'prep_kbps' => '',
         'prep_rate' => '32000', 'prep_precision' => '8', 'prep_dither' => '2', 'prep_quality' => '10']);
     check('bad values are refused, field by field', array_keys($errs) === array_keys($good), implode(',', array_keys($errs)));
     check('  and say what is allowed', str_contains($errs['skip_fade_seconds'], '0 to 6 s in steps of 0.5') && str_contains($errs['live_timeout_seconds'], '8 to 30')
@@ -312,7 +312,7 @@ try {
     check('  and nothing is stored', (new StationSettings($db, $fresh()))->values() === $defaults);
     [$updated, $errs] = $set->save($good);
     check('good values are saved, choices as their own type', !$errs && (new StationSettings($db, $fresh()))->values() === ['crossfade_seconds' => 4, 'fade_shape' => 'linear', 'skip_fade_seconds' => 1.5,
-        'live_fade_seconds' => 3.0, 'duck_db' => -18, 'live_timeout_seconds' => 12, 'rejoin_minutes' => 0, 'silence_db' => 0, 'recent_tracks' => 1, 'live_kbps' => 128, 'prep_kbps' => 256,
+        'live_fade_seconds' => 3.0, 'duck_db' => -18, 'live_timeout_seconds' => 12, 'rejoin_minutes' => 0, 'silence_db' => 0, 'recent_tracks' => 1, 'ratings_influence' => 1, 'live_kbps' => 128, 'prep_kbps' => 256,
         'prep_rate' => 48000, 'prep_precision' => 24, 'prep_dither' => 0, 'prep_quality' => 7], json_encode($errs));
     check('the quality choices show megabytes an hour', StationSettings::mbPerHour(192) === 86 && StationSettings::mbPerHour(128) === 58);
     $kept = Planner::settings($fresh());
@@ -446,7 +446,7 @@ try {
     $o3 = $mk('Old Full', 'manager', json_encode(['onair', 'library', 'playlists', 'schedule', 'podcast', 'listeners', 'sound', 'people']));
     $o4 = $mk('Old Plain', 'manager', null);
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '12' WHERE name = 'schema_version'");
-    check('the upgrade runs', Schema::upgrade($db) === [13, 14, 15]);
+    check('the upgrade runs', Schema::upgrade($db) === range(13, Schema::VERSION));
     $role = fn(int $id) => (string) $db->run("SELECT role FROM $u WHERE id = ?", [$id])->fetchColumn();
     $custom = $roles->get($role($o1));
     check('  "On air" becomes Go live any time and Run the on-air desk, in a new role', $custom !== null && str_starts_with($custom['name'], 'Custom role') && $custom['permissions'] === ['anytime', 'desk', 'schedule'], json_encode($custom));
@@ -555,10 +555,39 @@ try {
     $lib->setRights($tid, []);
     $db->pdo->exec('ALTER TABLE ' . $db->table('tracks') . ' DROP COLUMN art, DROP COLUMN rights');
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '13' WHERE name = 'schema_version'");
-    check('the upgrade to 14 adds the columns', Schema::upgrade($db, $root) === [14, 15] && $db->run('SHOW COLUMNS FROM ' . $db->table('tracks') . " LIKE 'rights'")->fetch() !== false);
+    check('the upgrade to 14 adds the columns', Schema::upgrade($db, $root) === range(14, Schema::VERSION) && $db->run('SHOW COLUMNS FROM ' . $db->table('tracks') . " LIKE 'rights'")->fetch() !== false);
     check('  and reads the songs already in the library for their art and copyright', $lib->get($tid)['art'] !== null && Stationwagon\Rights::decode($lib->get($tid)['rights'])['owner'] === 'Alruin Music');
     $art = $lib->get($tid)['art'];
     check('removing a song removes its art file too', $lib->delete($tid, $p, $now) === null && !is_file("$root/storage/art/$art"));
+
+    echo "Star ratings (round 62)\n";
+    make_mp3("$root/in/rate1", 30, ['title' => 'Rate One'], 41);
+    make_mp3("$root/in/rate2", 30, ['title' => 'Rate Two'], 42);
+    $s1 = $lib->import("$root/in/rate1", null, null, 'rate1.mp3')['id'];
+    $s2 = $lib->import("$root/in/rate2", null, null, 'rate2.mp3')['id'];
+    $starsOf = fn(int $id) => $lib->get($id)['rating'];
+    check('a new song has no rating (it counts as 3 until it is rated)', $starsOf($s1) === null && Stationwagon\Library::row($lib->get($s1))['rating'] === null);
+    $ok = true;
+    foreach ([1, 2, 3, 4, 5] as $n) {
+        $ok = $ok && $lib->setRating($s1, $n) === null && (int) $starsOf($s1) === $n && Stationwagon\Library::row($lib->get($s1))['rating'] === $n;
+    }
+    check('a song can be rated 1 to 5 stars', $ok);
+    check('  0, 6 and −1 stars are refused, and the rating stays', $lib->setRating($s1, 0) !== null && $lib->setRating($s1, 6) !== null && $lib->setRating($s1, -1) !== null && (int) $starsOf($s1) === 5);
+    check('  a song that isn’t here is refused', $lib->setRating(999999, 3) !== null);
+    check('  another song is not touched', $starsOf($s2) === null);
+    check('  the library list carries each song’s rating', (function () use ($lib, $s1, $s2) {
+        $by = array_column($lib->tracks(), null, 'id');
+        return (int) $by[$s1]['rating'] === 5 && $by[$s2]['rating'] === null;
+    })());
+    check('  null takes the rating off', $lib->setRating($s1, null) === null && $starsOf($s1) === null);
+    $lib->setRating($s2, 2);
+    $db->pdo->exec('ALTER TABLE ' . $db->table('tracks') . ' DROP COLUMN rating');
+    $db->run('UPDATE ' . $db->table('settings') . " SET value = '15' WHERE name = 'schema_version'");
+    check('the upgrade to 16 adds the rating column (songs start unrated)', Schema::upgrade($db, $root) === [16]
+        && $db->run('SHOW COLUMNS FROM ' . $db->table('tracks') . " LIKE 'rating'")->fetch() !== false && $starsOf($s2) === null);
+    check('  and a second upgrade has nothing to do', Schema::upgrade($db, $root) === []);
+    $lib->delete($s1, $p, $now);
+    $lib->delete($s2, $p, $now);
 
     echo "Diagnostics reports\n";
     $reports = new DiagReports("$root/storage/diag");

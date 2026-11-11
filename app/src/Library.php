@@ -135,7 +135,7 @@ final class Library
             array_push($args, $like, $like);
         }
         return $this->db->run(
-            "SELECT t.id, t.file, t.sha1, t.title, t.artist, t.album, t.duration_s, t.bitrate_kbps, t.bytes, t.loudness_lufs, t.source_lufs, t.level_gain_db, t.level_target, t.mastered, t.preset, t.preset_settings, t.art, t.rights, t.created_at,
+            "SELECT t.id, t.file, t.sha1, t.title, t.artist, t.album, t.duration_s, t.bitrate_kbps, t.bytes, t.loudness_lufs, t.source_lufs, t.level_gain_db, t.level_target, t.mastered, t.preset, t.preset_settings, t.art, t.rights, t.rating, t.created_at,
                     (SELECT COUNT(*) FROM $pt pt WHERE pt.track_id = t.id) AS playlists
              FROM $t t WHERE $where ORDER BY t.title, t.id",
             $args
@@ -161,6 +161,19 @@ final class Library
         $this->db->run('UPDATE ' . $this->db->table('tracks') . ' SET title = ?, artist = ?' . ($album !== null ? ', album = ?' : '') . ' WHERE id = ?',
             array_merge([mb_substr($title, 0, 255), trim($artist) !== '' ? mb_substr(trim($artist), 0, 255) : null],
                 $album !== null ? [trim($album) !== '' ? mb_substr(trim($album), 0, 255) : null] : [], [$id]));
+        return null;
+    }
+
+    /** Rate a song 1 to 5 stars, or null to clear it (unrated counts as 3). Returns what's wrong, or null. */
+    public function setRating(int $id, ?int $stars): ?string
+    {
+        if ($stars !== null && ($stars < 1 || $stars > 5)) {
+            return 'A rating is 1 to 5 stars.';
+        }
+        if ($this->get($id) === null) {
+            return 'That song isn’t in this library.';
+        }
+        $this->db->run('UPDATE ' . $this->db->table('tracks') . ' SET rating = ? WHERE id = ? AND station_id = ?', [$stars, $id, $this->station['id']]);
         return null;
     }
 
@@ -286,7 +299,8 @@ final class Library
     public static function row(array $t): array
     {
         return ['id' => (int) $t['id'], 'title' => $t['title'], 'artist' => $t['artist'] ?? '', 'album' => $t['album'] ?? '',
-                'art' => self::artPath($t['art'] ?? null), 'rights' => Rights::decode($t['rights'] ?? null) ?? new \stdClass()];
+                'art' => self::artPath($t['art'] ?? null), 'rights' => Rights::decode($t['rights'] ?? null) ?? new \stdClass(),
+                'rating' => isset($t['rating']) ? (int) $t['rating'] : null];
     }
 
     /**

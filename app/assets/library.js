@@ -16,7 +16,9 @@
   const send = async (fields, file) => {
     const data = new FormData();
     data.append("csrf", csrf);
-    for (const [k, v] of Object.entries(fields)) data.append(k, v);
+    for (const [k, v] of Object.entries(fields)) {
+      if (Array.isArray(v)) v.forEach((x) => data.append(k + "[]", x)); else data.append(k, v);
+    }
     if (file) data.append("art", file, file.name);
     let r, j;
     try {
@@ -45,7 +47,20 @@
       p.type = "button"; p.className = "pill rights"; p.title = line || "Copyright details"; p.textContent = "© Copyright";
       cb.append(" ", p);
     }
+    const stars = tr.querySelector(".stars");
+    if (stars && "rating" in t) { paintStars(stars, t.rating); tr.querySelector(".c-rating").dataset.sort = String(t.rating || 3); }
     tr.classList.remove("saved"); void tr.offsetWidth; tr.classList.add("saved");
+  }
+
+  /** Show a rating (0 or null = none) in a star group: filled stars, the checked one, and the one Tab lands on. */
+  function paintStars(group, value) {
+    const v = value || 0;
+    group.querySelectorAll(".star").forEach((b, i) => {
+      const n = i + 1;
+      b.classList.toggle("on", n <= v);
+      b.setAttribute("aria-checked", n === v ? "true" : "false");
+      b.tabIndex = n === v || (!v && n === 1) ? 0 : -1;
+    });
   }
 
   // ---- The row's editor ------------------------------------------------------------------------
@@ -133,6 +148,166 @@
     if (a.dataset.act === "edit") openEditor(tr);
     else if (a.dataset.act === "remove") askRemove(tr);
   });
+
+  // ---- Stars, sorting, columns, selection (round 62) -----------------------------------------------
+  // Ratings are saved in the background like every other change here; sorting, the rating filter, the
+  // column choice and compact rows work on the rows already on the page (the choices are kept in this
+  // browser only). Without JavaScript the table still shows everything, in title order.
+  const table = $("libTable"), note = $("libNote");
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* a private window: the choice just isn't kept */ } },
+  };
+  const say2 = (text, bad) => { note.textContent = text || ""; note.classList.toggle("bad", !!bad); };
+  const rows = () => [...body.querySelectorAll("tr[id^='t']")];
+  const plural = (n) => n + " star" + (n === 1 ? "" : "s");
+
+  /** Rate one song (0 clears), right away on screen, then on the server; put it back if that fails. */
+  async function setRating(tr, next) {
+    const t = track(tr);
+    if (!t) return;
+    const was = t.rating || 0, group = tr.querySelector(".stars");
+    if (next === was) return;
+    paintStars(group, next);
+    try {
+      await send({ action: "rate", id: t.id, rating: next || "" });
+      t.rating = next || null;
+      tr.dataset.track = JSON.stringify(t);
+      tr.querySelector(".c-rating").dataset.sort = String(next || 3);
+      applyFilter();
+      say2(next ? "“" + t.title + "” rated " + plural(next) + "." : "“" + t.title + "” has no rating now.");
+    } catch (ex) { paintStars(group, was); say2(ex.message, true); }
+  }
+  body.addEventListener("click", (e) => {
+    const s = e.target.closest(".star");
+    if (!s) return;
+    const tr = s.closest("tr"), n = +s.dataset.stars;
+    setRating(tr, n === ((track(tr) || {}).rating || 0) ? 0 : n); // the star it already has takes it off
+  });
+  body.addEventListener("keydown", (e) => {
+    const s = e.target.closest(".star");
+    if (!s || e.ctrlKey || e.metaKey || e.altKey) return;
+    const group = s.parentNode, n = +s.dataset.stars;
+    if (/^[0-5]$/.test(e.key)) { e.preventDefault(); setRating(s.closest("tr"), +e.key); return; } // 1 to 5, and 0 to clear
+    const to = { ArrowRight: n + 1, ArrowUp: n + 1, ArrowLeft: n - 1, ArrowDown: n - 1, Home: 1, End: 5 }[e.key];
+    if (!to) return;
+    e.preventDefault();
+    const target = group.children[Math.min(5, Math.max(1, to)) - 1];
+    group.querySelectorAll(".star").forEach((b) => { b.tabIndex = b === target ? 0 : -1; });
+    target.focus();
+  });
+
+  if (!table) return;
+
+  // -- Choosing songs and rating several at once
+  const bar = $("bulkBar"), selAll = $("selAll"), bulkStars = $("bulkStars");
+  const shown = () => rows().filter((tr) => !tr.hidden);
+  const selected = () => shown().filter((tr) => tr.querySelector(".sel").checked);
+  function syncBulk() {
+    const vis = shown(), n = selected().length;
+    bar.hidden = n === 0;
+    $("bulkCount").textContent = n + " selected";
+    selAll.checked = vis.length > 0 && n === vis.length;
+    selAll.indeterminate = n > 0 && n < vis.length;
+  }
+  body.addEventListener("change", (e) => { if (e.target.classList.contains("sel")) syncBulk(); });
+  new MutationObserver(syncBulk).observe(body, { childList: true });
+  selAll.addEventListener("change", () => { shown().forEach((tr) => { tr.querySelector(".sel").checked = selAll.checked; }); syncBulk(); });
+  $("bulkNone").addEventListener("click", () => { rows().forEach((tr) => { tr.querySelector(".sel").checked = false; }); syncBulk(); });
+  async function bulkRate(n) {
+    const trs = selected();
+    if (!trs.length) return;
+    say2("Saving…");
+    try {
+      await send({ action: "rate", ids: trs.map((tr) => track(tr).id), rating: n || "" });
+      for (const tr of trs) {
+        const t = track(tr);
+        t.rating = n || null;
+        tr.dataset.track = JSON.stringify(t);
+        paintStars(tr.querySelector(".stars"), n);
+        tr.querySelector(".c-rating").dataset.sort = String(n || 3);
+      }
+      applyFilter();
+      say2(trs.length + (trs.length === 1 ? " song" : " songs") + (n ? " rated " + plural(n) + "." : " have no rating now."));
+    } catch (ex) { say2(ex.message, true); }
+  }
+  bulkStars.addEventListener("click", (e) => { const s = e.target.closest(".star"); if (s) bulkRate(+s.dataset.stars); });
+  $("bulkClear").addEventListener("click", () => bulkRate(0));
+
+  // -- Showing songs by rating
+  const rf = $("ratingFilter");
+  rf.hidden = false;
+  function applyFilter() {
+    const v = rf.value;
+    let n = 0, total = 0;
+    for (const tr of rows()) {
+      const r = (track(tr) || {}).rating || 0, show = !v || (v === "none" ? r === 0 : r === +v);
+      total++;
+      if (show) n++;
+      tr.hidden = !show;
+      const ed = tr.nextElementSibling;
+      if (ed && ed.classList.contains("editing")) ed.hidden = !show;
+    }
+    if (v) say2("Showing " + n + " of " + total + " songs.");
+    syncBulk();
+  }
+  rf.addEventListener("change", () => { applyFilter(); if (!rf.value) say2(""); });
+
+  // -- Sorting: a click on a heading; again for the other way. Empty values go last either way.
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+  let sortKey = "title", sortDir = 1;
+  const valueOf = (tr, key, num) => {
+    const c = tr.querySelector('[data-col="' + key + '"]');
+    if (!c) return null;
+    const v = c.dataset.sort !== undefined ? c.dataset.sort : c.textContent.trim();
+    if (!num) return v;
+    const x = parseFloat(v);
+    return Number.isNaN(x) ? null : x;
+  };
+  function sortBy(key, num) {
+    closeEditor();
+    sortDir = key === sortKey ? -sortDir : 1;
+    sortKey = key;
+    const groups = rows().map((tr) => {
+      const ed = tr.nextElementSibling;
+      return { tr, ed: ed && ed.classList.contains("editing") ? ed : null, v: valueOf(tr, key, num), t: valueOf(tr, "title", false) };
+    });
+    groups.sort((a, b) => {
+      const ea = a.v === null || a.v === "", eb = b.v === null || b.v === "";
+      if (ea || eb) return ea === eb ? collator.compare(a.t, b.t) : (ea ? 1 : -1);
+      const d = num ? a.v - b.v : collator.compare(a.v, b.v);
+      return d ? d * sortDir : collator.compare(a.t, b.t);
+    });
+    for (const g of groups) { body.append(g.tr); if (g.ed) body.append(g.ed); }
+    table.querySelectorAll("th[aria-sort]").forEach((th) => th.removeAttribute("aria-sort"));
+    table.querySelector('th[data-col="' + key + '"]').setAttribute("aria-sort", sortDir === 1 ? "ascending" : "descending");
+  }
+  table.tHead.addEventListener("click", (e) => {
+    const b = e.target.closest(".sortb");
+    if (b) sortBy(b.dataset.key, b.dataset.type === "num");
+  });
+
+  // -- Columns to show, and compact rows (kept in this browser)
+  const menu = $("colMenu"), checks = [...menu.querySelectorAll("input[data-col]")], dense = $("denseToggle");
+  menu.hidden = false;
+  try {
+    const list = JSON.parse(store.get("sw.library.cols"));
+    if (Array.isArray(list)) {
+      const known = list.filter((k) => checks.some((c) => c.dataset.col === k));
+      table.dataset.hidden = known.join(" ");
+      checks.forEach((c) => { c.checked = !known.includes(c.dataset.col); });
+    }
+  } catch (_) { /* nothing kept yet: the page's own choice */ }
+  checks.forEach((c) => c.addEventListener("change", () => {
+    const hidden = checks.filter((x) => !x.checked).map((x) => x.dataset.col);
+    table.dataset.hidden = hidden.join(" ");
+    store.set("sw.library.cols", JSON.stringify(hidden));
+  }));
+  dense.checked = store.get("sw.library.dense") === "1";
+  table.classList.toggle("dense", dense.checked);
+  dense.addEventListener("change", () => { table.classList.toggle("dense", dense.checked); store.set("sw.library.dense", dense.checked ? "1" : "0"); });
+  document.addEventListener("click", (e) => { if (menu.open && !menu.contains(e.target)) menu.open = false; });
+  menu.addEventListener("keydown", (e) => { if (e.key === "Escape") { menu.open = false; menu.querySelector("summary").focus(); } });
 
   // ---- The song details window (round 45; round 56: the upload window too) -----------------------
   // For a song in the library it is the copyright and licence window (Save / Clear all / Cancel). Before
