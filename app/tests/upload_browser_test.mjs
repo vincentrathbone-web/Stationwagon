@@ -257,8 +257,8 @@ try {
 
   console.log("Upload with song prep");
   await go(`${base}/manage/library`);
-  const sw = await evaluate(`[document.getElementById('prepMaster')?.checked, document.getElementById('prepLevel')?.checked]`);
-  check("the library shows both switches, on", sw[0] === true && sw[1] === true, JSON.stringify(sw));
+  const sw = await evaluate(`[document.getElementById('drop').dataset.master, document.getElementById('drop').dataset.level]`);
+  check("the library hands the station's choices (mastering and levelling, both on) to the page", sw[0] === "1" && sw[1] === "1", JSON.stringify(sw));
   let rows = await upload([song]);
   check("the song is mastered, levelled and added", rows && rows[0].cls === "ok" && rows[0].text.startsWith("Added, mastered, levelled"), rows && rows[0].text);
   check("  a 44.1 kHz song needs no conversion, so no warning", rows && rows[0].warn === "", rows && rows[0].warn);
@@ -295,13 +295,10 @@ try {
   check("  the stored song is a 44.1 kHz MP3 as long as the original", oddRate === 44100 && near(od.duration_s, 12, 0.1), od && `${oddRate} Hz, ${od.duration_s} s`);
 
   console.log("Both switches off");
+  helper("prep", "0", "0"); // set on Sound & safety since round 64 (that screen has its own test); the page follows
   await go(`${base}/manage/library`);
-  await evaluate(`(() => { for (const id of ['prepMaster', 'prepLevel']) document.getElementById(id).click(); })()`);
-  let saved = "";
-  for (let i = 0; i < 50 && !saved.startsWith("Saved"); i++) { await sleep(100); saved = await evaluate(`document.getElementById('prepSaved').textContent`); }
-  check("turning them off is saved straight away", saved.startsWith("Saved") && (p => p.master === false && p.level === false && typeof p.target === "number")(helper("prep")), `${saved}; ${JSON.stringify(helper("prep"))}`);
-  await go(`${base}/manage/library`);
-  check("  and they stay off on the next visit", JSON.stringify(await evaluate(`[document.getElementById('prepMaster').checked, document.getElementById('prepLevel').checked]`)) === "[false,false]");
+  check("with mastering and levelling off the page hands that over", JSON.stringify(await evaluate(`[document.getElementById('drop').dataset.master, document.getElementById('drop').dataset.level]`)) === '["0","0"]'
+    && /not mastered, kept at its own loudness/.test(await evaluate(`document.getElementById('prepNote').textContent`)));
   rows = await upload([plain]);
   // round 51: with nothing to change (no mastering, no levelling, its rate kept) the original goes up as it came
   check("a song goes up kept as uploaded, measured", rows && rows[0].cls === "ok" && rows[0].text.startsWith("Added, kept as uploaded") && rows[0].text.includes("measured at"), rows && rows[0].text);

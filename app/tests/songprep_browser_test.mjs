@@ -219,7 +219,7 @@ try {
   await sleep(800);
   check("Use for new uploads makes it the import default", helper("presets").default === saved.id && (await evaluate("document.getElementById('spDefault').textContent")).includes("★"));
   await go(`${base}/manage/library`);
-  check("  the library says so", (await evaluate("document.getElementById('drop').dataset.presetName")) === presetPrefix + " warm" && (await evaluate("document.getElementById('prepOpts').textContent")).includes(presetPrefix + " warm"));
+  check("  the library says so", (await evaluate("document.getElementById('drop').dataset.presetName")) === presetPrefix + " warm" && (await evaluate("document.getElementById('prepNote').textContent")).includes(presetPrefix + " warm"));
   rows = await upload([fileB]);
   const tB = helper("track", titleB);
   check("  and a new upload is mastered with it", rows && rows[0].cls === "ok" && tB && tB.preset === presetPrefix + " warm", tB && tB.preset);

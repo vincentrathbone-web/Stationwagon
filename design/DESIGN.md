@@ -194,7 +194,13 @@ The app's `/studio` follows the green mock-up, with these additions and differen
   and the note being changed has an outline. In the running order a talk item has a **Now** button
   instead of A / B (gone while it is now); opening the mic marks the next talk item as now.
 
-### Song prep switches (round 34; not in the mock-ups)
+### Song prep switches (round 34; moved to Sound & safety in round 64)
+
+Since round 64 the two switches and the loudness target below are **Loudness** settings on Sound & safety
+(two selects and the slider with its marks and legend, saved with the rest of that form), for songs and
+ads alike. The drop zone keeps one quiet line ("Prepared in your browser before upload: not mastered,
+levelled to −16.0 LUFS. Change this in Sound & safety.") and its file chooser is a normal `.btn` (the real
+input is visually hidden). What follows describes how the switches looked on the Music library.
 
 The Music library's drop zone has a row of two switches (the `.sw` toggles) under its text: **Apply
 pre-processing** *(mastering, as in Audition)* and **Loudness normalization** *(−16 LUFS)*, with a quiet
@@ -206,7 +212,7 @@ Since round 40 the mastering switch names its preset (*mastering with “Warm ni
 Song prep" link), the Mastered pill's tooltip names the preset a song was made with, each row has a
 **Song prep** button, and an upload row ends "· original kept" once the file the manager chose is saved.
 
-### Loudness target (round 41; not in the mock-ups)
+### Loudness target (round 41; on Sound & safety since round 64)
 
 Under the two switches in the Music library's drop zone: **Loudness target −16.0 LUFS** (the value in
 the mono face) with a plain line of help, a full-width range slider in the accent colour (−23 to −8 LUFS,

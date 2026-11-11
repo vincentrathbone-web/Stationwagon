@@ -1,10 +1,13 @@
 <?php use function Stationwagon\h; use Stationwagon\{App, StationSettings};
-/** @var array $values @var array $errors @var int $minLiveTimeout @var float $segment @var int $delay @var string $csrf */
+/** @var array $values @var array $errors @var int $minLiveTimeout @var float $segment @var int $delay @var string $csrf @var string $presetName */
 $groups = [];
 foreach (StationSettings::FIELDS as $key => $f) {
     $groups[$f['group']][$key] = $f;
 }
 $unit = fn(string $u): string => $u === 's' ? ' s' : " $u";
+$lufs = fn(float $v): string => str_replace('-', '−', number_format($v, 1));
+// the usual loudness targets, marked on the slider (round 41)
+$standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 'Loud, like FM radio', -9 => 'Very loud'];
 ?>
 <form method="post" action="<?= h(App::url('manage/sound')) ?>" class="soundform">
   <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
@@ -18,7 +21,7 @@ $unit = fn(string $u): string => $u === 's' ? ' s' : " $u";
 
   <div class="cols">
     <?php foreach ($groups as $group => $fields): ?>
-      <section class="card set">
+      <section class="card set" id="g-<?= h(strtolower(preg_replace('/[^A-Za-z]+/', '-', $group))) ?>">
         <h2><?= h($group) ?></h2>
         <?php foreach ($fields as $key => $f):
           $help = $f['help'];
@@ -29,7 +32,7 @@ $unit = fn(string $u): string => $u === 's' ? ' s' : " $u";
           }
           $v = $values[$key]; ?>
           <div class="setrow<?= isset($errors[$key]) ? ' bad' : '' ?>">
-            <div><label for="f-<?= h($key) ?>"><b><?= h($f['label']) ?></b></label><p><?= h($help) ?></p>
+            <div><label for="f-<?= h($key) ?>"><b><?= h($f['label']) ?></b></label><p><?= h($help) ?><?php if ($key === 'prep_master'): ?> The import preset now is “<?= h($presetName) ?>” (<a href="<?= h(App::url('manage/songprep')) ?>">change it in Song prep</a>).<?php endif ?></p>
               <?php if (isset($errors[$key])): ?><p class="err"><?= h($errors[$key]) ?></p><?php endif ?></div>
             <?php if (isset($f['choices'])): ?>
               <div class="ctl choice">
@@ -47,6 +50,19 @@ $unit = fn(string $u): string => $u === 's' ? ' s' : " $u";
                     <path class="out" d=""/><path class="in" d=""/>
                   </svg>
                 <?php endif ?>
+              </div>
+            <?php elseif ($key === 'prep_target'): ?>
+              <div class="loudwrap">
+                <div class="ctl loudctl" id="loud"<?= (int) $values['prep_level'] === 1 ? '' : ' data-off' ?>>
+                  <div class="loudtrack">
+                    <input type="range" data-loud id="f-prep_target" name="prep_target" min="<?= h((string) $min) ?>" max="<?= h((string) $f['max']) ?>" step="0.5" value="<?= h((string) $v) ?>" aria-describedby="loudLegend">
+                    <?php foreach ($standards as $mark => $what): ?><i class="loudmark lk<?= -$mark ?>" style="--at: <?= round(($mark - $min) / ($f['max'] - $min), 4) ?>" aria-hidden="true"></i><?php endforeach ?>
+                  </div>
+                  <output for="f-prep_target"><?= h($lufs((float) $v)) ?> LUFS</output>
+                </div>
+                <ul class="loudlegend" id="loudLegend">
+                  <?php foreach ($standards as $mark => $what): ?><li><i class="lk<?= -$mark ?>"></i><b><?= h($lufs((float) $mark)) ?></b> <?= h($what) ?></li><?php endforeach ?>
+                </ul>
               </div>
             <?php else: ?>
               <div class="ctl">
@@ -69,8 +85,9 @@ $unit = fn(string $u): string => $u === 's' ? ' s' : " $u";
 </form>
 
 <script src="<?= h(App::asset('assets/fades.js')) ?>"></script>
+<script src="<?= h(App::asset('assets/loudness.js')) ?>"></script>
 <script>
-document.querySelectorAll('.soundform input[type=range]').forEach((el) => {
+document.querySelectorAll('.soundform input[type=range]:not([data-loud])').forEach((el) => {
   const out = el.nextElementSibling;
   el.addEventListener('input', () => { out.textContent = String(+el.value) + el.dataset.unit; });
 });

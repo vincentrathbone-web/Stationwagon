@@ -165,6 +165,12 @@ try {
     check('  the first comes after 3 songs, and each after at least 3 songs more', $adAt[0] >= 3 && $gapsOk, json_encode($kinds));
     $played = count($adAt);
     check('  6 a day, 10:00 to 13:00: no more than its pace allows (3 hours of 24: at most 2 plays, kept apart)', $played >= 1 && $played <= 2, (string) $played);
+    $xfAd = $entries[$adAt[0]];
+    $songBefore = $entries[$adAt[0] - 1];
+    $plainSong = null;
+    foreach ($entries as $k => $e) { if (empty($e['ad']) && empty($entries[$k + 1]['ad']) && !empty($entries[$k + 1])) { $plainSong = $e; break; } }
+    check('  an ad blends over the ads’ crossfade (2 s), and so does the song before it; other songs keep their 6 s', $xfAd['fade_out'] === 2.0 && $songBefore['fade_out'] === 2.0 && $plainSong !== null && $plainSong['fade_out'] === 6.0
+        && $xfAd['full'] - $xfAd['play'] >= 2.0 - 1e-6 && $xfAd['full'] - $xfAd['play'] < 2.0 + 6.1, json_encode([$xfAd['fade_out'], $songBefore['fade_out'], $plainSong['fade_out'] ?? null]));
     $joined = true;
     foreach ($entries as $k => $e) { if ($k > 0) { $joined = $joined && abs($e['start'] - $entries[$k - 1]['end']) < 0.002; } }
     check('  and the entries still follow each other with no gap', $joined);

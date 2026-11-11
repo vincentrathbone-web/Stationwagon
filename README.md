@@ -14,7 +14,7 @@ list and quick search.
 
 | Part | Version | State |
 |---|---|---|
-| Server app (`app/`) | `0.9.9-dev` | Station manager (full width), an Ads screen (ads the AutoDJ plays between songs, paced by plays a day), AutoDJ, listener player, browser studio, podcasts, listener stats, best-quality song prep, uploads in any common format and a details window with licensing, a sortable Music library table with star ratings: done, tested and **live** |
+| Server app (`app/`) | `0.9.10-dev` | Station manager (full width), an Ads screen (ads the AutoDJ plays between songs, paced by plays a day), AutoDJ, listener player, browser studio, podcasts, listener stats, best-quality song prep, uploads in any common format and a details window with licensing, a sortable Music library table with star ratings: done, tested and **live** |
 | Windows studio app | [`v0.6.4`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/v0.6.4) | Released; finds the station from the website's address; offers each new version in an update window |
 | Android studio app | [`android-v0.7.4`](https://github.com/vincentrathbone-web/Stationwagon/releases/tag/android-v0.7.4) | Released; finds the station from the website's address; offers each new version in an update window |
 | WordPress plugin | `1.2.1` | Installs and updates a station next to a WordPress site |

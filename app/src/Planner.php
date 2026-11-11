@@ -511,7 +511,9 @@ final class Planner
         // Move on at the last piece boundary that still leaves crossfade_seconds of the song, so
         // the two-deck player always has a full-length fade (it keeps the tail playing under the
         // next song). HLS listeners jump straight on and miss the last 6–12 s instead.
-        $target = max(0.0, $track['duration'] - $this->settings['crossfade_seconds']);
+        // an ad is short: it blends with the song before it and with whatever follows over the ads' crossfade
+        $xf = !empty($track['ad']) ? (float) $this->settings['ads_crossfade_seconds'] : (float) $this->settings['crossfade_seconds'];
+        $target = max(0.0, $track['duration'] - $xf);
         // Silence detection: move on where the song goes quiet for good, so a long fade-out or a
         // silent tail doesn't become dead air; the quiet part still plays out under the next song
         $quiet = self::quietFrom($track, (float) $this->settings['silence_db']);
@@ -529,10 +531,14 @@ final class Planner
         }
         $row = [
             'n' => $prev ? $prev['n'] + 1 : 0, 'type' => 'song', 'track_id' => $track['id'], 'start_at' => $start,
-            'play_s' => round($play, 4), 'full_s' => $track['duration'], 'fade_out_s' => $this->settings['crossfade_seconds'],
+            'play_s' => round($play, 4), 'full_s' => $track['duration'], 'fade_out_s' => $xf,
             'seq' => $prev ? $prev['seq'] + $prev['piece_count'] : 0, 'piece_count' => $count,
         ];
         $this->insertEntry($row);
+        if ($prev && !empty($track['ad']) && $prev['type'] === 'song') {
+            // the song before an ad fades out over the ads' crossfade too (its end is where the ad starts; only the fade is shorter)
+            $this->db->run('UPDATE ' . $this->db->table('timeline') . ' SET fade_out_s = ? WHERE station_id = ? AND n = ?', [$xf, $this->station['id'], $prev['n']]);
+        }
         return ['n' => $row['n'], 'type' => 'song', 'track_id' => $track['id'], 'start' => $start, 'play' => $row['play_s'],
                 'end' => $start + $row['play_s'], 'seq' => $row['seq'], 'piece_count' => $count];
     }

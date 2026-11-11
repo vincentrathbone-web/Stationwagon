@@ -396,8 +396,8 @@ ol.flow > li > a:hover { text-decoration: underline; }
   <ul>
     <li>a song that isn't an MP3 is turned into one in your browser, keeping its title, artist, songwriter and cover. A 320 kbps copy is kept as the song's <b>original</b>;</li>
     <li>silence is trimmed at both ends, with short 20 ms fades;</li>
-    <li><b>Apply pre-processing</b> masters the song with the station's import preset (set on the <b>Song prep</b> screen). Mastered songs get a <b>Mastered</b> tag;</li>
-    <li><b>Loudness normalization</b> (on by default) levels every song to the station's loudness target (<b>−16 LUFS</b> by default), so nothing jumps out louder or quieter;</li>
+    <li>if <b>Pre-processing</b> is on (<a href="#sound">Sound &amp; safety</a>, Loudness), it masters the song with the station's import preset (set on the <b>Song prep</b> screen). Mastered songs get a <b>Mastered</b> tag;</li>
+    <li>if <b>Loudness normalization</b> is on (the default), it levels every song <em>and ad</em> to the station's loudness target (<b>−16 LUFS</b> by default), so nothing jumps out louder or quieter. These choices are the same for the whole station and live in <a href="#sound">Sound &amp; safety</a>; the line above the upload button says what is set;</li>
     <li>it encodes the song once with <b>LAME 3.100</b> at the station's quality (<b>160 kbps</b> by default; see <a href="#sound">Sound &amp; safety</a>). An MP3 that needs nothing done is kept exactly as it came.</li>
   </ul>
   <p>If a song has to be converted in a way you didn't choose (for example 32 kHz to 48 kHz), the upload list tells you. Keep the page open until the uploads finish. Search, edit or remove songs in the list below; <b>Song prep</b> on a song lets you try mastering presets on it, and <b>Re-level</b> brings older songs up to the current loudness target.</p>
@@ -474,8 +474,10 @@ ol.flow > li > a:hover { text-decoration: underline; }
     <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
     <tbody>
       <tr><td>Crossfade, skip fade, live cut-in fade</td><td>How long songs overlap, how fast Skip fades out, and how a live show fades in over the AutoDJ.</td></tr>
+      <tr><td>Crossfade for ads</td><td>A shorter blend (2 s by default) between a song and an ad, between two ads, and from an ad back to a song, because ads are short.</td></tr>
       <tr><td>Fade shape</td><td>Equal power, linear or S-curve.</td></tr>
       <tr><td>Songs not to repeat</td><td>How long before the same song may play again.</td></tr>
+      <tr><td>Pre-processing, loudness normalization and the loudness target</td><td>How every song and ad is prepared when it is uploaded: master it with the import preset, level it to the target (−23 to −8 LUFS, the usual levels marked), or leave it as it is. They apply from the next upload; songs already in the library keep their level until you <b>Re-level</b> them in the Music library, which offers it when the target changes.</td></tr>
       <tr><td>Let ratings influence how often songs play</td><td>Off for now: stars are saved in the Music library, but they do not change the order yet. Later, songs with fewer stars will play less often.</td></tr>
       <tr><td>Music under the voice</td><td>How far the music dips when a DJ's mic is open (−24 to 0 dB).</td></tr>
       <tr><td>Back to the AutoDJ</td><td>How long the station waits for a live show's sound before the AutoDJ takes over.</td></tr>
@@ -679,7 +681,7 @@ ol.flow > li > a:hover { text-decoration: underline; }
   <h4>The station page says nothing is planned.</h4>
   <p>Check that the library has songs. The Overview's <b>Background jobs</b> line shows if they run; see <a href="#cron">Background jobs</a>.</p>
   <h4>A song starts too loud or too quiet.</h4>
-  <p>Upload it again with <b>Loudness normalization</b> on in the <a href="#library">Music library</a>.</p>
+  <p>Switch <b>Loudness normalization</b> on in <a href="#sound">Sound &amp; safety</a> (Loudness), then upload it again.</p>
   <h4>The Windows app says "unknown publisher".</h4>
   <p>That's expected the first time. Choose <b>More info</b>, then <b>Run anyway</b>.</p>
   <h4>The Android app didn't reopen after an update.</h4>

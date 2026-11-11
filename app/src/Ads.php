@@ -310,7 +310,7 @@ final class Ads
     {
         $r = $this->db->run('SELECT id, duration_s, outro FROM ' . $this->db->table('tracks') . " WHERE id = ? AND station_id = ? AND kind = 'ad' AND status = 'ready'",
             [$trackId, $this->station['id']])->fetch();
-        return $r ? ['id' => (int) $r['id'], 'duration' => (float) $r['duration_s'], 'outro' => $r['outro']] : null;
+        return $r ? ['id' => (int) $r['id'], 'duration' => (float) $r['duration_s'], 'outro' => $r['outro'], 'ad' => true] : null;
     }
 
     /**

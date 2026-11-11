@@ -141,7 +141,10 @@ try {
   await A.go(`${base}/manage/ads?confirm=${info.id}`);
   check("Remove asks first", await A.evaluate(`/Remove this ad\\?/.test(document.getElementById("a${info.id}").textContent)`));
   await A.evaluate(`[...document.querySelectorAll('#a${info.id} button')].find((b) => /Yes/.test(b.textContent)).click(); 1`);
-  check("  and Yes takes it away", await A.until(`!document.getElementById("a${info.id}")`) && helper("ads-info", adTitle) === null);
+  // an ad that is on air, or aired in the last two minutes, waits (like a song: listeners are a little behind); the test station plays ads often
+  const gone = await A.until(`!document.getElementById("a${info.id}") || /is on air/.test(document.body.textContent)`);
+  const removed = helper("ads-info", adTitle) === null;
+  check("  and Yes takes it away (or says it is on air and to try again, as for a song)", gone && (removed || await A.evaluate(`/is on air/.test(document.body.textContent)`)), removed ? "removed" : "on air: kept for now");
 } catch (e) {
   failed++;
   console.log("  [FAIL] " + (e.stack || e.message));

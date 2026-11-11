@@ -391,7 +391,16 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
 .drop-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .prep-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin-top: 12px; }
 .prep-opts .swrow { padding-bottom: 0; font-weight: 500; }
-.drop input[type=file] { color: var(--muted); font: 500 13px var(--f-ui); max-width: 100%; }
+/* the file chooser is a button like the others (the real input stays for the keyboard and without JavaScript) */
+.drop input.filepick { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+.drop input.filepick:focus-visible + label.btn { outline: 2px solid var(--amber); outline-offset: 2px; }
+.drop label.btn { cursor: pointer; }
+.drop .prepnote { margin: 12px 0 0; }
+.drop .prepnote b { font-family: var(--f-mono); font-weight: 500; color: var(--ink); }
+/* the loudness target on Sound & safety */
+.loudwrap { display: grid; gap: 8px; min-width: 0; }
+.loudctl[data-off] { opacity: .5; }
+.loudctl .loudtrack { min-width: 0; }
 .uplist { flex-basis: 100%; list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .uplist li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; background: var(--raised); border-radius: var(--r-field); padding: 8px 12px; font-size: 13px; }
 .uplist .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }

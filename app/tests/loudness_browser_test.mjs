@@ -1,6 +1,6 @@
 // End-to-end test of the station's loudness target (round 41) in headless Edge or Chrome on
 // Laragon: a throwaway manager uploads songs (each keeps its normalization in the database and in its
-// MP3's ID3 tag), moves the Music library's loudness slider (it snaps to the marked levels while
+// MP3's ID3 tag), moves the loudness slider on Sound & safety (it snaps to the marked levels while
 // dragged, steps by half a dB with the keys), is asked whether to re-level the library or only new
 // uploads, and re-levels: each song made again from its original with the mastering it was made
 // with, at the new target. Song prep follows the target; with normalization off nothing is offered.
@@ -95,11 +95,21 @@ async function upload(files) {
 }
 const rl = () => evaluate("window.SwRelevel && SwRelevel.state()");
 /** Set the slider the way a person does: a drag (pointer events, snapping) or the keyboard (no snap). */
-const slide = (value, drag) => evaluate(`(() => { const e = document.getElementById('prepTarget');
+const slide = (value, drag) => evaluate(`(() => { const e = document.getElementById('f-prep_target');
   if (${drag}) e.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
   e.value = ${JSON.stringify(String(value))}; e.dispatchEvent(new Event('input', { bubbles: true }));
   if (${drag}) e.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
   e.dispatchEvent(new Event('change', { bubbles: true })); return e.value; })()`);
+/** Save the Sound & safety form and wait for its note (the page reloads). */
+async function saveSound() {
+  await evaluate("document.querySelector('.soundform').requestSubmit(); 1");
+  for (let i = 0; i < 100; i++) {
+    await sleep(100);
+    const t = await evaluate("(document.querySelector('.toast') || {}).textContent || ''").catch(() => "");
+    if (t) { await loaded(); return t; }
+  }
+  return "";
+}
 async function relevel() {
   // the panel's button; the page reloads when every song is done (a song on air waits and is tried again)
   await evaluate("document.getElementById('relevelGo').click()");
@@ -145,28 +155,29 @@ try {
   check("  in its MP3's tag too", tg.LEVEL_TARGET === "-16.0 LUFS" && tg.SOURCE_LUFS === Number(tA.source_lufs).toFixed(2) + " LUFS" && /^[+-]\d+\.\d\d dB$/.test(tg.LEVEL_GAIN || ""), JSON.stringify(tg));
   check("  the Levelled pill says it", (await evaluate(`[...document.querySelectorAll('.pill')].map((p) => p.title).find((t) => t.includes('target −16.0'))`) || "").includes("dB from"));
 
-  console.log("The loudness slider");
-  check("the slider shows the target, with four marked levels and a legend",
-    (await evaluate("document.getElementById('prepTarget').value")) === "-16" && (await evaluate("document.querySelectorAll('.loudmark').length")) === 4
+  console.log("The loudness slider (on Sound & safety since round 64)");
+  await go(`${base}/manage/library`);
+  check("with every song at the target the Music library offers nothing, and it has no slider", !(await rl()).ask && !(await rl()).later && !(await evaluate("document.getElementById('prepTarget')")));
+  await go(`${base}/manage/sound`);
+  check("Sound & safety shows the target, with four marked levels and a legend",
+    (await evaluate("document.getElementById('f-prep_target').value")) === "-16" && (await evaluate("document.querySelectorAll('.loudmark').length")) === 4
     && (await evaluate("document.getElementById('loudLegend').textContent")).includes("Spotify"));
-  check("  nothing is offered while every song is at the target", !(await rl()).ask && !(await rl()).later);
   await slide(-13.5, true);
-  check("a drag near a marked level snaps to it", (await evaluate("document.getElementById('prepTarget').value")) === "-14" && (await evaluate("document.getElementById('prepTargetOut').textContent")) === "−14.0");
-  let s = null;
-  for (let i = 0; i < 40 && !(s && s.ask); i++) { await sleep(150); s = await rl(); }
-  check("  saved, it asks: re-level the library, or only new uploads", !!s && s.ask && s.target === -14 && helper("prep").target === -14 && s.songs.some((x) => x.title === titleA),
-    await evaluate("document.getElementById('relevelText').textContent"));
-  await evaluate("document.getElementById('relevelSkip').click()");
-  s = await rl();
-  check("Only new uploads: it leaves the songs, and a quiet line stays", !s.ask && s.later && (await evaluate("document.querySelector('#relevelLater span').textContent")).includes("another loudness than −14.0"));
-  // a key step is saved a moment after it lands: wait for the station to have it (up to 10 s), not a fixed time
-  const savedAs = async (v) => { const t0 = Date.now(); while (Date.now() - t0 < 10000) { if (helper("prep").target === v) return Date.now() - t0; await sleep(150); } return null; };
+  check("a drag near a marked level snaps to it", (await evaluate("document.getElementById('f-prep_target').value")) === "-14" && (await evaluate("document.querySelector('#loud output').textContent")) === "−14.0 LUFS");
+  let note = await saveSound();
+  check("  saved with the rest of the form, it says how many songs are at another loudness", helper("prep").target === -14 && /1 song is at another loudness: re-level it in the Music library/.test(note), note);
+  await go(`${base}/manage/library`);
+  let s = await rl();
+  check("the Music library then offers re-levelling on a quiet line", s.later && !s.ask && s.target === -14 && s.songs.some((x) => x.title === titleA)
+    && (await evaluate("document.querySelector('#relevelLater span').textContent")).includes("another loudness than −14.0"));
+  await go(`${base}/manage/sound`);
   await slide(-14.5, false);
-  let ms = await savedAs(-14.5);
-  check("the keys step past a mark by half a dB (no snap)", (await evaluate("document.getElementById('prepTarget').value")) === "-14.5" && ms !== null, ms === null ? "not saved in 10 s" : `saved in ${ms} ms`);
+  check("the keys step past a mark by half a dB (no snap)", (await evaluate("document.getElementById('f-prep_target').value")) === "-14.5" && (await evaluate("document.querySelector('#loud output').textContent")) === "−14.5 LUFS");
+  await saveSound();
+  check("  and it is saved", helper("prep").target === -14.5);
   await slide(-14, false);
-  ms = await savedAs(-14);
-  check("  and back to the mark, saved", ms !== null, ms === null ? `not saved in 10 s (the station has ${helper("prep").target})` : `saved in ${ms} ms`);
+  await saveSound();
+  check("  and back to the mark, saved", helper("prep").target === -14);
   await go(`${base}/manage/library`);
   s = await rl();
   check("after a reload the quiet line is still there", s.later && !s.ask && s.target === -14);
@@ -192,8 +203,12 @@ try {
   let tB = helper("track", titleB);
   check("a song mastered with the built-in chain keeps its mastering ({})", rows && rows[0].cls === "ok" && Number(tB.mastered) === 1 && tB.preset === "Audition chain" && tB.preset_settings === "{}" && Number(tB.level_target) === -14,
     tB && `${tB.preset} ${tB.preset_settings} ${tB.level_target}`);
+  await go(`${base}/manage/sound`);
   await slide(-12, false);
-  for (let i = 0; i < 40 && !(s && s.ask && s.target === -12); i++) { await sleep(150); s = await rl(); }
+  await saveSound();
+  await go(`${base}/manage/library`);
+  await evaluate("document.getElementById('relevelOpen').click()");
+  s = await rl();
   const item = s.songs.find((x) => x.title === titleB);
   check("  re-levelling makes it again with that mastering", !!item && typeof item.master === "object" && Object.keys(item.master).length === 0 && item.preset === "Audition chain", JSON.stringify(item));
   const beforeB = helper("track", titleB);
@@ -224,12 +239,14 @@ try {
   await go(`${base}/manage/songprep?song=${tB.id}`);
   check("Song prep levels to the station's target", (await evaluate("JSON.parse(document.getElementById('songprepData').textContent).target")) === -12
     && (await evaluate("document.querySelector('.songprep .vhead p').textContent")).includes("−12.0 LUFS"));
-  await go(`${base}/manage/library`);
-  await evaluate("document.getElementById('prepLevel').click()");
+  await go(`${base}/manage/sound`);
+  await evaluate(`(() => { const l = document.getElementById('f-prep_level'); l.value = '0'; l.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  check("with normalization off the slider is dimmed", await evaluate("document.getElementById('loud').hasAttribute('data-off')"));
   await slide(-15, false);
-  for (let i = 0; i < 40 && helper("prep").target !== -15; i++) await sleep(150);
+  await saveSound();
+  await go(`${base}/manage/library`);
   s = await rl();
-  check("with normalization off nothing is offered, and the slider is dimmed", helper("prep").level === false && !s.ask && !s.later && (await evaluate("document.getElementById('loud').hasAttribute('data-off')")));
+  check("  and nothing is offered", helper("prep").level === false && !s.ask && !s.later);
   check("no errors in the page", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (ex) {
   const where = await evaluate("location.href").catch(() => "?");

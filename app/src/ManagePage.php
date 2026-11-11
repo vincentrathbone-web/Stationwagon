@@ -91,15 +91,6 @@ final class ManagePage
                     $this->json(['ok' => $problem === null, 'error' => $problem]);
                 }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Original kept.');
-            } elseif ($action === 'prep') {
-                // song prep's two switches and the loudness target, saved as soon as they change
-                $target = isset($_POST['target']) && is_numeric($_POST['target']) ? (float) $_POST['target'] : null;
-                $this->station = (new StationSettings($this->db, $this->station))->savePrep(!empty($_POST['master']), !empty($_POST['level']), $target);
-                if ($wantsJson) {
-                    $this->json(['ok' => true, 'master' => !empty($_POST['master']), 'level' => !empty($_POST['level']),
-                        'target' => StationSettings::prep($this->station)[2], 'relevel' => $this->relevelList($library)]);
-                }
-                Session::flash('ok', 'Song prep choices saved.');
             } elseif ($action === 'rate') {
                 // stars from the library row; one song (id) or several (ids[], the bulk bar). "" or 0 clears.
                 $raw = trim((string) ($_POST['rating'] ?? ''));
@@ -461,14 +452,6 @@ final class ManagePage
                     $this->json(['ok' => $problem === null, 'error' => $problem]);
                 }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Original kept.');
-            } elseif ($action === 'prep') {
-                // the same two switches and loudness target as the Music library: they are the station's
-                $target = isset($_POST['target']) && is_numeric($_POST['target']) ? (float) $_POST['target'] : null;
-                $this->station = (new StationSettings($this->db, $this->station))->savePrep(!empty($_POST['master']), !empty($_POST['level']), $target);
-                if ($wantsJson) {
-                    $this->json(['ok' => true, 'master' => !empty($_POST['master']), 'level' => !empty($_POST['level']), 'target' => StationSettings::prep($this->station)[2]]);
-                }
-                Session::flash('ok', 'Song prep choices saved.');
             } elseif ($action === 'settings') {
                 [$updated, $problem] = $ads->saveSettings($_POST);
                 if ($updated !== null) {
@@ -771,7 +754,14 @@ final class ManagePage
             }
             // Plan what isn't on air yet again, with the new values
             (new Planner($this->db, $station, SW_ROOT))->replan(microtime(true));
-            Session::flash('ok', 'Saved. New settings apply from the next song.');
+            // a new loudness target (or normalization switched on): songs already in the library keep their level until re-levelled
+            $note = '';
+            if (array_slice(StationSettings::prep($station), 1) !== array_slice(StationSettings::prep($this->station), 1)) {
+                $this->station = $station;
+                $n = count($this->relevelList(new Library($this->db, $station, SW_ROOT)));
+                $note = $n > 0 ? ' ' . $n . ($n === 1 ? ' song is' : ' songs are') . ' at another loudness: re-level ' . ($n === 1 ? 'it' : 'them') . ' in the Music library.' : '';
+            }
+            Session::flash('ok', 'Saved. New settings apply from the next song.' . $note);
             App::redirect('manage/sound');
         }
         $me = App::requireRole('sound');
@@ -783,6 +773,7 @@ final class ManagePage
             'minLiveTimeout' => $settings->minLiveTimeout(),
             'segment' => (float) $this->planner->setting('segment_seconds'),
             'delay' => (int) $this->planner->setting('listener_delay_seconds'),
+            'presetName' => (new PrepPresets($this->db, $this->station))->forImport()[0],
         ]);
     }
 

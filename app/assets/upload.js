@@ -2,8 +2,8 @@
 // browser first (prep.js: mastered with the station's import preset and levelled as the two
 // switches say, trimmed, re-encoded), then they go up one at a time with progress, each followed
 // by the file it was made from (kept for the Song prep screen), and the page reloads to show them.
-// The switches and the loudness target slider are the station's, saved as soon as they change; a new
-// target offers to re-level the library (relevel.js, told by an "sw:target" event). Without JavaScript
+// Mastering, levelling and the loudness target are the station's, set on Sound & safety (round 64; they
+// were switches and a slider on this page): the page hands them over as data attributes. Without JavaScript
 // the form still works (MP3s only). Other formats (round 54: WAV, FLAC, M4A, AAC, Ogg, Opus, WMA) are
 // converted in the browser (prep.js): the song goes up as an MP3, followed by the 320 kbps MP3 the
 // station keeps as its original; one that can't be converted isn't sent.
@@ -20,57 +20,13 @@
   const csrf = form.querySelector('input[name="csrf"]').value;
   const maxBytes = Number(form.dataset.max || 0);
   form.querySelector('button[type="submit"]').hidden = true; // choosing files starts the upload
-  const master = document.getElementById("prepMaster"), level = document.getElementById("prepLevel");
-  const saved = document.getElementById("prepSaved"), target = document.getElementById("prepTarget");
+  // mastering, levelling and the loudness target are the station's (Sound & safety), sent with the page as data attributes
+  const master = form.dataset.master === "1", level = form.dataset.level === "1";
   const fmt = (v) => Number(v).toFixed(1).replace("-", "−");
   // the import preset (Song prep): its settings ({} is the built-in Audition chain) and its name
   let preset = {};
   try { preset = JSON.parse(form.dataset.preset || "{}") || {}; } catch (_) { /* the built-in one */ }
   const presetName = form.dataset.presetName || "";
-
-  // the switches are the station's: save them as soon as they change (one save at a time, the
-  // latest state last, so two quick flips can't land out of order)
-  let timer = 0, queue = Promise.resolve();
-  const savePrep = () => {
-    saved.textContent = "Saving…";
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      const data = new FormData();
-      data.append("csrf", csrf);
-      data.append("action", "prep");
-      if (master.checked) data.append("master", "1");
-      if (level.checked) data.append("level", "1");
-      if (target) data.append("target", target.value);
-      queue = queue.then(() => fetch(form.getAttribute("action"), { method: "POST", body: data, headers: { Accept: "application/json" }, credentials: "same-origin" })
-        .then((r) => r.json().then((j) => { if (!r.ok || !j.ok) throw new Error(j.error || r.status); return j; }))
-        .then((j) => {
-          saved.textContent = "Saved for every upload";
-          form.dataset.target = String(j.target);
-          document.dispatchEvent(new CustomEvent("sw:target", { detail: { target: j.target, level: j.level, songs: j.relevel || [] } }));
-        })
-        .catch(() => { saved.textContent = "Couldn’t save: try again"; }));
-    }, 250);
-  };
-  if (master && level) [master, level].forEach((el) => el.addEventListener("change", savePrep));
-  // the loudness target: snaps to the marked levels, shows its value as it moves, saved when let go
-  const SNAP = [-16, -14, -11, -9];
-  const showTarget = () => {
-    document.getElementById("prepTargetOut").textContent = fmt(target.value);
-    document.getElementById("prepTargetSw").textContent = fmt(target.value);
-  };
-  if (target) {
-    // only a drag snaps: the arrow keys step half a dB at a time, past the marks too
-    let dragging = false;
-    target.addEventListener("pointerdown", () => { dragging = true; });
-    ["pointerup", "pointercancel"].forEach((t) => target.addEventListener(t, () => { dragging = false; }));
-    target.addEventListener("input", () => {
-      const near = dragging && SNAP.find((v) => Math.abs(v - Number(target.value)) <= 0.5 && Number(target.value) !== v);
-      if (near !== undefined && near !== false) target.value = String(near);
-      showTarget();
-    });
-    target.addEventListener("change", savePrep);
-    level.addEventListener("change", () => { document.getElementById("loud").toggleAttribute("data-off", !level.checked); });
-  }
 
   const row = (name) => {
     const li = document.createElement("li");
@@ -167,7 +123,7 @@
             // a sample-rate conversion the station makes is said before the work starts, and stays on the row
             const warn = li.querySelector(".w");
             p = await window.SwPrep.prepare(files[i], say,
-              { master: !master || master.checked ? preset : false, level: !level || level.checked, target: Number(form.dataset.target),
+              { master: master ? preset : false, level, target: Number(form.dataset.target),
                 onNotice: (text) => { warn.textContent = text; warn.hidden = false; } });
           } catch (ex) {
             p = { file: files[i], prepared: false, note: "prep failed: " + ex.message };

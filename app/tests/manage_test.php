@@ -295,24 +295,24 @@ try {
     echo "Sound & safety\n";
     $fresh = fn() => $db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$station['id']])->fetch();
     $set = new StationSettings($db, $fresh());
-    $defaults = ['crossfade_seconds' => 6, 'fade_shape' => 'equal_power', 'skip_fade_seconds' => 2.0, 'live_fade_seconds' => 6.0, 'duck_db' => -12,
-        'live_timeout_seconds' => 8, 'rejoin_minutes' => 10, 'silence_db' => -40, 'recent_tracks' => 5, 'ratings_influence' => 0, 'live_kbps' => 192, 'prep_kbps' => 160,
+    $defaults = ['crossfade_seconds' => 6, 'ads_crossfade_seconds' => 2.0, 'fade_shape' => 'equal_power', 'skip_fade_seconds' => 2.0, 'live_fade_seconds' => 6.0, 'duck_db' => -12,
+        'live_timeout_seconds' => 8, 'rejoin_minutes' => 10, 'silence_db' => -40, 'recent_tracks' => 5, 'ratings_influence' => 0, 'prep_master' => 0, 'prep_level' => 1, 'prep_target' => -16.0, 'live_kbps' => 192, 'prep_kbps' => 160,
         'prep_rate' => 44100, 'prep_precision' => 32, 'prep_dither' => 1, 'prep_quality' => 9];
     check('the defaults are the values the POC proved', $set->values() === $defaults, json_encode($set->values()));
     check('with 6 s pieces a DJ gets at least 8 s', $set->minLiveTimeout() === 8);
-    $good = ['crossfade_seconds' => '4', 'fade_shape' => 'linear', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '3', 'duck_db' => '-18',
-        'live_timeout_seconds' => '12', 'rejoin_minutes' => '0', 'silence_db' => '0', 'recent_tracks' => '1', 'ratings_influence' => '1', 'live_kbps' => '128', 'prep_kbps' => '256',
+    $good = ['crossfade_seconds' => '4', 'ads_crossfade_seconds' => '1.5', 'fade_shape' => 'linear', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '3', 'duck_db' => '-18',
+        'live_timeout_seconds' => '12', 'rejoin_minutes' => '0', 'silence_db' => '0', 'recent_tracks' => '1', 'ratings_influence' => '1', 'prep_master' => '1', 'prep_level' => '0', 'prep_target' => '-14.5', 'live_kbps' => '128', 'prep_kbps' => '256',
         'prep_rate' => '48000', 'prep_precision' => '24', 'prep_dither' => '0', 'prep_quality' => '7'];
-    [, $errs] = $set->save(['crossfade_seconds' => '13', 'fade_shape' => 'wobbly', 'skip_fade_seconds' => '0.3', 'live_fade_seconds' => 'soon', 'duck_db' => '3',
-        'live_timeout_seconds' => '5', 'rejoin_minutes' => '31', 'silence_db' => '-45', 'ratings_influence' => '2', 'live_kbps' => '320', 'prep_kbps' => '',
+    [, $errs] = $set->save(['crossfade_seconds' => '13', 'ads_crossfade_seconds' => '12.3', 'fade_shape' => 'wobbly', 'skip_fade_seconds' => '0.3', 'live_fade_seconds' => 'soon', 'duck_db' => '3',
+        'live_timeout_seconds' => '5', 'rejoin_minutes' => '31', 'silence_db' => '-45', 'ratings_influence' => '2', 'prep_master' => '2', 'prep_level' => 'x', 'prep_target' => '-14.2', 'live_kbps' => '320', 'prep_kbps' => '',
         'prep_rate' => '32000', 'prep_precision' => '8', 'prep_dither' => '2', 'prep_quality' => '10']);
     check('bad values are refused, field by field', array_keys($errs) === array_keys($good), implode(',', array_keys($errs)));
     check('  and say what is allowed', str_contains($errs['skip_fade_seconds'], '0 to 6 s in steps of 0.5') && str_contains($errs['live_timeout_seconds'], '8 to 30')
         && str_contains($errs['duck_db'], '-24 to 0 dB') && $errs['silence_db'] === 'Move on when a song goes quiet: choose one of the options.', $errs['duck_db']);
     check('  and nothing is stored', (new StationSettings($db, $fresh()))->values() === $defaults);
     [$updated, $errs] = $set->save($good);
-    check('good values are saved, choices as their own type', !$errs && (new StationSettings($db, $fresh()))->values() === ['crossfade_seconds' => 4, 'fade_shape' => 'linear', 'skip_fade_seconds' => 1.5,
-        'live_fade_seconds' => 3.0, 'duck_db' => -18, 'live_timeout_seconds' => 12, 'rejoin_minutes' => 0, 'silence_db' => 0, 'recent_tracks' => 1, 'ratings_influence' => 1, 'live_kbps' => 128, 'prep_kbps' => 256,
+    check('good values are saved, choices as their own type', !$errs && (new StationSettings($db, $fresh()))->values() === ['crossfade_seconds' => 4, 'ads_crossfade_seconds' => 1.5, 'fade_shape' => 'linear', 'skip_fade_seconds' => 1.5,
+        'live_fade_seconds' => 3.0, 'duck_db' => -18, 'live_timeout_seconds' => 12, 'rejoin_minutes' => 0, 'silence_db' => 0, 'recent_tracks' => 1, 'ratings_influence' => 1, 'prep_master' => 1, 'prep_level' => 0, 'prep_target' => -14.5, 'live_kbps' => 128, 'prep_kbps' => 256,
         'prep_rate' => 48000, 'prep_precision' => 24, 'prep_dither' => 0, 'prep_quality' => 7], json_encode($errs));
     check('the quality choices show megabytes an hour', StationSettings::mbPerHour(192) === 86 && StationSettings::mbPerHour(128) === 58);
     $kept = Planner::settings($fresh());

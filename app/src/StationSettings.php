@@ -23,6 +23,7 @@ final class StationSettings
 
     public const FIELDS = [
         'crossfade_seconds' => ['group' => 'Transitions', 'label' => 'Crossfade between songs', 'help' => 'Both songs overlap for this long.', 'min' => 0, 'max' => 12, 'step' => 1, 'unit' => 's'],
+        'ads_crossfade_seconds' => ['group' => 'Transitions', 'label' => 'Crossfade for ads', 'help' => 'Ads are short, so a shorter blend works better: this long between a song and an ad, between two ads, and from an ad back to a song.', 'min' => 0, 'max' => 12, 'step' => 0.5, 'unit' => 's'],
         'fade_shape' => ['group' => 'Transitions', 'label' => 'Fade shape', 'help' => 'How the two songs blend in a crossfade or a skip.',
             'choices' => ['equal_power' => 'Equal power: smooth, no dip in the middle', 'linear' => 'Linear: a straight line, a little dip', 's_curve' => 'S-curve: holds, then blends quickly']],
         'skip_fade_seconds' => ['group' => 'Transitions', 'label' => 'Skip fade', 'help' => 'Used when someone presses Skip.', 'min' => 0, 'max' => 6, 'step' => 0.5, 'unit' => 's'],
@@ -35,6 +36,12 @@ final class StationSettings
         'recent_tracks' => ['group' => 'Songs', 'label' => 'Songs not to repeat', 'help' => 'Shuffle never picks one of the last this many songs.', 'min' => 0, 'max' => 20, 'step' => 1, 'unit' => 'songs'],
         'ratings_influence' => ['group' => 'Songs', 'label' => 'Let ratings influence how often songs play', 'help' => 'Coming soon: stars are saved in the Music library now, but they do not change the playing order yet. Later, with this on, songs with fewer stars play less often and songs with more stars play more often (a song with no stars counts as 3).',
             'choices' => [0 => 'Off: every song is equally likely', 1 => 'On: more stars play more often']],
+        // round 64: how songs and ads are made when they are uploaded (they were switches and a slider on the Music library and the Ads screen)
+        'prep_master' => ['group' => 'Loudness', 'label' => 'Pre-processing (mastering)', 'help' => 'EQ and compression with the import preset, which you set on the Song prep screen. It is applied to every song and ad uploaded from now on.',
+            'choices' => [1 => 'On: master with the import preset', 0 => 'Off: leave the sound as it is']],
+        'prep_level' => ['group' => 'Loudness', 'label' => 'Loudness normalization', 'help' => 'Every song and ad is levelled to the target below when it is uploaded, so they all play at the same volume.',
+            'choices' => [1 => 'On: level every upload to the target', 0 => 'Off: keep each upload’s own loudness']],
+        'prep_target' => ['group' => 'Loudness', 'label' => 'Loudness target', 'help' => 'The loudness every song and ad is levelled to (LUFS). Louder squeezes more; quieter keeps more dynamics. The usual levels are marked. Songs already in the library keep theirs until you re-level them in the Music library.', 'min' => -23, 'max' => -8, 'step' => 0.5, 'unit' => 'LUFS'],
         'live_kbps' => ['group' => 'Sound quality', 'label' => 'Live shows', 'help' => 'The studio sends live shows at this quality.', 'choices' => self::QUALITY],
         'prep_kbps' => ['group' => 'Sound quality', 'label' => 'Prepared songs', 'help' => 'Songs are saved at this quality when they’re prepared on upload. Songs already in the library keep theirs.', 'choices' => self::PREP_QUALITY],
         // round 51: how songs are prepared. They apply to songs prepared from now on (uploads, Song prep's Apply, re-levelling).

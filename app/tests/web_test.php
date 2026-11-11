@@ -578,30 +578,21 @@ try {
             && (function () use ($m, $doc) { $m->cookies['sw_bare'] = '1'; $b = $m->go('manage/library', null, $doc)['body']; unset($m->cookies['sw_bare']); return !str_contains($b, 'id="swScreen"'); })());
         check('  nor for the screen\'s own frame (a request for a frame)', !str_contains($m->go('manage/library', null, ['Sec-Fetch-Dest: iframe'])['body'], 'id="swScreen"'));
         check('the library opens with a drop zone', $r['status'] === 200 && str_contains($r['body'], 'id="drop"') && str_contains($r['body'], 'upload.js?v=') && preg_match('~data-worker="[^"]*prep-worker\.js\?v=[0-9a-f]{10}"~', $r['body']));
-        // song prep's two switches and the loudness target: shown as stored, saved by a manager only
+        // round 64: mastering, levelling and the loudness target are the station's own (Sound & safety); the drop zone hands them to the page
         $prepAll = fn() => Stationwagon\StationSettings::prep($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch());
-        $prepRow = fn() => array_slice($prepAll(), 0, 2);
         [$keepMaster, $keepLevel, $keepTarget] = $prepAll();
-        $shown = fn(string $body, string $id) => preg_match('~<input[^>]*id="' . $id . '"[^>]*>~', $body, $mm) ? str_contains($mm[0], 'checked') : null;
-        check('the drop zone has the two song prep switches, as stored', $shown($r['body'], 'prepMaster') === $keepMaster && $shown($r['body'], 'prepLevel') === $keepLevel
-            && str_contains($r['body'], 'Apply pre-processing') && str_contains($r['body'], 'Loudness normalization')
-            && preg_match('~data-worker="[^"]*prep-worker\.js\?v=[0-9a-f]{10}"~', $r['body']));
-        check('  and the loudness target slider, at the stored target, with its four marked levels', preg_match('~<input type="range" id="prepTarget"[^>]*value="([^"]+)"~', $r['body'], $tm) === 1
-            && (float) $tm[1] === $keepTarget && substr_count($r['body'], 'class="loudmark') === 4 && str_contains($r['body'], 'relevel.js?v='), $tm[1] ?? '');
-        $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'prep', 'level' => '1', 'target' => '-11.2'], ['Accept: application/json']);
-        $j = json_decode($r['body'], true);
-        check('a manager saves a target (kept in half-dB steps), and hears which songs are levelled to another', is_numeric($j['target'] ?? null) && (float) $j['target'] === -11.0 && $prepAll()[2] === -11.0 && is_array($j['relevel'] ?? null), $r['body']);
-        $r = (new Browser($base))->go('manage/library', ['csrf' => 'x', 'action' => 'prep', 'level' => '1', 'target' => '-9'], ['Accept: application/json']);
-        check('  someone signed out can’t', $r['status'] !== 200 && $prepAll()[2] === -11.0, (string) $r['status']);
-        $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'prep', 'level' => '1', 'target' => (string) $keepTarget], ['Accept: application/json']);
-        $j = json_decode($r['body'], true);
-        check('turning pre-processing off is saved', ($j['ok'] ?? false) && $prepRow() === [false, true], $r['body']);
-        $r = $m->go('manage/library');
-        check('  and the page shows it off', $shown($r['body'], 'prepMaster') === false && $shown($r['body'], 'prepLevel') === true);
-        $r = (new Browser($base))->go('manage/library', ['csrf' => 'x', 'action' => 'prep'], ['Accept: application/json']);
-        check('  someone signed out can’t change them', $r['status'] !== 200 && $prepRow() === [false, true], (string) $r['status']);
-        $m->go('manage/library', array_filter(['csrf' => $csrf, 'action' => 'prep', 'master' => $keepMaster ? '1' : null, 'level' => $keepLevel ? '1' : null]), ['Accept: application/json']);
-        check('  (put back as they were)', $prepAll() === [$keepMaster, $keepLevel, $keepTarget]);
+        check('the drop zone hands the station’s choices to the page, and says them in words', str_contains($r['body'], 'data-master="' . (int) $keepMaster . '"') && str_contains($r['body'], 'data-level="' . (int) $keepLevel . '"')
+            && str_contains($r['body'], 'data-target="' . $keepTarget . '"') && str_contains($r['body'], 'Prepared in your browser before upload') && str_contains($r['body'], 'Change this in Sound &amp; safety')
+            && preg_match('~data-worker="[^"]*prep-worker\.js\?v=[0-9a-f]{10}"~', $r['body']) && str_contains($r['body'], 'relevel.js?v='));
+        check('  the switches and the slider are not on the Music library any more', !str_contains($r['body'], 'id="prepMaster"') && !str_contains($r['body'], 'id="prepLevel"') && !str_contains($r['body'], 'id="prepTarget"') && !str_contains($r['body'], 'class="loudmark'));
+        check('  the file chooser is a button like the others', str_contains($r['body'], 'class="filepick"') && str_contains($r['body'], '<label class="btn" for="files">Choose files</label>'));
+        $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'prep', 'level' => '1', 'target' => '-9'], ['Accept: application/json']);
+        check('  and the old “prep” form no longer changes anything', $prepAll() === [$keepMaster, $keepLevel, $keepTarget] && !str_contains($r['body'], '"ok":true'), $r['body']);
+        $r = $m->go('manage/sound');
+        check('Sound & safety has them, in a Loudness group: pre-processing, normalization, and the target at the stored value with its four marked levels', $r['status'] === 200 && str_contains($r['body'], 'id="g-loudness"')
+            && str_contains($r['body'], 'name="prep_master"') && str_contains($r['body'], 'name="prep_level"') && preg_match('~<input type="range" data-loud id="f-prep_target"[^>]*value="([^"]+)"~', $r['body'], $tm) === 1
+            && (float) $tm[1] === $keepTarget && substr_count($r['body'], 'class="loudmark') === 4 && str_contains($r['body'], 'loudness.js?v=') && str_contains($r['body'], 'Spotify, YouTube'), $tm[1] ?? '');
+        check('  and the crossfade for ads, under the crossfade between songs', preg_match('~name="crossfade_seconds".*name="ads_crossfade_seconds"~s', $r['body']) === 1 && str_contains($r['body'], 'Crossfade for ads'));
         make_mp3("$tmpDir/mastered.mp3", 20, ['title' => "Web Test Mastered " . strrev($tag)], random_int(0, 255));
         $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'upload', 'files[0]' => new CURLFile("$tmpDir/mastered.mp3", 'audio/mpeg', 'mastered.mp3'),
             'source_sha1[0]' => sha1("mastered $tag"), 'prep_lufs[0]' => '-16', 'prep_mastered[0]' => '1'], ['Accept: application/json']);
@@ -854,10 +845,10 @@ try {
         // Sound & safety (the station's own values are put back in the cleanup)
         $origSettings = $db->run('SELECT settings FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetchColumn();
         $r = $m->go('manage/sound');
-        check('Sound & safety opens with eight sliders and eight choices', $r['status'] === 200 && substr_count($r['body'], 'type="range"') === 8 && substr_count($r['body'], '<select id="f-') === 8, (string) $r['status']);
+        check('Sound & safety opens with ten sliders and ten choices', $r['status'] === 200 && substr_count($r['body'], 'type="range"') === 10 && substr_count($r['body'], '<select id="f-') === 10, (string) $r['status']);
         check('with the fade shape preview, the MB an hour and the listener delay', str_contains($r['body'], 'id="fadeCurve"') && str_contains($r['body'], 'fades.js') && str_contains($r['body'], '192 kbps · 86 MB an hour') && preg_match('/About \d+ s/', $r['body']) === 1);
-        $values = ['csrf' => $csrf, 'crossfade_seconds' => '5', 'fade_shape' => 's_curve', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '4', 'duck_db' => '-10',
-            'live_timeout_seconds' => '10', 'rejoin_minutes' => '5', 'silence_db' => '-50', 'recent_tracks' => '3', 'ratings_influence' => '0', 'live_kbps' => '160', 'prep_kbps' => '256',
+        $values = ['csrf' => $csrf, 'crossfade_seconds' => '5', 'ads_crossfade_seconds' => '1.5', 'fade_shape' => 's_curve', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '4', 'duck_db' => '-10',
+            'live_timeout_seconds' => '10', 'rejoin_minutes' => '5', 'silence_db' => '-50', 'recent_tracks' => '3', 'ratings_influence' => '0', 'prep_master' => (string) (int) $keepMaster, 'prep_level' => (string) (int) $keepLevel, 'prep_target' => (string) $keepTarget, 'live_kbps' => '160', 'prep_kbps' => '256',
             'prep_rate' => '44100', 'prep_precision' => '32', 'prep_dither' => '1', 'prep_quality' => '9'];
         $r = $m->go('manage/sound', ['fade_shape' => 'wobbly'] + $values);
         check('a fade shape not on the list is refused', $flashed($after($m, $r), 'Fade shape: choose one of the options.'));
@@ -866,6 +857,21 @@ try {
         check('a crossfade of 99 s is refused', $flashed($p, 'Not saved: Crossfade between songs: choose 0 to 12 s.') && str_contains($p['body'], 'value="99"'));
         $r = $m->go('manage/sound', $values);
         check('good values are saved', $flashed($after($m, $r), 'Saved. New settings apply from the next song.'));
+        check('  and the crossfade for ads is saved, apart from the songs’ own', (float) Stationwagon\Planner::settings($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch())['ads_crossfade_seconds'] === 1.5
+            && (float) Stationwagon\Planner::settings($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch())['crossfade_seconds'] === 5.0);
+        $r = $m->go('manage/sound', ['prep_target' => '-11.2'] + $values);
+        check('a loudness target that isn’t a half dB step, or isn’t between −23 and −8, is refused', $flashed($after($m, $r), 'Loudness target: choose -23 to -8 LUFS in steps of 0.5.') && $prepAll()[2] === $keepTarget
+            && str_contains($m->go('manage/sound', ['prep_target' => '-7'] + $values)['body'], '') && $prepAll()[2] === $keepTarget);
+        $r = $m->go('manage/sound', ['prep_master' => '1', 'prep_level' => '1', 'prep_target' => '-11.5'] + $values);
+        $p = $after($m, $r);
+        check('a manager saves the loudness choices here: mastering on, levelling on, −11.5 LUFS', $flashed($p, 'Saved.') && $prepAll() === [true, true, -11.5], json_encode($prepAll()));
+        $r = $m->go('manage/library');
+        check('  and the Music library’s upload zone follows them', str_contains($r['body'], 'data-master="1"') && str_contains($r['body'], 'data-level="1"') && str_contains($r['body'], 'data-target="-11.5"') && str_contains($r['body'], 'mastered with') && str_contains($r['body'], '−11.5 LUFS'));
+        $r = $m->go('manage/ads');
+        check('  and so does the Ads screen', str_contains($r['body'], 'data-target="-11.5"') && str_contains($r['body'], '−11.5 LUFS') && !str_contains($r['body'], 'id="prepTarget"'));
+        $r = (new Browser($base))->go('manage/sound', ['csrf' => 'x', 'prep_target' => '-9'] + $values);
+        check('  someone signed out can’t', $r['status'] !== 200 && $prepAll()[2] === -11.5, (string) $r['status']);
+        $m->go('manage/sound', $values); // as they were
         $feed = json_decode((new Browser($base))->go('api/timeline.php')['body'], true);
         check('the player gets the new fades', ($feed['settings']['crossfade_seconds'] ?? null) == 5 && ($feed['settings']['live_fade_seconds'] ?? null) == 4 && ($feed['settings']['fade_shape'] ?? null) === 's_curve', json_encode($feed['settings'] ?? null));
         $soon = array_values(array_filter($feed['entries'] ?? [], fn($e) => $e['type'] === 'song' && $e['start'] > $feed['server_now'] + 10));

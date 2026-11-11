@@ -1,9 +1,9 @@
-// Re-levelling the Music library for a new loudness target (round 41). After the target slider
-// changes (upload.js sends an "sw:target" event with the songs levelled to another loudness), the
-// manager is asked: re-level them now, or only new uploads. Re-levelling makes each song again from
-// its kept original in this browser (prep.js), with the mastering it was made with, so only its
-// loudness changes, and puts it in place like Song prep's Apply (manage/songprep, action apply). A
-// song on air waits and is tried again. When the page opens with such songs, a quiet line offers it.
+// Re-levelling the Music library for a new loudness target (round 41). The target is set on Sound & safety
+// (round 64); when the Music library opens with songs levelled to another loudness, a quiet line offers to
+// re-level them ("Re-level" opens the panel: re-level them now, or only new uploads). Re-levelling makes each
+// song again from its kept original in this browser (prep.js), with the mastering it was made with, so only
+// its loudness changes, and puts it in place like Song prep's Apply (manage/songprep, action apply). A song
+// on air waits and is tried again.
 (() => {
   const box = document.getElementById("relevel"), form = document.getElementById("drop");
   if (!box || !form || !window.FormData) return;
@@ -38,7 +38,6 @@
     go.disabled = !d.ready.length;
     go.textContent = d.ready.length ? "Re-level " + plural(d.ready.length, "song", "songs") + " now" : "Nothing to re-level";
   };
-  document.addEventListener("sw:target", (e) => { target = e.detail.target; songs = e.detail.level ? e.detail.songs : []; show(true); });
   skip.addEventListener("click", () => show(false));
   document.getElementById("relevelOpen").addEventListener("click", () => show(true));
   show(false);
