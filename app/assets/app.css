@@ -236,6 +236,31 @@ td.c-title .tcell { display: flex; gap: 10px; align-items: center; min-width: 0;
 td.c-title .arts { flex: none; width: 40px; height: 40px; border-radius: var(--r-small); background: var(--raised); overflow: hidden; display: block; }
 td.c-title .arts img { width: 40px; height: 40px; object-fit: cover; display: block; }
 td .sub.alb:empty { display: none; }
+/* "Look up details" in the song details window (round 65) */
+.lkbox { border: 1px solid var(--edge); border-radius: var(--r-box); padding: 12px 14px; margin: 14px 0 0; display: grid; gap: 8px; min-width: 0; }
+.lkhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.lkhead h3 { margin: 0; font-size: 15px; font-weight: 700; }
+.lknote { margin: 0; font-size: 13px; }
+.lkbox .editmsg { margin: 0; min-height: 1.3em; }
+.lkcands { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.lkpick { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; background: var(--raised); border-radius: var(--r-field); padding: 8px 12px; cursor: pointer; font-size: 14px; }
+.lkpick input { accent-color: var(--amber); margin: 0; }
+.lkpick .lkmain { font-weight: 600; }
+.lkpick .sub { margin: 0; flex-basis: 100%; padding-left: 26px; }
+.lkresult { display: grid; gap: 10px; min-width: 0; }
+.lkresult select { background: var(--raised); color: var(--ink); border: 1px solid transparent; border-radius: var(--r-field); font: 500 14px var(--f-ui); padding: 9px 10px; width: 100%; }
+.lktable { width: 100%; border-collapse: collapse; font-size: 13px; }
+.lktable th { text-align: left; font: 700 11px var(--f-ui); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); padding: 4px 8px; border-bottom: 1px solid var(--edge); }
+.lktable td { padding: 6px 8px; border-bottom: 1px solid var(--edge-soft); vertical-align: top; overflow-wrap: anywhere; }
+.lktable td:first-child, .lktable th:first-child { width: 30px; padding-right: 0; }
+.lktable td.lkf { font-weight: 600; white-space: nowrap; }
+.lktable td.lknow { color: var(--muted); }
+.lktable td.lkval { color: var(--ink); }
+.lktable tr.none td.lkval { color: var(--faint); font-style: italic; }
+.lktable input[type=checkbox] { accent-color: var(--amber); width: 16px; height: 16px; margin: 0; cursor: pointer; }
+.lkcover { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.lkcover img { width: 96px; height: 96px; object-fit: cover; border-radius: var(--r-box); display: block; }
+@media (max-width: 700px) { .lktable td.lknow, .lktable th:nth-child(3) { display: none; } }
 /* the music library table (round 62): the whole window wide, sticky header and title, sortable, columns to choose, stars */
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .tablewrap.lib { max-height: calc(100vh - 24px); overflow: auto; }

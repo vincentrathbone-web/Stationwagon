@@ -331,6 +331,8 @@
   form.addEventListener("input", (e) => { if (e.target.name) { e.target.dataset.touched = "1"; delete e.target.dataset.fromName; } if (WANTED.some(([k]) => k === e.target.name)) warn(); });
   const mode = (upload) => {
     $("sdTop").hidden = !upload; $("sdBtns").hidden = !upload; $("rightsBtns").hidden = upload;
+    $("lkAlbumWrap").hidden = upload; // a song in the library: the album is here (an upload has it in its top part)
+    if (window.SwLookup) window.SwLookup.reset();
     $("rightsTitle").textContent = upload ? "Before it’s added" : "Copyright and licence";
   };
   const fill = (r) => {
@@ -339,6 +341,28 @@
     linkBar.hidden = true; say(""); warn();
   };
 
+  // Look up details (assets/lookup.js): what the song is, and how to read and write the window's fields
+  const lkField = (name) => (name === "album" ? (asking ? form.elements.album : $("lkAlbumIn")) : form.elements[name]);
+  if (window.SwLookup) window.SwLookup.init({
+    action, csrf,
+    query: () => {
+      if (asking) return { title: form.elements.title.value, artist: form.elements.artist.value, isrc: form.elements.isrc.value, seconds: null };
+      const t = track(current) || {};
+      return { title: t.title, artist: t.artist, isrc: form.elements.isrc.value, seconds: t.duration || null };
+    },
+    get: (name) => (lkField(name) ? lkField(name).value : ""),
+    set: (name, value) => { const f = lkField(name); if (f) { f.value = value; f.dataset.touched = "1"; } },
+    addNote: (text) => { if (notes.textContent.trim()) insertPlain("\n"); insertPlain(text); },
+    done: () => warn(),
+    hasArt: () => (asking ? (art.how === "new" || (art.how === "keep" && !!fileArt)) : !!(track(current) || {}).art),
+    useCover: async (file) => {
+      if (asking) { art = Object.assign(art, { how: "new", file }); showArt(file); return; }
+      const t = track(current), j = await send({ action: "art", id: t.id }, file);
+      Object.assign(t, j.track);
+      applyRow(current, j.track, j.line);
+    },
+  });
+
   function openRights(tr, done) {
     if (asking) return;
     current = tr; after = done;
@@ -346,6 +370,7 @@
     mode(false);
     $("rightsSong").textContent = t.title + (t.artist ? " · " + t.artist : "");
     fill(r);
+    $("lkAlbumIn").value = t.album || "";
     dlg.showModal();
     form.elements.owner.focus({ preventScroll: true });
   }
@@ -366,7 +391,10 @@
     const fields = Object.assign({ action: "rights", id: t.id }, collect(clear));
     say("Saving…");
     try {
-      const j = await send(fields);
+      let j = await send(fields);
+      // the album (filled in by Look up details, or typed here) is saved with the song's other details
+      const album = $("lkAlbumIn").value.trim();
+      if (!clear && album !== (t.album || "")) j = await send({ action: "update", id: t.id, title: t.title, artist: t.artist, album });
       applyRow(current, j.track, j.line);
       if (after) after(j.track, j.line);
       dlg.close();

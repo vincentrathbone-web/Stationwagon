@@ -91,6 +91,27 @@ final class ManagePage
                     $this->json(['ok' => $problem === null, 'error' => $problem]);
                 }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Original kept.');
+            } elseif (in_array($action, ['lookup', 'lookup_detail', 'lookup_cover'], true)) {
+                // "Look up details" in the song details window (round 65): suggestions from MusicBrainz for one song, asked for by a manager
+                $mb = $this->musicBrainz();
+                try {
+                    if ($action === 'lookup') {
+                        $seconds = isset($_POST['seconds']) && is_numeric($_POST['seconds']) && (float) $_POST['seconds'] > 0 ? (float) $_POST['seconds'] : null;
+                        $this->json(['ok' => true, 'candidates' => $mb->search((string) ($_POST['title'] ?? ''), (string) ($_POST['artist'] ?? ''), (string) ($_POST['isrc'] ?? ''), $seconds)]);
+                    } elseif ($action === 'lookup_detail') {
+                        $this->json(['ok' => true, 'details' => $mb->details((string) ($_POST['recording'] ?? ''), ($r = (string) ($_POST['release'] ?? '')) !== '' ? $r : null, (string) ($_POST['title'] ?? ''), (string) ($_POST['artist'] ?? ''))]);
+                    }
+                    $bytes = $mb->cover((string) ($_POST['release'] ?? ''));
+                    if ($bytes === null) {
+                        $this->json(['ok' => false, 'error' => 'MusicBrainz has no front cover for that release.']);
+                    }
+                    header('Content-Type: ' . (str_starts_with($bytes, "\x89PNG") ? 'image/png' : 'image/jpeg'));
+                    header('Cache-Control: no-store');
+                    echo $bytes;
+                    exit;
+                } catch (RuntimeException $ex) {
+                    $this->json(['ok' => false, 'error' => $ex->getMessage()]);
+                }
             } elseif ($action === 'rate') {
                 // stars from the library row; one song (id) or several (ids[], the bulk bar). "" or 0 clears.
                 $raw = trim((string) ($_POST['rating'] ?? ''));
@@ -807,6 +828,14 @@ final class ManagePage
             'wide' => true,
             'fluid' => true, // the manager uses the whole window (round 62); the player and the studio keep their width
         ]);
+    }
+
+    /** The MusicBrainz client, saying who asks (the program, its version, and the station's address or its privacy email). */
+    private function musicBrainz(): MusicBrainz
+    {
+        $host = preg_replace('/[^A-Za-z0-9.\-:\[\]]/', '', (string) ($_SERVER['HTTP_HOST'] ?? 'localhost')) ?: 'localhost';
+        $address = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . $host . App::url('');
+        return new MusicBrainz(SW_ROOT, MusicBrainz::userAgent($this->station, Config::version(), $address));
     }
 
     private function json(array $data): never

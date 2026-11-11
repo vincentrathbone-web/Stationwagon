@@ -194,6 +194,17 @@ The app's `/studio` follows the green mock-up, with these additions and differen
   and the note being changed has an outline. In the running order a talk item has a **Now** button
   instead of A / B (gone while it is now); opening the mic marks the next talk item as now.
 
+### Look up details (round 65; not in the mock-ups)
+
+A bordered box (`.lkbox`) at the top of the song details window, under the song's name: a heading "Look up details"
+with a small **Look up on MusicBrainz** button, a quiet two-line notice (what is sent, and that it says who is registered,
+not what may be played), a status line, then after a lookup: the possible matches as rows of radio buttons (the title and
+artist, a **Likely** pill in the accent or a plain **Check** pill, and the year, length and how far it is off), a release
+select, and a table of Field, Now and Found with a tick in the accent colour (empty fields ticked, "(same)" values
+disabled, "not in MusicBrainz" in italics), a warm note when the writers come from an unlinked work, the cover (a 96 px
+picture with **Show the cover** and **Use this cover**), and the primary **Fill the ticked fields**. On a phone the Now
+column goes. In the Music library's window an **Album** field sits under the box.
+
 ### Song prep switches (round 34; moved to Sound & safety in round 64)
 
 Since round 64 the two switches and the loudness target below are **Loudness** settings on Sound & safety

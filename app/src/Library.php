@@ -307,7 +307,7 @@ final class Library
     {
         return ['id' => (int) $t['id'], 'title' => $t['title'], 'artist' => $t['artist'] ?? '', 'album' => $t['album'] ?? '',
                 'art' => self::artPath($t['art'] ?? null), 'rights' => Rights::decode($t['rights'] ?? null) ?? new \stdClass(),
-                'rating' => isset($t['rating']) ? (int) $t['rating'] : null];
+                'rating' => isset($t['rating']) ? (int) $t['rating'] : null, 'duration' => (float) ($t['duration_s'] ?? 0)];
     }
 
     /**

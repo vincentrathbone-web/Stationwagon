@@ -160,6 +160,29 @@ $stars = function (?int $r, string $label, bool $action = false): string {
   <form method="dialog" id="rightsForm" novalidate>
     <h2 id="rightsTitle">Copyright and licence</h2>
     <p class="muted2" id="rightsSong"></p>
+    <?php /* "Look up details" (round 65): MusicBrainz suggestions for this song, asked for by a manager; assets/lookup.js, MusicBrainz.php */ ?>
+    <section class="lkbox" id="lkBox" aria-labelledby="lkTitle">
+      <div class="lkhead">
+        <h3 id="lkTitle">Look up details</h3>
+        <button class="btn sm" type="button" id="lkRun">Look up on MusicBrainz</button>
+      </div>
+      <p class="muted2 lknote">Suggests the album, year, label, ISRC, writers and publishers from <a href="https://musicbrainz.org/" target="_blank" rel="noopener noreferrer">MusicBrainz</a>, a free, open music database. The station’s server sends it only this song’s title, artist, ISRC and length. Nothing changes until you tick what to keep. It says who is registered, not what you may play: keep the licence itself below.</p>
+      <p class="muted2 editmsg" id="lkMsg" role="status" aria-live="polite"></p>
+      <ol class="lkcands" id="lkCands" hidden></ol>
+      <div class="lkresult" id="lkResult" hidden>
+        <label class="field" id="lkRelWrap" hidden><span class="lbl">Release (the album, year, label and track number come from it)</span><select id="lkRel"></select></label>
+        <table class="lktable"><thead><tr><th><span class="vh">Use</span></th><th>Field</th><th>Now</th><th>Found</th></tr></thead><tbody id="lkRows"></tbody></table>
+        <p class="sdwarn" id="lkWarn" role="status" hidden></p>
+        <div class="lkcover" id="lkCover" hidden>
+          <img id="lkCoverImg" alt="Cover found on MusicBrainz" width="96" height="96" hidden>
+          <button class="btn sm" type="button" id="lkCoverShow">Show the cover</button>
+          <button class="btn sm primary" type="button" id="lkCoverUse" hidden>Use this cover</button>
+          <span class="muted2" id="lkCoverMsg" role="status" aria-live="polite"></span>
+        </div>
+        <div class="dlgbtns"><button class="btn primary sm" type="button" id="lkApply">Fill the ticked fields</button></div>
+      </div>
+    </section>
+    <label class="field" id="lkAlbumWrap" hidden><span class="lbl">Album</span><input id="lkAlbumIn" maxlength="255" autocomplete="off"></label>
     <div class="sdtop" id="sdTop" hidden>
       <p class="sdprep muted2" id="sdPrep" role="status" aria-live="polite"></p>
       <div class="artbox">
@@ -236,4 +259,5 @@ $stars = function (?int $r, string $label, bool $action = false): string {
   </form>
 </dialog>
 <script src="<?= h(App::asset('assets/relevel.js')) ?>" defer></script>
+<script src="<?= h(App::asset('assets/lookup.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/library.js')) ?>" defer></script>

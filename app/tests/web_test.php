@@ -726,6 +726,26 @@ try {
         $putBack();
         check('  (put back as they were)', Stationwagon\Ads::settings($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch()) === $origAds);
 
+        // round 65: "Look up details" (MusicBrainz). Only what stops before the internet is tried here (lookup_test.php and lookup_browser_test.mjs have the answers)
+        $lk = fn(array $f, ?Browser $who = null) => ($who ?? $m)->go('manage/library', ['csrf' => $csrf, 'action' => 'lookup'] + $f, ['Accept: application/json']);
+        $r = $lk(['title' => '  ']);
+        $j = json_decode($r['body'], true);
+        check('a look-up with no title and no ISRC is refused with a reason (nothing is asked of MusicBrainz)', ($j['ok'] ?? true) === false && str_contains((string) ($j['error'] ?? ''), 'title'), $r['body']);
+        $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'lookup_detail', 'recording' => '../../etc/passwd'], ['Accept: application/json']);
+        $j = json_decode($r['body'], true);
+        check('  a recording that isn’t a MusicBrainz id is refused', ($j['ok'] ?? true) === false && str_contains((string) ($j['error'] ?? ''), 'MusicBrainz id'), $r['body']);
+        $r = $m->go('manage/library', ['csrf' => $csrf, 'action' => 'lookup_cover', 'release' => 'x'], ['Accept: application/json']);
+        $j = json_decode($r['body'], true);
+        check('  and so is a release', ($j['ok'] ?? true) === false && str_contains((string) ($j['error'] ?? ''), 'MusicBrainz id'), $r['body']);
+        $r = (new Browser($base))->go('manage/library', ['csrf' => 'x', 'action' => 'lookup', 'title' => 'Anything'], ['Accept: application/json']);
+        check('  someone signed out can’t look anything up', $r['status'] !== 200 && !str_contains($r['body'], 'candidates'), (string) $r['status']);
+        $r = $a->go('manage/library', ['csrf' => $csrf, 'action' => 'lookup', 'title' => 'Anything'], ['Accept: application/json']);
+        check('  nor a DJ', $r['status'] === 403 || $r['status'] === 303 || $r['status'] === 400, (string) $r['status']);
+        $r = $m->go('manage/library');
+        check('the details window has the Look up box, its notice about what is sent, and the album field', str_contains($r['body'], 'id="lkBox"') && str_contains($r['body'], 'musicbrainz.org') && str_contains($r['body'], 'id="lkAlbumIn"')
+            && str_contains($r['body'], 'lookup.js?v=') && strpos($r['body'], 'lookup.js') < strpos($r['body'], 'library.js'));
+        check('  and the Ads screen, which has no such window, has none of it', !str_contains($m->go('manage/ads')['body'], 'id="lkBox"'));
+
         $r = $m->go('manage/ads?confirm=' . $adId);
         check('Remove asks first', str_contains($r['body'], 'Remove this ad?') && str_contains($r['body'], 'Yes, remove'));
         $r = $m->go('manage/ads', ['csrf' => $csrf, 'action' => 'delete', 'id' => $adId]);

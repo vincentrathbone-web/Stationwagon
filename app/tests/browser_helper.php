@@ -9,6 +9,7 @@
 //   php browser_helper.php cleanup-like <SQL LIKE pattern> ...   (songs a killed run left, e.g. "Loudness %"; one on air is hidden) -> {removed, hidden}
 //   php browser_helper.php lib-songs <n>    -> n throwaway songs "Web Test Lib NN" and one tagged with a cover and copyright: {"ids", "tagged"}
 //   php browser_helper.php lib-info <id>    -> the song's title, art file and rights
+//   php browser_helper.php lib-set <id> <title> <artist> [<seconds>];  mb-seed / mb-unseed (the saved MusicBrainz answers in the lookup's cache)
 //   php browser_helper.php ads-info <title> -> an ad's track and plan (or null);  ads-clean (every "Web Test Ad")
 //   php browser_helper.php lib-clean        (every "Web Test Lib" song, and their art)
 //   php browser_helper.php rate-fixture "<mp3>|<title>" ...  -> the songs imported, in order in a "[ww-test] Rate switch" playlist that a block plays from now: {ids, playlist, block, tracks}
@@ -183,6 +184,24 @@ if ($cmd === 'manager') {
         $lib->delete((int) $id, $planner, microtime(true));
     }
     echo json_encode(['cleaned' => $n]);
+} elseif ($cmd === 'lib-set') {
+    // a song's title, artist and length as the lookup test wants them: lib-set <id> <title> <artist> [<seconds>] (album and rights cleared)
+    $db->run('UPDATE ' . $db->table('tracks') . ' SET title = ?, artist = ?, album = NULL, rights = NULL' . (isset($argv[5]) && (float) $argv[5] > 0 ? ', duration_s = ' . (float) $argv[5] : '') . ' WHERE id = ? AND station_id = ?',
+        [$argv[3] ?? '', ($argv[4] ?? '') !== '' ? $argv[4] : null, (int) ($argv[2] ?? 0), $station['id']]);
+    echo json_encode(['ok' => true]);
+} elseif ($cmd === 'mb-seed' || $cmd === 'mb-unseed') {
+    // the MusicBrainz answers kept in fixtures-musicbrainz.json, put in (or taken out of) the lookup's cache, so the tests never reach the internet
+    $mb = new Stationwagon\MusicBrainz(SW_ROOT, 'Stationwagon/test ( test )');
+    $n = 0;
+    foreach (json_decode((string) file_get_contents(__DIR__ . '/fixtures-musicbrainz.json'), true) as $url => $f) {
+        if ($cmd === 'mb-seed') {
+            $mb->seed((string) $url, (string) $f['body'], (int) $f['code']);
+        } else {
+            @unlink(SW_ROOT . '/storage/cache/mb/' . sha1((string) $url) . '.json');
+        }
+        $n++;
+    }
+    echo json_encode(['answers' => $n]);
 } elseif ($cmd === 'ads-info') {
     // an ad by its title: its track and its plan
     $r = $db->run('SELECT t.id, t.title, t.kind, t.art, t.artist, t.album, t.rights, t.loudness_lufs, t.mastered, t.file, t.sha1, a.* FROM ' . $db->table('tracks') . ' t LEFT JOIN ' . $db->table('ads') . ' a ON a.track_id = t.id WHERE t.station_id = ? AND t.title = ? ORDER BY t.id DESC LIMIT 1',
