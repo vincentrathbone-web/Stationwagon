@@ -136,6 +136,12 @@ async function inBar(expression) {
   b.close();
   return r && r.result && r.result.result ? r.result.result.value : undefined;
 }
+/** The bar view's window and its region, as Windows has them (round 66: its view is always 234 px tall; the region shows its foot, or all of it while the slider is up). */
+const barRegion = () => {
+  const out = execFileSync("powershell", ["-NoProfile", "-Command", `Add-Type -TypeDefinition 'using System; using System.Collections.Generic; using System.Runtime.InteropServices; public class BR { public delegate bool E(IntPtr h, IntPtr l); [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr p, E cb, IntPtr l); [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RC r); [DllImport("user32.dll")] static extern int GetWindowRgnBox(IntPtr h, out RC r); [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n); [DllImport("user32.dll")] static extern IntPtr FindWindow(string c, string t); [StructLayout(LayoutKind.Sequential)] public struct RC { public int L, T, R, B; } public static string Go() { var top = FindWindow(null, "Stationwagon Studio"); var rows = new List<string>(); EnumChildWindows(top, (h, l) => { var cn = new System.Text.StringBuilder(64); GetClassName(h, cn, 64); if (cn.ToString() != "WRY_WEBVIEW") return true; RC r, g; GetWindowRect(h, out r); int k = GetWindowRgnBox(h, out g); rows.Add((r.B - r.T) + "," + (k == 0 ? "none" : g.T + "-" + g.B)); return true; }, IntPtr.Zero); return string.Join(";", rows); } }'; [BR]::Go()`], { encoding: "utf8" }).trim();
+  const bar = out.split(";").map((x) => x.split(",")).find((x) => x[0] === "234");
+  return bar ? { height: 234, region: bar[1] } : { height: null, region: out };
+};
 const barTargets = async () => (await targets().catch(() => [])).filter((x) => /\/bar(\?|$)/.test(x.url));
 const go = async (url) => { await call("Page.navigate", { url }); for (let i = 0; i < 100; i++) { await sleep(100); if ((await evaluate("document.readyState").catch(() => "")) === "complete") return; } };
 const state = () => evaluate("window.SwStudio && SwStudio.state()");
@@ -208,7 +214,9 @@ try {
   for (let i = 0; i < 50 && !(bar && bar.playing); i++) { await sleep(200); bar = await inBar("({ playing: swEmbed.playing, muted: SwBar.muted, h: innerHeight, w: innerWidth, vis: document.visibilityState, play: !!document.getElementById('emPlay'), t: performance.timeOrigin })").catch(() => null); }
   const winH = await evaluate("innerHeight"), winW = await evaluate("innerWidth");
   check("the bar opens under the studio by itself: running, muted, with no play button", bar && bar.playing && bar.muted && !bar.play && bar.vis === "visible", JSON.stringify(bar));
-  check("  84 px tall, the window's width; the studio above it", bar && bar.h === 84 && Math.abs(bar.w - winW) <= 1, bar && `bar ${bar.w}×${bar.h}, studio ${winW}×${winH}`);
+  check("  84 px tall, the window's width; the studio above it (its view is 234 px, only the foot shows)", bar && bar.h === 234 && (await inBar("document.getElementById('embed').getBoundingClientRect().height")) === 84 && Math.abs(bar.w - winW) <= 1, bar && `bar view ${bar.w}×${bar.h}, studio ${winW}×${winH}`);
+  const reg = barRegion();
+  check("  Windows shows only the bottom 84 px of that view (the rest is out of sight and out of the mouse's way: no resizing, so no flicker)", reg.height === 234 && reg.region === "150-234", JSON.stringify(reg));
   check("  the bar's look for its room (bigger art and strip), the strip using its width", (await inBar("document.getElementById('embed').classList.contains('roomy') && document.getElementById('emWave').getBoundingClientRect().width > 300")) === true);
   check("  the bar is the station's own page (one view, not counted as a listener)", (await barTargets()).length === 1 && (await inBar("swEmbed.ping")) === null);
   check("  the bar may make room for its slider, and nothing else", await inBar("Promise.all([window.__TAURI__.core.invoke('bar_tall', { tall: false }).then(() => true, () => false), ...['get_info', 'bridge_status', 'set_busy', 'quit_app'].map((c) => window.__TAURI__.core.invoke(c, { busy: false }).then(() => false, () => true))]).then((r) => r.every(Boolean))"));
@@ -217,7 +225,7 @@ try {
   await go(`${base}/manage/library`);
   await sleep(1500);
   let bar2 = await inBar("({ playing: swEmbed.playing, muted: SwBar.muted, t: performance.timeOrigin, h: innerHeight })");
-  check("going to the manager: the same bar plays on (not loaded again), still heard", bar2 && bar && bar2.t === bar.t && bar2.playing && !bar2.muted && bar2.h === 84, JSON.stringify(bar2));
+  check("going to the manager: the same bar plays on (not loaded again), still heard", bar2 && bar && bar2.t === bar.t && bar2.playing && !bar2.muted, JSON.stringify(bar2));
   check("  the manager's page has the window less the bar", Math.abs((await evaluate("innerHeight")) - winH) <= 1);
   await go(`${base}/manage/songprep`);
   await sleep(1500);
@@ -226,7 +234,8 @@ try {
   await inBar("(() => { const e = document.getElementById('emSound'); e.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' })); })()");
   await sleep(700);
   bar2 = await inBar("({ h: innerHeight, open: SwBar.open, tall: getComputedStyle(document.getElementById('emVolPop')).display })");
-  check("pointing at the speaker: the volume slider comes up, the bar grows over the page's foot", bar2 && bar2.open && bar2.h === 234, JSON.stringify(bar2));
+  const regUp = barRegion();
+  check("pointing at the speaker: the volume slider comes up, and Windows shows the whole view over the page's foot", bar2 && bar2.open && bar2.tall !== "none" && regUp.region === "0-234", JSON.stringify([bar2, regUp]));
   check("  the page above keeps its size", Math.abs((await evaluate("innerHeight")) - winH) <= 1);
   // SW_SHOT=<file.png>: a picture of the window now, to see the page through the bar around the slider
   if (process.env.SW_SHOT) execFileSync("powershell", ["-NoProfile", "-Command",
@@ -236,7 +245,7 @@ try {
   await inBar("(() => { const e = document.getElementById('emSound'); e.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' })); })()");
   await sleep(1200);
   bar2 = await inBar("({ h: innerHeight, open: SwBar.open })");
-  check("  and it goes down again when the pointer leaves", bar2 && !bar2.open && bar2.h === 84, JSON.stringify(bar2));
+  check("  and it goes down again when the pointer leaves (the view keeps its size)", bar2 && !bar2.open && bar2.h === 234 && barRegion().region === "150-234", JSON.stringify([bar2, barRegion()]));
   await inBar("SwBar.volume(0.5)");
   await go(`${base}/`);
   await sleep(1200);

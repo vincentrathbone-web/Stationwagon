@@ -16,7 +16,7 @@ mod mp3;
 use bridge::{Bridge, Event};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering, AtomicU64};
 use std::sync::Mutex;
 use tauri::ipc::CapabilityBuilder;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewBuilder, WebviewUrl, WebviewWindowBuilder};
@@ -84,6 +84,9 @@ struct App {
     bar_busy: Mutex<()>,
     /// the bar's view is shown now (shown or hidden only when that changes: showing a view can take the keyboard)
     bar_shown: AtomicBool,
+    /// when (milliseconds since 1970) the window last gave the screen the keyboard on coming to the front, so that doing it
+    /// is not answered again by its own echo (see the Focused handler in `run`)
+    refocus_ms: AtomicU64,
 }
 
 /// The same options for every view in the app: WebView2 refuses a second view whose options differ. The
@@ -104,6 +107,37 @@ fn bar_route(base: &url::Url, at: &url::Url) -> Option<String> {
     if screen { Some(r.to_string()) } else { None }
 }
 
+/// The bar's view is always as tall as it gets, and only its foot shows (round 66). Growing and shrinking a WebView2
+/// view each time the pointer came to the speaker showed one stale frame: the bar jumped to the top of the new size
+/// over a white block (a flicker on every hover, seen in pictures of the real window). A window region keeps the
+/// rest of the view out of sight and out of the mouse's way until the volume slider is up, with no resizing at all.
+#[cfg(windows)]
+mod clip {
+    use std::ffi::c_void;
+    #[link(name = "user32")] extern "system" { fn SetWindowRgn(hwnd: *mut c_void, rgn: *mut c_void, redraw: i32) -> i32; }
+    #[link(name = "gdi32")] extern "system" { fn CreateRectRgn(left: i32, top: i32, right: i32, bottom: i32) -> *mut c_void; }
+    /// A window handle as the WebView2 bindings fill it in (the same layout as their HWND).
+    #[repr(transparent)] pub struct Hwnd(pub *mut c_void);
+    /// Shows only the bottom `keep` pixels of a window that is `width` by `height` pixels (the size it is being given:
+    /// the resize is made a moment after, so the window's own size is not asked).
+    pub fn bottom(hwnd: &Hwnd, width: i32, height: i32, keep: i32) {
+        if hwnd.0.is_null() || width <= 0 || height <= 0 { return; }
+        let top = if keep <= 0 || keep >= height { 0 } else { height - keep };
+        unsafe { SetWindowRgn(hwnd.0, CreateRectRgn(0, top, width, height), 1); } // the system owns the region from now on
+    }
+}
+
+/// Shows only the bottom `keep` of the bar's view, which is `width` by `height` (all physical pixels; see `clip`).
+fn clip_bar(bar: &tauri::Webview, width: i32, height: i32, keep: i32) {
+    #[cfg(windows)]
+    let _ = bar.with_webview(move |wv| unsafe {
+        let mut h = clip::Hwnd(std::ptr::null_mut());
+        if wv.controller().ParentWindow(&mut h as *mut clip::Hwnd as *mut _).is_ok() { clip::bottom(&h, width, height, keep); }
+    });
+    #[cfg(not(windows))]
+    let _ = (bar, width, height, keep);
+}
+
 /// Puts the screen and the bar where they belong for the window's size: the bar along the foot (taller,
 /// over the screen's foot, while its slider is up), or only the screen.
 fn lay_out(app: &AppHandle) {
@@ -119,8 +153,11 @@ fn lay_out(app: &AppHandle) {
     let _ = screen.set_bounds(tauri::Rect { position: LogicalPosition::new(0.0, 0.0).into(), size: LogicalSize::new(size.width, screen_h).into() });
     if let Some(bar) = bar {
         if on {
-            let h = if state.bar_tall.load(Ordering::SeqCst) { BAR_TALL_H } else { BAR_H }.min(size.height);
-            let _ = bar.set_bounds(tauri::Rect { position: LogicalPosition::new(0.0, size.height - h).into(), size: LogicalSize::new(size.width, h).into() });
+            // always its full height (the slider comes up inside it); the region shows the foot, or all of it while the slider is up
+            let full = BAR_TALL_H.min(size.height);
+            let shown = if state.bar_tall.load(Ordering::SeqCst) { BAR_TALL_H } else { BAR_H }.min(size.height);
+            let _ = bar.set_bounds(tauri::Rect { position: LogicalPosition::new(0.0, size.height - full).into(), size: LogicalSize::new(size.width, full).into() });
+            clip_bar(&bar, (size.width * scale).round() as i32, (full * scale).round() as i32, (shown * scale).round() as i32);
             if !state.bar_shown.swap(true, Ordering::SeqCst) {
                 let _ = bar.show();
                 let _ = screen.set_focus(); // the keyboard stays with the screen
@@ -548,7 +585,7 @@ pub fn run() {
             bridge.set_password(&settings.password);
             let port = settings.port;
             app.manage(App { bridge, settings: Mutex::new(settings), path, busy: AtomicBool::new(false), update: Mutex::new(None), allowed: Mutex::new(Vec::new()),
-                bar_on: AtomicBool::new(false), bar_tall: AtomicBool::new(false), bar_route: Mutex::new(String::new()), bar_busy: Mutex::new(()), bar_shown: AtomicBool::new(true) });
+                bar_on: AtomicBool::new(false), bar_tall: AtomicBool::new(false), bar_route: Mutex::new(String::new()), bar_busy: Mutex::new(()), bar_shown: AtomicBool::new(true), refocus_ms: AtomicU64::new(0) });
             let state = app.state::<App>();
             state.save().ok(); // keeps the first password
             state.bridge.listen(port);
@@ -569,10 +606,19 @@ pub fn run() {
             if let tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. } = event {
                 if window.label() == "main" { lay_out(window.app_handle()); }
             }
-            // back in front (after the settings window, say): the keys go to the page, not the bar
+            // back in front (after the settings window, say): with the bar up, the keys go to the page, not the bar.
+            // Giving the page the keyboard makes WebView2 lose and regain it, which tauri reports as Focused(false) and
+            // Focused(true) again when a window has two views: answering that one gave the page the keyboard again, for
+            // ever (round 66: the sign-in page's field flickered, clicks in it were lost, and the window was slow to minimise,
+            // maximise or close). So only with the bar up, and never twice within two seconds.
             if let tauri::WindowEvent::Focused(true) = event {
                 if window.label() == "main" {
-                    if let Some(screen) = window.app_handle().get_webview("main") { let _ = screen.set_focus(); }
+                    let state = window.state::<App>();
+                    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+                    if state.bar_on.load(Ordering::SeqCst) && now.saturating_sub(state.refocus_ms.load(Ordering::SeqCst)) > 2000 {
+                        state.refocus_ms.store(now, Ordering::SeqCst);
+                        if let Some(screen) = window.app_handle().get_webview("main") { let _ = screen.set_focus(); }
+                    }
                 }
             }
             // closing the studio while on air: the page asks first ("End the show" or "Close anyway")

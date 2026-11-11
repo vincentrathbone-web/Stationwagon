@@ -141,6 +141,28 @@ try {
   await evaluate(`(() => { const v = swShell.bar.contentDocument.getElementById("emVol"); v.value = 35; v.dispatchEvent(new Event("input", { bubbles: true })); v.dispatchEvent(new Event("change", { bubbles: true })); })()`);
   b = await bar();
   check("  moving it sets the volume and turns the sound on", b && Math.abs(b.vol - 0.35) < 0.001 && !b.muted, JSON.stringify(b));
+  // round 66: muting drops the slider to the bottom, and raising it from there unmutes quietly
+  const slider = () => evaluate(`swShell.bar.contentDocument.getElementById("emVol").value`);
+  const press = () => evaluate(`swShell.bar.contentDocument.getElementById("emMute").click()`);
+  const drag = (v) => evaluate(`(() => { const e = swShell.bar.contentDocument.getElementById("emVol"); e.value = ${v}; e.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+  await press();
+  b = await bar();
+  check("  pressing the speaker mutes it and drops the slider to the bottom, keeping the volume for later", b && b.muted && (await slider()) === "0" && Math.abs(b.vol - 0.35) < 0.001, JSON.stringify(b) + " slider " + await slider());
+  await press();
+  b = await bar();
+  check("  pressing it again brings the sound back at the same volume, the slider up where it was", b && !b.muted && (await slider()) === "35" && Math.abs(b.vol - 0.35) < 0.001, JSON.stringify(b) + " slider " + await slider());
+  await press();
+  await drag(4);
+  b = await bar();
+  check("  from the bottom, raising it a little unmutes at that low level", b && !b.muted && Math.abs(b.vol - 0.04) < 0.001 && (await slider()) === "4", JSON.stringify(b) + " slider " + await slider());
+  await press();
+  await drag(0);
+  b = await bar();
+  check("  moving it to the bottom while muted changes nothing (still muted, the volume kept)", b && b.muted && (await slider()) === "0" && Math.abs(b.vol - 0.04) < 0.001, JSON.stringify(b));
+  await press();
+  b = await bar();
+  check("  a volume left at the bottom never comes back silent: the speaker brings it to half", b && !b.muted && Math.abs(b.vol - 0.5) < 0.001 && (await slider()) === "50", JSON.stringify(b) + " slider " + await slider());
+  await evaluate(`swShell.bar.contentWindow.SwBar.volume(0.35)`);
   await evaluate(`swShell.bar.contentDocument.getElementById("emSound").dispatchEvent(new PointerEvent("pointerleave", { pointerType: "mouse" }))`);
   b = await waitFor(async () => { const x = await bar(); return x && !x.open && x.h === 84 && x; }, 6);
   check("  the pointer leaving: it goes down again", !!b, JSON.stringify(await bar()));

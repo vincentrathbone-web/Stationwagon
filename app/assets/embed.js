@@ -129,21 +129,38 @@
   function setMuted(m, auto = false) {
     muted = !!m; P.mute(muted);
     root.classList.toggle("is-muted", muted);
+    // the bar's slider shows what is heard: at the bottom while muted (the remembered volume is kept, and comes back
+    // when the speaker is pressed again), so that raising it from there starts quietly (round 66)
+    const slider = BAR ? $("emVol") : null;
+    if (slider) slider.value = muted ? 0 : Math.round(P.volume() * 100);
     const b = $("emMute");
     b.setAttribute("aria-pressed", muted ? "true" : "false"); b.setAttribute("aria-label", muted ? "Unmute" : "Mute"); b.title = muted ? (auto ? "Muted while you work here: press to listen" : "Unmute") : "Mute";
   }
   if (BAR) {
     setMuted(true); // always quiet on opening (the user, round 61)
     // the speaker: heard or quiet; if the browser held the sound back until a tap, this tap starts it
-    $("emMute").addEventListener("click", () => { setMuted(!muted); if (!on) P.start(); });
+    $("emMute").addEventListener("click", () => {
+      if (muted && P.volume() < 0.05) P.volume(0.5); // it was left at the bottom: pressing the speaker must make sound
+      setMuted(!muted); if (!on) P.start();
+    });
     const vol = $("emVol"), pop = $("emVolPop"), sound = $("emSound");
     // the bar is as tall as the room its host gives it (84 px in the Windows app and a wide browser, 64 on a
     // phone); while the slider is up the host gives it 150 px more, and the bar keeps its own height at the foot
-    const fit = () => { if (!pop.hidden) return; root.style.setProperty("--bar-h", innerHeight + "px"); root.classList.toggle("roomy", innerHeight >= 76); };
+    // (in the Windows app the view is always as tall as the slider needs and only its foot shows: the bar is 84 px there)
+    const fit = () => {
+      if (window.__TAURI__ && window.__TAURI__.core) { root.style.setProperty("--bar-h", "84px"); root.classList.add("roomy"); return; }
+      if (!pop.hidden) return;
+      root.style.setProperty("--bar-h", innerHeight + "px"); root.classList.toggle("roomy", innerHeight >= 76);
+    };
     fit();
     window.addEventListener("resize", fit);
-    vol.value = Math.round(P.volume() * 100);
-    vol.addEventListener("input", () => { P.volume(vol.value / 100); if (muted && vol.value > 0) setMuted(false); if (!on) P.start(); });
+    vol.value = muted ? 0 : Math.round(P.volume() * 100);
+    vol.addEventListener("input", () => {
+      const v = vol.value / 100;
+      if (muted) { if (v > 0) { P.volume(v); setMuted(false); } } // from the bottom up: it starts quietly, and the speaker comes on
+      else P.volume(v);
+      if (!on) P.start();
+    });
     // the slider pops up out of the speaker: the page around the bar (the frame page, or an app) makes room for it
     let shut = 0;
     const tall = (t) => {
@@ -155,7 +172,7 @@
     // it closes when the pointer has left, unless the keyboard is using it
     let mouseIn = false; // a phone's tap leaves :hover stuck, so only a mouse counts
     const inUse = () => mouseIn || !!sound.querySelector(":focus-visible");
-    const closePop = (ms = 350) => { clearTimeout(shut); shut = setTimeout(() => { if (pop.hidden) return; if (inUse()) { closePop(1500); return; } if (sound.contains(document.activeElement)) document.activeElement.blur(); pop.hidden = true; tall(false); }, ms); };
+    const closePop = (ms = 350) => { clearTimeout(shut); shut = setTimeout(() => { if (pop.hidden) return; if (inUse()) { closePop(1500); return; } if (sound.contains(document.activeElement)) document.activeElement.blur(); pop.hidden = true; setTimeout(() => { if (pop.hidden) tall(false); }, 90); }, ms); };
     sound.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") { mouseIn = true; openPop(); } });
     sound.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") { mouseIn = false; closePop(); } });
     sound.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") { openPop(); closePop(4000); } }); // a tap: up for a few seconds
@@ -163,11 +180,11 @@
     vol.addEventListener("change", () => closePop(2500));
     sound.addEventListener("focusin", openPop);
     sound.addEventListener("focusout", () => closePop(200));
-    vol.addEventListener("keydown", (e) => { if (e.key === "Escape") { vol.blur(); $("emMute").focus(); pop.hidden = true; tall(false); } });
+    vol.addEventListener("keydown", (e) => { if (e.key === "Escape") { vol.blur(); $("emMute").focus(); pop.hidden = true; setTimeout(() => { if (pop.hidden) tall(false); }, 90); } });
     P.start(); // runs while it's open: the strip and the time move, muted
     /** The screen above changed (the frame page or the app says so): the studio and Song prep mute the bar. */
     const screen = (route) => { if (/^(studio|manage\/songprep)(\/|$)/.test(String(route || "")) && !muted) setMuted(true, true); };
-    window.SwBar = { screen, mute: (m) => setMuted(m), get muted() { return muted; }, volume: (v) => { if (v !== undefined) vol.value = Math.round(P.volume(v) * 100); return P.volume(); }, get open() { return !pop.hidden; },
+    window.SwBar = { screen, mute: (m) => setMuted(m), get muted() { return muted; }, volume: (v) => { if (v !== undefined) { const set = P.volume(v); if (!muted) vol.value = Math.round(set * 100); } return P.volume(); }, get open() { return !pop.hidden; },
       // the Android app hides its bar's view without the page knowing: told, the bar stops drawing until it shows again
       hide: (h) => { document.documentElement.style.display = h ? "none" : ""; } };
     window.addEventListener("message", (e) => { if (e.origin === location.origin && e.data && e.data.sw === "screen") screen(e.data.route); });
