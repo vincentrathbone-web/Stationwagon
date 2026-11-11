@@ -345,13 +345,7 @@ final class Library
     /** The planner it was given and one for every other stream (the songs are every stream's), round 73. @return list<Planner> */
     private function everyPlanner(Planner $given): array
     {
-        $out = [$given];
-        foreach (Streams::all($this->db) as $s) {
-            if ((int) $s['id'] !== (int) $given->station()['id'] && ($p = Streams::planner($this->db, $s['main'] ? null : (string) $s['slug'])) !== null) {
-                $out[] = $p;
-            }
-        }
-        return $out;
+        return $given->everyStream();
     }
 
     private function dropUnused(string $file): void

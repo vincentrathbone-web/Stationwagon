@@ -991,7 +991,7 @@ final class ManagePage
                 App::redirect('manage/sound');
             }
             // Plan what isn't on air yet again, with the new values
-            (new Planner($this->db, $station, SW_ROOT))->replan(microtime(true));
+            $this->replanAll(microtime(true)); // the sound settings are every stream's (round 73)
             // a new loudness target (or normalization switched on): songs already in the library keep their level until re-levelled
             $note = '';
             if (array_slice(StationSettings::prep($station), 1) !== array_slice(StationSettings::prep($this->station), 1)) {

@@ -171,9 +171,12 @@ final class Staff
         $this->db->run('UPDATE ' . $this->db->table('users') . ' SET blocked_at = COALESCE(blocked_at, ?) WHERE id = ?', [gmdate('Y-m-d H:i:s'), $id]);
         $this->db->run('DELETE FROM ' . $this->db->table('remember_tokens') . ' WHERE user_id = ?', [$id]);
         if ($planner !== null) {
-            $open = $this->db->run('SELECT public_id FROM ' . $this->db->table('live_shows') . ' WHERE station_id = ? AND dj_user_id = ? AND open = 1', [$this->station['id'], $id])->fetchAll(\PDO::FETCH_COLUMN);
-            foreach ($open as $publicId) {
-                $planner->endLive($now ?? microtime(true), (string) $publicId, 'DJ blocked');
+            // a live show on any stream ends (round 73: the planner given is one stream's)
+            foreach ($planner->everyStream() as $pl) {
+                $open = $this->db->run('SELECT public_id FROM ' . $this->db->table('live_shows') . ' WHERE station_id = ? AND dj_user_id = ? AND open = 1', [(int) $pl->station()['id'], $id])->fetchAll(\PDO::FETCH_COLUMN);
+                foreach ($open as $publicId) {
+                    $pl->endLive($now ?? microtime(true), (string) $publicId, 'DJ blocked');
+                }
             }
         }
         return null;

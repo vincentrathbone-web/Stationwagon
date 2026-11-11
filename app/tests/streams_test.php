@@ -170,6 +170,61 @@ try {
         && (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('episodes') . ' WHERE station_id = ?', [$main['id']])->fetchColumn() >= 1);
     check('  ended, it can', Streams::delete($db, $g2) === null);
 
+    echo "A song on air on another stream\n";
+    $pg->replan($t0 + 5);
+    $onG = null;
+    foreach ($pg->timeline($t0 + 5) as $e) {
+        if ($e['type'] === 'song' && empty($e['ad']) && empty($e['jingle']) && $e['start'] > $t0 + 60) {
+            $mid = $e['start'] + 1;
+            $onMain = array_filter($pm->timeline($t0), fn($m) => $m['type'] === 'song' && $m['track_id'] === $e['track_id'] && $m['start'] <= $mid + 30 && $m['end'] > $mid - 30);
+            if (!$onMain) {
+                $onG = [$e['track_id'], $mid];
+                break;
+            }
+        }
+    }
+    check('(a song is on air on the stream and not on the main one)', $onG !== null);
+    [$busyId, $tq] = $onG;
+    $why = $lib->delete($busyId, $pm, $tq);
+    check('removing it from the library is refused, though the main stream’s planner was given', is_string($why) && str_contains($why, 'is on air') && $lib->get($busyId) !== null, (string) $why);
+    $why = $lib->replace($busyId, "$root/in/One.mp3", null, null, false, null, $pm, $tq);
+    check('  and so is giving it a new file', is_string($why) && str_contains($why, 'is on air'), (string) $why);
+    check('the main planner sees every stream, itself first', array_map(fn($p) => (int) $p->station()['id'], $pm->everyStream()) === array_map(fn($s) => (int) $s['id'], Streams::all($db))
+        && (int) $pg->everyStream()[0]->station()['id'] === $g && (int) $pg->everyStream()[1]->station()['library_id'] === (int) $main['id']);
+
+    echo "Blocking a DJ who is live on another stream\n";
+    [$g3] = Streams::create($db, 'Night', 'night');
+    $schedN = new Schedule($db, Streams::station($db, 'night'));
+    $liveIn = ['kind' => 'live', 'title' => 'Night show', 'dj_user_id' => $dj['id'], 'days' => array_keys(Schedule::DAYS), 'start' => '00:00', 'end' => '00:00'];
+    Streams::setFor($db, $dj['id'], [(int) $main['id']]);
+    [$none, $errs] = $schedN->add($liveIn);
+    check('a live block on a stream for a DJ who may not use it is refused, with the reason', $none === null && str_contains($errs['dj_user_id'] ?? '', 'may not go live on this stream'), json_encode($errs));
+    [$plBlock, $errs] = $schedN->add(['kind' => 'playlist', 'playlist_id' => (int) $pl, 'days' => [1], 'start' => '05:00', 'end' => '06:00']);
+    check('a block with one of the library’s playlists is added to a stream', is_int($plBlock) && !$errs && $schedN->all()[0]['playlist_name'] === 'Gospel list', json_encode($errs));
+    $schedN->delete((int) $plBlock);
+    Streams::setFor($db, $dj['id'], [$g3]);
+    $djNow = $staff->get($dj['id']);
+    $pN = Streams::planner($db, 'night');
+    $added = $schedN->add($liveIn);
+    check('  given the stream, the DJ’s live block is added', is_int($added[0]) && !$added[1], json_encode($added));
+    $tb = $t0 + 1800;
+    $pN->timeline($tb);
+    $r = (new Stationwagon\Studio($pN))->goLive($djNow, $tb);
+    $openN = fn() => (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('live_shows') . ' WHERE station_id = ? AND `open` = 1', [$g3])->fetchColumn();
+    check('(the DJ is live on the Night stream)', $openN() === 1, $openN() === 1 ? '' : json_encode([$added, $r]));
+    check('blocking them on the main stream’s screen ends that show too', $staff->block($adminU, $dj['id'], $pm, $tb + 2) === null && $openN() === 0
+        && $db->run('SELECT closed_reason FROM ' . $db->table('live_shows') . ' WHERE station_id = ? ORDER BY id DESC LIMIT 1', [$g3])->fetchColumn() === 'DJ blocked'
+        && !array_filter($pN->timeline($tb + 60), fn($e) => $e['type'] === 'live' && $e['start'] > $tb + 30));
+    $staff->unblock($adminU, $dj['id']);
+    check('  the stream goes on with its AutoDJ, and it can be removed', Streams::delete($db, $g3) === null);
+    [$g4] = Streams::create($db, 'Fresh', 'fresh');
+    $pF = Streams::planner($db, 'fresh');
+    $noTimeline = (int) $db->run("SELECT COUNT(*) FROM $tl WHERE station_id = ?", [$g4])->fetchColumn() === 0;
+    $r = (new Stationwagon\Studio($pF))->goLive($mgrU, $tb + 100);
+    check('going live on a new stream nobody has listened to yet (no timeline) hands over from its AutoDJ', $noTimeline && !isset($r['error']) && isset($r['live']), json_encode($r['error'] ?? null));
+    $pF->endLive($tb + 130, (string) $r['live']['public_id']);
+    Streams::delete($db, $g4);
+
     echo "Removing a stream\n";
     $db->insert('live_shows', ['station_id' => $g, 'public_id' => bin2hex(random_bytes(8)), 'dj_user_id' => $dj['id'], 'title' => 'Live', 'open' => 1, 'start_at' => (float) $t0, 'last_piece_at' => (float) $t0, 'created_at' => gmdate('Y-m-d H:i:s')]);
     check('one with a live show on it is not removed', Streams::delete($db, $g) === 'A live show is on this stream now. End it first.' && Streams::bySlug($db, 'gospel') !== null);

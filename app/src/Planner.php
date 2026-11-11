@@ -96,6 +96,19 @@ final class Planner
         return $this->station;
     }
 
+    /** This planner and one for every other stream of the station (round 73), the same storage folder: for what touches every stream. @return list<Planner> */
+    public function everyStream(): array
+    {
+        $out = [$this];
+        $main = Streams::main($this->db);
+        foreach (Streams::all($this->db) as $s) {
+            if ((int) $s['id'] !== (int) $this->station['id']) {
+                $out[] = new self($this->db, Streams::view($s, $main), $this->root, $this->lockSeconds);
+            }
+        }
+        return $out;
+    }
+
     // ---- Reading -------------------------------------------------------------------------
 
     /** The timeline from 10 minutes ago onwards, planning ahead first if it needs it. */
@@ -425,7 +438,13 @@ final class Planner
             $this->blocks = null;
             $this->pieceCache = [];
             try {
-                $result = $fn($this->entries($now - 600));
+                // a stream nobody has listened to yet has no timeline to hand over from: plan it first (round 73)
+                $entries = $this->entries($now - 600);
+                if (!$entries) {
+                    $this->plan($now);
+                    $entries = $this->entries($now - 600);
+                }
+                $result = $fn($entries);
                 $this->plan($now);
                 $pdo->commit();
             } catch (Throwable $ex) {

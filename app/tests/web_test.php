@@ -1022,6 +1022,60 @@ try {
             && $pub->go('api/timeline.php?stream=no-such-stream')['status'] === 404 && $pub->go('api/stream.php?stream=no-such-stream')['status'] === 404 && $pub->go('embed?stream=no-such-stream')['status'] === 404);
         check('  the address names the app uses still go where they went (the manager, the studio, the api folder)', $pub->go('manage')['status'] !== 404 && $pub->go('studio')['status'] !== 404 && $pub->go('signin')['status'] === 200);
 
+        // the manager screens' actions on a further stream: Skip, the Schedule form, the numbers, and someone without the stream
+        $sid = (int) $row['id'];
+        $cuts = fn(int $st) => (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('timeline') . ' WHERE station_id = ? AND cut = 1', [$st])->fetchColumn();
+        $ad->go('manage?stream=' . $strSlug);
+        $mainCuts = $cuts($stationId);
+        $strCuts = $cuts($sid);
+        $r = $ad->go('manage/skip', ['csrf' => $acsrf]);
+        check('Skip on the picked stream cuts that stream’s song and leaves the main stream’s alone', $flashed($after($ad, $r), 'Skipped.') && $cuts($sid) > $strCuts && $cuts($stationId) === $mainCuts, "$strCuts → " . $cuts($sid) . ", main $mainCuts → " . $cuts($stationId));
+        $stationRow = $db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch();
+        [$plId] = (new Stationwagon\Playlists($db, $stationRow))->create("[test] Stream list $tag", 'shuffle');
+        $blkTitle = "[test] Stream block $tag";
+        $r = $ad->go('manage/schedule', ['csrf' => $acsrf, 'kind' => 'playlist', 'playlist_id' => (string) $plId, 'days' => ['1'], 'start' => '05:00', 'end' => '06:00', 'title' => $blkTitle]);
+        $blk = $db->run('SELECT * FROM ' . $db->table('schedule') . ' WHERE title = ?', [$blkTitle])->fetch();
+        check('the Schedule form adds a block with one of the library’s playlists to the picked stream', $flashed($after($ad, $r), 'Block added.') && $blk && (int) $blk['station_id'] === $sid, json_encode($blk));
+        $onMain = str_contains($ad->go('manage/schedule?stream=' . $mainSlug)['body'], htmlspecialchars($blkTitle));
+        check('  it is on that stream’s week and not the main one’s', str_contains($ad->go('manage/schedule?stream=' . $strSlug)['body'], htmlspecialchars($blkTitle)) && !$onMain);
+        $r = $ad->go('manage/schedule', ['csrf' => $acsrf, 'kind' => 'live', 'dj_user_id' => (string) $db->run('SELECT id FROM ' . $db->table('users') . ' WHERE email = ?', [$email])->fetchColumn(), 'days' => ['1'], 'start' => '07:00', 'end' => '08:00', 'title' => "[test] Stream live $tag"]);
+        check('  a live block for a DJ who may not go live on the stream is refused, saying why', $flashed($after($ad, $r), 'may not go live on this stream') && !$db->run('SELECT id FROM ' . $db->table('schedule') . ' WHERE title = ?', ["[test] Stream live $tag"])->fetch());
+        $r = $ad->go('manage/schedule', ['csrf' => $acsrf, 'action' => 'delete', 'id' => (string) $blk['id']]);
+        check('  and the block is removed from the stream again', $flashed($after($ad, $r), 'Block removed.') && !$db->run('SELECT id FROM ' . $db->table('schedule') . ' WHERE id = ?', [$blk['id']])->fetch());
+        $db->run('DELETE FROM ' . $db->table('playlists') . ' WHERE id = ?', [$plId]);
+        $lStream = new Stationwagon\Listeners($db, Stationwagon\Streams::station($db, $strSlug));
+        $tPing = microtime(true);
+        foreach (['a1a1a1a1a1a1a1a1', 'b2b2b2b2b2b2b2b2', 'c3c3c3c3c3c3c3c3'] as $sidL) {
+            $lStream->ping($sidL, 'player', $tPing);
+        }
+        $lr = $ad->go('manage/listeners?stream=' . $strSlug)['body'];
+        $ov = $ad->go('manage?stream=' . $strSlug)['body'];
+        $ovMain = $ad->go('manage?stream=' . $mainSlug)['body'];
+        $mainNow = (new Stationwagon\Listeners($db, Stationwagon\Streams::station($db, null)))->now(microtime(true));
+        check('the Listeners screen and the Overview count the picked stream’s listeners', preg_match('~<b>3</b><span>Listening now~', $lr) === 1 && str_contains($ov, '<b id="ovListening">3</b>')
+            && str_contains($ovMain, '<b id="ovListening">' . $mainNow . '</b>'), "main has $mainNow");
+        foreach (['a1a1a1a1a1a1a1a1', 'b2b2b2b2b2b2b2b2', 'c3c3c3c3c3c3c3c3'] as $sidL) {
+            $lStream->ping($sidL, 'player', $tPing + 1, true);
+        }
+        // someone whose role may skip and plan the week, but who was only given the main stream
+        $rr = $ad->go('manage/roles', ['csrf' => $acsrf, 'action' => 'add', 'name' => "Web Test Desk $tag", 'perm' => ['desk', 'schedule']]);
+        $deskKey = (string) $db->run('SELECT `key` FROM ' . $db->table('roles') . ' WHERE name = ?', ["Web Test Desk $tag"])->fetchColumn();
+        $dEmail = "web-test-$tag-desk@example.test";
+        $dPass = bin2hex(random_bytes(12));
+        $users[] = $deskId = $db->insert('users', ['email' => $dEmail, 'name' => 'Web Test Desk', 'password_hash' => password_hash($dPass, PASSWORD_DEFAULT), 'role' => $deskKey, 'created_at' => gmdate('Y-m-d H:i:s')]);
+        $db->insert('station_users', ['station_id' => $stationId, 'user_id' => $deskId]);
+        $dk = new Browser($base);
+        $dk->go('signin', ['csrf' => Browser::csrf($dk->go('signin')), 'email' => $dEmail, 'password' => $dPass]);
+        $dr = $dk->go('manage?stream=' . $strSlug);
+        $dcsrf = Browser::csrf($dr);
+        $strCuts = $cuts($sid);
+        check('someone without the stream may not Skip on it', $deskKey !== '' && $flashed($after($dk, $dk->go('manage/skip', ['csrf' => $dcsrf])), 'You may not skip songs on this stream.') && $cuts($sid) === $strCuts, (string) $dr['status']);
+        check('  nor change its schedule', $flashed($after($dk, $dk->go('manage/schedule', ['csrf' => $dcsrf, 'kind' => 'playlist', 'playlist_id' => '1', 'days' => ['1'], 'start' => '05:00', 'end' => '06:00'])), 'You may not change the schedule of this stream.'));
+        $dk->go('manage?stream=' . $mainSlug);
+        check('  on the main stream, which they have, they may', $flashed($after($dk, $dk->go('manage/skip', ['csrf' => $dcsrf])), 'Skipped.'));
+        $db->run('DELETE FROM ' . $db->table('users') . ' WHERE id = ?', [$deskId]);
+        $ad->go('manage/roles', ['csrf' => $acsrf, 'action' => 'delete', 'key' => $deskKey]);
+
         // DJs and streams: the People screen gives them, the studio follows
         $djS = new Browser($base);
         $djS->go('signin', ['csrf' => Browser::csrf($djS->go('signin')), 'email' => $email, 'password' => 'a new password 1']);

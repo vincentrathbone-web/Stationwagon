@@ -71,22 +71,25 @@ final class Jobs
             self::save(['last_run' => $now, 'last_by' => $by] + ($by === 'cron' ? ['last_cron' => $now] : []));
             $out = [];
             $db = Db::fromConfig();
-            foreach ($db->run('SELECT * FROM ' . $db->table('stations') . ' ORDER BY id')->fetchAll() as $station) {
-                $planner = new Planner($db, $station, SW_ROOT);
+            // every stream plans ahead (round 73: a further stream gets the main station's settings and library through Streams::view)
+            $main = Streams::main($db);
+            foreach (Streams::all($db) as $stream) {
+                $planner = new Planner($db, Streams::view($stream, $main), SW_ROOT);
                 $entries = $planner->timeline($now);
                 $last = $entries ? end($entries) : null;
-                $out[] = sprintf('%s: %d entries, planned until %s', $station['name'], count($entries),
+                $out[] = sprintf('%s: %d entries, planned until %s', $stream['name'], count($entries),
                     $last ? gmdate('Y-m-d H:i:s', (int) $last['end']) . ' UTC' : 'nothing (empty library)');
-                $podcast = new Podcast($db, $planner->station(), SW_ROOT);
-                $added = $podcast->sync($now);
-                $cleaned = $podcast->cleanup($now);
-                if ($added || $cleaned) {
-                    $out[] = sprintf('%s: %d show(s) added to podcast episodes, raw tracks of %d episode(s) deleted',
-                        $station['name'], $added, $cleaned);
-                }
-                if (($slides = (new Slides($db, SW_ROOT))->cleanup($now)) > 0) {
-                    $out[] = sprintf('%s: %d unused slide picture(s) deleted', $station['name'], $slides);
-                }
+            }
+            // the podcast and the slides are the station's, once
+            $podcast = new Podcast($db, $main, SW_ROOT);
+            $added = $podcast->sync($now);
+            $cleaned = $podcast->cleanup($now);
+            if ($added || $cleaned) {
+                $out[] = sprintf('%s: %d show(s) added to podcast episodes, raw tracks of %d episode(s) deleted',
+                    $main['name'], $added, $cleaned);
+            }
+            if (($slides = (new Slides($db, SW_ROOT))->cleanup($now)) > 0) {
+                $out[] = sprintf('%s: %d unused slide picture(s) deleted', $main['name'], $slides);
             }
             if (Geo::due($now) && self::mayFetchGeo($by)) {
                 Geo::tried();

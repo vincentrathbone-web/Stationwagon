@@ -428,8 +428,54 @@ if ($cmd === 'manager') {
             $pieces[] = ['seq' => (int) $r['seq'], 'duration' => (float) $r['duration_s'], 'bytes' => is_file($path) ? filesize($path) : 0, 'scanned' => $scan ? round((float) $scan['duration'], 3) : null];
         }
     }
+    // the show's own stream (round 73): notes are kept per stream
+    $showStation = $show ? (Stationwagon\Streams::byId($db, (int) $show['station_id']) ?? $station) : $station;
     echo json_encode($show ? ['open' => (bool) $show['open'], 'closed_reason' => $show['closed_reason'], 'dj_user_id' => (int) $show['dj_user_id'], 'title' => $show['title'], 'pieces' => $pieces,
-        'notes' => count((new Notes($db, $station))->forShow($show['public_id']))] : null);
+        'station_id' => (int) $show['station_id'], 'notes' => count((new Notes($db, Stationwagon\Streams::view($showStation, Stationwagon\Streams::main($db))))->forShow($show['public_id']))] : null);
+} elseif ($cmd === 'stream-fixture') {
+    // round 73: a throwaway further stream, a DJ who may go live only there, and their live block on it (every day, all day)
+    $tag = bin2hex(random_bytes(3));
+    [$sid, $why] = Stationwagon\Streams::create($db, "[test] Stream $tag", "test-stream-$tag");
+    if ($sid === null) {
+        echo json_encode(['error' => $why]);
+        exit(1);
+    }
+    $email = "web-test-$tag-stream@example.test";
+    $password = bin2hex(random_bytes(12));
+    $id = $db->insert('users', ['email' => $email, 'name' => 'Stream Test DJ', 'password_hash' => password_hash($password, PASSWORD_DEFAULT), 'role' => 'dj', 'created_at' => gmdate('Y-m-d H:i:s')]);
+    $db->insert('station_users', ['station_id' => $station['id'], 'user_id' => $id]);
+    Stationwagon\Streams::setFor($db, $id, [$sid]);
+    [$block, $errs] = (new Schedule($db, Stationwagon\Streams::station($db, "test-stream-$tag")))->add(['kind' => 'live', 'title' => '[test] Stream test show', 'dj_user_id' => $id, 'days' => array_keys(Schedule::DAYS), 'start' => '00:00', 'end' => '00:00']);
+    echo json_encode(['stream' => "test-stream-$tag", 'stream_id' => $sid, 'name' => "[test] Stream $tag", 'id' => $id, 'email' => $email, 'password' => $password, 'block' => $block, 'errors' => $errs]);
+} elseif ($cmd === 'stream-listeners') {
+    // how many listen to a stream now (no name: the main one)
+    $st = Stationwagon\Streams::station($db, ($argv[2] ?? '') ?: null);
+    echo json_encode(['now' => $st ? (new Stationwagon\Listeners($db, $st))->now(microtime(true)) : null]);
+} elseif ($cmd === 'stream-clean') {
+    // the stream-fixture's: shows ended on their stream, notes, episodes, running orders, the DJ and the stream itself (and any "[test] Stream" a killed run left)
+    $userId = (int) ($argv[2] ?? 0);
+    foreach (Stationwagon\Streams::all($db) as $s) {
+        if ($s['main'] || !str_starts_with((string) $s['name'], '[test] Stream ')) {
+            continue;
+        }
+        $view = Stationwagon\Streams::view($s, Stationwagon\Streams::main($db));
+        $pl = new Planner($db, $view, SW_ROOT);
+        $notes = new Notes($db, $view);
+        $shows = $db->run('SELECT id, public_id, `open` FROM ' . $db->table('live_shows') . ' WHERE station_id = ?', [$s['id']])->fetchAll();
+        foreach ($shows as $sh) {
+            if ((int) $sh['open'] === 1) {
+                $pl->endLive(microtime(true), $sh['public_id']);
+            }
+            foreach ($notes->forShow($sh['public_id']) as $n) {
+                $notes->remove($sh['public_id'], $n['id']);
+            }
+        }
+        test_episodes_gone($db, array_column($shows, 'id'));
+        $db->run('DELETE FROM ' . $db->table('running_orders') . ' WHERE station_id = ?', [$s['id']]);
+        Stationwagon\Streams::delete($db, (int) $s['id']);
+    }
+    $db->run('DELETE FROM ' . $db->table('users') . " WHERE (id = ? OR email LIKE 'web-test-%-stream@example.test') AND email LIKE 'web-test-%'", [$userId]);
+    echo json_encode(['cleaned' => true]);
 } elseif ($cmd === 'studio-cleanup') {
     // end the DJ's open shows, clear their notes, remove their running orders, block and account
     $userId = (int) ($argv[2] ?? 0);

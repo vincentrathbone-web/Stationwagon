@@ -55,6 +55,25 @@ try {
     check('health: during visits, ran 1 minute ago', $h['ok'] && $h['found'] === 'ran 1 min ago', $h['found']);
     check('and "just now" within a minute', Jobs::health($now + 5)['found'] === 'ran just now');
 
+    echo "Every stream (round 73)\n";
+    $db = Stationwagon\Db::fromConfig();
+    [$sid, $why] = Stationwagon\Streams::create($db, '[test] Jobs stream', 'test-jobs-stream');
+    try {
+        $tl = $db->table('timeline');
+        $lines = Jobs::run('visit', $now + 0.5);
+        $mainName = Stationwagon\Streams::main($db)['name'];
+        $streamLine = array_values(array_filter($lines, fn($l) => str_starts_with($l, '[test] Jobs stream: ')));
+        $songs = $db->run("SELECT COUNT(*) FROM $tl WHERE station_id = ? AND track_id IS NOT NULL", [$sid])->fetchColumn();
+        check('a further stream is planned ahead too, from the main station’s library', $sid !== null && $streamLine && str_contains($streamLine[0], 'planned until') && (int) $songs > 0, $why ?? ($streamLine[0] ?? implode(' | ', $lines)));
+        check('  the podcast runs once, for the station', count(array_filter($lines, fn($l) => str_contains($l, 'podcast') && !str_starts_with($l, $mainName))) === 0);
+    } finally {
+        if ($sid !== null) {
+            Stationwagon\Streams::delete($db, $sid);
+        }
+    }
+    @unlink($statePath);
+    Jobs::run('visit', $now);
+
     echo "One at a time\n";
     $lock = fopen(SW_ROOT . '/storage/cache/jobs.lock', 'c');
     flock($lock, LOCK_EX);

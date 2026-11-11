@@ -16,6 +16,12 @@ final class Schedule
     {
     }
 
+    /** The station the playlists and the people are (a further stream's view says it in library_id). */
+    private function libraryId(): int
+    {
+        return (int) ($this->station['library_id'] ?? $this->station['id']);
+    }
+
     public function all(): array
     {
         $sc = $this->db->table('schedule');
@@ -68,7 +74,8 @@ final class Schedule
             $e['kind'] = 'Choose a playlist or a live show.';
         } elseif ($kind === 'playlist') {
             $playlistId = (int) ($in['playlist_id'] ?? 0);
-            $name = $this->db->run('SELECT name FROM ' . $this->db->table('playlists') . ' WHERE id = ? AND station_id = ?', [$playlistId, $this->station['id']])->fetchColumn();
+            // the playlists are the library's, which a further stream shares (round 73)
+            $name = $this->db->run('SELECT name FROM ' . $this->db->table('playlists') . ' WHERE id = ? AND station_id = ?', [$playlistId, $this->libraryId()])->fetchColumn();
             if ($name === false) {
                 $e['playlist_id'] = 'Choose a playlist.';
             } elseif ($title === '') {
@@ -77,9 +84,12 @@ final class Schedule
         } else {
             $djId = (int) ($in['dj_user_id'] ?? 0) ?: null;
             if ($djId !== null) {
-                $ok = $this->db->run('SELECT COUNT(*) FROM ' . $this->db->table('station_users') . ' WHERE user_id = ? AND station_id = ?', [$djId, $this->station['id']])->fetchColumn();
-                if (!(int) $ok) {
+                // the people are the main station's; on a further stream the DJ must also be given it (round 73)
+                $u = $this->db->run('SELECT u.id, u.name, u.role FROM ' . $this->db->table('station_users') . ' su JOIN ' . $this->db->table('users') . ' u ON u.id = su.user_id WHERE su.user_id = ? AND su.station_id = ?', [$djId, $this->libraryId()])->fetch();
+                if (!$u) {
                     $e['dj_user_id'] = 'Choose one of this station’s DJs.';
+                } elseif (!Streams::may($this->db, $u, (int) $this->station['id'])) {
+                    $e['dj_user_id'] = $u['name'] . ' may not go live on this stream. Tick it for them on the People screen first.';
                 }
             }
             if ($title === '') {
