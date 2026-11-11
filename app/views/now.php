@@ -21,7 +21,7 @@ $name = $station['name'] ?? 'Stationwagon';
 <link rel="stylesheet" href="<?= h(App::asset('assets/app.css')) ?>">
 </head>
 <body class="embed nowcard">
-<div class="nw" id="now" data-base="<?= h(App::url('')) ?>">
+<div class="nw" id="now" data-base="<?= h(App::url('')) ?>"<?= ($streamSlug ?? '') !== '' ? ' data-stream="' . h($streamSlug) . '"' : '' ?>>
   <a class="nw-link" id="nwLink" href="<?= h($link) ?>" target="<?= $newTab ? '_blank' : '_top' ?>"<?= $newTab ? ' rel="noopener"' : '' ?>>
     <span class="nw-art" id="nwArt" aria-hidden="true">
       <img id="nwArtImg" alt="" hidden>

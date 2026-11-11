@@ -34,6 +34,9 @@ final class Planner
     private array $pieceCache = [];
     private ?array $blocks = null;
 
+    /** The station the library (songs, playlists, ads, jingles) belongs to: the main station, for a stream too (round 73) */
+    private readonly int $lib;
+
     public function __construct(
         private readonly Db $db,
         private readonly array $station,
@@ -41,6 +44,7 @@ final class Planner
         private readonly int $lockSeconds = 10,
     ) {
         $this->settings = self::settings($station);
+        $this->lib = (int) ($station['library_id'] ?? $station['id']);
     }
 
     public static function forFirstStation(): self
@@ -51,6 +55,23 @@ final class Planner
             throw new RuntimeException('No station is set up yet.');
         }
         return new self($db, $station, SW_ROOT);
+    }
+
+    /**
+     * The planner for the stream a request is about (round 73): `?stream=<name>` (an api file, the embed), else the main stream.
+     * An unknown stream is answered here with 404 (as JSON, or as plain text when $json is false) and the request ends.
+     */
+    public static function forRequest(bool $json = true): self
+    {
+        $db = Db::fromConfig();
+        $slug = isset($_GET['stream']) && is_string($_GET['stream']) ? $_GET['stream'] : null;
+        $planner = Streams::planner($db, $slug);
+        if ($planner === null) {
+            http_response_code(404);
+            echo $json ? json_encode(['error' => 'There is no such stream.']) : "#EXTM3U\n# There is no such stream.\n";
+            exit;
+        }
+        return $planner;
     }
 
     /** The station's settings over the defaults the POC proved. */
@@ -102,10 +123,11 @@ final class Planner
              ORDER BY tl.n",
             [$this->station['id'], $from, $this->station['id']]
         )->fetchAll();
-        return array_map([self::class, 'entry'], $rows);
+        $name = (string) ($this->station['name'] ?? '');
+        return array_map(fn(array $r) => self::entry($r, $name), $rows);
     }
 
-    private static function entry(array $r): array
+    private static function entry(array $r, string $stationName = ''): array
     {
         $e = [
             'row' => (int) $r['id'],
@@ -122,6 +144,10 @@ final class Planner
         if ($r['type'] === 'song' && ($r['track_kind'] ?? 'song') === 'ad') {
             // an ad: listeners and the apps see only "Advertisement" (no art, no copyright line); the station sees its title
             $e += ['track_id' => (int) $r['track_id'], 'file' => $r['file'], 'title' => Ads::PUBLIC_TITLE, 'ad' => true, 'ad_title' => $r['track_title'],
+                   'artist' => null, 'album' => null, 'art' => null, 'rights' => null, 'full' => (float) $r['full_s']];
+        } elseif ($r['type'] === 'song' && ($r['track_kind'] ?? 'song') === 'jingle') {
+            // a jingle: listeners and the apps see the station's name (no artist, art or copyright line); the station sees its title
+            $e += ['track_id' => (int) $r['track_id'], 'file' => $r['file'], 'title' => $stationName, 'jingle' => true, 'jingle_title' => $r['track_title'],
                    'artist' => null, 'album' => null, 'art' => null, 'rights' => null, 'full' => (float) $r['full_s']];
         } elseif ($r['type'] === 'song') {
             $e += ['track_id' => (int) $r['track_id'], 'file' => $r['file'], 'title' => $r['track_title'] ?? 'Removed song',
@@ -456,11 +482,16 @@ final class Planner
         $ads->logAired($now);
         $breaks = Ads::settings($this->station);
         $state = $breaks['enabled'] ? $ads->state() : null;
+        // jingles: one between two songs after every N songs (round 70); an ad break is not a song
+        $jingles = new Jingles($this->db, $this->station);
+        $jset = Jingles::settings($this->station);
+        $jsince = $jset['enabled'] ? $jingles->songsSince() : null;
+        $lastKind = $last === null ? null : ($last['type'] === 'live' ? 'live' : (!empty($last['ad']) ? 'ad' : (!empty($last['jingle']) ? 'jingle' : 'song')));
         $recent = $this->recentTrackIds();
         $until = $now + $this->settings['plan_ahead_seconds'];
         while ($last === null || $last['end'] < $until) {
             // an ad break: after every N songs (and the minutes since the last one), the ads that are due now
-            if ($state !== null && $last !== null && $state['since'] >= $breaks['every']
+            if ($state !== null && $last !== null && $lastKind !== 'jingle' && $state['since'] >= $breaks['every']
                 && ($state['last_end'] === null || $this->startAfter($last, $now) - $state['last_end'] >= $breaks['gap_minutes'] * 60)) {
                 $in = [];
                 for ($i = 0; $i < $breaks['per_break']; $i++) {
@@ -474,6 +505,18 @@ final class Planner
                 }
                 if ($in) {
                     $state = ['since' => 0, 'last_end' => $last['end']];
+                    $lastKind = 'ad';
+                    continue;
+                }
+            }
+            // a jingle: only between two songs (not after an ad, another jingle or a live show)
+            if ($jsince !== null && $lastKind === 'song' && $jsince >= $jset['every']) {
+                $id = $jingles->pick();
+                $track = $id !== null ? $jingles->track($id) : null;
+                if ($track !== null) {
+                    $last = $this->appendSong($last, $now, $recent, $track);
+                    $jsince = 0;
+                    $lastKind = 'jingle';
                     continue;
                 }
             }
@@ -485,6 +528,10 @@ final class Planner
             if ($state !== null) {
                 $state['since']++;
             }
+            if ($jsince !== null) {
+                $jsince++;
+            }
+            $lastKind = 'song';
             $last = $next;
         }
     }
@@ -495,7 +542,7 @@ final class Planner
         return $prev && $prev['end'] >= $now - self::RESTART_AFTER_SECONDS ? round($prev['end'], 3) : floor($now * 1000) / 1000;
     }
 
-    /** @param ?array $forced the track to place (an ad); null picks a song */
+    /** @param ?array $forced the track to place (an ad or a jingle); null picks a song */
     private function appendSong(?array $prev, float $now, array $recent, ?array $forced = null): ?array
     {
         // Carry on straight after the previous entry, even if it ended a few seconds ago (an ended
@@ -512,7 +559,9 @@ final class Planner
         // the two-deck player always has a full-length fade (it keeps the tail playing under the
         // next song). HLS listeners jump straight on and miss the last 6–12 s instead.
         // an ad is short: it blends with the song before it and with whatever follows over the ads' crossfade
-        $xf = !empty($track['ad']) ? (float) $this->settings['ads_crossfade_seconds'] : (float) $this->settings['crossfade_seconds'];
+        // a jingle is tinier still: it blends over its own, shorter crossfade (round 70)
+        $short = !empty($track['ad']) || !empty($track['jingle']);
+        $xf = !empty($track['jingle']) ? (float) $this->settings['jingles_crossfade_seconds'] : (!empty($track['ad']) ? (float) $this->settings['ads_crossfade_seconds'] : (float) $this->settings['crossfade_seconds']);
         $target = max(0.0, $track['duration'] - $xf);
         // Silence detection: move on where the song goes quiet for good, so a long fade-out or a
         // silent tail doesn't become dead air; the quiet part still plays out under the next song
@@ -535,8 +584,8 @@ final class Planner
             'seq' => $prev ? $prev['seq'] + $prev['piece_count'] : 0, 'piece_count' => $count,
         ];
         $this->insertEntry($row);
-        if ($prev && !empty($track['ad']) && $prev['type'] === 'song') {
-            // the song before an ad fades out over the ads' crossfade too (its end is where the ad starts; only the fade is shorter)
+        if ($prev && $short && $prev['type'] === 'song') {
+            // the song before an ad or a jingle fades out over the shorter crossfade too (its end is where the ad starts; only the fade is shorter)
             $this->db->run('UPDATE ' . $this->db->table('timeline') . ' SET fade_out_s = ? WHERE station_id = ? AND n = ?', [$xf, $this->station['id'], $prev['n']]);
         }
         return ['n' => $row['n'], 'type' => 'song', 'track_id' => $track['id'], 'start' => $start, 'play' => $row['play_s'],
@@ -632,7 +681,7 @@ final class Planner
     private function tracks(): array
     {
         if ($this->tracks === null) {
-            $rows = $this->db->run('SELECT id, duration_s, outro FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND status = 'ready' AND kind = 'song'", [$this->station['id']])->fetchAll();
+            $rows = $this->db->run('SELECT id, duration_s, outro FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND status = 'ready' AND kind = 'song'", [$this->lib])->fetchAll();
             $this->tracks = [];
             foreach ($rows as $r) {
                 $this->tracks[(int) $r['id']] = ['id' => (int) $r['id'], 'duration' => (float) $r['duration_s'], 'outro' => $r['outro']];
@@ -685,7 +734,7 @@ final class Planner
     {
         $pl = $this->db->table('playlists');
         $pt = $this->db->table('playlist_tracks');
-        $mode = $this->db->run("SELECT mode FROM $pl WHERE id = ? AND station_id = ? AND active = 1", [$playlistId, $this->station['id']])->fetchColumn();
+        $mode = $this->db->run("SELECT mode FROM $pl WHERE id = ? AND station_id = ? AND active = 1", [$playlistId, $this->lib])->fetchColumn();
         if ($mode === false) {
             return ['mode' => 'shuffle', 'ids' => []];
         }

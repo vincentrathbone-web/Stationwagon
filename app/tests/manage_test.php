@@ -295,12 +295,12 @@ try {
     echo "Sound & safety\n";
     $fresh = fn() => $db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$station['id']])->fetch();
     $set = new StationSettings($db, $fresh());
-    $defaults = ['crossfade_seconds' => 6, 'ads_crossfade_seconds' => 2.0, 'fade_shape' => 'equal_power', 'skip_fade_seconds' => 2.0, 'live_fade_seconds' => 6.0, 'duck_db' => -12,
+    $defaults = ['crossfade_seconds' => 6, 'ads_crossfade_seconds' => 2.0, 'jingles_crossfade_seconds' => 1.0, 'fade_shape' => 'equal_power', 'skip_fade_seconds' => 2.0, 'live_fade_seconds' => 6.0, 'duck_db' => -12,
         'live_timeout_seconds' => 8, 'rejoin_minutes' => 10, 'silence_db' => -40, 'recent_tracks' => 5, 'ratings_influence' => 0, 'prep_master' => 0, 'prep_level' => 1, 'prep_target' => -16.0, 'live_kbps' => 192, 'prep_kbps' => 160,
         'prep_rate' => 44100, 'prep_precision' => 32, 'prep_dither' => 1, 'prep_quality' => 9];
     check('the defaults are the values the POC proved', $set->values() === $defaults, json_encode($set->values()));
     check('with 6 s pieces a DJ gets at least 8 s', $set->minLiveTimeout() === 8);
-    $good = ['crossfade_seconds' => '4', 'ads_crossfade_seconds' => '1.5', 'fade_shape' => 'linear', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '3', 'duck_db' => '-18',
+    $good = ['crossfade_seconds' => '4', 'ads_crossfade_seconds' => '1.5', 'jingles_crossfade_seconds' => '0.5', 'fade_shape' => 'linear', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '3', 'duck_db' => '-18',
         'live_timeout_seconds' => '12', 'rejoin_minutes' => '0', 'silence_db' => '0', 'recent_tracks' => '1', 'ratings_influence' => '1', 'prep_master' => '1', 'prep_level' => '0', 'prep_target' => '-14.5', 'live_kbps' => '128', 'prep_kbps' => '256',
         'prep_rate' => '48000', 'prep_precision' => '24', 'prep_dither' => '0', 'prep_quality' => '7'];
     [, $errs] = $set->save(['crossfade_seconds' => '13', 'ads_crossfade_seconds' => '12.3', 'fade_shape' => 'wobbly', 'skip_fade_seconds' => '0.3', 'live_fade_seconds' => 'soon', 'duck_db' => '3',
@@ -311,7 +311,7 @@ try {
         && str_contains($errs['duck_db'], '-24 to 0 dB') && $errs['silence_db'] === 'Move on when a song goes quiet: choose one of the options.', $errs['duck_db']);
     check('  and nothing is stored', (new StationSettings($db, $fresh()))->values() === $defaults);
     [$updated, $errs] = $set->save($good);
-    check('good values are saved, choices as their own type', !$errs && (new StationSettings($db, $fresh()))->values() === ['crossfade_seconds' => 4, 'ads_crossfade_seconds' => 1.5, 'fade_shape' => 'linear', 'skip_fade_seconds' => 1.5,
+    check('good values are saved, choices as their own type', !$errs && (new StationSettings($db, $fresh()))->values() === ['crossfade_seconds' => 4, 'ads_crossfade_seconds' => 1.5, 'jingles_crossfade_seconds' => 0.5, 'fade_shape' => 'linear', 'skip_fade_seconds' => 1.5,
         'live_fade_seconds' => 3.0, 'duck_db' => -18, 'live_timeout_seconds' => 12, 'rejoin_minutes' => 0, 'silence_db' => 0, 'recent_tracks' => 1, 'ratings_influence' => 1, 'prep_master' => 1, 'prep_level' => 0, 'prep_target' => -14.5, 'live_kbps' => 128, 'prep_kbps' => 256,
         'prep_rate' => 48000, 'prep_precision' => 24, 'prep_dither' => 0, 'prep_quality' => 7], json_encode($errs));
     check('the quality choices show megabytes an hour', StationSettings::mbPerHour(192) === 86 && StationSettings::mbPerHour(128) === 58);
@@ -443,7 +443,7 @@ try {
     };
     $o1 = $mk('Old Onair', 'dj', '["onair","schedule"]');
     $o2 = $mk('Old Twin', 'manager', '["schedule","onair"]');
-    $o3 = $mk('Old Full', 'manager', json_encode(['onair', 'library', 'playlists', 'schedule', 'podcast', 'listeners', 'sound', 'people']));
+    $o3 = $mk('Old Full', 'manager', json_encode(['onair', 'library', 'playlists', 'schedule', 'podcast', 'listeners', 'sound', 'people', 'download'])); // (the download tick came in schema 19: an older list would not have it)
     $o4 = $mk('Old Plain', 'manager', null);
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '12' WHERE name = 'schema_version'");
     check('the upgrade runs', Schema::upgrade($db) === range(13, Schema::VERSION));
@@ -607,6 +607,27 @@ try {
     check('  and an hour later the first may again', $reports->save('later', '192.0.2.20', $now + 3700) !== '');
     for ($i = 0; $i < DiagReports::KEEP + 5; $i++) { $reports->save("fill $i", "198.51.100." . intdiv($i, 20), $now + 4000 + $i); }
     check('  only the newest 200 are kept', count(glob("$root/storage/diag/*.txt")) === DiagReports::KEEP, (string) count(glob("$root/storage/diag/*.txt")));
+
+    echo "Downloads (round 71)\n";
+    $name = fn(string $title, ?string $artist = null, bool $orig = false) => Library::downloadName(['id' => 7, 'title' => $title, 'artist' => $artist], $orig);
+    check('a download is named “Artist - Title.mp3”, or just the title', $name('Hello', 'Me') === 'Me - Hello.mp3' && $name('Hello') === 'Hello.mp3' && $name('Hello', '') === 'Hello.mp3');
+    check('  the original says so', $name('Hello', 'Me', true) === 'Me - Hello (original).mp3');
+    check('  nothing a file system dislikes is kept (slashes, colons, quotes, stars, control characters)', $name("A/B: \"C\" *?<>|\\ D\t\n", 'X') === 'X - A B C D.mp3', $name("A/B: \"C\" *?<>|\\ D\t\n", 'X'));
+    check('  dots and spaces at the ends go, accents stay, a long name is cut', $name('  ..Café..  ') === 'Café.mp3' && mb_strlen($name(str_repeat('é', 400))) <= 150 + 4);
+    check('  a clip with no title or artist is still named', $name('', '') === 'clip-7.mp3' && $name('', 'Only Artist') === 'Only Artist.mp3');
+    check('the Download tick is one of the permissions, and the built-in Manager has it, the DJ does not', isset(Permissions::ALL['download']) && in_array('download', Permissions::defaults('manager'), true) && Permissions::defaults('dj') === []);
+    check('  an admin always may; a person may only by their role', Auth::allows(['role' => 'admin'], 'download') && !Auth::allows(['role' => 'dj', 'role_permissions' => []], 'download') && Auth::allows(['role' => 'dj', 'role_permissions' => ['download']], 'download'));
+    check('  upgrading from 18 gives the built-in Manager role the tick, and leaves a custom role as its admin chose', (function () use ($db, $station) {
+        $rt = $db->table('roles');
+        $db->run("UPDATE $rt SET permissions = ? WHERE `key` = 'manager' AND station_id = ?", [json_encode(['library', 'sound']), $station['id']]);
+        $db->insert('roles', ['station_id' => $station['id'], 'key' => 'custom-dl', 'name' => 'Custom dl', 'permissions' => json_encode(['library']), 'built_in' => 0, 'created_at' => gmdate('Y-m-d H:i:s')]);
+        $db->run('UPDATE ' . $db->table('settings') . " SET value = '18' WHERE name = 'schema_version'");
+        $ran = Schema::upgrade($db);
+        $mgr = json_decode((string) $db->run("SELECT permissions FROM $rt WHERE `key` = 'manager' AND station_id = ?", [$station['id']])->fetchColumn(), true);
+        $cus = json_decode((string) $db->run("SELECT permissions FROM $rt WHERE `key` = 'custom-dl' AND station_id = ?", [$station['id']])->fetchColumn(), true);
+        $dj = json_decode((string) $db->run("SELECT permissions FROM $rt WHERE `key` = 'dj' AND station_id = ?", [$station['id']])->fetchColumn(), true);
+        return $ran === [19, 20] && $mgr === ['library', 'download', 'sound'] && $cus === ['library'] && !in_array('download', $dj ?: [], true) && Schema::upgrade($db) === [];
+    })());
 } finally {
     drop_test_database($t);
     remove_tree($root);

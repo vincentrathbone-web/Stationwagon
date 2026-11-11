@@ -28,8 +28,12 @@ final class Ads
     public const PUBLIC_TITLE = 'Advertisement';
     private const DAY = 86400;
 
+    /** The station the ads belong to: the main station, for a stream too (round 73) */
+    private readonly int $lib;
+
     public function __construct(private readonly Db $db, private readonly array $station)
     {
+        $this->lib = (int) ($station['library_id'] ?? $station['id']);
     }
 
     // ---- The station's ad-break settings ---------------------------------------------------------------
@@ -69,7 +73,7 @@ final class Ads
         $own = json_decode((string) ($this->station['settings'] ?? ''), true);
         $own = array_replace(is_array($own) ? $own : [], ['ads_enabled' => empty($in['enabled']) ? 0 : 1, 'ads_every_songs' => $every, 'ads_per_break' => $per, 'ads_gap_minutes' => $gap]);
         $json = json_encode($own, JSON_UNESCAPED_SLASHES);
-        $this->db->run('UPDATE ' . $this->db->table('stations') . ' SET settings = ? WHERE id = ?', [$json, $this->station['id']]);
+        $this->db->run('UPDATE ' . $this->db->table('stations') . ' SET settings = ? WHERE id = ?', [$json, $this->lib]);
         return [['settings' => $json] + $this->station, null];
     }
 
@@ -79,7 +83,7 @@ final class Ads
     public function create(int $trackId, ?string $advertiser = null): void
     {
         $this->db->run('INSERT IGNORE INTO ' . $this->db->table('ads') . ' (track_id, station_id, advertiser, created_at) VALUES (?, ?, ?, ?)',
-            [$trackId, $this->station['id'], $advertiser !== null && trim($advertiser) !== '' ? mb_substr(trim($advertiser), 0, 190) : null, gmdate('Y-m-d H:i:s')]);
+            [$trackId, $this->lib, $advertiser !== null && trim($advertiser) !== '' ? mb_substr(trim($advertiser), 0, 190) : null, gmdate('Y-m-d H:i:s')]);
     }
 
     /**
@@ -94,7 +98,7 @@ final class Ads
             "SELECT a.*, t.title, t.duration_s, t.file, t.loudness_lufs, t.mastered, t.created_at AS uploaded_at
              FROM $a a JOIN $t t ON t.id = a.track_id
              WHERE a.station_id = ? AND t.kind = 'ad' AND t.status = 'ready' ORDER BY t.title, a.track_id",
-            [$this->station['id']]
+            [$this->lib]
         )->fetchAll();
         [$from, $to] = $this->dayBounds($now);
         $count = $this->counts($from, $to, $now);
@@ -114,7 +118,7 @@ final class Ads
         $a = $this->db->table('ads');
         $t = $this->db->table('tracks');
         $row = $this->db->run("SELECT a.*, t.title, t.duration_s FROM $a a JOIN $t t ON t.id = a.track_id WHERE a.track_id = ? AND a.station_id = ? AND t.kind = 'ad'",
-            [$trackId, $this->station['id']])->fetch();
+            [$trackId, $this->lib])->fetch();
         return $row ?: null;
     }
 
@@ -199,10 +203,24 @@ final class Ads
         }
         $title = $v['title'];
         unset($v['title']);
-        $this->db->run('UPDATE ' . $this->db->table('tracks') . ' SET title = ? WHERE id = ? AND station_id = ?', [$title, $trackId, $this->station['id']]);
+        $this->db->run('UPDATE ' . $this->db->table('tracks') . ' SET title = ? WHERE id = ? AND station_id = ?', [$title, $trackId, $this->lib]);
         $sets = implode(', ', array_map(fn($k) => "`$k` = ?", array_keys($v)));
         $this->db->run('UPDATE ' . $this->db->table('ads') . " SET $sets WHERE track_id = ?", [...array_values($v), $trackId]);
         return null;
+    }
+
+    /** Turn several ads on or off at once (the list's bulk bar, round 72); returns how many there were. */
+    public function setActive(array $ids, bool $on): int
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn(int $i) => $i > 0)));
+        if (!$ids) {
+            return 0;
+        }
+        $marks = implode(',', array_fill(0, count($ids), '?'));
+        $t = $this->db->table('ads');
+        $n = (int) $this->db->run("SELECT COUNT(*) FROM $t WHERE station_id = ? AND track_id IN ($marks)", [$this->lib, ...$ids])->fetchColumn();
+        $this->db->run("UPDATE $t SET active = ? WHERE station_id = ? AND track_id IN ($marks)", [$on ? 1 : 0, $this->lib, ...$ids]);
+        return $n;
     }
 
     /** "Every day, all day" or "Mon–Fri · 06:00–18:00" for an ad's days and hours. */
@@ -251,7 +269,7 @@ final class Ads
         $rows = $this->db->run(
             "SELECT a.* FROM $a a JOIN $t t ON t.id = a.track_id
              WHERE a.station_id = ? AND a.active = 1 AND a.daily_target > 0 AND t.kind = 'ad' AND t.status = 'ready'",
-            [$this->station['id']]
+            [$this->lib]
         )->fetchAll();
         if (!$rows) {
             return null;
@@ -309,7 +327,7 @@ final class Ads
     public function track(int $trackId): ?array
     {
         $r = $this->db->run('SELECT id, duration_s, outro FROM ' . $this->db->table('tracks') . " WHERE id = ? AND station_id = ? AND kind = 'ad' AND status = 'ready'",
-            [$trackId, $this->station['id']])->fetch();
+            [$trackId, $this->lib])->fetch();
         return $r ? ['id' => (int) $r['id'], 'duration' => (float) $r['duration_s'], 'outro' => $r['outro'], 'ad' => true] : null;
     }
 
@@ -335,7 +353,9 @@ final class Ads
                 $lastEnd = (float) $r['start_at'] + (float) $r['play_s'];
                 break;
             }
-            $since++;
+            if ($r['kind'] !== 'jingle') {
+                $since++; // a jingle is not a song: it does not bring the next ad break nearer
+            }
         }
         return ['since' => $since, 'last_end' => $lastEnd];
     }

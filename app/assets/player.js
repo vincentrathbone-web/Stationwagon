@@ -14,6 +14,7 @@
   const EMBED = root.id === "embed";
   const BAR = EMBED && root.dataset.kind === "bar"; // the bar under the staff's screens (round 61): not counted as listening
   const BASE = new URL(root.dataset.base, location.href).href; // the app's full address, ending in "/"
+  const STREAM = root.dataset.stream ? encodeURIComponent(root.dataset.stream) : ""; // a further stream's address name (round 73)
   const SEEK_FROM = 1.2; // song deck drift (s) beyond which the deck seeks back into step
   // Android's Chrome skips bits of a song (5 jumps in 40 s on a Xiaomi) when a media element plays
   // through a "playback" (big buffer) AudioContext, and "interactive" gives underruns; "balanced" plays clean.
@@ -39,7 +40,7 @@
     now() { return (this.local() + this.offsetMs) / 1000; },
     async fetch() {
       const t0 = this.local();
-      const res = await fetch(BASE + "api/timeline.php?t=" + Math.round(t0), { cache: "no-store" }).catch((e) => { this.fails++; throw e; });
+      const res = await fetch(BASE + "api/timeline.php?t=" + Math.round(t0) + (STREAM ? "&stream=" + STREAM : ""), { cache: "no-store" }).catch((e) => { this.fails++; throw e; });
       const t1 = this.local();
       if (!res.ok) { this.fails++; throw new Error("HTTP " + res.status); }
       const json = await res.json();
@@ -142,7 +143,7 @@
     async start() {
       if (this.active) return;
       this.active = true; this.locked = false; this.settled = false;
-      const url = BASE + "api/stream.php";
+      const url = BASE + "api/stream.php" + (STREAM ? "?stream=" + STREAM : "");
       if (!window.Hls) await loadScript(BASE + "assets/vendor/hls.min.js").catch(() => null);
       if (!this.active) return;
       if (window.Hls && Hls.isSupported()) {
@@ -277,7 +278,7 @@
       ];
       this.setPlaying(true); this.setStatus("Playing");
       // counted as listening while it plays: a ping a minute (assets/listeners.js)
-      if (window.SwListeners && !BAR) this.ping = SwListeners.start(BASE, EMBED ? "embed" : "player", (n) => this.setListeners(n));
+      if (window.SwListeners && !BAR) this.ping = SwListeners.start(BASE, EMBED ? "embed" : "player", (n) => this.setListeners(n), root.dataset.stream || "");
       if (this.analyser) spectrum.run(); // stream only: no Web Audio, so nothing to measure
     },
 

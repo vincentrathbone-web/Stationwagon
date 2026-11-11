@@ -47,6 +47,11 @@ Options -Indexes
     Header unset Cache-Control
     Header always set Cache-Control "private, no-store"
   </If>
+  # Downloads of the station's clips (the staff's Download buttons): never kept by anyone but the person who asked
+  <If "%{THE_REQUEST} =~ m#^[A-Z]+ [^ ?]*/manage/download[ ?]#">
+    Header unset Cache-Control
+    Header always set Cache-Control "private, no-store"
+  </If>
   # Who is signed in (the website's header asks): personal, never kept anywhere
   <If "%{THE_REQUEST} =~ m#^[A-Z]+ [^ ?]*/api/me[ ?]#">
     # PHP sends the same; behind PHP-FPM (Hestia) its copy can sit in the error-headers table, so a plain

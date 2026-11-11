@@ -15,7 +15,8 @@ final class Permissions
     public const ALL = [
         'anytime' => ['Go live any time', 'Live shows, events and podcast recordings outside their own scheduled block'],
         'desk' => ['Run the on-air desk', 'Skip songs, and run, change or end anyone’s live show'],
-        'library' => ['Music library', 'Upload, edit and remove songs; song prep and re-levelling'],
+        'library' => ['Music library', 'Upload, edit and remove songs, ads and jingles; song prep and re-levelling'],
+        'download' => ['Download clips', 'Download the processed or the original file of any song, ad or jingle'],
         'playlists' => ['Playlists', 'Make and change playlists'],
         'schedule' => ['Schedule', 'Plan the week, including DJs’ live blocks'],
         'podcast' => ['Podcast', 'Every episode and the podcast’s details (everyone keeps their own episodes)'],

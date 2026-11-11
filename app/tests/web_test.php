@@ -277,7 +277,7 @@ try {
     $sorted = $starts;
     rsort($sorted);
     check('  recent songs are newest first and already over', count($starts) <= 5 && $starts === $sorted && !array_filter($starts, fn($t) => $t >= $np['on_air']['started']), implode(' ', $starts));
-    check('  no file addresses in it', !str_contains($r['body'], '.mp3') && !str_contains(str_replace('storage\/art\/', '', $r['body']), 'storage/') && !str_contains(str_replace('storage/art/', '', $r['body']), 'storage/'));
+    check('  no file addresses in it', !str_contains($r['body'], '.mp3') && !str_contains(str_replace(['storage\/art\/', 'storage/art/'], '', $r['body']), 'storage/'));
     $e = new Browser($base);
     $r = $e->go('embed');
     check('the embed page opens', $r['status'] === 200 && str_contains($r['body'], 'id="embed"') && preg_match('~assets/embed\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1, (string) $r['status']);
@@ -401,6 +401,8 @@ try {
         check('a DJ sees the overview but not the library', str_contains($r['body'], '>Overview</a>') && !str_contains($r['body'], '>Music library</a>'));
         check('a DJ can’t open the library', $a->go('manage/library')['status'] === 403);
         check('or the Ads', $a->go('manage/ads')['status'] === 403);
+        check('or the Jingles', $a->go('manage/jingles')['status'] === 403);
+        check('or download a clip (the Download tick)', $a->go('manage/download?id=1')['status'] === 403);
         check('or Sound & safety', $a->go('manage/sound')['status'] === 403);
         check('or Listeners', $a->go('manage/listeners')['status'] === 403);
         check('or Song prep, or a song’s original', $a->go('manage/songprep')['status'] === 403 && $a->go('manage/songprep/original?id=1')['status'] === 403);
@@ -605,7 +607,7 @@ try {
         $mrow = $db->run('SELECT mastered, loudness_lufs FROM ' . $db->table('tracks') . ' WHERE id = ?', [(int) ($mu['id'] ?? 0)])->fetch();
         check('a song prep mastered is stored as mastered', $mrow && (int) $mrow['mastered'] === 1 && (float) $mrow['loudness_lufs'] === -16.0, json_encode($mrow));
         $r = $m->go('manage/library?q=' . rawurlencode("Web Test Mastered " . strrev($tag)));
-        check('  and the library tags it Mastered', str_contains($r['body'], '>Mastered</span>') && str_contains($r['body'], '>Levelled</span>'));
+        check('  and the library tags it Mastered and Levelled, as symbols with their words on hover', str_contains($r['body'], 'sym mastered') && str_contains($r['body'], 'sym levelled') && str_contains($r['body'], 'title="Mastered with') && str_contains($r['body'], 'title="Levelled to') && !str_contains($r['body'], '>Mastered</span>') && str_contains($r['body'], 'id="badgeKey"'));
         $u = $upload("$tmpDir/song.mp3", 'my song.mp3');
         $tracks[] = $trackId = (int) ($u['id'] ?? 0);
         check('  a song uploaded without song prep is not', (int) $db->run('SELECT mastered FROM ' . $db->table('tracks') . ' WHERE id = ?', [$trackId])->fetchColumn() === 0);
@@ -643,7 +645,7 @@ try {
         check('  and the album art chosen in the window', $drow && $drow['art'] !== null && (new Browser($base))->go('storage/art/' . $drow['art'])['status'] === 200, (string) ($drow['art'] ?? 'none'));
         $r = $m->go('manage/library?q=' . rawurlencode("Window Title " . strrev($tag)));
         check('  the library page has the window with its three groups and the licence types', substr_count($r['body'], 'class="rgroup"') === 3 && str_contains($r['body'], 'id="sdAdd"')
-            && str_contains($r['body'], '<datalist id="licenceTypes">') && str_contains($r['body'], 'name="terms"') && str_contains($r['body'], '© Copyright</button>'));
+            && str_contains($r['body'], '<datalist id="licenceTypes">') && str_contains($r['body'], 'name="terms"') && str_contains($r['body'], '>©</button>'));
         $file = $db->run('SELECT file FROM ' . $db->table('tracks') . ' WHERE id = ?', [$trackId])->fetchColumn();
         check('the song is served from storage', (new Browser($base))->go("storage/media/$file", null, ['Range: bytes=0-1'])['status'] === 206);
         $r = $m->go('manage/library?q=' . rawurlencode($tag));
@@ -753,10 +755,105 @@ try {
         $r = $m->go('manage/ads?confirm=' . $adId);
         check('Remove asks first', str_contains($r['body'], 'Remove this ad?') && str_contains($r['body'], 'Yes, remove'));
         $r = $m->go('manage/ads', ['csrf' => $csrf, 'action' => 'delete', 'id' => $adId]);
-        check('  and Yes removes the ad and its plan', $flashed($after($m, $r), 'Ad removed.') && !$db->run('SELECT id FROM ' . $db->table('tracks') . ' WHERE id = ?', [$adId])->fetch()
-            && !$db->run('SELECT track_id FROM ' . $db->table('ads') . ' WHERE track_id = ?', [$adId])->fetch());
+        $p = $after($m, $r);
+        $gone = !$db->run('SELECT id FROM ' . $db->table('tracks') . ' WHERE id = ?', [$adId])->fetch();
+        // an ad that is on air, or aired in the last two minutes, waits (like a song): the test station plays ads often
+        check('  and Yes removes the ad and its plan (or says it is on air and to try again, as for a song)', ($flashed($p, 'Ad removed.') && $gone && !$db->run('SELECT track_id FROM ' . $db->table('ads') . ' WHERE track_id = ?', [$adId])->fetch())
+            || (!$gone && $flashed($p, 'is on air')), $gone ? 'removed' : 'on air: kept for now');
+        if (!$gone) {
+            $db->run('UPDATE ' . $db->table('tracks') . " SET status = 'error', title = CONCAT('[test] ', title) WHERE id = ?", [$adId]); // hidden now; ads-clean removes it later
+        }
         $r = $m->go('manage/ads', ['csrf' => $csrf, 'action' => 'delete', 'id' => $trackId]);
         check('  a song can’t be removed from here', !$flashed($after($m, $r), 'Ad removed.') && $db->run('SELECT id FROM ' . $db->table('tracks') . ' WHERE id = ?', [$trackId])->fetch() !== false);
+
+        // round 71: downloads of the processed and the original file of any clip
+        $dlTitle = 'Web Test Download ' . strrev($tag);
+        make_mp3("$tmpDir/dl.mp3", 20, ['title' => $dlTitle, 'artist' => 'Dl: Artist/One'], random_int(0, 255));
+        $dlUp = $adUpload("$tmpDir/dl.mp3", 'dl.mp3'); // uploaded as an ad: a download works for every kind of clip
+        $dlId = (int) ($dlUp['id'] ?? 0);
+        $dlRow = $db->run('SELECT file, sha1 FROM ' . $db->table('tracks') . ' WHERE id = ?', [$dlId])->fetch();
+        $stored = $dlRow ? (string) file_get_contents(dirname(__DIR__) . '/storage/media/' . $dlRow['file']) : '';
+        $r = $m->go('manage/download?id=' . $dlId);
+        check('a manager downloads the processed file: an MP3 attachment with the exact bytes, never cached by others', $r['status'] === 200 && $r['body'] === $stored && $stored !== ''
+            && str_contains($r['headers']['content-type'][0] ?? '', 'audio/mpeg') && str_starts_with($r['headers']['content-disposition'][0] ?? '', 'attachment;')
+            && str_contains($r['headers']['content-disposition'][0] ?? '', '.mp3') && str_contains(implode(',', $r['headers']['cache-control'] ?? []), 'no-store'), $r['status'] . ' bytes ' . strlen($r['body']) . '/' . strlen($stored) . ' ' . ($r['headers']['content-type'][0] ?? '') . ' ' . implode(',', $r['headers']['cache-control'] ?? []));
+        $r2 = $m->go('manage/download?id=' . $dlId . '&version=original');
+        check('  and the original, saved with “(original)” in its name (an uploaded copy is its own original)', $r2['status'] === 200 && str_contains(rawurldecode($r2['headers']['content-disposition'][0] ?? ''), '(original).mp3'), (string) $r2['status'] . ' ' . ($r2['headers']['content-disposition'][0] ?? ''));
+        check('  the name is the title (an ad has no artist), with nothing a file system dislikes', str_contains(rawurldecode($r['headers']['content-disposition'][0] ?? ''), $dlTitle . '.mp3'), $r['headers']['content-disposition'][0] ?? '');
+        check('  a song and a jingle download too', ($m->go('manage/download?id=' . $trackId)['status'] === 200));
+        check('  an unknown clip is “not here”', $m->go('manage/download?id=99999999')['status'] === 404 && $m->go('manage/download')['status'] === 404);
+        check('  a path in place of an id is refused (nothing outside the clips is ever sent)', $m->go('manage/download?id=../../config.local.php')['status'] === 404);
+        $r = $m->go('manage/ads');
+        check('the lists have a Download button: the Music library and the Ads', str_contains($m->go('manage/library?q=' . rawurlencode($tag))['body'], 'manage/download?id=') && str_contains($r['body'], 'manage/download?id=' . $dlId));
+        $r = (new Browser($base))->go('manage/download?id=' . $dlId);
+        check('  someone signed out is sent to sign in, and gets no file', $r['status'] === 303 && $r['body'] !== $stored && !str_contains(implode(',', $r['headers']['content-type'] ?? []), 'audio'), (string) $r['status']);
+        $m->go('manage/ads', ['csrf' => $csrf, 'action' => 'delete', 'id' => $dlId]);
+        if ($db->run('SELECT id FROM ' . $db->table('tracks') . ' WHERE id = ?', [$dlId])->fetch()) { // on air: hidden now, removed by the next ads-clean
+            $db->run('UPDATE ' . $db->table('tracks') . " SET status = 'error', title = CONCAT('[test] ', title) WHERE id = ?", [$dlId]);
+        }
+
+        // round 70: the Jingles screen, kept apart from the Music library and the Ads
+        $r = $m->go('manage/jingles');
+        check('a manager opens the Jingles: the settings, the drop zone, the list and a link in the side rail', $r['status'] === 200 && str_contains($r['body'], 'id="jinglesTable"') && str_contains($r['body'], 'name="every"')
+            && str_contains($r['body'], 'id="drop"') && str_contains($r['body'], '<b>Add jingles</b>') && str_contains($r['body'], 'action="' . $basePath . '/manage/jingles"')
+            && str_contains($r['body'], '>Jingles</a>') && str_contains($r['body'], 'upload.js?v=') && !str_contains($r['body'], 'name="gap_minutes"'), (string) $r['status']);
+        check('  with no copyright window and no album art in it', !str_contains($r['body'], 'id="rightsDlg"') && !str_contains($r['body'], 'library.js'));
+        $jUpload = function (string $file, string $name) use ($m, $csrf): array {
+            $r = $m->go('manage/jingles', ['csrf' => $csrf, 'action' => 'upload', 'files[0]' => new CURLFile($file, 'audio/mpeg', $name)], ['Accept: application/json']);
+            return (json_decode($r['body'], true)['results'] ?? [[]])[0] + ['status' => $r['status']];
+        };
+        $jTitle = 'Web Test Jingle ' . strrev($tag);
+        make_mp3("$tmpDir/jingle.mp3", 4, ['title' => $jTitle, 'artist' => 'Some Artist', 'album' => 'Some Album'], random_int(0, 255));
+        $ju = $jUpload("$tmpDir/jingle.mp3", 'jingle.mp3');
+        $jId = (int) ($ju['id'] ?? 0);
+        $jrow = $db->run('SELECT kind, art, artist, album, rights FROM ' . $db->table('tracks') . ' WHERE id = ?', [$jId])->fetch();
+        check('an MP3 uploads as a jingle: its title from the file, kind “jingle”, no artist, album, art or copyright', ($ju['ok'] ?? false) && !$ju['duplicate'] && $ju['title'] === $jTitle
+            && $jrow && $jrow['kind'] === 'jingle' && $jrow['art'] === null && $jrow['artist'] === null && $jrow['album'] === null && $jrow['rights'] === null, json_encode([$ju, $jrow]));
+        $jr = $db->run('SELECT * FROM ' . $db->table('jingles') . ' WHERE track_id = ?', [$jId])->fetch();
+        check('  and it is on', $jr && (int) $jr['active'] === 1);
+        $again = $jUpload("$tmpDir/jingle.mp3", 'copy.mp3');
+        check('  the same file again is “already there”', ($again['ok'] ?? false) && $again['duplicate'] && (int) $again['id'] === $jId);
+        $r = $m->go('manage/jingles');
+        check('  the Jingles list shows it, on, with a Download button', str_contains($r['body'], 'id="j' . $jId . '"') && str_contains($r['body'], htmlspecialchars($jTitle)) && str_contains($r['body'], '>On<') && str_contains($r['body'], 'manage/download?id=' . $jId));
+        $r = $m->go('manage/library?q=' . rawurlencode($jTitle));
+        check('  the Music library does not list it', !str_contains($r['body'], 'id="t' . $jId . '"') && str_contains($r['body'], 'No songs match'));
+        check('  nor do the Ads', !str_contains($m->go('manage/ads')['body'], 'id="a' . $jId . '"'));
+        $asSong = $upload("$tmpDir/jingle.mp3", 'jingle-as-song.mp3');
+        check('  and the same recording as a song is refused, saying where it is', !($asSong['ok'] ?? true) && str_contains((string) ($asSong['error'] ?? ''), 'already in the Jingles'), (string) ($asSong['error'] ?? ''));
+        $r = $m->go('manage/jingles?edit=' . $jId);
+        check('Edit opens the title, on and notes', str_contains($r['body'], 'id="jingleEdit"') && str_contains($r['body'], 'name="title"') && str_contains($r['body'], 'name="active"') && str_contains($r['body'], 'name="notes"'));
+        $r = $m->go('manage/jingles', ['csrf' => $csrf, 'action' => 'update', 'id' => $jId, 'title' => "$jTitle (edited)", 'notes' => 'Station ID']);
+        $p = $after($m, $r);
+        check('a manager saves it (an unticked On switches it off)', $flashed($p, 'Saved.') && (int) $db->run('SELECT active FROM ' . $db->table('jingles') . ' WHERE track_id = ?', [$jId])->fetchColumn() === 0
+            && $db->run('SELECT title FROM ' . $db->table('tracks') . ' WHERE id = ?', [$jId])->fetchColumn() === "$jTitle (edited)" && str_contains($p['body'], '>Off<'));
+        $r = $m->go('manage/jingles', ['csrf' => $csrf, 'action' => 'update', 'id' => $jId, 'title' => '  ', 'active' => '1']);
+        $p = $after($m, $r);
+        check('  a missing title is refused, back at the form', $flashed($p, 'A jingle needs a title.') && str_contains($p['body'], 'id="jingleEdit"'));
+        $r = (new Browser($base))->go('manage/jingles', ['csrf' => 'x', 'action' => 'update', 'id' => $jId, 'title' => 'Hacked', 'active' => '1']);
+        check('  someone signed out can’t', $r['status'] !== 200 && $db->run('SELECT title FROM ' . $db->table('tracks') . ' WHERE id = ?', [$jId])->fetchColumn() === "$jTitle (edited)", (string) $r['status']);
+        $origJ = Stationwagon\Jingles::settings($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch());
+        $r = $m->go('manage/jingles', ['csrf' => $csrf, 'action' => 'settings', 'enabled' => '1', 'every' => '6']);
+        $p = $after($m, $r);
+        check('the jingle settings are saved and shown', $flashed($p, 'Saved.') && str_contains($p['body'], 'id="jinglesEvery" min="1" max="20" step="1" value="6"') && str_contains($p['body'], 'After every 6 songs the AutoDJ plays a jingle'));
+        $r = $m->go('manage/jingles', ['csrf' => $csrf, 'action' => 'settings', 'enabled' => '1', 'every' => '25']);
+        check('  25 songs is refused, and 6 stays', $flashed($after($m, $r), 'choose 1 to 20 songs') && Stationwagon\Jingles::settings($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch())['every'] === 6);
+        $m->go('manage/jingles', ['csrf' => $csrf, 'action' => 'settings', 'every' => (string) $origJ['every']] + ($origJ['enabled'] ? ['enabled' => '1'] : []));
+        check('  (put back as they were)', Stationwagon\Jingles::settings($db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch()) === $origJ);
+        $r = $m->go('manage/sound');
+        check('Sound & safety has the crossfade for jingles under the ads’ one', preg_match('~name="ads_crossfade_seconds".*name="jingles_crossfade_seconds"~s', $r['body']) === 1 && str_contains($r['body'], 'Crossfade for jingles'));
+        $r = $m->go('manage/jingles?confirm=' . $jId);
+        check('Remove asks first', str_contains($r['body'], 'Remove this jingle?') && str_contains($r['body'], 'Yes, remove'));
+        $r = $m->go('manage/jingles', ['csrf' => $csrf, 'action' => 'delete', 'id' => $jId]);
+        $p = $after($m, $r);
+        $gone = !$db->run('SELECT id FROM ' . $db->table('tracks') . ' WHERE id = ?', [$jId])->fetch();
+        // a jingle that is on air, or aired in the last two minutes, waits (like a song): the test station plays them every few songs
+        check('  and Yes removes the jingle and its row (or says it is on air and to try again, as for a song)', ($flashed($p, 'Jingle removed.') && $gone && !$db->run('SELECT track_id FROM ' . $db->table('jingles') . ' WHERE track_id = ?', [$jId])->fetch())
+            || (!$gone && $flashed($p, 'is on air')), $gone ? 'removed' : 'on air: kept for now');
+        if (!$gone) {
+            $db->run('UPDATE ' . $db->table('tracks') . " SET status = 'error', title = CONCAT('[test] ', title) WHERE id = ?", [$jId]); // hidden now; the next run's jingles-clean removes it
+        }
+        $r = $m->go('manage/jingles', ['csrf' => $csrf, 'action' => 'delete', 'id' => $trackId]);
+        check('  a song can’t be removed from here', !$flashed($after($m, $r), 'Jingle removed.') && $db->run('SELECT id FROM ' . $db->table('tracks') . ' WHERE id = ?', [$trackId])->fetch() !== false);
 
         // Playlists and schedule
         $r = $m->go('manage/playlists', ['csrf' => $csrf, 'name' => "Web test list $tag", 'mode' => 'in_order']);
@@ -852,7 +949,7 @@ try {
         $rr = $ad->go('manage/roles');
         check('an admin opens Roles from the menu: Admin, Manager and DJ with what each may do', $rr['status'] === 200 && str_contains($rr['body'], '>Roles</a>')
             && str_contains($rr['body'], 'data-role="admin"') && str_contains($rr['body'], 'data-role="manager"') && str_contains($rr['body'], 'data-role="dj"') && str_contains($rr['body'], 'Their own shows, in their own blocks'), (string) $rr['status']);
-        check('  the Add form has a tick for each permission, the live ones split in two', substr_count(substr($rr['body'], (int) strpos($rr['body'], 'id="addRole"')), 'name="perm[]"') === 9
+        check('  the Add form has a tick for each permission, the live ones split in two', substr_count(substr($rr['body'], (int) strpos($rr['body'], 'id="addRole"')), 'name="perm[]"') === 10
             && str_contains($rr['body'], 'Go live any time') && str_contains($rr['body'], 'Run the on-air desk'));
         $acsrf = Browser::csrf($rr);
         $r = $ad->go('manage/roles', ['csrf' => $acsrf, 'action' => 'add', 'name' => "Web Test Guest $tag", 'perm' => ['anytime']]);
@@ -866,12 +963,117 @@ try {
         check('  and deletes it', $flashed($after($ad, $r), 'Role deleted.') && !$db->run('SELECT COUNT(*) FROM ' . $db->table('roles') . ' WHERE `key` = ?', [$guestKey])->fetchColumn());
         check('a manager can’t send the Roles form', $m->go('manage/roles', ['csrf' => $csrf, 'action' => 'add', 'name' => 'Sneaky', 'perm' => ['people']])['status'] === 403);
 
+        // round 73: the Streams screen (admins), and the stream switch on the Overview and the Schedule
+        $mainSlug = (string) $db->run('SELECT slug FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetchColumn();
+        $strName = "Web Test Stream $tag";
+        $strSlug = Stationwagon\Streams::slugFor($strName);
+        $r = $ad->go('manage/streams');
+        check('an admin opens Streams from the menu: the main stream, the list and the Add form', $r['status'] === 200 && str_contains($r['body'], '>Streams</a>') && str_contains($r['body'], 'id="streamsTable"') && str_contains($r['body'], 'id="streamAdd"')
+            && str_contains($r['body'], '>Main<'), (string) $r['status']);
+        check('  with one stream there is no stream switch on the Overview', !str_contains($ad->go('manage')['body'], 'class="streamswitch"'));
+        check('  a manager has no Streams (403), nor the form', $m->go('manage/streams')['status'] === 403 && $m->go('manage/streams', ['csrf' => $csrf, 'action' => 'create', 'name' => 'Sneaky'])['status'] === 403);
+        $acsrf = Browser::csrf($r);
+        $r = $ad->go('manage/streams', ['csrf' => $acsrf, 'action' => 'create', 'name' => '  ']);
+        check('a stream needs a name', $flashed($after($ad, $r), 'A stream needs a name.'));
+        $r = $ad->go('manage/streams', ['csrf' => $acsrf, 'action' => 'create', 'name' => 'Studio Stream', 'slug' => 'studio']);
+        check('  and an address name the app does not already use', $flashed($after($ad, $r), 'already uses'));
+        $r = $ad->go('manage/streams', ['csrf' => $acsrf, 'action' => 'create', 'name' => $strName]);
+        $p = $after($ad, $r);
+        $row = $db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE slug = ?', [$strSlug])->fetch();
+        check('an admin adds a stream (its address name made from its name)', $flashed($p, 'Stream added.') && $row && (int) $row['parent_id'] === $stationId && $row['name'] === $strName, json_encode($row));
+        check('  the list has it, with its address', str_contains($p['body'], htmlspecialchars($strName)) && str_contains($p['body'], '…/' . $strSlug . '/') && str_contains($p['body'], 'id="s' . ($row['id'] ?? 0) . '"'));
+        $r = $ad->go('manage/streams', ['csrf' => $acsrf, 'action' => 'create', 'name' => 'Twin', 'slug' => $strSlug]);
+        check('  two streams cannot share an address name', $flashed($after($ad, $r), 'already a stream with that address name'));
+        $r = $ad->go('manage?stream=' . $strSlug);
+        check('with two streams the Overview has the stream switch, the picked stream marked', str_contains($r['body'], 'class="streamswitch"') && preg_match('~aria-current="true">' . preg_quote(htmlspecialchars($strName), '~') . '<~', $r['body']) === 1, (string) $r['status']);
+        $r = $ad->go('manage/schedule');
+        check('  and the Schedule follows the stream picked (an empty week of its own)', str_contains($r['body'], 'class="streamswitch"') && preg_match('~aria-current="true">' . preg_quote(htmlspecialchars($strName), '~') . '<~', $r['body']) === 1);
+        $r = $ad->go('manage?stream=' . $mainSlug);
+        check('  the main stream is picked again with its own address name', preg_match('~aria-current="true">[^<]*<~', $r['body']) === 1 && !preg_match('~aria-current="true">' . preg_quote(htmlspecialchars($strName), '~') . '<~', $r['body']));
+        $r = $ad->go('manage?stream=nonsense');
+        check('  an unknown stream name changes nothing', $r['status'] === 200 && !preg_match('~aria-current="true">' . preg_quote(htmlspecialchars($strName), '~') . '<~', $r['body']));
+        // the listeners' side of a further stream: its own page, embed and api addresses
+        $pub = new Browser($base);
+        $r = $pub->go($strSlug);
+        check('a stream has its own player page at its address name, naming the stream and its api address', $r['status'] === 200 && str_contains($r['body'], 'data-stream="' . $strSlug . '"') && str_contains($r['body'], htmlspecialchars($strName))
+            && str_contains($r['body'], 'api/stream.php?stream=' . $strSlug), (string) $r['status']);
+        $r = $pub->go($strSlug . '/');
+        check('  the same with a slash at the end', $r['status'] === 200 && str_contains($r['body'], 'data-stream="' . $strSlug . '"'), (string) $r['status']);
+        check('  the station’s own page has no stream mark', !str_contains($pub->go('')['body'], 'data-stream='));
+        $r = $pub->go($strSlug . '/embed');
+        check('  its embed, framed by any site, knows the stream (also as ?stream=)', $r['status'] === 200 && str_contains($r['body'], 'data-stream="' . $strSlug . '"') && str_contains($pub->go('embed?stream=' . $strSlug)['body'], 'data-stream="' . $strSlug . '"')
+            && !str_contains($pub->go('embed')['body'], 'data-stream='));
+        $r = $pub->go($strSlug . '/now');
+        check('  its Now playing card is its own too, and its link goes to the stream’s player (also as ?stream=)', $r['status'] === 200 && str_contains($r['body'], 'data-stream="' . $strSlug . '"') && str_contains($r['body'], 'href="' . $basePath . '/' . $strSlug . '"')
+            && str_contains($pub->go('now?stream=' . $strSlug)['body'], 'data-stream="' . $strSlug . '"') && !str_contains($pub->go('now')['body'], 'data-stream=') && $pub->go('now?stream=no-such-stream')['status'] === 404, (string) $r['status']);
+        $r = $ad->go('manage/streams');
+        check('  the Streams screen has the code to copy for each stream: its player and its card', str_contains($r['body'], 'id="embedCodes"') && str_contains($r['body'], htmlspecialchars('/' . $strSlug . '/embed')) && str_contains($r['body'], htmlspecialchars('/' . $strSlug . '/now'))
+            && str_contains($r['body'], htmlspecialchars($basePath . '/embed"')) && substr_count($r['body'], 'data-copy-btn') >= 4);
+        $np = json_decode($pub->go('api/nowplaying.php?stream=' . $strSlug)['body'], true);
+        $npMain = json_decode($pub->go('api/nowplaying.php')['body'], true);
+        check('  its now-playing says the stream’s name, and the station’s own still says the station’s', ($np['station']['name'] ?? '') === $strName && ($npMain['station']['name'] ?? '') !== $strName && isset($np['delay'], $np['server_now']), json_encode($np['station'] ?? $np));
+        $tlj = json_decode($pub->go('api/timeline.php?stream=' . $strSlug)['body'], true);
+        $tlMain = json_decode($pub->go('api/timeline.php')['body'], true);
+        check('  its timeline is its own (its name, its own listeners, its own entries, the same songs)', ($tlj['station']['name'] ?? '') === $strName && !empty($tlj['entries']) && ($tlMain['station']['name'] ?? '') !== $strName
+            && json_encode(array_column($tlj['entries'], 'n')) !== '' && count($tlj['entries']) > 1, json_encode(array_keys($tlj ?? [])));
+        $hls = $pub->go('api/stream.php?stream=' . $strSlug);
+        check('  its stream playlist is its own HLS playlist', $hls['status'] === 200 && str_starts_with($hls['body'], '#EXTM3U') && str_contains(implode(',', $hls['headers']['content-type'] ?? []), 'mpegurl'), (string) $hls['status']);
+        check('  an unknown stream is “not found” (a page, the api and the playlist), never the main stream', $pub->go('no-such-stream')['status'] === 404 && $pub->go('api/nowplaying.php?stream=no-such-stream')['status'] === 404
+            && $pub->go('api/timeline.php?stream=no-such-stream')['status'] === 404 && $pub->go('api/stream.php?stream=no-such-stream')['status'] === 404 && $pub->go('embed?stream=no-such-stream')['status'] === 404);
+        check('  the address names the app uses still go where they went (the manager, the studio, the api folder)', $pub->go('manage')['status'] !== 404 && $pub->go('studio')['status'] !== 404 && $pub->go('signin')['status'] === 200);
+
+        // DJs and streams: the People screen gives them, the studio follows
+        $djS = new Browser($base);
+        $djS->go('signin', ['csrf' => Browser::csrf($djS->go('signin')), 'email' => $email, 'password' => 'a new password 1']);
+        $djPage = (int) $db->run('SELECT id FROM ' . $db->table('users') . ' WHERE email = ?', [$email])->fetchColumn();
+        $r = $djS->go('studio?stream=' . $strSlug);
+        check('a DJ who has only the main stream may not open the studio on another (403, with the reason)', $r['status'] === 403 && str_contains($r['body'], 'You may not go live on this stream'), (string) $r['status']);
+        check('  the studio’s own api says the same, with no state', $djS->go('studio/api/state?stream=' . $strSlug)['status'] === 403);
+        $r = $djS->go('studio');
+        check('  and the studio with no stream is the main one as ever (no stream switch for one stream)', $r['status'] === 200 && !str_contains($r['body'], 'data-stream=') && !str_contains($r['body'], 'class="streamswitch"'), (string) $r['status']);
+        $r = $ad->go('manage/people?person=' . $djPage);
+        check('the People screen lets an admin tick the streams a DJ may go live on', str_contains($r['body'], 'May go live on') && str_contains($r['body'], 'name="streams[]"') && str_contains($r['body'], htmlspecialchars($strName)), (string) $r['status']);
+        $r = $ad->go('manage/people', ['csrf' => $acsrf, 'action' => 'streams', 'id' => $djPage]);
+        check('  at least one is needed', $flashed($after($ad, $r), 'Choose at least one stream'));
+        $r = $ad->go('manage/people', ['csrf' => $acsrf, 'action' => 'streams', 'id' => $djPage, 'streams' => [(string) $row['id']]]);
+        check('  saved: they may go live on the stream, and no longer on the main one', $flashed($after($ad, $r), 'Saved.') && Stationwagon\Streams::allowedIds($db, ['id' => $djPage, 'role' => 'dj']) === [(int) $row['id']]);
+        $r = $djS->go('studio?stream=' . $strSlug);
+        check('  their studio opens on that stream, named, with its own api address', $r['status'] === 200 && str_contains($r['body'], 'data-stream="' . $strSlug . '"') && str_contains($r['body'], htmlspecialchars($strName)), (string) $r['status']);
+        $sj = json_decode($djS->go('studio/api/state?stream=' . $strSlug)['body'], true);
+        check('  the studio’s state is that stream’s', ($sj['station']['name'] ?? '') === $strName && isset($sj['slot']), json_encode($sj['station'] ?? $sj));
+        $r = $djS->go('studio');
+        check('  and with no stream picked they get the one they have (not a 403 for the main one)', $r['status'] === 200 && str_contains($r['body'], 'data-stream="' . $strSlug . '"'), (string) $r['status']);
+        check('  the main stream is closed to them now', $djS->go('studio?stream=' . $mainSlug)['status'] === 403 || str_contains($djS->go('studio?stream=' . $mainSlug)['body'], 'You may not go live'));
+        $r = $ad->go('manage/people', ['csrf' => $acsrf, 'action' => 'streams', 'id' => $djPage, 'streams' => [(string) $stationId, (string) $row['id']]]);
+        $r2 = $djS->go('studio?stream=' . $strSlug);
+        check('  with both ticked the studio has the switch between them', $flashed($after($ad, $r), 'Saved.') && str_contains($r2['body'], 'class="streamswitch"') && str_contains($r2['body'], 'Go live on'), (string) $r2['status']);
+        $r = $ad->go('manage/people?person=' . $mgrId);
+        check('  an admin or manager has every stream, no ticks to choose', str_contains($r['body'], 'may go live on every stream') && !str_contains(substr($r['body'], (int) strpos($r['body'], 'streamform')), 'name="streams[]"') || str_contains($r['body'], 'Admins and managers may go live on every stream'));
+        $db->run('DELETE FROM ' . $db->table('user_streams') . ' WHERE user_id = ?', [$djPage]); // back to nobody having given them streams
+
+        $r = $ad->go('manage/streams?edit=' . $row['id']);
+        check('Edit opens the name and the address name', str_contains($r['body'], 'id="streamEdit"') && str_contains($r['body'], 'name="slug"'));
+        $r = $ad->go('manage/streams', ['csrf' => $acsrf, 'action' => 'update', 'id' => $row['id'], 'name' => "$strName 2", 'slug' => $strSlug . '-2']);
+        check('  and saves them', $flashed($after($ad, $r), 'Saved.') && $db->run('SELECT name FROM ' . $db->table('stations') . ' WHERE id = ?', [$row['id']])->fetchColumn() === "$strName 2");
+        $r = $ad->go('manage/streams', ['csrf' => $acsrf, 'action' => 'update', 'id' => $row['id'], 'name' => 'x', 'slug' => 'manage']);
+        check('  a name the app uses is refused, back at the form', $flashed($p = $after($ad, $r), 'already uses') && str_contains($p['body'], 'id="streamEdit"'));
+        $r = $ad->go('manage/streams', ['csrf' => $acsrf, 'action' => 'update', 'id' => $stationId, 'name' => 'Hijack', 'slug' => 'hijack']);
+        check('  the main stream is not changed here', $flashed($after($ad, $r), 'isn’t here') && $db->run('SELECT slug FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetchColumn() === $mainSlug);
+        $r = $ad->go('manage/streams?confirm=' . $row['id']);
+        check('Remove asks first', str_contains($r['body'], 'Remove this stream and its schedule?') && str_contains($r['body'], 'Yes, remove'));
+        $ad->go('manage?stream=' . $strSlug . '-2');
+        $r = $ad->go('manage/streams', ['csrf' => $acsrf, 'action' => 'delete', 'id' => $row['id']]);
+        check('  and Yes removes the stream; the picked stream falls back to the main one', $flashed($after($ad, $r), 'Stream removed.') && !$db->run('SELECT id FROM ' . $db->table('stations') . ' WHERE id = ?', [$row['id']])->fetch()
+            && !str_contains($ad->go('manage')['body'], 'class="streamswitch"'));
+        $r = $ad->go('manage/streams', ['csrf' => $acsrf, 'action' => 'delete', 'id' => $stationId]);
+        check('  the main stream can’t be removed', $flashed($after($ad, $r), 'isn’t here') && $db->run('SELECT id FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch() !== false);
+
         // Sound & safety (the station's own values are put back in the cleanup)
         $origSettings = $db->run('SELECT settings FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetchColumn();
         $r = $m->go('manage/sound');
-        check('Sound & safety opens with ten sliders and ten choices', $r['status'] === 200 && substr_count($r['body'], 'type="range"') === 10 && substr_count($r['body'], '<select id="f-') === 10, (string) $r['status']);
+        check('Sound & safety opens with eleven sliders and ten choices', $r['status'] === 200 && substr_count($r['body'], 'type="range"') === 11 && substr_count($r['body'], '<select id="f-') === 10, (string) $r['status']);
         check('with the fade shape preview, the MB an hour and the listener delay', str_contains($r['body'], 'id="fadeCurve"') && str_contains($r['body'], 'fades.js') && str_contains($r['body'], '192 kbps · 86 MB an hour') && preg_match('/About \d+ s/', $r['body']) === 1);
-        $values = ['csrf' => $csrf, 'crossfade_seconds' => '5', 'ads_crossfade_seconds' => '1.5', 'fade_shape' => 's_curve', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '4', 'duck_db' => '-10',
+        $values = ['csrf' => $csrf, 'crossfade_seconds' => '5', 'ads_crossfade_seconds' => '1.5', 'jingles_crossfade_seconds' => '1', 'fade_shape' => 's_curve', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '4', 'duck_db' => '-10',
             'live_timeout_seconds' => '10', 'rejoin_minutes' => '5', 'silence_db' => '-50', 'recent_tracks' => '3', 'ratings_influence' => '0', 'prep_master' => (string) (int) $keepMaster, 'prep_level' => (string) (int) $keepLevel, 'prep_target' => (string) $keepTarget, 'live_kbps' => '160', 'prep_kbps' => '256',
             'prep_rate' => '44100', 'prep_precision' => '32', 'prep_dither' => '1', 'prep_quality' => '9'];
         $r = $m->go('manage/sound', ['fade_shape' => 'wobbly'] + $values);

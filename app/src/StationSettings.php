@@ -24,6 +24,7 @@ final class StationSettings
     public const FIELDS = [
         'crossfade_seconds' => ['group' => 'Transitions', 'label' => 'Crossfade between songs', 'help' => 'Both songs overlap for this long.', 'min' => 0, 'max' => 12, 'step' => 1, 'unit' => 's'],
         'ads_crossfade_seconds' => ['group' => 'Transitions', 'label' => 'Crossfade for ads', 'help' => 'Ads are short, so a shorter blend works better: this long between a song and an ad, between two ads, and from an ad back to a song.', 'min' => 0, 'max' => 12, 'step' => 0.5, 'unit' => 's'],
+        'jingles_crossfade_seconds' => ['group' => 'Transitions', 'label' => 'Crossfade for jingles', 'help' => 'Jingles are tiny, so they blend over a very short crossfade: this long between a song and a jingle, and from a jingle back to a song.', 'min' => 0, 'max' => 6, 'step' => 0.5, 'unit' => 's'],
         'fade_shape' => ['group' => 'Transitions', 'label' => 'Fade shape', 'help' => 'How the two songs blend in a crossfade or a skip.',
             'choices' => ['equal_power' => 'Equal power: smooth, no dip in the middle', 'linear' => 'Linear: a straight line, a little dip', 's_curve' => 'S-curve: holds, then blends quickly']],
         'skip_fade_seconds' => ['group' => 'Transitions', 'label' => 'Skip fade', 'help' => 'Used when someone presses Skip.', 'min' => 0, 'max' => 6, 'step' => 0.5, 'unit' => 's'],

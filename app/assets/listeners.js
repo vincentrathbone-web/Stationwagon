@@ -1,13 +1,13 @@
 // Listener count: while a player plays it pings api/listen.php once a minute with a random id made
 // when Listen is pressed (not kept anywhere: no cookie, no storage), and a last "stop" ping when it
 // stops or the page closes. The station counts the ids it heard in the last 90 s (src/Listeners.php).
-//   const ping = SwListeners.start(base, "player", (n) => show(n));  …  ping.stop();
+//   const ping = SwListeners.start(base, "player", (n) => show(n), stream);  …  ping.stop();   (stream: a further stream's address name, or none)
 window.SwListeners = (() => {
   const EVERY_MS = 60000;
   const randomId = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
-  function start(base, source, onCount) {
-    const url = base + "api/listen.php", sid = randomId();
+  function start(base, source, onCount, stream) {
+    const url = base + "api/listen.php" + (stream ? "?stream=" + encodeURIComponent(stream) : ""), sid = randomId();
     let timer = 0, stopped = false;
     const send = async () => {
       try {

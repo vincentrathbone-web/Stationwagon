@@ -50,6 +50,14 @@ final class App
                 (new ManagePage())->playlist((int) $m[1]);
                 return;
             }
+            if (preg_match('#^([a-z0-9][a-z0-9-]*)(/embed|/now)?$#', $route, $m) === 1 && ($stream = Streams::bySlug(Db::fromConfig(), $m[1])) !== null && !$stream['main']) {
+                match ($m[2] ?? '') {
+                    '/embed' => self::embed(false, $m[1]),
+                    '/now' => self::now($m[1]),
+                    default => self::home($m[1]),
+                };
+                return;
+            }
             match ($route) {
                 '' => self::home(),
                 'install' => (new InstallPage(new Installer(SW_ROOT)))->handle(),
@@ -60,6 +68,8 @@ final class App
                 'manage/skip' => (new ManagePage())->skip(),
                 'manage/library' => (new ManagePage())->library(),
                 'manage/ads' => (new ManagePage())->ads(),
+                'manage/jingles' => (new ManagePage())->jingles(),
+                'manage/streams' => (new ManagePage())->streams(),
                 'manage/playlists' => (new ManagePage())->playlists(),
                 'manage/schedule' => (new ManagePage())->schedule(),
                 'manage/people' => (new ManagePage())->people(),
@@ -68,6 +78,7 @@ final class App
                 'manage/sound' => (new ManagePage())->sound(),
                 'manage/songprep' => (new ManagePage())->songprep(),
                 'manage/songprep/original' => (new ManagePage())->songprepOriginal(),
+                'manage/download' => (new ManagePage())->download(),
                 'manage/listeners' => (new ManagePage())->listeners(),
                 'manage/podcast' => (new ManagePage())->podcast(),
                 'manage/about' => (new ManagePage())->about(),
@@ -210,12 +221,16 @@ final class App
     }
 
     /** The station's page: the listener player, what's on and today's schedule. No session. */
-    private static function home(): void
+    private static function home(?string $slug = null): void
     {
-        $station = self::station();
-        $vars = ['title' => $station['name'] ?? 'Stationwagon', 'station' => $station, 'onAir' => self::onAir(), 'today' => [], 'delay' => 20];
+        $planner = Streams::planner(Db::fromConfig(), $slug);
+        if ($planner === null) {
+            self::notFound();
+            return;
+        }
+        $station = $planner->station();
+        $vars = ['title' => $station['name'] ?? 'Stationwagon', 'station' => $station, 'onAir' => self::onAir($planner), 'today' => [], 'delay' => 20, 'streamSlug' => ($station['parent_id'] ?? null) === null ? '' : (string) $station['slug']];
         try {
-            $planner = Planner::forFirstStation();
             $vars['delay'] = (int) $planner->setting('listener_delay_seconds');
             $vars['today'] = Schedule::today((new Schedule(Db::fromConfig(), $planner->station()))->all(), microtime(true), $planner->station()['timezone']);
         } catch (\Throwable $ex) {
@@ -232,13 +247,19 @@ final class App
      * the account page (the browser's frame page, views/shell.php, or the apps' own bar area), with a mute
      * button; only this station's own pages may frame it, and its listening isn't counted (it's the staff).
      */
-    private static function embed(bool $bar = false): void
+    private static function embed(bool $bar = false, ?string $slug = null): void
     {
-        $station = self::station();
+        $planner = Streams::planner(Db::fromConfig(), $slug ?? (is_string($_GET['stream'] ?? null) ? $_GET['stream'] : null));
+        if ($planner === null) {
+            self::notFound();
+            return;
+        }
+        $station = $planner->station();
+        $streamSlug = ($station['parent_id'] ?? null) === null ? '' : (string) $station['slug'];
         $light = !$bar && ($_GET['look'] ?? '') === 'light';
         $delay = 20; // the listener delay, which the embed's player holds as the station's page does (round 60)
         try {
-            $delay = (int) Planner::forFirstStation()->setting('listener_delay_seconds');
+            $delay = (int) $planner->setting('listener_delay_seconds');
         } catch (\Throwable $ex) {
             error_log('Stationwagon embed: ' . $ex);
         }
@@ -252,7 +273,7 @@ final class App
     public static function shellRoute(string $route): bool
     {
         return in_array($route, ['studio', 'account', 'manage'], true)
-            || (str_starts_with($route, 'manage/') && !in_array($route, ['manage/skip', 'manage/songprep/original'], true));
+            || (str_starts_with($route, 'manage/') && !in_array($route, ['manage/skip', 'manage/songprep/original', 'manage/download'], true));
     }
 
     /**
@@ -293,13 +314,19 @@ final class App
      * The small Now playing card other websites frame (round 61): no sound, a link to where people listen.
      * `?link=` an http(s) address (else the station page), `?target=new` a new tab, `?look=light`.
      */
-    private static function now(): void
+    private static function now(?string $slug = null): void
     {
-        $station = self::station();
+        $planner = Streams::planner(Db::fromConfig(), $slug ?? (is_string($_GET['stream'] ?? null) ? $_GET['stream'] : null));
+        if ($planner === null) {
+            self::notFound();
+            return;
+        }
+        $station = $planner->station();
+        $streamSlug = ($station['parent_id'] ?? null) === null ? '' : (string) $station['slug'];
         $light = ($_GET['look'] ?? '') === 'light';
         $link = (string) ($_GET['link'] ?? '');
         if (!preg_match('#^https?://[^\s"<>]+$#i', $link) || strlen($link) > 500) {
-            $link = self::url('');
+            $link = self::url($streamSlug);
         }
         $newTab = ($_GET['target'] ?? '') === 'new';
         header_remove('X-Frame-Options');
@@ -316,12 +343,12 @@ final class App
     }
 
     /** What's on air now and next, plus the library size; null if the planner can't answer. */
-    private static function onAir(): ?array
+    private static function onAir(?Planner $given = null): ?array
     {
         try {
-            $planner = Planner::forFirstStation();
+            $planner = $given ?? Planner::forFirstStation();
             $db = Db::fromConfig();
-            $songs = (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('tracks') . " WHERE station_id = ? AND status = 'ready' AND kind = 'song'", [$planner->station()['id']])->fetchColumn();
+            $songs = (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('tracks') . " WHERE station_id = ? AND status = 'ready' AND kind = 'song'", [(int) ($planner->station()['library_id'] ?? $planner->station()['id'])])->fetchColumn();
             return $planner->nowPlaying(microtime(true)) + ['songs' => $songs, 'tz' => $planner->station()['timezone']];
         } catch (\Throwable $ex) {
             error_log('Stationwagon on air: ' . $ex);

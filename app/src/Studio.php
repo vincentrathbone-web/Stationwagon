@@ -353,7 +353,7 @@ final class Studio
     /** Library songs for Deck B and the running order (40 at most). */
     public function songs(string $search): array
     {
-        $rows = array_slice((new Library($this->db, $this->station, SW_ROOT))->tracks($search), 0, 40);
+        $rows = array_slice((new Library($this->db, Streams::libraryStation($this->station), SW_ROOT))->tracks($search), 0, 40);
         return array_map(fn($r) => $this->track($r), $rows);
     }
 
@@ -386,7 +386,7 @@ final class Studio
             return [];
         }
         $rows = $this->db->run('SELECT id, file, title, artist, duration_s FROM ' . $this->db->table('tracks') .
-            " WHERE station_id = ? AND status = 'ready' AND kind = 'song' AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')', [$this->station['id'], ...$ids])->fetchAll();
+            " WHERE station_id = ? AND status = 'ready' AND kind = 'song' AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')', [(int) ($this->station['library_id'] ?? $this->station['id']), ...$ids])->fetchAll();
         $out = [];
         foreach ($rows as $r) {
             $out[(int) $r['id']] = $this->track($r);

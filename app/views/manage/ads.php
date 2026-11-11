@@ -1,9 +1,11 @@
 <?php use function Stationwagon\{h, duration}; use Stationwagon\{App, Ads};
-/** @var array $ads @var array $adSettings @var int $edit @var int $confirm @var float $now @var int $songs @var int $maxUpload @var array $prepQuality @var array $prep @var array $preset @var ?array $relevel @var array $station @var string $csrf */
+/** @var array $ads @var array $adSettings @var string $q @var int $edit @var int $confirm @var float $now @var int $songs @var int $maxUpload @var array $prepQuality @var array $prep @var array $preset @var ?array $relevel @var array $station @var string $csrf */
 $today = (new DateTimeImmutable('@' . (int) $now))->setTimezone(new DateTimeZone((string) ($station['timezone'] ?? 'UTC') ?: 'UTC'))->format('Y-m-d');
 $running = count(array_filter($ads, fn(array $a) => Ads::status($a, $today)[1]));
 $date = fn(?string $d) => $d !== null ? (new DateTimeImmutable($d))->format('j M Y') : '';
-$ncols = 8;
+$tz = new DateTimeZone((string) ($station['timezone'] ?? 'UTC') ?: 'UTC');
+$lufs = fn(float $v) => str_replace('-', '−', number_format($v, 1));
+$ncols = 13;
 ?>
 <div class="vhead">
   <div>
@@ -31,31 +33,56 @@ $dropRoute = 'manage/ads';
 $dropNoun = 'ad';
 $dropIntro = 'Drop ad recordings here, or choose them: MP3, WAV, FLAC, M4A (AAC or ALAC), AAC, Ogg, Opus or WMA. They are prepared and levelled like songs, with the choices below; there is no album art or copyright window.';
 require __DIR__ . '/_drop.php';
+
+// the list, laid out like the Music library (round 72): the same toolbar, compact table, symbols for the badges, columns to choose
+$clipRoute = 'manage/ads';
+$clipNoun = 'ad';
+$clipStore = 'ads';
+$cols = ['advertiser' => 'Advertiser', 'length' => 'Length', 'badges' => 'Badges', 'added' => 'Added', 'loudness' => 'Loudness', 'plays' => 'Plays a day', 'today' => 'Today', 'when' => 'When', 'dates' => 'Dates'];
+$hiddenCols = ['added', 'loudness', 'dates'];
+$statusWords = ['Running', 'Paused'];
+$bulkWords = ['Pause', 'Resume'];
+require __DIR__ . '/_clips.php';
 ?>
 
-<div class="tablewrap" id="adsWrap">
-  <table class="ads" id="adsTable">
-    <thead><tr><th>Ad</th><th>Advertiser</th><th class="num">Plays a day</th><th>Today</th><th>When</th><th>Dates</th><th>Status</th><th></th></tr></thead>
+<div class="tablewrap lib" id="adsWrap">
+  <table class="lib ads" id="adsTable" data-hidden="<?= h(implode(' ', $hiddenCols)) ?>">
+    <thead><tr>
+      <th class="c-sel" data-col="sel"><input type="checkbox" id="selAll" aria-label="Select every ad shown"></th>
+      <th data-col="title" aria-sort="ascending"><button type="button" class="sortb" data-key="title">Ad</button></th>
+      <?php foreach ($cols as $key => $label): $num = in_array($key, ['length', 'loudness', 'plays'], true); ?>
+        <th data-col="<?= h($key) ?>"<?= $num ? ' class="num"' : '' ?>><?php if ($key === 'badges'): ?><?= h($label) ?><?php else: ?><button type="button" class="sortb" data-key="<?= h($key) ?>"<?= $num ? ' data-type="num"' : '' ?>><?= h($label) ?></button><?php endif ?></th>
+      <?php endforeach ?>
+      <th data-col="status"><button type="button" class="sortb" data-key="status" data-type="num">Status</button></th>
+      <th data-col="acts"><span class="vh">Actions</span></th>
+    </tr></thead>
     <tbody id="adsBody">
     <?php if (!$ads): ?>
-      <tr class="empty"><td colspan="<?= $ncols ?>" class="muted2">No ads yet. Add some above, then say how often each one plays.</td></tr>
+      <tr class="empty"><td colspan="<?= $ncols ?>" class="muted2"><?= $q !== '' ? 'No ads match “' . h($q) . '”.' : 'No ads yet. Add some above, then say how often each one plays.' ?></td></tr>
     <?php endif ?>
-    <?php foreach ($ads as $a): $id = (int) $a['track_id']; [$status, $live] = Ads::status($a, $today); $target = (int) $a['daily_target']; ?>
-      <tr id="a<?= $id ?>" class="ad<?= $live ? '' : ' off' ?>">
-        <td class="c-title"><b class="tt"><?= h($a['title']) ?></b><span class="sub"><?= h(duration((float) $a['duration_s'])) ?></span></td>
-        <td class="c-advertiser"><?= h((string) ($a['advertiser'] ?? '')) ?></td>
-        <td class="num c-plays"><?= $target ?></td>
-        <td class="today"><?= $target === 0 ? '—' : (int) $a['aired_today'] . ' played' . ((int) $a['planned_today'] > 0 ? ', ' . (int) $a['planned_today'] . ' planned' : '') . ' of ' . $target ?></td>
-        <td class="when"><?= h(Ads::describe($a)) ?></td>
-        <td class="dates"><?= $a['start_date'] !== null || $a['end_date'] !== null ? h(($a['start_date'] !== null ? $date($a['start_date']) : 'Any time') . ' – ' . ($a['end_date'] !== null ? $date($a['end_date']) : 'no end')) : 'No end' ?></td>
-        <td class="c-status"><span class="pill<?= $live ? ' auto' : '' ?>"><?= h($status) ?></span></td>
-        <td class="acts">
+    <?php foreach ($ads as $a): $id = (int) $a['track_id']; [$status, $live] = Ads::status($a, $today); $target = (int) $a['daily_target'];
+      $added = ''; try { $added = (new DateTimeImmutable((string) $a['uploaded_at'], new DateTimeZone('UTC')))->setTimezone($tz)->format('j M Y'); } catch (Throwable) {} ?>
+      <tr id="a<?= $id ?>" class="clip ad<?= $live ? '' : ' off' ?>" data-state="<?= $live ? 'on' : 'off' ?>">
+        <td class="c-sel" data-col="sel"><input type="checkbox" class="sel" value="<?= $id ?>" aria-label="Select <?= h($a['title']) ?>"></td>
+        <td class="c-title" data-col="title"><div class="tcell"><b class="tt"><?= h($a['title']) ?></b></div></td>
+        <td class="c-artist c-advertiser" data-col="advertiser"><?= h((string) ($a['advertiser'] ?? '')) ?></td>
+        <td class="num" data-col="length" data-sort="<?= h((string) (float) $a['duration_s']) ?>"><?= h(duration((float) $a['duration_s'])) ?></td>
+        <td class="c-badges" data-col="badges"><?= $clipBadges($a) ?></td>
+        <td class="num" data-col="added" data-sort="<?= h((string) $a['uploaded_at']) ?>"><?= h($added) ?></td>
+        <td class="num" data-col="loudness" data-sort="<?= $a['loudness_lufs'] !== null ? h((string) (float) $a['loudness_lufs']) : '' ?>"><?= $a['loudness_lufs'] !== null ? h($lufs((float) $a['loudness_lufs'])) : '—' ?></td>
+        <td class="num c-plays" data-col="plays" data-sort="<?= $target ?>"><?= $target ?></td>
+        <td class="today" data-col="today" data-sort="<?= (int) $a['aired_today'] ?>"><?= $target === 0 ? '—' : (int) $a['aired_today'] . ' played' . ((int) $a['planned_today'] > 0 ? ', ' . (int) $a['planned_today'] . ' planned' : '') . ' of ' . $target ?></td>
+        <td class="when" data-col="when"><?= h(Ads::describe($a)) ?></td>
+        <td class="dates" data-col="dates"><?= $a['start_date'] !== null || $a['end_date'] !== null ? h(($a['start_date'] !== null ? $date($a['start_date']) : 'Any time') . ' – ' . ($a['end_date'] !== null ? $date($a['end_date']) : 'no end')) : 'No end' ?></td>
+        <td class="c-status" data-col="status" data-sort="<?= $live ? 0 : 1 ?>"><span class="pill<?= $live ? ' auto' : '' ?>"><?= h($status) ?></span></td>
+        <td class="acts" data-col="acts">
           <?php if ($confirm === $id): ?>
             <span class="warn2">Remove this ad?</span>
             <?= $post('manage/ads', 'Yes, remove', ['action' => 'delete', 'id' => $id], 'btn sm danger') ?>
             <a class="btn sm" href="<?= h(App::url('manage/ads')) ?>">Keep</a>
           <?php else: ?>
             <a class="btn sm" href="<?= h(App::url('manage/ads') . '?edit=' . $id) ?>#a<?= $id ?>">Edit</a>
+            <?= $dl($id, 'ad') ?>
             <a class="btn sm" href="<?= h(App::url('manage/ads') . '?confirm=' . $id) ?>">Remove</a>
           <?php endif ?>
         </td>
@@ -91,6 +118,7 @@ require __DIR__ . '/_drop.php';
     </tbody>
   </table>
 </div>
+<script src="<?= h(App::asset('assets/cliplist.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/prep-core.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/prep.js')) ?>" data-kbps="<?= $prepQuality['kbps'] ?>" data-rate="<?= $prepQuality['rate'] ?>" data-precision="<?= $prepQuality['precision'] ?>" data-dither="<?= $prepQuality['dither'] ? 1 : 0 ?>" data-quality="<?= $prepQuality['q'] ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js', 'assets/master-core.js', 'assets/vendor/lame-3.100.js', 'assets/vendor/ffmpeg-decode-7.1.js'])) ?>" defer></script>
 <script src="<?= h(App::asset('assets/upload.js')) ?>" defer></script>

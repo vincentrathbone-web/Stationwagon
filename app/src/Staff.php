@@ -83,6 +83,7 @@ final class Staff
         $id = $this->db->insert('users', ['email' => strtolower(trim($email)), 'name' => mb_substr(trim($name), 0, 190), 'password_hash' => password_hash($password, PASSWORD_DEFAULT),
             'role' => $role, 'created_at' => gmdate('Y-m-d H:i:s')]);
         $this->db->insert('station_users', ['station_id' => $this->station['id'], 'user_id' => $id]);
+        $this->db->insert('user_streams', ['user_id' => $id, 'station_id' => $this->station['id']]); // the main stream, as before: more are given on the People screen
         return [$id, []];
     }
 
@@ -98,6 +99,29 @@ final class Staff
             $this->db->run('UPDATE ' . $this->db->table('users') . ' SET name = ?, email = ? WHERE id = ?', [mb_substr(trim($name), 0, 190), strtolower(trim($email)), $id]);
         }
         return $e;
+    }
+
+    /** The streams this person may go live on (ids): a DJ's own list; admins and managers have every stream. @return list<int> */
+    public function streamsOf(array $person): array
+    {
+        return Streams::allowedIds($this->db, $person);
+    }
+
+    /** Give a person exactly these streams to go live on (round 73). Returns what's wrong, or null. */
+    public function setStreams(array $actor, int $id, array $ids): ?string
+    {
+        $target = $this->get($id);
+        if ($target === null || !$this->canManage($actor, $target)) {
+            return 'You can’t change that person.';
+        }
+        if (Streams::usesAll($target)) {
+            return 'Admins and managers may use every stream.';
+        }
+        if (!array_filter(array_map('intval', $ids), fn(int $i) => Streams::byId($this->db, $i) !== null)) {
+            return 'Choose at least one stream. To stop someone going live, block them or change their role.';
+        }
+        Streams::setFor($this->db, $id, $ids);
+        return null;
     }
 
     /** A new role: from now on they may do what it allows. */

@@ -137,6 +137,21 @@ final class Roles
     }
 
     /**
+     * Schema 19: a new tick for the built-in role $key at every station (a custom role keeps what its admin chose).
+     */
+    public static function addTick(Db $db, string $key, string $tick): void
+    {
+        $t = $db->table('roles');
+        foreach ($db->run("SELECT id, permissions FROM $t WHERE `key` = ? AND built_in = 1", [$key])->fetchAll() as $r) {
+            $have = json_decode((string) $r['permissions'], true) ?: [];
+            if (!in_array($tick, $have, true)) {
+                $have[] = $tick;
+                $db->run("UPDATE $t SET permissions = ? WHERE id = ?", [json_encode(Permissions::clean($have)), $r['id']]);
+            }
+        }
+    }
+
+    /**
      * Schema 13: everyone who had their own ticks (schema 12) moves to a role with exactly those
      * ticks: a role that already has them, or a new "Custom role" made for them.
      */

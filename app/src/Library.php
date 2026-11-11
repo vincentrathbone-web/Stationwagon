@@ -31,14 +31,14 @@ final class Library
      * @param ?float $lufs the levelled copy's loudness
      * @param bool $mastered song prep mastered the copy
      * @param ?array $level song prep's normalization: source_lufs, gain_db, target, settings (see levelColumns)
-     * @param string $kind 'song' (the Music library) or 'ad' (the Ads screen: the same file handling, but no album art or copyright details)
+     * @param string $kind 'song' (the Music library), 'ad' (the Ads screen) or 'jingle' (the Jingles screen): the same file handling, but an ad or a jingle has no album art or copyright details
      * @return array{id:int,duplicate:bool,title:string}
      */
     public function import(string $path, ?string $title = null, ?string $artist = null, ?string $name = null,
                            ?string $sourceSha1 = null, ?float $lufs = null, ?array $outro = null, bool $mastered = false,
                            ?string $preset = null, ?array $level = null, string $kind = 'song'): array
     {
-        $kind = $kind === 'ad' ? 'ad' : 'song';
+        $kind = in_array($kind, ['ad', 'jingle'], true) ? $kind : 'song';
         $name = basename($name ?? $path);
         if (!is_file($path)) {
             throw new RuntimeException("No file at $path");
@@ -49,7 +49,7 @@ final class Library
         $existing = $this->db->run("SELECT id, title, kind FROM $t WHERE station_id = ? AND (sha1 = ? OR sha1 = ? OR file = ?) ORDER BY id LIMIT 1",
             [$this->station['id'], $sha1, $content, "$content.mp3"])->fetch();
         if ($existing && $existing['kind'] !== $kind) {
-            throw new RuntimeException('“' . $existing['title'] . '” is already in the ' . ($existing['kind'] === 'ad' ? 'Ads' : 'Music library') . ' with this same recording.');
+            throw new RuntimeException('“' . $existing['title'] . '” is already in the ' . (['ad' => 'Ads', 'jingle' => 'Jingles'][$existing['kind']] ?? 'Music library') . ' with this same recording.');
         }
         if ($existing) {
             return ['id' => (int) $existing['id'], 'duplicate' => true, 'title' => $existing['title']];
@@ -87,7 +87,7 @@ final class Library
             'mastered' => $mastered && $sourceSha1 !== null ? 1 : 0,
             'preset' => $mastered && $sourceSha1 !== null && $preset !== null && trim($preset) !== '' ? mb_substr(trim($preset), 0, 60) : null,
             'outro' => self::outro($outro),
-            // an ad has no album art and no copyright details
+            // an ad or a jingle has no album art and no copyright details
             'art' => $kind === 'song' && isset($tags['art']) ? $this->storeArt($tags['art']['data']) : null,
             'rights' => $kind === 'song' ? Rights::encode(Rights::normalize(self::rightsFromTags($tags))) : null,
             'kind' => $kind,
@@ -321,13 +321,18 @@ final class Library
         if ($track === null) {
             return 'That song isn’t in this library.';
         }
-        foreach ($planner->timeline($now) as $e) {
-            if ($e['type'] === 'song' && $e['track_id'] === $id && $e['start'] <= $now + 2 * (float) $planner->setting('cut_lead_seconds') + 1 && $e['end'] > $now - self::LISTENER_GRACE_SECONDS) {
-                return '“' . $track['title'] . '” is on air (or just was). Try again in a few minutes.';
+        $planners = $this->everyPlanner($planner);
+        foreach ($planners as $pl) {
+            foreach ($pl->timeline($now) as $e) {
+                if ($e['type'] === 'song' && $e['track_id'] === $id && $e['start'] <= $now + 2 * (float) $pl->setting('cut_lead_seconds') + 1 && $e['end'] > $now - self::LISTENER_GRACE_SECONDS) {
+                    return '“' . $track['title'] . '” is on air (or just was). Try again in a few minutes.';
+                }
             }
         }
         $this->db->run('DELETE FROM ' . $this->db->table('tracks') . ' WHERE id = ?', [$id]);
-        $planner->replan($now); // drops planned plays of the song
+        foreach ($planners as $pl) {
+            $pl->replan($now); // drops planned plays of the song
+        }
         $this->dropUnused($track['file']);
         $this->dropUnusedArt($track['art']);
         $kept = (int) $this->db->run('SELECT COUNT(*) FROM ' . $this->db->table('tracks') . ' WHERE sha1 = ?', [$track['sha1']])->fetchColumn();
@@ -335,6 +340,18 @@ final class Library
             @unlink($this->originalsDir() . '/' . $track['sha1'] . '.mp3');
         }
         return null;
+    }
+
+    /** The planner it was given and one for every other stream (the songs are every stream's), round 73. @return list<Planner> */
+    private function everyPlanner(Planner $given): array
+    {
+        $out = [$given];
+        foreach (Streams::all($this->db) as $s) {
+            if ((int) $s['id'] !== (int) $given->station()['id'] && ($p = Streams::planner($this->db, $s['main'] ? null : (string) $s['slug'])) !== null) {
+                $out[] = $p;
+            }
+        }
+        return $out;
     }
 
     private function dropUnused(string $file): void
@@ -429,6 +446,20 @@ HT);
     /** @var array<string,bool>|null which files were made before round 51 (see madeWithOldEncoder) */
     private ?array $encoderCache = null;
 
+    /**
+     * The name a downloaded clip is saved under: "Artist - Title.mp3" (or just the title), safe for any file system,
+     * with " (original)" for the file it was made from. An ad or a jingle is named by its title.
+     */
+    public static function downloadName(array $track, bool $original = false): string
+    {
+        $clean = fn(string $s) => trim((string) preg_replace('/\s+/u', ' ', (string) preg_replace('#[\x00-\x1f\x7f\\\\/:*?"<>|]+#u', ' ', $s)), " .");
+        $title = $clean((string) ($track['title'] ?? ''));
+        $artist = $clean((string) ($track['artist'] ?? ''));
+        $base = $artist !== '' && $title !== '' ? "$artist - $title" : ($title !== '' ? $title : ($artist !== '' ? $artist : 'clip-' . (int) ($track['id'] ?? 0)));
+        $base = mb_substr($base, 0, 150);
+        return rtrim($base, ' .') . ($original ? ' (original)' : '') . '.mp3';
+    }
+
     /** The file a song was made from, when the station has it, or null. */
     public function original(array $track): ?string
     {
@@ -454,9 +485,12 @@ HT);
         if ($this->original($track) === null) {
             return 'The station doesn’t have this song’s original, so it can’t be prepared again. Upload it again instead.';
         }
-        foreach ($planner->timeline($now) as $e) {
-            if ($e['type'] === 'song' && $e['track_id'] === $id && $e['start'] <= $now + 2 * (float) $planner->setting('cut_lead_seconds') + 1 && $e['end'] > $now - self::LISTENER_GRACE_SECONDS) {
-                return '“' . $track['title'] . '” is on air (or just was). Try again in a few minutes.';
+        $planners = $this->everyPlanner($planner);
+        foreach ($planners as $pl) {
+            foreach ($pl->timeline($now) as $e) {
+                if ($e['type'] === 'song' && $e['track_id'] === $id && $e['start'] <= $now + 2 * (float) $pl->setting('cut_lead_seconds') + 1 && $e['end'] > $now - self::LISTENER_GRACE_SECONDS) {
+                    return '“' . $track['title'] . '” is on air (or just was). Try again in a few minutes.';
+                }
             }
         }
         $scan = Mp3::scan($path, (float) Planner::settings($this->station)['segment_seconds']);
@@ -482,7 +516,9 @@ HT);
             $mastered && $preset !== null && trim($preset) !== '' ? mb_substr(trim($preset), 0, 60) : null, self::outro($outro),
             $cols['source_lufs'], $cols['level_gain_db'], $cols['level_target'], $cols['preset_settings'], $id,
         ]);
-        $planner->replan($now); // its coming plays use the new file
+        foreach ($planners as $pl) {
+            $pl->replan($now); // its coming plays use the new file
+        }
         if ($track['file'] !== $file) {
             $this->dropUnused($track['file']);
         }

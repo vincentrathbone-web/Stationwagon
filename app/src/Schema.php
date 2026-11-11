@@ -34,10 +34,14 @@ namespace Stationwagon;
  *   v15 presenter notes can be slides
  *   v16 tracks.rating (1 to 5 stars; NULL = not rated, counts as 3)
  *   v17 ads: tracks.kind ('song' or 'ad': an ad is a track the Ads screen owns), ads (how often each plays) and ad_plays (a log of ads that aired)
+ *   v18 jingles: tracks.kind can be 'jingle' (tiny station-name clips the Jingles screen owns) and jingles (which are on)
+ *   v19 the Manager role gets the new 'download' tick (Download clips); no table changes
+ *   v20 streams: stations.parent_id (a stream is a station row whose parent is the main station, which shares its library, settings and people;
+ *       its timeline, schedule, live shows and listeners are its own) and user_streams (which streams a person may go live on)
  */
 final class Schema
 {
-    public const VERSION = 17;
+    public const VERSION = 20;
 
     /** Where the station's storage is, for upgrade steps that read files (the app's folder unless a test says otherwise). */
     private static ?string $root = null;
@@ -48,7 +52,7 @@ final class Schema
         'schedule', 'live_shows', 'live_pieces', 'timeline', 'presenter_notes', 'running_orders',
         'listeners', 'listener_hours', 'listener_tally', 'listener_visitors',
         'episodes', 'episode_takes', 'episode_chunks', 'remember_tokens', 'prep_presets', 'roles',
-        'ads', 'ad_plays',
+        'ads', 'ad_plays', 'jingles', 'user_streams',
     ];
 
     /** @return array<string,string> table name => CREATE TABLE statement */
@@ -74,6 +78,7 @@ final class Schema
                 `name` VARCHAR(190) NOT NULL,
                 `timezone` VARCHAR(64) NOT NULL DEFAULT 'Africa/Johannesburg',
                 `settings` MEDIUMTEXT NULL COMMENT 'JSON: crossfade, piece length, live timeout…',
+                `parent_id` INT UNSIGNED NULL COMMENT 'a stream: the main station it belongs to (NULL: the main station)',
                 `created_at` DATETIME NOT NULL,
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `{$p}stations_slug` (`slug`)
@@ -127,7 +132,7 @@ final class Schema
                 `art` VARCHAR(40) NULL COMMENT 'album art file under storage/art',
                 `rights` TEXT NULL COMMENT 'JSON: copyright details (Rights)',
                 `rating` TINYINT UNSIGNED NULL COMMENT 'stars 1-5; NULL = not rated yet (counts as 3)',
-                `kind` ENUM('song','ad') NOT NULL DEFAULT 'song' COMMENT 'an ad belongs to the Ads screen, not the Music library',
+                `kind` ENUM('song','ad','jingle') NOT NULL DEFAULT 'song' COMMENT 'an ad belongs to the Ads screen and a jingle to the Jingles screen, not the Music library',
                 `outro` MEDIUMTEXT NULL COMMENT 'JSON: loudness (LUFS) of each second of the last minute, from song prep',
                 `status` ENUM('processing','ready','error') NOT NULL DEFAULT 'ready',
                 `created_at` DATETIME NOT NULL,
@@ -268,6 +273,8 @@ final class Schema
             'prep_presets' => self::prepPresets($p, $opts),
             'ads' => self::ads($p, $opts),
             'ad_plays' => self::adPlays($p, $opts),
+            'jingles' => self::jingles($p, $opts),
+            'user_streams' => self::userStreams($p, $opts),
         ];
     }
 
@@ -491,6 +498,39 @@ final class Schema
             ) $opts";
     }
 
+    /** Which streams a person may go live on (v20); admins and managers may use them all and have no rows that count. */
+    private static function userStreams(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}user_streams` (
+                `user_id` INT UNSIGNED NOT NULL,
+                `station_id` INT UNSIGNED NOT NULL COMMENT 'the stream (a stations row; the main station is stream 1)',
+                PRIMARY KEY (`user_id`, `station_id`),
+                KEY `{$p}user_streams_station` (`station_id`),
+                CONSTRAINT `{$p}fk_userstreams_user` FOREIGN KEY (`user_id`) REFERENCES `{$p}users` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `{$p}fk_userstreams_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE
+            ) $opts";
+    }
+
+    /**
+     * The station's jingles (v18): tiny clips that announce the station between songs. A jingle's audio is a
+     * `tracks` row with kind = 'jingle' (uploaded, prepared and streamed like a song); this row says whether
+     * it is on. The AutoDJ plays one after every N songs (the station's setting), the one played longest ago.
+     */
+    private static function jingles(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}jingles` (
+                `track_id` INT UNSIGNED NOT NULL,
+                `station_id` INT UNSIGNED NOT NULL,
+                `active` TINYINT(1) NOT NULL DEFAULT 1,
+                `notes` TEXT NULL,
+                `created_at` DATETIME NOT NULL,
+                PRIMARY KEY (`track_id`),
+                KEY `{$p}jingles_station` (`station_id`),
+                CONSTRAINT `{$p}fk_jingles_track` FOREIGN KEY (`track_id`) REFERENCES `{$p}tracks` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `{$p}fk_jingles_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE
+            ) $opts";
+    }
+
     /** The ads that aired (v17): one row per timeline entry once it has ended; kept after the ad is removed. */
     private static function adPlays(string $p, string $opts): string
     {
@@ -605,6 +645,23 @@ final class Schema
                     : $db->pdo->exec("ALTER TABLE `{$p}tracks` ADD KEY `{$p}tracks_station_kind` (`station_id`, `kind`, `status`)"),
                 self::ads($p, $opts),
                 self::adPlays($p, $opts),
+            ],
+            // jingles: a third kind of track, and which jingles are on
+            18 => [
+                "ALTER TABLE `{$p}tracks` MODIFY `kind` ENUM('song','ad','jingle') NOT NULL DEFAULT 'song' COMMENT 'an ad belongs to the Ads screen and a jingle to the Jingles screen, not the Music library'",
+                self::jingles($p, $opts),
+            ],
+            // downloads: the built-in Manager role may download clips (admins always may; a custom role's admin chooses)
+            19 => [
+                fn(Db $db) => Roles::addTick($db, 'manager', 'download'),
+            ],
+            // streams: a stream is a station row under the main station; people may go live on the streams they are given
+            // (everyone who is there now keeps the main stream, the only one there is)
+            20 => [
+                fn(Db $db) => $db->run("SHOW COLUMNS FROM `{$p}stations` LIKE 'parent_id'")->fetch() ? null
+                    : $db->pdo->exec("ALTER TABLE `{$p}stations` ADD COLUMN `parent_id` INT UNSIGNED NULL COMMENT 'a stream: the main station it belongs to (NULL: the main station)' AFTER `settings`"),
+                self::userStreams($p, $opts),
+                fn(Db $db) => $db->pdo->exec("INSERT IGNORE INTO `{$p}user_streams` (user_id, station_id) SELECT su.user_id, su.station_id FROM `{$p}station_users` su JOIN `{$p}stations` s ON s.id = su.station_id AND s.parent_id IS NULL"),
             ],
         ];
     }

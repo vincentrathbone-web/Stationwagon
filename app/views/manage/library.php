@@ -64,6 +64,7 @@ $stars = function (?int $r, string $label, bool $action = false): string {
   <button class="btn sm" type="button" id="bulkNone">Deselect</button>
 </div>
 <p class="muted2 libnote" id="libNote" role="status" aria-live="polite"></p>
+<p class="badgekey muted2" id="badgeKey">Badges: <span class="pill rights sym" aria-hidden="true">©</span> copyright details (click it) · <span class="pill auto sym" aria-hidden="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2v12M8 2v12M13 2v12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="3" cy="10" r="2" fill="currentColor"/><circle cx="8" cy="5" r="2" fill="currentColor"/><circle cx="13" cy="9" r="2" fill="currentColor"/></svg></span> mastered · <span class="pill auto sym" aria-hidden="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M5 5l3-3 3 3M5 11l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span> levelled. Hover a badge for the details.</p>
 
 <div class="tablewrap lib" id="libWrap" data-action="<?= h(App::url('manage/library')) ?>" data-csrf="<?= h($csrf) ?>" data-base="<?= h(App::url('')) ?>">
   <table class="lib" id="libTable" data-hidden="<?= h(implode(' ', $hiddenCols)) ?>">
@@ -100,9 +101,9 @@ $stars = function (?int $r, string $label, bool $action = false): string {
           <td class="c-artist" data-col="artist"><?= h($t['artist'] ?? '') ?></td>
           <td class="c-album alb" data-col="album"><?= h($t['album'] ?? '') ?></td>
           <td class="num" data-col="length" data-sort="<?= h((string) (float) $t['duration_s']) ?>"><?= h(duration((float) $t['duration_s'])) ?></td>
-          <td class="c-badges" data-col="badges"><span class="cb"><?php if ($line !== ''): ?><button type="button" class="pill rights" title="<?= h($line) ?>">© Copyright</button><?php endif ?></span><?php if ((int) ($t['mastered'] ?? 0)): ?> <span class="pill auto" title="Mastered with “<?= h($t['preset'] ?? 'Audition chain') ?>”">Mastered</span><?php endif ?><?php if ($t['loudness_lufs'] !== null): ?> <span class="pill auto" title="<?= h('Levelled to ' . $lufs((float) $t['loudness_lufs']) . ' LUFS'
+          <td class="c-badges" data-col="badges"><span class="cb"><?php if ($line !== ''): ?><button type="button" class="pill rights sym" title="<?= h($line) ?>" aria-label="Copyright: <?= h($line) ?>">©</button><?php endif ?></span><?php if ((int) ($t['mastered'] ?? 0)): ?> <span class="pill auto sym mastered" role="img" title="Mastered with “<?= h($t['preset'] ?? 'Audition chain') ?>”" aria-label="Mastered with “<?= h($t['preset'] ?? 'Audition chain') ?>”"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2v12M8 2v12M13 2v12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="3" cy="10" r="2" fill="currentColor"/><circle cx="8" cy="5" r="2" fill="currentColor"/><circle cx="13" cy="9" r="2" fill="currentColor"/></svg></span><?php endif ?><?php if ($t['loudness_lufs'] !== null): ?> <span class="pill auto sym levelled" role="img" aria-label="Levelled" title="<?= h('Levelled to ' . $lufs((float) $t['loudness_lufs']) . ' LUFS'
             . ($t['level_target'] !== null ? ' (target ' . $lufs((float) $t['level_target']) . ')' : '')
-            . ($t['level_gain_db'] !== null ? ': ' . ((float) $t['level_gain_db'] >= 0 ? '+' : '') . $lufs((float) $t['level_gain_db']) . ' dB from ' . $lufs((float) $t['source_lufs']) . ' LUFS' : '')) ?>">Levelled</span><?php endif ?></td>
+            . ($t['level_gain_db'] !== null ? ': ' . ((float) $t['level_gain_db'] >= 0 ? '+' : '') . $lufs((float) $t['level_gain_db']) . ' dB from ' . $lufs((float) $t['source_lufs']) . ' LUFS' : '')) ?>"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M5 5l3-3 3 3M5 11l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><?php endif ?></td>
           <td class="num" data-col="playlists"><?= (int) $t['playlists'] ?></td>
           <td class="num" data-col="added" data-sort="<?= h((string) $t['created_at']) ?>"><?= h($added) ?></td>
           <td class="num" data-col="loudness" data-sort="<?= $t['loudness_lufs'] !== null ? h((string) (float) $t['loudness_lufs']) : '' ?>"><?= $t['loudness_lufs'] !== null ? h($lufs((float) $t['loudness_lufs'])) : '—' ?></td>
@@ -118,6 +119,7 @@ $stars = function (?int $r, string $label, bool $action = false): string {
             <?php else: ?>
               <a class="btn sm" data-act="edit" href="<?= h(App::url('manage/library') . '?' . http_build_query(array_filter(['q' => $q, 'edit' => $id]))) ?>">Edit</a>
               <a class="btn sm" href="<?= h(App::url('manage/songprep') . '?song=' . $id) ?>" title="Try mastering presets on this song">Song prep</a>
+              <?= $dl($id, 'song') ?>
               <a class="btn sm" data-act="remove" href="<?= h(App::url('manage/library') . '?' . http_build_query(array_filter(['q' => $q, 'confirm' => $id]))) ?>">Remove</a>
             <?php endif ?>
           </td>

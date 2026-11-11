@@ -15,6 +15,7 @@
   if (!root) return;
   const $ = (id) => document.getElementById(id);
   const BASE = new URL(root.dataset.base, location.href).href;
+  const STREAM = root.dataset.stream ? encodeURIComponent(root.dataset.stream) : ""; // a further stream's address name (round 73)
   const CSRF = root.dataset.csrf, DELAY = Number(root.dataset.delay) || 20, TZ = root.dataset.tz || "UTC";
   const RATE = 44100, DEAD_AIR_S = 10;
   const kbps = () => (S && S.settings.live_kbps) || 192; // Sound & safety: sound quality of live shows
@@ -69,7 +70,7 @@
       method: "POST", cache: "no-store", body: sent.body,
       headers: { "X-CSRF": CSRF, "Content-Type": sent.type },
     };
-    const res = await fetch(BASE + "studio/api/" + action + query, opts);
+    const res = await fetch(BASE + "studio/api/" + action + query + (STREAM ? (query ? "&" : "?") + "stream=" + STREAM : ""), opts);
     const json = await res.json().catch(() => ({}));
     json.httpStatus = res.status;
     if (res.status === 401) banner("You’re signed out. Sign in again in another tab, then carry on here.", "end");

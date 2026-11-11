@@ -22,13 +22,51 @@ use Throwable;
  */
 final class StudioPage
 {
+    /**
+     * The planner for the stream the studio is on (round 73): `?stream=<name>`, else the main stream, else the first stream this person
+     * may use. Null with the reason when there is no such stream or they may not go live on it.
+     * @return array{0:?Planner,1:?string}
+     */
+    private function planner(array $me): array
+    {
+        $db = Db::fromConfig();
+        $slug = isset($_GET['stream']) && is_string($_GET['stream']) && $_GET['stream'] !== '' ? $_GET['stream'] : null;
+        $allowed = Streams::allowedIds($db, $me);
+        if ($slug === null) {
+            $main = Streams::main($db);
+            $pick = in_array((int) $main['id'], $allowed, true) ? (int) $main['id'] : ($allowed[0] ?? null);
+            if ($pick === null) {
+                return [null, 'You haven’t been given a stream to go live on. Ask the station’s manager.'];
+            }
+            $s = Streams::byId($db, $pick);
+            $slug = $s['main'] ? null : (string) $s['slug'];
+        }
+        $planner = Streams::planner($db, $slug);
+        if ($planner === null) {
+            return [null, 'There is no such stream.'];
+        }
+        if (!in_array((int) $planner->station()['id'], $allowed, true)) {
+            return [null, 'You may not go live on this stream. Ask the station’s manager.'];
+        }
+        return [$planner, null];
+    }
+
     public function page(): void
     {
         $me = App::requireRole('dj');
-        $planner = Planner::forFirstStation();
+        [$planner, $why] = $this->planner($me);
+        if ($planner === null) {
+            http_response_code(403);
+            View::render('error', ['title' => 'Studio', 'message' => $why]);
+            return;
+        }
+        $db = Db::fromConfig();
+        $streams = array_values(array_filter(Streams::all($db), fn(array $s) => in_array((int) $s['id'], Streams::allowedIds($db, $me), true)));
         View::render('studio', [
             'title' => 'Studio',
             'me' => $me,
+            'streams' => $streams,
+            'streamSlug' => ($planner->station()['parent_id'] ?? null) === null ? '' : (string) $planner->station()['slug'],
             'station' => $planner->station(),
             'csrf' => Session::csrf(),
             'delay' => (int) $planner->setting('listener_delay_seconds'),
@@ -52,7 +90,10 @@ final class StudioPage
             }
             session_write_close(); // pieces, notes and state requests must never queue behind each other
 
-            $planner = Planner::forFirstStation();
+            [$planner, $why] = $this->planner($me);
+            if ($planner === null) {
+                $this->out(['error' => $why], 403);
+            }
             $studio = new Studio($planner);
             $now = microtime(true);
             $in = $post && $action !== 'piece' && $action !== 'slide' ? (json_decode((string) file_get_contents('php://input'), true) ?: []) : [];

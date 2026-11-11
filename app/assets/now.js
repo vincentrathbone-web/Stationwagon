@@ -5,6 +5,7 @@
   const root = document.getElementById("now");
   if (!root) return;
   const BASE = root.dataset.base;
+  const STREAMQ = root.dataset.stream ? "?stream=" + encodeURIComponent(root.dataset.stream) : ""; // a further stream's address name (round 73)
   const $ = (id) => document.getElementById(id);
   const POLL_MS = 15000;
   let np = null, offset = 0, polledAt = 0, timer = 0, artShown;
@@ -13,7 +14,7 @@
     clearTimeout(timer); polledAt = Date.now();
     try {
       const sent = Date.now() / 1000;
-      const r = await fetch(BASE + "api/nowplaying.php", { cache: "no-store" });
+      const r = await fetch(BASE + "api/nowplaying.php" + STREAMQ, { cache: "no-store" });
       if (!r.ok) throw new Error(String(r.status));
       np = await r.json();
       offset = np.server_now - (sent + Date.now() / 1000) / 2; // a cached answer may be 2 s old: plenty for a progress line

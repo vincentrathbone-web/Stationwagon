@@ -11,6 +11,7 @@
 (() => {
   const root = document.getElementById("embed");
   const BASE = root.dataset.base;
+  const STREAMQ = root.dataset.stream ? "stream=" + encodeURIComponent(root.dataset.stream) : ""; // a further stream's address name (round 73)
   const $ = (id) => document.getElementById(id);
   const P = window.SwPlayer; // player.js, loaded before this
   const POLL_MS = 15000;
@@ -31,7 +32,7 @@
   async function sampleClock() {
     clockAt = Date.now();
     const sent = Date.now() / 1000;
-    const r = await fetch(BASE + "api/nowplaying.php?clock=" + Math.random().toString(36).slice(2), { cache: "no-store" });
+    const r = await fetch(BASE + "api/nowplaying.php?clock=" + Math.random().toString(36).slice(2) + (STREAMQ ? "&" + STREAMQ : ""), { cache: "no-store" });
     if (!r.ok) throw new Error(String(r.status));
     const j = await r.json(), back = Date.now() / 1000;
     clockSamples = [...clockSamples, { rtt: back - sent, offset: j.server_now - (sent + back) / 2 }].slice(-5);
@@ -44,7 +45,7 @@
     try {
       if (!clockSamples.length || Date.now() - clockAt > CLOCK_MS) np = await sampleClock();
       else {
-        const r = await fetch(BASE + "api/nowplaying.php", { cache: "no-store" }); // the shared, cached answer
+        const r = await fetch(BASE + "api/nowplaying.php" + (STREAMQ ? "?" + STREAMQ : ""), { cache: "no-store" }); // the shared, cached answer
         if (!r.ok) throw new Error(String(r.status));
         np = await r.json();
       }

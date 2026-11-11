@@ -65,9 +65,10 @@ final class Podcast
             $from = gmdate('Y-m-d H:i:s', (int) $now - 3600);
         }
         $ls = $this->db->table('live_shows');
-        $shows = $this->db->run("SELECT * FROM $ls s WHERE s.station_id = ? AND s.`open` = 0 AND s.created_at >= ?
+        $streams = $this->streamIds();
+        $shows = $this->db->run("SELECT * FROM $ls s WHERE s.station_id IN (" . implode(',', array_fill(0, count($streams), '?')) . ") AND s.`open` = 0 AND s.created_at >= ?
             AND NOT EXISTS (SELECT 1 FROM " . $this->db->table('episode_takes') . " t WHERE t.live_show_id = s.id AND t.kind = 'aired') ORDER BY s.id",
-            [$this->station['id'], $from])->fetchAll();
+            [...$streams, $from])->fetchAll();
         $added = 0;
         foreach ($shows as $show) {
             $seconds = (float) $this->db->run('SELECT COALESCE(SUM(duration_s), 0) FROM ' . $this->db->table('live_pieces') . ' WHERE show_id = ?', [$show['id']])->fetchColumn();
@@ -233,7 +234,15 @@ final class Podcast
 
     private function show(string $publicId): ?array
     {
-        return $this->db->run('SELECT * FROM ' . $this->db->table('live_shows') . ' WHERE public_id = ? AND station_id = ?', [$publicId, $this->station['id']])->fetch() ?: null;
+        $streams = $this->streamIds();
+        return $this->db->run('SELECT * FROM ' . $this->db->table('live_shows') . ' WHERE public_id = ? AND station_id IN (' . implode(',', array_fill(0, count($streams), '?')) . ')', [$publicId, ...$streams])->fetch() ?: null;
+    }
+
+    /** The station's podcast is one for all its streams (round 73): the main station's id and every further stream's. @return list<int> */
+    private function streamIds(): array
+    {
+        $t = $this->db->table('stations');
+        return array_map('intval', $this->db->run("SELECT id FROM $t WHERE id = ? OR parent_id = ?", [$this->station['id'], $this->station['id']])->fetchAll(\PDO::FETCH_COLUMN));
     }
 
     private function mayRecord(array $user, array $show): bool

@@ -252,7 +252,7 @@ try {
         $db->pdo->exec('ALTER TABLE ' . $db->table('tracks') . ' DROP INDEX ' . $db->table('tracks_station_kind') . ', DROP COLUMN kind');
         $db->run('UPDATE ' . $db->table('settings') . " SET value = '16' WHERE name = 'schema_version'");
         $ran = Schema::upgrade($db, $root);
-        return $ran === [17] && $db->run('SHOW COLUMNS FROM ' . $db->table('tracks') . " LIKE 'kind'")->fetch() !== false
+        return $ran === [17, 18, 19, 20] && $db->run('SHOW COLUMNS FROM ' . $db->table('tracks') . " LIKE 'kind'")->fetch() !== false
             && $db->run("SHOW TABLES LIKE 'sw\_ads'")->fetch() !== false && $db->run("SHOW TABLES LIKE 'sw\_ad\_plays'")->fetch() !== false
             && Schema::upgrade($db, $root) === [];
     })());

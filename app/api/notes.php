@@ -15,7 +15,7 @@ if (!Config::isInstalled()) {
     exit;
 }
 try {
-    $planner = Planner::forFirstStation();
+    $planner = Planner::forRequest();
     echo json_encode((new Notes($planner->db(), $planner->station()))->forListeners(microtime(true)), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 } catch (Throwable $ex) {
     error_log('Stationwagon notes: ' . $ex);

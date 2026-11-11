@@ -1,11 +1,12 @@
 <?php use function Stationwagon\h; use Stationwagon\{App, Config};
-/** @var ?array $station @var ?array $onAir @var array $today @var int $delay */
+/** @var ?array $station @var ?array $onAir @var array $today @var int $delay @var string $streamSlug */
+$streamSlug = $streamSlug ?? '';
 $name = $station['name'] ?? 'Stationwagon';
 $tz = new DateTimeZone($station['timezone'] ?? 'UTC');
 $day = (new DateTimeImmutable('now', $tz))->format('l j F');
 $hm = fn(string $t): string => substr($t, 0, 5);
 ?>
-<div class="lp" id="player" data-base="<?= h(App::url('')) ?>" data-delay="<?= (int) $delay ?>" data-station="<?= h($name) ?>" data-meter="<?= h(App::asset('assets/outwave-meter.js')) ?>">
+<div class="lp" id="player" data-base="<?= h(App::url('')) ?>"<?= $streamSlug !== '' ? ' data-stream="' . h($streamSlug) . '"' : '' ?> data-delay="<?= (int) $delay ?>" data-station="<?= h($name) ?>" data-meter="<?= h(App::asset('assets/outwave-meter.js')) ?>">
   <div class="lp-stack">
     <section class="lp-win" aria-label="Player">
       <div class="lp-titlebar"><span><?= h($name) ?></span><span class="lp-lamp"><i></i><span id="lpMode">AutoDJ</span></span></div>
@@ -73,7 +74,7 @@ $hm = fn(string $t): string => substr($t, 0, 5);
         </ol>
       <?php endif ?>
     </section>
-    <noscript><p class="muted">The player needs JavaScript. Any HLS player can play the stream at <code><?= h(App::url('api/stream.php')) ?></code>.</p></noscript>
+    <noscript><p class="muted">The player needs JavaScript. Any HLS player can play the stream at <code><?= h(App::url('api/stream.php') . ($streamSlug !== '' ? '?stream=' . rawurlencode($streamSlug) : '')) ?></code>.</p></noscript>
   </aside>
 </div>
 <p class="lp-foot"><a href="<?= h(App::url('podcast')) ?>">Podcast: past shows</a> · Listening sets no cookies. The station counts its listeners for 30 days by internet address and browser: <a href="<?= h(App::url('privacy')) ?>">Privacy</a></p>

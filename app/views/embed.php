@@ -15,7 +15,7 @@ $name = $station['name'] ?? 'Stationwagon';
 <link rel="stylesheet" href="<?= h(App::asset('assets/app.css')) ?>">
 </head>
 <body class="embed<?= $bar ? ' barpage' : '' ?>">
-<div class="em<?= $bar ? ' bar' : '' ?>" id="embed"<?= $bar ? ' data-kind="bar"' : '' ?> data-base="<?= h(App::url('')) ?>" data-delay="<?= (int) $delay ?>" data-station="<?= h($name) ?>" data-meter="<?= h(App::asset('assets/outwave-meter.js')) ?>">
+<div class="em<?= $bar ? ' bar' : '' ?>" id="embed"<?= $bar ? ' data-kind="bar"' : '' ?> data-base="<?= h(App::url('')) ?>"<?= ($streamSlug ?? '') !== '' ? ' data-stream="' . h($streamSlug) . '"' : '' ?> data-delay="<?= (int) $delay ?>" data-station="<?= h($name) ?>" data-meter="<?= h(App::asset('assets/outwave-meter.js')) ?>">
   <?php /* shown when the frame is tall enough (280 px and up, app.css): the album art, the copyright line, the spectrum and the output strip */ ?>
   <div class="em-art" id="emArt" role="img" aria-label="Album art (a CD in its case when the song has none)">
     <img id="emArtImg" alt="" hidden>

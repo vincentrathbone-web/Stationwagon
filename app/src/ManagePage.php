@@ -14,14 +14,34 @@ use RuntimeException;
 final class ManagePage
 {
     private Db $db;
+    /** The stream the screen is about (the schedule, the AutoDJ, listeners): the main one unless another is picked (round 73) */
     private Planner $planner;
+    /** The main station: the library, the sound settings and the people, which every stream shares */
     private array $station;
+    /** The picked stream, as station() gives it */
+    private array $stream;
 
     public function __construct()
     {
-        $this->planner = Planner::forFirstStation();
+        Session::start();
         $this->db = Db::fromConfig();
-        $this->station = $this->planner->station();
+        $this->station = Streams::main($this->db);
+        $this->stream = Streams::selected($this->db);
+        $this->planner = new Planner($this->db, $this->stream, SW_ROOT);
+    }
+
+    /** Plan every stream again (what changed is every stream's: a song, a playlist, the sound settings, ads or jingles). */
+    private function replanAll(float $now): void
+    {
+        foreach (Streams::all($this->db) as $s) {
+            Streams::planner($this->db, $s['main'] ? null : (string) $s['slug'])?->replan($now);
+        }
+    }
+
+    /** Whether this person may act on the picked stream (admins and managers on all; others on the ones they are given). */
+    private function mayStream(array $me): bool
+    {
+        return Streams::may($this->db, $me, (int) $this->stream['id']);
     }
 
     // ---- Overview and Skip ---------------------------------------------------------------
@@ -39,9 +59,9 @@ final class ManagePage
             'songs' => count($library->tracks()),
             'bytes' => $library->bytes(),
             'playlists' => count((new Playlists($this->db, $this->station))->all()),
-            'blocks' => count((new Schedule($this->db, $this->station))->all()),
+            'blocks' => count((new Schedule($this->db, $this->stream))->all()),
             'block' => $this->planner->blockAt($now),
-            'listening' => ($listeners = new Listeners($this->db, $this->station))->now($now),
+            'listening' => ($listeners = new Listeners($this->db, $this->stream))->now($now),
             'todayPeak' => $listeners->daily($now, 1)[0]['peak'],
             'jobs' => Jobs::health($now),
         ]);
@@ -50,6 +70,10 @@ final class ManagePage
     public function skip(): void
     {
         $me = $this->postAs('desk', 'manage');
+        if (!$this->mayStream($me)) {
+            Session::flash('bad', 'You may not skip songs on this stream.');
+            App::redirect('manage');
+        }
         $now = microtime(true);
         $r = $this->planner->skip($now)['result'];
         if ($r['cut_at'] === null) {
@@ -280,6 +304,35 @@ final class ManagePage
         ], 'songprep');
     }
 
+    /**
+     * Download a clip (a song, an ad or a jingle), round 71: `?id=<track>&version=processed|original`. The processed
+     * version is the file the station plays (levelled and prepared); the original is the file it was made from, when the
+     * station kept it. Needs the "Download clips" tick; never cached by others; saved as "Artist - Title.mp3".
+     */
+    public function download(): void
+    {
+        App::requireRole('download');
+        $library = new Library($this->db, $this->station, SW_ROOT);
+        $track = $library->get((int) ($_GET['id'] ?? 0));
+        $original = ($_GET['version'] ?? 'processed') === 'original';
+        $path = $track === null ? null : ($original ? $library->original($track) : SW_ROOT . '/storage/media/' . basename((string) $track['file']));
+        if ($path === null || !is_file($path)) {
+            http_response_code(404);
+            header('Content-Type: text/plain; charset=utf-8');
+            echo $track === null ? 'That clip isn’t here.' : ($original ? 'The station doesn’t have the original of that clip.' : 'The file of that clip is missing.');
+            exit;
+        }
+        $name = Library::downloadName($track, $original);
+        $ascii = preg_replace('/[^A-Za-z0-9 ._()\-]+/', '_', (string) (function_exists('iconv') ? @iconv('UTF-8', 'ASCII//TRANSLIT', $name) : $name)) ?: 'clip.mp3';
+        header('Content-Type: audio/mpeg');
+        header('Content-Length: ' . filesize($path));
+        header('Content-Disposition: attachment; filename="' . $ascii . '"; filename*=UTF-8\'\'' . rawurlencode($name));
+        header('Cache-Control: private, no-store');
+        header('X-Content-Type-Options: nosniff');
+        readfile($path);
+        exit;
+    }
+
     /** A song's original, for the Song prep screen (managers only; never cached by others). */
     public function songprepOriginal(): void
     {
@@ -341,7 +394,7 @@ final class ManagePage
                 $mastered = (string) (((array) ($_POST['prep_mastered'] ?? []))[$i] ?? '') === '1';
                 $preset = ((array) ($_POST['prep_preset'] ?? []))[$i] ?? null;
                 // the upload window's details (round 56), checked before the song is kept
-                $details = $kind === 'song' ? self::detailsPosted($i) : null; // an ad has no details window
+                $details = $kind === 'song' ? self::detailsPosted($i) : null; // an ad or a jingle has no details window
                 if (is_string($details)) {
                     throw new RuntimeException($details);
                 }
@@ -350,6 +403,9 @@ final class ManagePage
                 $added = $added || !$r['duplicate'];
                 if ($kind === 'ad' && !$r['duplicate']) {
                     (new Ads($this->db, $this->station))->create((int) $r['id']); // its plan: 5 plays a day, every day, all day
+                }
+                if ($kind === 'jingle' && !$r['duplicate']) {
+                    (new Jingles($this->db, $this->station))->create((int) $r['id']); // on
                 }
                 $note = null;
                 if ($details !== null && !$r['duplicate']) {
@@ -366,7 +422,7 @@ final class ManagePage
             }
         }
         if ($added) {
-            $this->planner->replan(microtime(true));
+            $this->replanAll(microtime(true));
         }
         return $out;
     }
@@ -439,6 +495,13 @@ final class ManagePage
         return min($bytes((string) ini_get('upload_max_filesize')), $bytes((string) ini_get('post_max_size')));
     }
 
+    /** The rows of an Ads or Jingles list whose title or $field contains $q (a search box, like the Music library's). */
+    private static function clipsMatching(array $rows, string $q, string $field): array
+    {
+        $q = trim($q);
+        return $q === '' ? $rows : array_values(array_filter($rows, fn(array $r) => mb_stripos((string) $r['title'], $q) !== false || mb_stripos((string) ($r[$field] ?? ''), $q) !== false));
+    }
+
     // ---- Ads (round 63) --------------------------------------------------------------------
 
     /** The Ads screen: the ad-break settings, uploads, and each ad's plan (plays a day, days, hours, dates). */
@@ -477,13 +540,13 @@ final class ManagePage
                 [$updated, $problem] = $ads->saveSettings($_POST);
                 if ($updated !== null) {
                     $this->station = $updated;
-                    $this->planner->replan(microtime(true)); // the coming songs and ads follow the new settings
+                    $this->replanAll(microtime(true)); // the coming songs and ads follow the new settings
                 }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Saved. Ad breaks follow this from the next song planned.');
             } elseif ($action === 'update') {
                 $problem = $ads->update($id, $_POST);
                 if ($problem === null) {
-                    $this->planner->replan(microtime(true));
+                    $this->replanAll(microtime(true));
                 } else {
                     $edit = $id; // back to the form, with what was wrong
                 }
@@ -491,14 +554,23 @@ final class ManagePage
             } elseif ($action === 'delete') {
                 $problem = $ads->get($id) === null ? 'That ad isn’t here.' : $library->delete($id, $this->planner, microtime(true));
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Ad removed.');
+            } elseif ($action === 'bulk') {
+                $on = ($_POST['value'] ?? '') === 'on';
+                $n = $ads->setActive((array) ($_POST['ids'] ?? []), $on);
+                if ($n > 0) {
+                    $this->replanAll(microtime(true));
+                }
+                Session::flash($n > 0 ? 'ok' : 'bad', $n > 0 ? $n . ($n === 1 ? ' ad ' : ' ads ') . ($on ? 'resumed.' : 'paused.') : 'Choose at least one ad first.');
+                $back = trim((string) ($_POST['q'] ?? ''));
             }
-            App::redirect('manage/ads' . ($edit ? '?edit=' . $edit : ''));
+            App::redirect('manage/ads' . ($edit ? '?edit=' . $edit : (($back ?? '') !== '' ? '?q=' . rawurlencode($back) : '')));
         }
         $me = App::requireRole('library');
         $now = microtime(true);
         $ads->logAired($now);
         $this->render('ads', 'Ads', $me, [
-            'ads' => $ads->all($now),
+            'ads' => self::clipsMatching($ads->all($now), $q = trim((string) ($_GET['q'] ?? '')), 'advertiser'),
+            'q' => $q,
             'adSettings' => Ads::settings($this->station),
             'edit' => (int) ($_GET['edit'] ?? 0),
             'confirm' => (int) ($_GET['confirm'] ?? 0),
@@ -509,6 +581,138 @@ final class ManagePage
             'prep' => StationSettings::prep($this->station),
             'preset' => (new PrepPresets($this->db, $this->station))->forImport(),
             'relevel' => null,
+        ]);
+    }
+
+    // ---- Jingles (round 70) ----------------------------------------------------------------
+
+    /** The Jingles screen: how often the AutoDJ plays one, uploads, and each jingle (on or off, a note). */
+    public function jingles(): void
+    {
+        $library = new Library($this->db, $this->station, SW_ROOT);
+        $jingles = new Jingles($this->db, $this->station);
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+            $wantsJson = str_contains((string) ($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json');
+            if (empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+                $this->uploadTooBig($wantsJson, 'manage/jingles');
+            }
+            $this->postAs('library', 'manage/jingles', $wantsJson);
+            $action = (string) ($_POST['action'] ?? '');
+            $id = (int) ($_POST['id'] ?? 0);
+            $edit = 0;
+            if ($action === 'upload') {
+                $results = $this->upload($library, 'jingle');
+                if ($wantsJson) {
+                    $this->json(['results' => $results]);
+                }
+                foreach ($results as $r) {
+                    Session::flash($r['ok'] ? 'ok' : 'bad', $r['ok'] ? ($r['duplicate'] ? "Already in the jingles: {$r['title']}" : "Added: {$r['title']}. It plays between songs from the next plan.") : "{$r['name']}: {$r['error']}");
+                }
+            } elseif ($action === 'original') {
+                // after an upload: the file the jingle was prepared from (the same as for songs)
+                $file = $_FILES['original'] ?? null;
+                $problem = $jingles->get($id) === null ? 'That jingle isn’t here.'
+                    : (is_array($file) && (int) $file['error'] === UPLOAD_ERR_OK && (is_uploaded_file((string) $file['tmp_name']) || PHP_SAPI === 'cli')
+                        ? $library->keepOriginal($id, (string) $file['tmp_name']) : 'The original didn’t arrive.');
+                if ($wantsJson) {
+                    $this->json(['ok' => $problem === null, 'error' => $problem]);
+                }
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Original kept.');
+            } elseif ($action === 'settings') {
+                [$updated, $problem] = $jingles->saveSettings($_POST);
+                if ($updated !== null) {
+                    $this->station = $updated;
+                    $this->replanAll(microtime(true)); // the coming songs and jingles follow the new settings
+                }
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Saved. Jingles follow this from the next song planned.');
+            } elseif ($action === 'update') {
+                $problem = $jingles->update($id, $_POST);
+                if ($problem === null) {
+                    $this->replanAll(microtime(true));
+                } else {
+                    $edit = $id; // back to the form, with what was wrong
+                }
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Saved.');
+            } elseif ($action === 'delete') {
+                $problem = $jingles->get($id) === null ? 'That jingle isn’t here.' : $library->delete($id, $this->planner, microtime(true));
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Jingle removed.');
+            } elseif ($action === 'bulk') {
+                $on = ($_POST['value'] ?? '') === 'on';
+                $n = $jingles->setActive((array) ($_POST['ids'] ?? []), $on);
+                if ($n > 0) {
+                    $this->replanAll(microtime(true));
+                }
+                Session::flash($n > 0 ? 'ok' : 'bad', $n > 0 ? $n . ($n === 1 ? ' jingle ' : ' jingles ') . 'turned ' . ($on ? 'on.' : 'off.') : 'Choose at least one jingle first.');
+                $back = trim((string) ($_POST['q'] ?? ''));
+            }
+            App::redirect('manage/jingles' . ($edit ? '?edit=' . $edit : (($back ?? '') !== '' ? '?q=' . rawurlencode($back) : '')));
+        }
+        $me = App::requireRole('library');
+        $now = microtime(true);
+        $this->render('jingles', 'Jingles', $me, [
+            'jingles' => self::clipsMatching($jingles->all($now), $q = trim((string) ($_GET['q'] ?? '')), 'notes'),
+            'q' => $q,
+            'jingleSettings' => Jingles::settings($this->station),
+            'edit' => (int) ($_GET['edit'] ?? 0),
+            'confirm' => (int) ($_GET['confirm'] ?? 0),
+            'now' => $now,
+            'songs' => count($library->tracks()),
+            'maxUpload' => self::maxUploadBytes(),
+            'prepQuality' => StationSettings::prepQuality($this->station),
+            'prep' => StationSettings::prep($this->station),
+            'preset' => (new PrepPresets($this->db, $this->station))->forImport(),
+            'relevel' => null,
+        ]);
+    }
+
+    // ---- Streams (round 73) ------------------------------------------------------------------
+
+    /** The Streams screen: the main stream and the further ones; add, rename, move to another address name, remove (admins). */
+    public function streams(): void
+    {
+        $db = $this->db;
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+            $this->postAs('admin', 'manage/streams');
+            $action = (string) ($_POST['action'] ?? '');
+            $id = (int) ($_POST['id'] ?? 0);
+            $edit = 0;
+            if ($action === 'create') {
+                $name = (string) ($_POST['name'] ?? '');
+                $slug = trim((string) ($_POST['slug'] ?? '')) !== '' ? (string) $_POST['slug'] : Streams::slugFor($name);
+                [$new, $problem] = Streams::create($db, $name, $slug);
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Stream added. It starts with an empty week and plays the whole library; give it playlists on its schedule, and let DJs go live on it from People.');
+            } elseif ($action === 'update') {
+                $problem = Streams::update($db, $id, (string) ($_POST['name'] ?? ''), (string) ($_POST['slug'] ?? ''));
+                $edit = $problem ? $id : 0;
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Saved.');
+            } elseif ($action === 'delete') {
+                $problem = Streams::delete($db, $id);
+                if ($problem === null && ($_SESSION['sw_stream'] ?? '') !== '' && Streams::bySlug($db, (string) $_SESSION['sw_stream']) === null) {
+                    unset($_SESSION['sw_stream']);
+                }
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Stream removed.');
+            }
+            App::redirect('manage/streams' . ($edit ? '?edit=' . $edit : ''));
+        }
+        $me = App::requireRole('admin');
+        $now = microtime(true);
+        $rows = [];
+        foreach (Streams::all($db) as $s) {
+            $view = Streams::view($s, $this->station);
+            $planner = new Planner($db, $view, SW_ROOT);
+            $rows[] = $s + [
+                'on_air' => $planner->nowPlaying($now)['current'] ?? null,
+                'listening' => (new Listeners($db, $view))->now($now),
+                'blocks' => count((new Schedule($db, $view))->all()),
+                'people' => $s['main'] ? null : (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('user_streams') . ' WHERE station_id = ?', [$s['id']])->fetchColumn(),
+            ];
+        }
+        $this->render('streams', 'Streams', $me, [
+            'rows' => $rows,
+            'edit' => (int) ($_GET['edit'] ?? 0),
+            'confirm' => (int) ($_GET['confirm'] ?? 0),
+            'reserved' => Streams::RESERVED,
+            'base' => App::url(''),
         ]);
     }
 
@@ -549,7 +753,7 @@ final class ManagePage
                 default => 'Unknown action.',
             };
             if ($problem === null) {
-                $this->planner->replan(microtime(true));
+                $this->replanAll(microtime(true));
             }
             Session::flash($problem ? 'bad' : 'ok', $problem ?? match ($action) {
                 'delete' => 'Playlist deleted, with its schedule blocks.',
@@ -579,9 +783,13 @@ final class ManagePage
 
     public function schedule(): void
     {
-        $schedule = new Schedule($this->db, $this->station);
+        $schedule = new Schedule($this->db, $this->stream);
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-            $this->postAs('schedule', 'manage/schedule');
+            $me = $this->postAs('schedule', 'manage/schedule');
+            if (!$this->mayStream($me)) {
+                Session::flash('bad', 'You may not change the schedule of this stream.');
+                App::redirect('manage/schedule');
+            }
             if (($_POST['action'] ?? '') === 'delete') {
                 $problem = $schedule->delete((int) ($_POST['id'] ?? 0));
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Block removed. It applies from the next song.');
@@ -594,7 +802,7 @@ final class ManagePage
                 }
                 Session::flash('ok', 'Block added. It applies from the next song.');
             }
-            $this->planner->replan(microtime(true));
+            $this->planner->replan(microtime(true)); // the schedule is this stream's own
             App::redirect('manage/schedule');
         }
         $me = App::requireRole('schedule');
@@ -634,6 +842,7 @@ final class ManagePage
                 $problem = match ($action) {
                     'details' => implode(' ', $staff->edit($me, $id, (string) ($_POST['name'] ?? ''), (string) ($_POST['email'] ?? ''))) ?: null,
                     'role' => $staff->setRole($me, $id, (string) ($_POST['role'] ?? '')),
+                    'streams' => $staff->setStreams($me, $id, (array) ($_POST['streams'] ?? [])),
                     'password' => $staff->resetPassword($me, $id, (string) ($_POST['password'] ?? ''), Auth::fromConfig()),
                     'block' => $staff->block($me, $id, $this->planner),
                     'unblock' => $staff->unblock($me, $id),
@@ -646,6 +855,7 @@ final class ManagePage
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? match ($action) {
                     'details' => 'Name and email saved.',
                     'role' => 'Role changed. They may now do what that role allows.',
+                    'streams' => 'Saved. They may go live on the streams you ticked.',
                     'password' => 'New password set. Their other sessions are signed out.',
                     'block' => 'Blocked. They are signed out everywhere, and if they were live the AutoDJ has taken over.',
                     'unblock' => 'Unblocked. They can sign in again.',
@@ -715,7 +925,7 @@ final class ManagePage
         }
         $me = App::requireRole('listeners');
         $now = microtime(true);
-        $listeners = new Listeners($this->db, $this->station);
+        $listeners = new Listeners($this->db, $this->stream); // each stream counts its own listeners (round 73)
         $this->render('listeners', 'Listeners', $me, [
             'now' => $now,
             'listening' => $listeners->now($now),
@@ -830,6 +1040,8 @@ final class ManagePage
             'inner' => $view,
             'section' => $section ?? $view,
             'station' => $this->station,
+            'streams' => Streams::all($this->db),
+            'stream' => $this->stream,
             'nowPlaying' => $view === 'overview' ? null : $this->planner->nowPlaying(microtime(true))['current'],
             'csrf' => Session::csrf(),
             'wide' => true,

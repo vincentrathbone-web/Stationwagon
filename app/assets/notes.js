@@ -9,6 +9,7 @@
   if (!root || !box) return;
   const $ = (id) => document.getElementById(id);
   const BASE = new URL(root.dataset.base, location.href).href, DELAY = Number(root.dataset.delay) || 0;
+  const STREAMQ = root.dataset.stream ? "?stream=" + encodeURIComponent(root.dataset.stream) : ""; // a further stream's address name (round 73)
   const KIND = { verse: "Verse", refs: "References", video: "Video", note: "Note", slides: "Slides" };
   const ICON = {
     verse: "M1 3.5C3 2.6 5.5 2.6 7.5 3.6V13c-2-1-4.5-1-6.5-.1zM8.5 3.6c2-1 4.5-1 6.5-.1v9.4c-2-.9-4.5-.9-6.5.1z",
@@ -30,7 +31,7 @@
     if (loading) return;
     loading = true;
     try {
-      const r = await fetch(BASE + "api/notes.php", { cache: "no-store" });
+      const r = await fetch(BASE + "api/notes.php" + STREAMQ, { cache: "no-store" });
       if (r.ok) { data = await r.json(); rev = data.rev; render(); }
     } catch (_) { /* offline: try again on the next change */ } finally { loading = false; }
   }

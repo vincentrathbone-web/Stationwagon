@@ -44,7 +44,7 @@
     cb.textContent = "";
     if (hasRights(t.rights)) {
       const p = document.createElement("button");
-      p.type = "button"; p.className = "pill rights"; p.title = line || "Copyright details"; p.textContent = "© Copyright";
+      p.type = "button"; p.className = "pill rights sym"; p.title = line || "Copyright details"; p.setAttribute("aria-label", "Copyright: " + (line || "details")); p.textContent = "©";
       cb.append(" ", p);
     }
     const stars = tr.querySelector(".stars");

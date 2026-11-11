@@ -24,7 +24,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
 // JSON from fetch() or navigator.sendBeacon() (which sends it as text/plain)
 $in = json_decode((string) file_get_contents('php://input', false, null, 0, 1024), true);
 try {
-    $planner = Planner::forFirstStation();
+    $planner = Planner::forRequest();
     $count = (new Listeners($planner->db(), $planner->station()))->ping(
         is_array($in) ? (string) ($in['sid'] ?? '') : '', is_array($in) ? (string) ($in['source'] ?? '') : '',
         microtime(true), is_array($in) && !empty($in['stop']), Request::clientAddress(), (string) ($_SERVER['HTTP_USER_AGENT'] ?? ''));

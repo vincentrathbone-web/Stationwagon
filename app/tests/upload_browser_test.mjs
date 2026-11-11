@@ -282,7 +282,7 @@ try {
     check("the stored file really measures -16 LUFS (within 0.1: LAME's own gain cut is undone)", near(measured, -16, 0.1), measured && measured.toFixed(2));
   }
   await go(`${base}/manage/library`);
-  check("the library shows it Mastered and Levelled", await evaluate(`(() => { const row = [...document.querySelectorAll('tbody tr')].find((tr) => tr.textContent.includes(${JSON.stringify(songTitle)})); return !!row && row.textContent.includes('Mastered') && row.textContent.includes('Levelled'); })()`));
+  check("the library shows it Mastered and Levelled", await evaluate(`(() => { const row = [...document.querySelectorAll('tbody tr')].find((tr) => tr.textContent.includes(${JSON.stringify(songTitle)})); return !!row && !!row.querySelector('.sym.mastered[title^="Mastered"]') && !!row.querySelector('.sym.levelled[title^="Levelled"]'); })()`));
   rows = await upload([song]);
   check("the same song again is caught as a duplicate", rows && rows[0].cls === "ok" && rows[0].text === "Already there", rows && rows[0].text);
 

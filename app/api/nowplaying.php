@@ -13,7 +13,7 @@ if (!Config::isInstalled()) {
     exit;
 }
 try {
-    echo json_encode((new NowPlaying(Planner::forFirstStation()))->at(microtime(true)),
+    echo json_encode((new NowPlaying(Planner::forRequest()))->at(microtime(true)),
         JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
 } catch (Throwable $ex) {
     error_log('Stationwagon now playing: ' . $ex);

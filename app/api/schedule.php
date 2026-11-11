@@ -14,7 +14,7 @@ if (!Config::isInstalled()) {
     exit;
 }
 try {
-    $planner = Planner::forFirstStation();
+    $planner = Planner::forRequest();
     $station = $planner->station();
     echo json_encode([
         'station' => ['name' => $station['name'], 'timezone' => $station['timezone']],

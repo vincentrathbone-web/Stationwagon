@@ -14,7 +14,7 @@ if (!Config::isInstalled()) {
 }
 Jobs::afterVisit();
 try {
-    $planner = Planner::forFirstStation();
+    $planner = Planner::forRequest();
     $now = microtime(true);
     $entries = $planner->window($now, $now - 30, $now + 900);
     // The player reads its songs about 20 s ahead of what it plays, to draw the coming output: give

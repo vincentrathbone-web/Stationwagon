@@ -20,7 +20,15 @@ $deck = fn(string $k): string => '
     </div>
   </section>';
 ?>
-<div class="st" id="studio" data-base="<?= h(App::url('')) ?>" data-csrf="<?= h($csrf) ?>" data-delay="<?= (int) $delay ?>" data-tz="<?= h($station['timezone']) ?>" data-meter="<?= h(App::asset('assets/outwave-meter.js')) ?>" data-encoder="<?= h(App::asset('assets/studio-encoder.js')) ?>">
+<?php if (count($streams ?? []) > 1): // which stream the studio goes live on (round 73) ?>
+<nav class="streamswitch" aria-label="Stream">
+  <span class="muted2">Go live on</span>
+  <?php foreach ($streams as $s): $here = (int) $s['id'] === (int) $station['id']; ?>
+    <a class="<?= $here ? 'on' : '' ?>" href="<?= h(App::url('studio') . (empty($s['main']) ? '?stream=' . rawurlencode((string) $s['slug']) : '')) ?>"<?= $here ? ' aria-current="true"' : '' ?>><?= h($s['name']) ?></a>
+  <?php endforeach ?>
+</nav>
+<?php endif ?>
+<div class="st" id="studio" data-base="<?= h(App::url('')) ?>"<?= ($streamSlug ?? '') !== '' ? ' data-stream="' . h($streamSlug) . '"' : '' ?> data-csrf="<?= h($csrf) ?>" data-delay="<?= (int) $delay ?>" data-tz="<?= h($station['timezone']) ?>" data-meter="<?= h(App::asset('assets/outwave-meter.js')) ?>" data-encoder="<?= h(App::asset('assets/studio-encoder.js')) ?>">
   <section class="st-win st-top" aria-label="Show">
     <div class="st-brand">Studio<small><?= h($station['name']) ?> · live desk</small></div>
     <div class="st-show">

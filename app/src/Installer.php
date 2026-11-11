@@ -253,6 +253,8 @@ final class Installer
             'ads_enabled' => 1, 'ads_every_songs' => 3, 'ads_per_break' => 1, 'ads_gap_minutes' => 0,
             // ads are short, so they blend with the songs around them over 2 s, not the songs' 6 s (round 64)
             'ads_crossfade_seconds' => 2.0,
+            // jingles (round 70): one after every 4 songs; they blend over 1 s (the Jingles screen, Sound & safety)
+            'jingles_enabled' => 1, 'jingles_every_songs' => 4, 'jingles_crossfade_seconds' => 1.0,
             'live_timeout_seconds' => 8, 'listener_delay_seconds' => 20,
             'live_fade_seconds' => 6.0, // the go-live fade; until 2026-10-20 it was the crossfade
             // v0.4 Sound & safety (round 25)

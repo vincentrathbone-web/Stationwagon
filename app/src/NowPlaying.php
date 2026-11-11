@@ -34,10 +34,10 @@ final class NowPlaying
             if ($current === null && $e['start'] <= $heard && ($heard < $e['end'] || $openLive)) {
                 $current = $e;
             } elseif ($current === null && $e['end'] <= $heard) {
-                if ($e['type'] === 'song') {
-                    $recent[] = $e;
+                if ($e['type'] === 'song' && empty($e['jingle'])) {
+                    $recent[] = $e; // (a jingle is not listed as a song that was played)
                 }
-            } elseif ($current !== null && $e['type'] === 'song' && count($next) < self::NEXT) {
+            } elseif ($current !== null && $e['type'] === 'song' && empty($e['jingle']) && count($next) < self::NEXT) {
                 $next[] = $e;
             }
         }

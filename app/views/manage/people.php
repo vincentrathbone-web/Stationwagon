@@ -54,6 +54,19 @@ $isAdmin = $me['role'] === 'admin';
               <label class="field"><span class="lbl">Role</span><select name="role"><?= $roleOptions($p['role']) ?></select></label>
               <button class="btn sm" type="submit">Change role</button>
             </form>
+            <?php if (count($streams ?? []) > 1): // the streams a person may go live on (round 73) ?>
+              <form method="post" action="<?= h($url) ?>" class="formrow streamform">
+                <?= $hidden('streams', $pid) ?>
+                <?php if (Stationwagon\Streams::usesAll($p)): ?>
+                  <p class="hint grow">Admins and managers may go live on every stream.</p>
+                <?php else: $mine2 = $staff->streamsOf($p); ?>
+                  <fieldset class="field daypick"><legend class="lbl">May go live on</legend>
+                    <?php foreach ($streams as $s): ?><label class="swrow"><input class="sw" type="checkbox" name="streams[]" value="<?= (int) $s['id'] ?>"<?= in_array((int) $s['id'], $mine2, true) ? ' checked' : '' ?>> <?= h($s['name']) ?></label><?php endforeach ?>
+                  </fieldset>
+                  <button class="btn sm" type="submit">Save streams</button>
+                <?php endif ?>
+              </form>
+            <?php endif ?>
             <form method="post" action="<?= h($url) ?>" class="formrow">
               <?= $hidden('password', $pid) ?>
               <label class="field"><span class="lbl">New password</span><input type="password" name="password" autocomplete="new-password" minlength="10" required><span class="hint">At least 10 characters. Signs them out elsewhere.</span></label>

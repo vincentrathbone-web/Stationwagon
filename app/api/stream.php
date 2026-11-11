@@ -15,7 +15,7 @@ if (!Config::isInstalled()) {
 }
 Jobs::afterVisit(); // the background jobs, when due, once this answer is out
 try {
-    $out = Stream::playlist(Planner::forFirstStation(), microtime(true));
+    $out = Stream::playlist(Planner::forRequest(false), microtime(true));
 } catch (Throwable $ex) {
     error_log('Stationwagon stream: ' . $ex);
     $out = ['status' => 503, 'body' => "#EXTM3U\n# The station is busy. Try again.\n"];
