@@ -275,10 +275,10 @@ const MAP = {
       { text: "The choice is kept per device, in the embed and the apps", v: "v1.12", state: "later" }
     ]},
     { name: "Gansbaai Community Radio", blurb: "A second station: its own site, installation, stream, branding and app.", features: [
-      { text: "A site and a hosting account for the station", v: "v1.8", state: "later" },
-      { text: "Its own Stationwagon installation and stream", v: "v1.8", state: "later" },
-      { text: "Line-up, privacy details, staff and first music", v: "v1.8", state: "later" },
-      { text: "Go live: tests, backups, the website's player", v: "v1.8", state: "later" },
+      { text: "A site and a hosting account for the station", v: "v1.8", state: "done" },
+      { text: "Its own Stationwagon installation and stream", v: "v1.8", state: "done" },
+      { text: "Line-up, privacy details, staff and first music", v: "v1.8", state: "waiting" },
+      { text: "Go live: tests, backups, the website's player", v: "v1.8", state: "done" },
       { text: "Branding package: logo, icons, favicon, colours", v: "v1.9", state: "later" },
       { text: "Applied to the station and the site", v: "v1.9", state: "later" },
       { text: "Listener app from the config file", v: "v1.10", state: "later" },
@@ -327,11 +327,12 @@ const MAP = {
   next: {
     title: "Next: the Gansbaai phases (v1.8 to v1.10)",
     text: "Jingles, downloads, compact lists and streams (v1.1 to v1.4, v1.6, v1.7) are live since 12 Nov, and so is the bar's stream picker (v1.5), in the browser, the Windows app and the Android app. The Gansbaai phases (v1.8 to v1.10) need details from you, and the studio apps (v1.11) and listener quality (v1.12) need a decision.",
-    order: ["v1.8 Gansbaai Community Radio (needs your details)","v1.12 Stream quality (needs a decision)"]
+    order: ["v1.8 Gansbaai: your line-up, staff, privacy email and music","v1.12 Stream quality (needs a decision)"]
   },
   call: null,
   feedTitle: "Recent changes",
   feed: [
+    { what: "Gansbaai Community Radio is up", to: "a WordPress site with the station's player at gbcr.controll.co.za (a stand-in until the real domain), its own Stationwagon at /radio with the AutoDJ on test songs; the line-up, staff, privacy email and music wait for your details", at: "13 Nov" },
     { what: "The bar's stream list checked by eye", to: "in the Windows and Android apps the bar's list opens the system's own list with every stream, and on the phone a real tap on a stream's name picks it; the phone test now waits for you to unlock the phone after its screen-off step (all 96 phone checks and 97 Windows checks pass)", at: "13 Nov" },
     { what: "WordWave app: the live stream plays again", to: "the Android app sat on buffering because Android's player read only three frames of each piece; the station now gives each piece its own address (the app already on phones plays again), and the app got its own fix in 0.1.1; live since 12 Nov", at: "12 Nov" },
     { what: "The bar's stream picker", to: "on a station with more than one stream, the bottom bar has a stream list: picking one changes only what the bar plays (the screens keep their own stream switch), the device remembers it, and the Open link goes to that stream's page; in the browser, the Windows app and the Android app; live since 12 Nov", at: "12 Nov" },
