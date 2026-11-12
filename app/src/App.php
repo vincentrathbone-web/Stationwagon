@@ -257,6 +257,8 @@ final class App
         $station = $planner->station();
         $streamSlug = ($station['parent_id'] ?? null) === null ? '' : (string) $station['slug'];
         $light = !$bar && ($_GET['look'] ?? '') === 'light';
+        // the bar's stream picker (round 75, v1.5): every stream, when there is more than one; the bar is a monitor, the screens keep their own switch
+        $barStreams = $bar ? Streams::all(Db::fromConfig()) : [];
         $delay = 20; // the listener delay, which the embed's player holds as the station's page does (round 60)
         try {
             $delay = (int) $planner->setting('listener_delay_seconds');

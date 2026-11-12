@@ -14,7 +14,7 @@
   const EMBED = root.id === "embed";
   const BAR = EMBED && root.dataset.kind === "bar"; // the bar under the staff's screens (round 61): not counted as listening
   const BASE = new URL(root.dataset.base, location.href).href; // the app's full address, ending in "/"
-  const STREAM = root.dataset.stream ? encodeURIComponent(root.dataset.stream) : ""; // a further stream's address name (round 73)
+  let STREAM = root.dataset.stream ? encodeURIComponent(root.dataset.stream) : ""; // a further stream's address name (round 73); the bar switches it (round 75)
   const SEEK_FROM = 1.2; // song deck drift (s) beyond which the deck seeks back into step
   // Android's Chrome skips bits of a song (5 jumps in 40 s on a Xiaomi) when a media element plays
   // through a "playback" (big buffer) AudioContext, and "interactive" gives underruns; "balanced" plays clean.
@@ -39,11 +39,12 @@
     local: () => performance.timeOrigin + performance.now(),
     now() { return (this.local() + this.offsetMs) / 1000; },
     async fetch() {
-      const t0 = this.local();
+      const t0 = this.local(), asked = STREAM;
       const res = await fetch(BASE + "api/timeline.php?t=" + Math.round(t0) + (STREAM ? "&stream=" + STREAM : ""), { cache: "no-store" }).catch((e) => { this.fails++; throw e; });
       const t1 = this.local();
       if (!res.ok) { this.fails++; throw new Error("HTTP " + res.status); }
       const json = await res.json();
+      if (asked !== STREAM) return this.last; // the bar switched stream while this was on its way (round 75)
       this.samples = [...this.samples, { rtt: t1 - t0, offset: json.server_now * 1000 - (t0 + t1) / 2 }].slice(-10);
       this.offsetMs = this.samples.reduce((a, b) => (b.rtt < a.rtt ? b : a)).offset;
       this.last = json;
@@ -768,6 +769,20 @@
   };
   window.SwPlayer = {
     start: () => player.start(), stop: () => player.stop(), state: () => player.state(), serverNow: () => (clock.last ? clock.now() : null),
+    /** Play another stream ('' the main one), in place (round 75, the bar's picker): a fresh timeline; muted and the volume stay as they are. */
+    setStream: (slug) => {
+      const s = slug ? encodeURIComponent(slug) : "";
+      if (s === STREAM) return false;
+      const was = player.on;
+      if (was) player.stop();
+      STREAM = s;
+      if (slug) root.dataset.stream = slug; else delete root.dataset.stream;
+      clock.samples = []; clock.last = null;
+      player.log("stream " + (slug || "main"));
+      if (was) player.start();
+      return true;
+    },
+    stream: () => decodeURIComponent(STREAM),
     heard: () => heardBest(), // for the embed and its tests: { el, gain, lag }
     mute: (m) => player.setMuted(m), muted: () => !!player.muted, // the bar's mute and volume (round 61)
     volume: (v) => { if (v !== undefined) player.setVolume(Math.max(0, Math.min(1, Number(v)))); return player.volume; },

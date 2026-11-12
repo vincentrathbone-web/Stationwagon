@@ -11,7 +11,7 @@
 (() => {
   const root = document.getElementById("embed");
   const BASE = root.dataset.base;
-  const STREAMQ = root.dataset.stream ? "stream=" + encodeURIComponent(root.dataset.stream) : ""; // a further stream's address name (round 73)
+  let STREAMQ = root.dataset.stream ? "stream=" + encodeURIComponent(root.dataset.stream) : ""; // a further stream's address name (round 73); the bar's picker changes it (round 75)
   const $ = (id) => document.getElementById(id);
   const P = window.SwPlayer; // player.js, loaded before this
   const POLL_MS = 15000;
@@ -42,13 +42,17 @@
 
   async function poll() {
     clearTimeout(timer); polledAt = Date.now();
+    const asked = STREAMQ; // an answer for the stream the bar played before a switch is dropped (round 75)
     try {
-      if (!clockSamples.length || Date.now() - clockAt > CLOCK_MS) np = await sampleClock();
+      let got;
+      if (!clockSamples.length || Date.now() - clockAt > CLOCK_MS) got = await sampleClock();
       else {
         const r = await fetch(BASE + "api/nowplaying.php" + (STREAMQ ? "?" + STREAMQ : ""), { cache: "no-store" }); // the shared, cached answer
         if (!r.ok) throw new Error(String(r.status));
-        np = await r.json();
+        got = await r.json();
       }
+      if (asked !== STREAMQ) return;
+      np = got;
       show();
     } catch (_) {
       if (!np) $("emTitle").textContent = "The station can’t be reached just now";
@@ -182,10 +186,31 @@
     sound.addEventListener("focusin", openPop);
     sound.addEventListener("focusout", () => closePop(200));
     vol.addEventListener("keydown", (e) => { if (e.key === "Escape") { vol.blur(); $("emMute").focus(); pop.hidden = true; setTimeout(() => { if (pop.hidden) tall(false); }, 90); } });
+    // the stream the bar plays (round 75, v1.5): a monitor only, the screens keep their own switch; remembered on this device
+    const picker = $("emStream"), STREAM_KEY = "sw-bar-stream";
+    const pick = (slug, save = true) => {
+      const opt = picker && [...picker.options].find((o) => o.value === slug);
+      if (!opt) return false;
+      picker.value = slug;
+      STREAMQ = slug ? "stream=" + encodeURIComponent(slug) : "";
+      clockSamples = []; np = null;
+      $("emOpen").href = opt.dataset.url;
+      if (save) { try { localStorage.setItem(STREAM_KEY, slug); } catch (_) { /* private window */ } }
+      P.setStream(slug);
+      poll();
+      return true;
+    };
+    if (picker) {
+      let saved = null;
+      try { saved = localStorage.getItem(STREAM_KEY); } catch (_) { /* private window */ }
+      // the one remembered here, if it is still a stream (a removed one falls back to the main stream)
+      if (saved !== null && saved !== picker.value && !pick(saved, false)) { try { localStorage.removeItem(STREAM_KEY); } catch (_) { /* private window */ } }
+      picker.addEventListener("change", () => pick(picker.value));
+    }
     P.start(); // runs while it's open: the strip and the time move, muted
     /** The screen above changed (the frame page or the app says so): the studio and Song prep mute the bar. */
     const screen = (route) => { if (/^(studio|manage\/songprep)(\/|$)/.test(String(route || "")) && !muted) setMuted(true, true); };
-    window.SwBar = { screen, mute: (m) => setMuted(m), get muted() { return muted; }, volume: (v) => { if (v !== undefined) { const set = P.volume(v); if (!muted) vol.value = Math.round(set * 100); } return P.volume(); }, get open() { return !pop.hidden; },
+    window.SwBar = { screen, mute: (m) => setMuted(m), pick: (slug) => pick(slug), get stream() { return P.stream(); }, get muted() { return muted; }, volume: (v) => { if (v !== undefined) { const set = P.volume(v); if (!muted) vol.value = Math.round(set * 100); } return P.volume(); }, get open() { return !pop.hidden; },
       // the Android app hides its bar's view without the page knowing: told, the bar stops drawing until it shows again
       hide: (h) => { document.documentElement.style.display = h ? "none" : ""; } };
     window.addEventListener("message", (e) => { if (e.origin === location.origin && e.data && e.data.sw === "screen") screen(e.data.route); });

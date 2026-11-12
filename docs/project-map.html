@@ -187,9 +187,9 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "11 Nov",
-  commits: 90,
-  version: "0.9.14-dev",
+  updated: "12 Nov",
+  commits: 93,
+  version: "0.9.16-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
     { v: "v0.4", name: "Player & studio", when: "done 22 Oct" },
@@ -203,7 +203,7 @@ const MAP = {
     { v: "v1.2", name: "Downloads", when: "live 12 Nov" },
     { v: "v1.3", name: "Multi-stream stations", when: "live 12 Nov" },
     { v: "v1.4", name: "Mini-player per stream", when: "live 12 Nov" },
-    { v: "v1.5", name: "Stream selector in the bar", when: "now: the bar's selector needs your say", state: "now" },
+    { v: "v1.5", name: "Stream selector in the bar", when: "live 12 Nov" },
     { v: "v1.6", name: "Compact libraries", when: "live 12 Nov" },
     { v: "v1.7", name: "Ads and jingles like the music library", when: "live 12 Nov" },
     { v: "v1.8", name: "Gansbaai Community Radio", when: "planned" },
@@ -268,7 +268,7 @@ const MAP = {
       { text: "Deploy, upgrade of the live station", v: "v1.3", state: "done" },
       { text: "Embed and Now playing card take a stream parameter", v: "v1.4", state: "done" },
       { text: "Copy code and the JSON APIs follow the stream", v: "v1.4", state: "done" },
-      { text: "Stream selector in the bottom bar", v: "v1.5", state: "later" },
+      { text: "Stream selector in the bottom bar", note: "it changes only what the bar plays; remembered on the device", v: "v1.5", state: "done" },
       { text: "Studio goes live on the chosen stream, only those you may use", v: "v1.5", state: "done" },
       { text: "Listener picks a stream quality to save data", v: "v1.12", state: "later" },
       { text: "Lower-bitrate versions made on the server or at upload", note: "to decide: shared hosting cannot transcode", v: "v1.12", state: "later" },
@@ -325,20 +325,22 @@ const MAP = {
     ]}
   ],
   next: {
-    title: "Stream selector in the bar (v1.5)",
-    text: "Jingles, downloads, compact lists and streams (v1.1 to v1.4, v1.6, v1.7) are live since 12 Nov. The studio already goes live on the stream you pick; what is left of v1.5 is a selector inside the bottom bar itself, which needs your decision. The Gansbaai phases (v1.8 to v1.10) need details from you, and the studio apps (v1.11) and listener quality (v1.12) need a decision.",
-    order: ["Where the bar's stream selector goes","v1.8 Gansbaai Community Radio (needs your details)","v1.12 Stream quality (needs a decision)"]
+    title: "Next: the Gansbaai phases (v1.8 to v1.10)",
+    text: "Jingles, downloads, compact lists and streams (v1.1 to v1.4, v1.6, v1.7) are live since 12 Nov, and so is the bar's stream picker (v1.5), in the browser, the Windows app and the Android app. The Gansbaai phases (v1.8 to v1.10) need details from you, and the studio apps (v1.11) and listener quality (v1.12) need a decision.",
+    order: ["v1.8 Gansbaai Community Radio (needs your details)","v1.12 Stream quality (needs a decision)"]
   },
   call: null,
   feedTitle: "Recent changes",
   feed: [
-    { what: "Streams: the missing tests", to: "a full live show on a further stream in the browser, its listeners, notes and podcast, Skip and Schedule per stream; four bugs found and fixed (a stream's schedule refused playlists and DJs, going live on a brand-new stream, blocking a DJ live on another stream, the background planning of streams); all of it (v1.1 to v1.7) deployed to wordwave.co.za on 12 Nov", at: "11 Nov" },
-    { what: "Streams", to: "several streams on one station: each has its own AutoDJ, schedule, live shows, stats, player page, embed and card at /<name>/, all playing from the same library, ads and jingles; admins add them under Manage, Streams; DJs are given streams on People; built and tested on Laragon, not deployed", at: "11 Nov" },
-    { what: "Streams: screen and addresses", to: "a Streams screen for admins (add, rename, remove; the Overview and Schedule have a stream switch); each further stream has its own player page, embed and api addresses at its address name; built and tested on Laragon, not deployed", at: "11 Nov" },
-    { what: "Streams: the engine", to: "a stream is a station row under the main station: its own AutoDJ timeline, schedule and live shows, the same library, ads, jingles and settings; the main station is stream 1; built and tested on Laragon, not deployed", at: "11 Nov" },
-    { what: "Downloads", to: "every song, ad and jingle has a Download button (the processed MP3, named Artist - Title); a new Download clips tick, on for Managers and admins; built and tested on Laragon, not deployed", at: "11 Nov" },
-    { what: "Compact libraries, matching lists", to: "a smaller type and tighter rows, symbols for the badges, and the Ads and Jingles in the Music library's table with search, columns, sorting and bulk Pause or Turn off; not deployed", at: "11 Nov" },
-    { what: "Jingles library", to: "a Jingles screen: upload tiny station-name clips, switch each on or off; the AutoDJ plays one between two songs after every few songs and listeners see the station name; built and tested on Laragon, not deployed", at: "11 Nov" },
+    { what: "WordWave app: the live stream plays again", to: "the Android app sat on buffering because Android's player read only three frames of each piece; the station now gives each piece its own address (the app already on phones plays again), and the app got its own fix in 0.1.1; live since 12 Nov", at: "12 Nov" },
+    { what: "The bar's stream picker", to: "on a station with more than one stream, the bottom bar has a stream list: picking one changes only what the bar plays (the screens keep their own stream switch), the device remembers it, and the Open link goes to that stream's page; in the browser, the Windows app and the Android app; live since 12 Nov", at: "12 Nov" },
+    { what: "Streams: the missing tests", to: "a full live show on a further stream in the browser, its listeners, notes and podcast, Skip and Schedule per stream; four bugs found and fixed (a stream's schedule refused playlists and DJs, going live on a brand-new stream, blocking a DJ live on another stream, the background planning of streams); all of it (v1.1 to v1.7) deployed to wordwave.co.za on 12 Nov", at: "12 Nov" },
+    { what: "Streams", to: "several streams on one station: each has its own AutoDJ, schedule, live shows, stats, player page, embed and card at /<name>/, all playing from the same library, ads and jingles; admins add them under Manage, Streams; DJs are given streams on People; live since 12 Nov", at: "11 Nov" },
+    { what: "Streams: screen and addresses", to: "a Streams screen for admins (add, rename, remove; the Overview and Schedule have a stream switch); each further stream has its own player page, embed and api addresses at its address name; live since 12 Nov", at: "11 Nov" },
+    { what: "Streams: the engine", to: "a stream is a station row under the main station: its own AutoDJ timeline, schedule and live shows, the same library, ads, jingles and settings; the main station is stream 1; live since 12 Nov", at: "11 Nov" },
+    { what: "Downloads", to: "every song, ad and jingle has a Download button (the processed MP3, named Artist - Title); a new Download clips tick, on for Managers and admins; live since 12 Nov", at: "11 Nov" },
+    { what: "Compact libraries, matching lists", to: "a smaller type and tighter rows, symbols for the badges, and the Ads and Jingles in the Music library's table with search, columns, sorting and bulk Pause or Turn off; live since 12 Nov", at: "11 Nov" },
+    { what: "Jingles library", to: "a Jingles screen: upload tiny station-name clips, switch each on or off; the AutoDJ plays one between two songs after every few songs and listeners see the station name; live since 12 Nov", at: "11 Nov" },
     { what: "About screen", to: "version, Check for updates and links; Windows 0.6.8 released", at: "11 Nov" },
     { what: "The output strip's white line", to: "now sits on the sound you hear, in the middle at every width", at: "11 Nov" },
     { what: "Windows app and bar fixes", to: "no more focus loop or flicker; mute drops the slider", at: "11 Nov" },

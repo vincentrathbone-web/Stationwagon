@@ -84,16 +84,19 @@ try {
     $parse = function (string $body): array {
         preg_match_all('/^#EXTINF:([\d.]+),/m', $body, $inf);
         preg_match('/#EXT-X-MEDIA-SEQUENCE:(\d+)/', $body, $ms);
-        preg_match_all('/^#EXT-X-BYTERANGE:(\d+)@(\d+)\n(.+)$/m', $body, $br);
+        preg_match_all('#^\.\./seg/\d+-\d+/[0-9a-f]+\.mp3$#m', $body, $br); // a piece of a song at its own address (round 76)
         preg_match_all('/^#EXT-X-PROGRAM-DATE-TIME:(\S+)$/m', $body, $pdt);
-        return ['pieces' => count($inf[1]), 'msn' => (int) ($ms[1] ?? -1), 'ranges' => $br[3], 'pdt' => $pdt[1], 'disc' => substr_count($body, "#EXT-X-DISCONTINUITY\n")];
+        return ['pieces' => count($inf[1]), 'msn' => (int) ($ms[1] ?? -1), 'ranges' => $br[0], 'byterange' => str_contains($body, '#EXT-X-BYTERANGE'), 'pdt' => $pdt[1], 'disc' => substr_count($body, "#EXT-X-DISCONTINUITY\n")];
     };
     $a = Stream::playlist($p, $t0 + 100);
     $b = Stream::playlist($p, $t0 + 106.5);
     $pa = $parse($a['body']); $pb = $parse($b['body']);
     check('playlist answers 200 with 5 pieces', $a['status'] === 200 && $pa['pieces'] === 5, $a['status'] . ', ' . $pa['pieces']);
     check('the window slides forward', $pb['msn'] > $pa['msn']);
-    check('songs are byte ranges of the stored file', count($pa['ranges']) === 5 && str_starts_with($pa['ranges'][0], '../storage/media/') && str_ends_with($pa['ranges'][0], '.mp3'));
+    $segs = $p->segments($t0 + 100);
+    [$len0, $off0] = explode('@', (string) $segs[0]['range']);
+    check('songs are pieces at their own address (seg/<offset>-<length>/<file>), no byte ranges (round 76: Android\'s player)', count($pa['ranges']) === 5 && !$pa['byterange']
+        && $pa['ranges'][0] === '../seg/' . $off0 . '-' . $len0 . '/' . basename($segs[0]['uri']), $pa['ranges'][0] ?? '');
     check('each piece has a millisecond date-time', count($pa['pdt']) === 5 && preg_match('/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/', $pa['pdt'][0]) === 1);
     $d = [Stream::date(1793576354.9996), Stream::date(1793576354.0004), Stream::date(1793576354.5)];
     check('  a start just short of a second is the next second, not one early', $d === ['2026-11-01T23:39:15.000Z', '2026-11-01T23:39:14.000Z', '2026-11-01T23:39:14.500Z'], implode(' ', $d));

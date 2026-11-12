@@ -47,7 +47,9 @@ $name = $station['name'] ?? 'Stationwagon';
   </div>
   <?php endif ?>
   <div class="em-body">
-    <p class="em-top"><span class="em-lamp" id="emLamp"><i></i><span id="emMode">AutoDJ</span></span><a class="em-name" href="<?= h(App::url('')) ?>" target="_blank" rel="noopener"><?= h($name) ?></a></p>
+    <p class="em-top"><span class="em-lamp" id="emLamp"><i></i><span id="emMode">AutoDJ</span></span><?php if (count($barStreams ?? []) > 1): /* the bar picks the stream it plays (round 75): a plain list, so the system's own menu opens it, outside a short bar */ ?><select class="em-streams" id="emStream" aria-label="The stream the bar plays" title="The stream the bar plays (only here: the screens keep their own)">
+      <?php foreach ($barStreams as $s): $slug = $s['main'] ? '' : (string) $s['slug']; ?><option value="<?= h($slug) ?>" data-url="<?= h(App::url($slug)) ?>"<?= $slug === ($streamSlug ?? '') ? ' selected' : '' ?>><?= h($s['name']) ?></option><?php endforeach ?>
+    </select><?php else: ?><a class="em-name" href="<?= h(App::url($streamSlug ?? '')) ?>" target="_blank" rel="noopener"><?= h($name) ?></a><?php endif ?></p>
     <p class="em-title" id="emTitle" aria-live="polite">Loading…</p>
     <button class="em-rights" id="emRights" type="button" hidden aria-haspopup="dialog"></button>
     <canvas class="em-spec" id="emSpec" aria-hidden="true"></canvas>
@@ -63,7 +65,7 @@ $name = $station['name'] ?? 'Stationwagon';
     <button class="btn sm" type="button" id="emRClose">Close</button>
   </div>
   <div class="em-side">
-    <a class="em-open" href="<?= h(App::url('')) ?>" target="_blank" rel="noopener">Open the player <span aria-hidden="true">↗</span></a>
+    <a class="em-open" id="emOpen" href="<?= h(App::url($streamSlug ?? '')) ?>" target="_blank" rel="noopener">Open the player <span aria-hidden="true">↗</span></a>
     <span class="em-foot"><a class="em-brand" href="<?= h(App::url('')) ?>" target="_blank" rel="noopener" title="Powered by Stationwagon" aria-label="Powered by Stationwagon"><?= App::mark() ?></a><?= Skins::picker(true) ?><a class="em-priv" href="<?= h(App::url('privacy')) ?>" target="_blank" rel="noopener">Privacy</a></span>
   </div>
 </div>

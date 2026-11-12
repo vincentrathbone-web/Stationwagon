@@ -172,16 +172,28 @@ try {
     check('playlist may be kept 2 s by Cloudflare, never by browsers', str_contains($cc, 's-maxage=2') && str_contains($cc, 'max-age=0'), $cc);
     check('listeners get no cookie from the stream', $s->setCookies === []);
     if ($r['status'] === 200) {
-        preg_match_all('/^#EXT-X-BYTERANGE:(\d+)@(\d+)\n(\S+)$/m', $r['body'], $m);
+        // a piece of a song at its own address (round 76): Android's player (Media3 1.8) reads only three
+        // frames of a byte range that starts further into the song than it is long
+        preg_match_all('#^\.\./(seg/(\d+)-(\d+)/([0-9a-f]+\.mp3))$#m', $r['body'], $m);
         $count = substr_count($r['body'], '#EXTINF:');
         check('playlist lists the last 5 pieces (fewer just after the station starts)', $count >= 1 && $count <= 5, "$count");
+        check('no piece is a byte range into a song (Android\'s player reads only three frames of one)', !str_contains($r['body'], '#EXT-X-BYTERANGE'));
         if ($m[0]) {
-            $len = (int) $m[1][0]; $off = (int) $m[2][0];
-            $file = (new Browser($base))->go('api/' . $m[3][0], null, ['Range: bytes=' . $off . '-' . ($off + $len - 1)]);
-            check('a piece is served as a byte range', $file['status'] === 206 && strlen($file['body']) === $len, $file['status'] . ', ' . strlen($file['body']) . " of $len bytes");
-            check('and starts on an MP3 frame', strlen($file['body']) > 1 && ord($file['body'][0]) === 0xFF && (ord($file['body'][1]) & 0xE0) === 0xE0);
+            $off = (int) $m[2][0]; $len = (int) $m[3][0];
+            $piece = (new Browser($base))->go($m[1][0]);
+            check('a piece of a song is served whole at its own address', $piece['status'] === 200 && strlen($piece['body']) === $len, $piece['status'] . ', ' . strlen($piece['body']) . " of $len bytes");
+            check('  and starts on an MP3 frame', strlen($piece['body']) > 1 && ord($piece['body'][0]) === 0xFF && (ord($piece['body'][1]) & 0xE0) === 0xE0);
+            $file = (new Browser($base))->go('storage/media/' . $m[4][0], null, ['Range: bytes=' . $off . '-' . ($off + $len - 1)]);
+            check('  the same bytes as that part of the song', $file['status'] === 206 && $file['body'] === $piece['body'], (string) $file['status']);
+            $pcc = implode(',', $piece['headers']['cache-control'] ?? []);
+            check('  kept for a year, by Cloudflare too', str_contains($pcc, 'public') && str_contains($pcc, 'max-age=31536000') && str_contains($pcc, 'immutable')
+                && !str_contains($pcc, 'no-cache') && str_contains(implode(',', $piece['headers']['content-type'] ?? []), 'audio/mpeg'), $pcc);
             $fcc = implode(',', $file['headers']['cache-control'] ?? []);
             check('songs are cached for a year', str_contains($fcc, 'max-age=31536000') && str_contains($fcc, 'immutable'), $fcc);
+            $bad = [(new Browser($base))->go('seg/' . $off . '-' . $len . '/0000000000000000000000000000000000000000.mp3')['status'],
+                    (new Browser($base))->go('seg/999999999999-' . $len . '/' . $m[4][0])['status'],
+                    (new Browser($base))->go('seg/' . $off . '-99999999/' . $m[4][0])['status']];
+            check('  an unknown song, or a piece past its end or too long, is 404', $bad === [404, 404, 404], implode(',', $bad));
         }
     } else {
         check('with an empty library the playlist says so', str_contains($r['body'], 'library'));
@@ -1006,6 +1018,12 @@ try {
         $r = $pub->go($strSlug . '/now');
         check('  its Now playing card is its own too, and its link goes to the stream’s player (also as ?stream=)', $r['status'] === 200 && str_contains($r['body'], 'data-stream="' . $strSlug . '"') && str_contains($r['body'], 'href="' . $basePath . '/' . $strSlug . '"')
             && str_contains($pub->go('now?stream=' . $strSlug)['body'], 'data-stream="' . $strSlug . '"') && !str_contains($pub->go('now')['body'], 'data-stream=') && $pub->go('now?stream=no-such-stream')['status'] === 404, (string) $r['status']);
+        check('  its embed’s Open the player goes to the stream’s own page', str_contains($pub->go($strSlug . '/embed')['body'], 'id="emOpen" href="' . $basePath . '/' . $strSlug . '"'));
+        // round 75 (v1.5): the bar's stream picker, when there is more than one stream
+        $bar = $ad->go('bar')['body'];
+        check('the bar has a stream picker listing every stream, the main one picked, with each stream’s page', str_contains($bar, 'id="emStream"') && str_contains($bar, '<option value="" data-url="' . $basePath . '/" selected>')
+            && str_contains($bar, '<option value="' . $strSlug . '" data-url="' . $basePath . '/' . $strSlug . '">' . htmlspecialchars($strName) . '</option>') && !str_contains($bar, 'class="em-name"'));
+        check('  the embeds for websites have no picker', !str_contains($pub->go('embed')['body'], 'id="emStream"') && !str_contains($pub->go($strSlug . '/embed')['body'], 'id="emStream"'));
         $r = $ad->go('manage/streams');
         check('  the Streams screen has the code to copy for each stream: its player and its card', str_contains($r['body'], 'id="embedCodes"') && str_contains($r['body'], htmlspecialchars('/' . $strSlug . '/embed')) && str_contains($r['body'], htmlspecialchars('/' . $strSlug . '/now'))
             && str_contains($r['body'], htmlspecialchars($basePath . '/embed"')) && substr_count($r['body'], 'data-copy-btn') >= 4);
@@ -1119,6 +1137,8 @@ try {
         $r = $ad->go('manage/streams', ['csrf' => $acsrf, 'action' => 'delete', 'id' => $row['id']]);
         check('  and Yes removes the stream; the picked stream falls back to the main one', $flashed($after($ad, $r), 'Stream removed.') && !$db->run('SELECT id FROM ' . $db->table('stations') . ' WHERE id = ?', [$row['id']])->fetch()
             && !str_contains($ad->go('manage')['body'], 'class="streamswitch"'));
+        $bar = $ad->go('bar')['body'];
+        check('  with one stream again the bar has no picker, only the station’s name', count(Stationwagon\Streams::all($db)) > 1 || (!str_contains($bar, 'id="emStream"') && str_contains($bar, 'class="em-name"')));
         $r = $ad->go('manage/streams', ['csrf' => $acsrf, 'action' => 'delete', 'id' => $stationId]);
         check('  the main stream can’t be removed', $flashed($after($ad, $r), 'isn’t here') && $db->run('SELECT id FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetch() !== false);
 

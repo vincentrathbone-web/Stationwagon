@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Stationwagon;
 
-/** The listener's HLS playlist: byte ranges into the original MP3s, or the uploaded live pieces. */
+/** The listener's HLS playlist: pieces of the original MP3s (each at its own address, api/seg.php), or the uploaded live pieces. */
 final class Stream
 {
     /**
@@ -28,12 +28,24 @@ final class Stream
             }
             $out[] = '#EXT-X-PROGRAM-DATE-TIME:' . self::date($s['start']);
             $out[] = sprintf('#EXTINF:%.3f,%s', $s['dur'], str_replace([',', "\n", "\r"], ' ', $s['title']));
-            if ($s['range'] !== null) {
-                $out[] = '#EXT-X-BYTERANGE:' . $s['range'];
-            }
-            $out[] = $prefix . $s['uri'];
+            $out[] = $prefix . self::address($s);
         }
         return ['status' => 200, 'body' => implode("\n", $out) . "\n"];
+    }
+
+    /**
+     * A piece's address from the app root. A piece of a song gets one of its own, seg/<offset>-<length>/<file>
+     * (api/seg.php), not a byte range into the song: Android's player (Media3 1.8, in the listener apps and
+     * many others) reads only three frames of a byte range that starts further in than it is long (round 76).
+     * @param array{uri:string,range:?string} $s
+     */
+    public static function address(array $s): string
+    {
+        if ($s['range'] === null) {
+            return $s['uri'];
+        }
+        [$length, $offset] = explode('@', $s['range']);
+        return 'seg/' . $offset . '-' . $length . '/' . basename($s['uri']);
     }
 
     /**

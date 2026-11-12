@@ -261,6 +261,28 @@ try {
   await sleep(1500);
   bar2 = await inBar("({ vis: document.visibilityState, t: performance.timeOrigin, vol: SwBar.volume() })");
   check("  back in the studio: the bar again, the same one, with the volume set", bar2 && bar2.vis === "visible" && bar2.t === bar.t && bar2.vol === 0.5 && Math.abs((await evaluate("innerHeight")) - winH) <= 1, JSON.stringify(bar2));
+  // round 75 (v1.5): the bar's stream picker in the app; a plain list, so Windows opens its own menu outside the 84 px view
+  console.log("The bar's stream picker");
+  const pickFx = helper("stream-fixture");
+  try {
+    await inBar("location.reload()");
+    let pk = null;
+    for (let i = 0; i < 50 && !(pk && pk.on && pk.opts.length > 1); i++) { await sleep(200); pk = await inBar("({ on: !!SwPlayer.state().on, opts: [...document.querySelectorAll('#emStream option')].map((o) => o.value), h: document.getElementById('emStream') ? document.getElementById('emStream').getBoundingClientRect().height : 0, bottom: document.getElementById('emStream') ? innerHeight - document.getElementById('emStream').getBoundingClientRect().bottom : 0 })").catch(() => null); }
+    check("with two streams the app's bar has the stream picker, small, in the bar's foot", pk && pk.opts.includes(pickFx.stream) && pk.h > 10 && pk.h < 30 && pk.bottom > 0 && pk.bottom < 84, JSON.stringify(pk));
+    const screenBefore = await evaluate("location.href");
+    await inBar(`(() => { const s = document.getElementById('emStream'); s.value = ${JSON.stringify(pickFx.stream)}; s.dispatchEvent(new Event('change')); })()`);
+    let on2 = null;
+    for (let i = 0; i < 50 && !(on2 && on2.name === pickFx.name && on2.status === "Playing"); i++) { await sleep(200); on2 = await inBar("({ stream: SwPlayer.stream(), name: SwPlayer.timeline() && SwPlayer.timeline().station.name, status: SwPlayer.state().status, muted: SwBar.muted })").catch(() => null); }
+    check("  picking a stream plays it in the bar, muted as it was", on2 && on2.stream === pickFx.stream && on2.name === pickFx.name && on2.status === "Playing", JSON.stringify(on2));
+    check("  and the studio above stays as it was", (await evaluate("location.href")) === screenBefore);
+    await inBar("(() => { const s = document.getElementById('emStream'); s.value = ''; s.dispatchEvent(new Event('change')); })()");
+    for (let i = 0; i < 50 && !(on2 && on2.stream === "" && on2.status === "Playing"); i++) { await sleep(200); on2 = await inBar("({ stream: SwPlayer.stream(), status: SwPlayer.state().status })").catch(() => null); }
+    check("  and back to the main stream", on2 && on2.stream === "" && on2.status === "Playing", JSON.stringify(on2));
+  } finally {
+    helper("stream-clean", String(pickFx.id));
+  }
+  await inBar("location.reload()");
+  await sleep(2500);
   await until((x) => x.slot !== undefined, 10);
   // round 58: the app's own page and its update dialog follow the look picked in the studio
   const lookNow = () => { try { return JSON.parse(readFileSync(cfgFile, "utf8")).look || null; } catch { return null; } };

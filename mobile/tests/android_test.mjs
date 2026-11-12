@@ -444,6 +444,26 @@ try {
   await go(`${base}/studio`);
   b2 = await waitFor(async () => { const x = await inBar("({ vis: document.documentElement.style.display === 'none' ? 'hidden' : 'shown', t: performance.timeOrigin, muted: SwBar.muted })"); return x && x.vis === "shown" && x; }, 8);
   check("  back in the studio: the same bar again (drawing), muted by itself there", b2 && bar && b2.t === bar.t && b2.muted && Math.abs((await evaluate("innerHeight")) - studioH) <= 1, JSON.stringify(b2));
+  // round 75 (v1.5): the bar's stream picker in the app; a plain list, so Android opens its own list over the screen
+  console.log("The bar's stream picker");
+  const pickFx = helper("stream-fixture");
+  try {
+    await inBar("location.reload()");
+    const pk = await waitFor(() => inBar("(() => { const s = document.getElementById('emStream'); if (!s || !SwPlayer.state().on) return null; const r = s.getBoundingClientRect(); return { opts: [...s.options].map((o) => o.value), h: r.height, top: r.top, bottom: r.bottom, H: innerHeight }; })()"), 20);
+    check("with two streams the app's bar has the stream picker, inside the 64 dp bar", pk && pk.opts.includes(pickFx.stream) && pk.h > 10 && pk.top >= 0 && pk.bottom <= pk.H, JSON.stringify(pk));
+    const screenBefore = await evaluate("location.href");
+    await inBar(`(() => { const s = document.getElementById('emStream'); s.value = ${JSON.stringify(pickFx.stream)}; s.dispatchEvent(new Event('change')); })()`);
+    const on2 = await waitFor(() => inBar(`(() => { const x = { stream: SwPlayer.stream(), name: SwPlayer.timeline() && SwPlayer.timeline().station.name, status: SwPlayer.state().status }; return x.name === ${JSON.stringify(pickFx.name)} && x.status === "Playing" && x; })()`), 15);
+    check("  picking a stream plays it in the bar", on2 && on2.stream === pickFx.stream, JSON.stringify(on2 || await inBar("({ stream: SwPlayer.stream(), status: SwPlayer.state().status })")));
+    check("  and the studio above stays as it was", (await evaluate("location.href")) === screenBefore);
+    await inBar("(() => { const s = document.getElementById('emStream'); s.value = ''; s.dispatchEvent(new Event('change')); })()");
+    const back = await waitFor(() => inBar("(() => { const x = { stream: SwPlayer.stream(), status: SwPlayer.state().status }; return x.stream === '' && x.status === 'Playing' && x; })()"), 15);
+    check("  and back to the main stream", !!back);
+  } finally {
+    helper("stream-clean", String(pickFx.id));
+  }
+  await inBar("location.reload()");
+  await sleep(2500);
   s = await until((x) => x.on || x.slot, 15);
   if (s && !s.on) { await clickText("#stBannerActs button", "Switch on the studio"); await until((x) => x.on, 15); }
 

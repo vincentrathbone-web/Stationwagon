@@ -149,6 +149,46 @@ try {
   check("  and the stream's AutoDJ carries on after it", tlAfter.entries.some((e) => e.type === "song" && showEnd && e.start >= showEnd - 0.01));
   liveId = null;
 
+  console.log("The bar's stream picker (round 75)");
+  await go(`${base}/bar`);
+  await evaluate("localStorage.removeItem('sw-bar-stream')");
+  await go(`${base}/bar`);
+  await until(player, (x) => x.on, 10);
+  const opts = await evaluate("[...document.querySelectorAll('#emStream option')].map((o) => o.value)");
+  check("with two streams the bar has a stream picker, on the main stream at first", opts.length >= 2 && opts[0] === "" && opts.includes(fx.stream) && (await evaluate("document.getElementById('emStream').value")) === "", JSON.stringify(opts));
+  const mutedBefore = await evaluate("SwPlayer.muted()");
+  requests.length = 0;
+  await evaluate(`(() => { const s = document.getElementById('emStream'); s.value = ${JSON.stringify(fx.stream)}; s.dispatchEvent(new Event('change')); })()`);
+  s = await until(player, (x) => x.on && x.status === "Playing", 10);
+  const tlName = await evaluate("SwPlayer.timeline() && SwPlayer.timeline().station.name");
+  check("picking a stream plays it in the bar, in place (no reload)", !!s && (await evaluate("SwPlayer.stream()")) === fx.stream && tlName === fx.name && (await evaluate("!!window.SwBar")), `${tlName}`);
+  check("  from that stream's timeline and now playing", requests.some((u) => u.includes("api/timeline.php") && u.includes("stream=" + fx.stream)) && requests.some((u) => u.includes("api/nowplaying.php") && u.includes("stream=" + fx.stream))
+    && !requests.some((u) => u.includes("/bar")), requests.filter((u) => u.includes("api/")).slice(0, 3).join(" "));
+  await until(() => evaluate("swEmbed.np"), (x) => x && x.station && x.station.name === fx.name, 6);
+  check("  the bar shows that stream's now playing, and Open the player goes to its page", (await evaluate("swEmbed.np && swEmbed.np.station.name")) === fx.name && (await evaluate("document.getElementById('emOpen').href")).endsWith("/" + fx.stream));
+  check("  muted as it was", (await evaluate("SwPlayer.muted()")) === mutedBefore);
+  check("  remembered on this device", (await evaluate("localStorage.getItem('sw-bar-stream')")) === fx.stream);
+  await go(`${base}/bar`);
+  await until(player, (x) => x.on, 10);
+  check("the bar opens on the remembered stream next time", (await evaluate("document.getElementById('emStream').value")) === fx.stream && (await evaluate("SwPlayer.stream()")) === fx.stream);
+  await evaluate("localStorage.setItem('sw-bar-stream', 'a-stream-that-was-removed')");
+  await go(`${base}/bar`);
+  await until(player, (x) => x.on, 10);
+  check("  a remembered stream that was removed falls back to the main one, and is forgotten", (await evaluate("document.getElementById('emStream').value")) === "" && (await evaluate("SwPlayer.stream()")) === "" && (await evaluate("localStorage.getItem('sw-bar-stream')")) === null);
+  await evaluate(`(() => { const s = document.getElementById('emStream'); s.value = ${JSON.stringify(fx.stream)}; s.dispatchEvent(new Event('change')); })()`);
+  await sleep(500);
+  await evaluate("(() => { const s = document.getElementById('emStream'); s.value = ''; s.dispatchEvent(new Event('change')); })()");
+  s = await until(player, (x) => x.on && x.status === "Playing", 10);
+  check("  and back to the main stream", !!s && (await evaluate("SwPlayer.stream()")) === "" && (await evaluate("SwPlayer.timeline() && SwPlayer.timeline().station.name")) !== fx.name && (await evaluate("localStorage.getItem('sw-bar-stream')")) === "");
+  await call("Network.setCookie", { name: "sw_bare", value: "0", url: base + "/" });
+  await call("Network.deleteCookies", { name: "sw_bare", url: base + "/" });
+  await evaluate(`localStorage.setItem('sw-bar-stream', ${JSON.stringify(fx.stream)})`);
+  await go(`${base}/studio`);
+  let framed = null;
+  for (let i = 0; i < 40 && !(framed && framed.bar === fx.stream); i++) { await sleep(250); framed = await evaluate("(() => { const b = document.getElementById('swBar'); const w = b && b.contentWindow; return w && w.SwPlayer ? { bar: w.SwPlayer.stream(), screen: (document.getElementById('swScreen') || {}).src || '' } : null; })()").catch(() => null); }
+  check("under the screens, the bar plays the picked stream and the screen keeps its own", !!framed && framed.bar === fx.stream && !framed.screen.includes("stream="), JSON.stringify(framed));
+  await call("Network.setCookie", { name: "sw_bare", value: "1", url: base + "/" });
+
   console.log("A listener on the stream's page");
   requests.length = 0;
   await go(`${base}/${fx.stream}`);
