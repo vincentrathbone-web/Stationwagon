@@ -187,8 +187,8 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "12 Nov",
-  commits: 93,
+  updated: "13 Nov",
+  commits: 94,
   version: "0.9.16-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
@@ -332,6 +332,7 @@ const MAP = {
   call: null,
   feedTitle: "Recent changes",
   feed: [
+    { what: "The bar's stream list checked by eye", to: "in the Windows and Android apps the bar's list opens the system's own list with every stream, and on the phone a real tap on a stream's name picks it; the phone test now waits for you to unlock the phone after its screen-off step (all 96 phone checks and 97 Windows checks pass)", at: "13 Nov" },
     { what: "WordWave app: the live stream plays again", to: "the Android app sat on buffering because Android's player read only three frames of each piece; the station now gives each piece its own address (the app already on phones plays again), and the app got its own fix in 0.1.1; live since 12 Nov", at: "12 Nov" },
     { what: "The bar's stream picker", to: "on a station with more than one stream, the bottom bar has a stream list: picking one changes only what the bar plays (the screens keep their own stream switch), the device remembers it, and the Open link goes to that stream's page; in the browser, the Windows app and the Android app; live since 12 Nov", at: "12 Nov" },
     { what: "Streams: the missing tests", to: "a full live show on a further stream in the browser, its listeners, notes and podcast, Skip and Schedule per stream; four bugs found and fixed (a stream's schedule refused playlists and DJs, going live on a brand-new stream, blocking a DJ live on another stream, the background planning of streams); all of it (v1.1 to v1.7) deployed to wordwave.co.za on 12 Nov", at: "12 Nov" },

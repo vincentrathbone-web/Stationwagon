@@ -187,6 +187,17 @@ async function waitFor(fn, seconds) {
   while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(250); }
   return null;
 }
+/** After the screen comes back on: a phone with a secure lock screen shows it, and the app can't be reached until the user unlocks (up to 3 min). */
+async function unlocked() {
+  const locked = () => /isKeyguardShowing=true|mShowingLockscreen=true/.test(adb("dumpsys", "window"));
+  await sleep(1000);
+  if (!locked()) return;
+  console.log("  (the phone shows its lock screen: unlock it to go on)");
+  await waitFor(() => !locked(), 180);
+  await sleep(1500);
+  // the phone may come back to its home screen: the DJ opens the app again (in the background, Android slows its page right down)
+  if (!/topResumedActivity=\S+ \S+ za\.co\.controll\.stationwagon/.test(adb("dumpsys", "activity", "activities"))) { adb("am", "start", "-n", `${PKG}/.MainActivity`); await sleep(2000); }
+}
 /** The app's open pages (only one should be left after it switches pages). */
 const pages = async () => (await fetch(`http://localhost:${CDP}/json`).then((r) => r.json()).catch(() => [])).filter((p) => p.type === "page" && !BAR_URL.test(p.url));
 /** Runs an expression in the bar's WebView (round 61), over its own DevTools connection. */
@@ -452,7 +463,18 @@ try {
     const pk = await waitFor(() => inBar("(() => { const s = document.getElementById('emStream'); if (!s || !SwPlayer.state().on) return null; const r = s.getBoundingClientRect(); return { opts: [...s.options].map((o) => o.value), h: r.height, top: r.top, bottom: r.bottom, H: innerHeight }; })()"), 20);
     check("with two streams the app's bar has the stream picker, inside the 64 dp bar", pk && pk.opts.includes(pickFx.stream) && pk.h > 10 && pk.top >= 0 && pk.bottom <= pk.H, JSON.stringify(pk));
     const screenBefore = await evaluate("location.href");
-    await inBar(`(() => { const s = document.getElementById('emStream'); s.value = ${JSON.stringify(pickFx.stream)}; s.dispatchEvent(new Event('change')); })()`);
+    // a real tap on the list, as a person does: Android opens its own list over the screen; then a tap on the stream's name
+    const at = await inBar("(() => { const r = document.getElementById('emStream').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, dpr: devicePixelRatio, names: [...document.querySelectorAll('#emStream option')].map((o) => o.textContent) }; })()");
+    const views = screenNodes().filter((n) => n.cls === "android.webkit.WebView").sort((a, b) => b.y1 - a.y1);
+    const barView = views[0];
+    if (at && barView) adb("input", "tap", String(Math.round(barView.x1 + at.x * at.dpr)), String(Math.round(barView.y1 + at.y * at.dpr)));
+    await sleep(1500);
+    const listed = screenTexts();
+    if (process.env.SW_SHOTS) writeFileSync(join(process.env.SW_SHOTS, "android-bar-stream-list.png"), execFileSync(adbPath, ["exec-out", "screencap", "-p"], { maxBuffer: 64 << 20 }));
+    check("  tapping the list opens Android's own list with every stream", !!at && at.names.length > 1 && at.names.every((n) => listed.includes(n)), JSON.stringify({ names: at && at.names, listed: listed.slice(0, 12) }));
+    const tapped = tapText(new RegExp("^" + pickFx.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$"));
+    if (!tapped) await inBar(`(() => { const s = document.getElementById('emStream'); s.value = ${JSON.stringify(pickFx.stream)}; s.dispatchEvent(new Event('change')); })()`);
+    check("  and tapping a stream's name there picks it", !!tapped, String(tapped));
     const on2 = await waitFor(() => inBar(`(() => { const x = { stream: SwPlayer.stream(), name: SwPlayer.timeline() && SwPlayer.timeline().station.name, status: SwPlayer.state().status }; return x.name === ${JSON.stringify(pickFx.name)} && x.status === "Playing" && x; })()`), 15);
     check("  picking a stream plays it in the bar", on2 && on2.stream === pickFx.stream, JSON.stringify(on2 || await inBar("({ stream: SwPlayer.stream(), status: SwPlayer.state().status })")));
     check("  and the studio above stays as it was", (await evaluate("location.href")) === screenBefore);
@@ -645,8 +667,11 @@ try {
   s = await state();
   check("  with no send errors", !!s && s.errors === 0 && s.live, s ? `${s.sent} sent, ${s.errors} errors` : "no answer");
   adb("input", "keyevent", "KEYCODE_WAKEUP");
+  await unlocked();
   s = await endShow();
-  check("End show (screen on again): the DJ's own Do Not Disturb stays on, the service stops", !!s && await waitFor(() => zen() === "1" && !onAirRunning(), 8) !== null, zen());
+  const stopped = !!s && await waitFor(() => zen() === "1" && !onAirRunning(), 8) !== null;
+  check("End show (screen on again): the DJ's own Do Not Disturb stays on, the service stops", stopped,
+    `ended: ${!!s}, zen ${zen()}, service ${onAirRunning() ? "running" : "stopped"}, banner: ${await text("#stBannerText").catch(() => "?")}, top: ${(adb("dumpsys", "activity", "activities").match(/topResumedActivity=\S+ \S+ \S+/) || [""])[0]}`);
   adb("cmd", "notification", "set_dnd", "off");
   liveId = null;
 } finally {
