@@ -84,6 +84,59 @@ final class Browser
     }
 }
 
+/**
+ * Removes this test's clips: the ones of earlier runs (a run killed before its clean-up leaves its songs
+ * ready and on the AutoDJ) and those in $ids (this run's). A clip on air right now can't go yet: it is
+ * hidden from the AutoDJ (status 'error', '[test] ' before its title), skipped if it is playing at the
+ * live edge, and removed by a later run. Hidden ones of earlier runs (also those browser_helper.php's
+ * cleanup-like hid as "[test] Web Test Song …") go now if they can. Other tests' clips ("Web Test Lib …")
+ * are left to their own clean-ups.
+ * @param list<int> $ids
+ * @return array{removed:int, hidden:int, skipped:bool}
+ */
+function sweep_test_songs(Db $db, \Stationwagon\Planner $planner, array $ids = []): array
+{
+    $lib = new \Stationwagon\Library($db, $planner->station(), SW_ROOT);
+    // [title pattern, the artist it must have (null: any), the kind it must be (null: any)]
+    $own = [['Web Test Song %', null, null], ['Web Test Mastered %', null, null], ['Window Title %', 'Window Artist', null],
+        ['Tag Title %', 'Tag Artist', null], ['Web Test Ad %', null, 'ad'], ['Web Test Download %', null, 'ad'], ['Web Test Jingle %', null, 'jingle']];
+    $or = [];
+    $args = [(int) $planner->station()['id']];
+    foreach ($own as [$like, $artist, $kind]) {
+        $or[] = "(title LIKE ?" . ($artist !== null ? ' AND artist = ?' : '') . ($kind !== null ? ' AND kind = ?' : '') . ')';
+        array_push($args, $like, ...array_values(array_filter([$artist, $kind], fn($v) => $v !== null)));
+        $or[] = "(status = 'error' AND title LIKE ?)"; // hidden by an earlier run
+        $args[] = "[test] $like";
+    }
+    $ids = array_values(array_filter(array_map('intval', $ids)));
+    $rows = $db->run('SELECT id, title FROM ' . $db->table('tracks') . ' WHERE station_id = ? AND (' . implode(' OR ', $or)
+        . ($ids ? ' OR id IN (' . implode(',', $ids) . ')' : '') . ') ORDER BY id', $args)->fetchAll();
+    $removed = $hidden = 0;
+    $skipped = false;
+    foreach ($rows as $row) {
+        $id = (int) $row['id'];
+        if ($lib->delete($id, $planner, microtime(true)) === null) {
+            $removed++;
+            continue;
+        }
+        if (str_starts_with((string) $row['title'], '[test] ')) {
+            continue; // still on air, already hidden: a later run removes it
+        }
+        // On air right now: hide it from the AutoDJ; a later run removes it
+        $db->run('UPDATE ' . $db->table('tracks') . " SET status = 'error', title = CONCAT('[test] ', title) WHERE id = ?", [$id]);
+        $hidden++;
+        // and if it's playing at the live edge, skip it, so the silent test song doesn't stay on air
+        $t = microtime(true);
+        foreach ($planner->timeline($t) as $e) {
+            if ($e['type'] === 'song' && $e['track_id'] === $id && $e['start'] <= $t && $e['end'] > $t + 5) {
+                $skipped = ($planner->skip($t)['cut_at'] ?? null) !== null || $skipped;
+            }
+        }
+    }
+    $planner->replan(microtime(true)); // nothing planned may use a hidden song
+    return ['removed' => $removed, 'hidden' => $hidden, 'skipped' => $skipped];
+}
+
 $location = fn(array $r) => $r['headers']['location'][0] ?? '';
 $created = null;
 $db = null;
@@ -433,6 +486,47 @@ try {
     if (!$public) {
         echo "Signed in (throwaway DJ account)\n";
         $db = Db::fromConfig();
+        // songs an earlier run left (killed before its clean-up, or hidden because they were on air) go first
+        $sw = sweep_test_songs($db, \Stationwagon\Planner::forFirstStation());
+        $leftOn = (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('tracks') . " WHERE status <> 'error' AND (title LIKE 'Web Test Song %' OR title LIKE 'Web Test Mastered %' OR title LIKE 'Window Title %' AND artist = 'Window Artist')")->fetchColumn();
+        check("no test song of an earlier run is left in the AutoDJ ({$sw['removed']} removed, {$sw['hidden']} on air hidden)", $leftOn === 0, "$leftOn left");
+        // and the throwaway accounts (and their roles and lists) of runs killed before their clean-up, this test's
+        // and the browser tests' ("web-test-…"); test suites never run two at once, so none of them is in use now.
+        // Each goes with its own test's clean-up in browser_helper.php (the DJ's shows ended, their notes, episodes,
+        // running orders and "[test]" live block; the stream fixture's stream), so no live block is left without its DJ.
+        $helper = function (string ...$args): void {
+            $p = proc_open([PHP_BINARY, __DIR__ . '/browser_helper.php', ...$args], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+            if (is_resource($p)) {
+                stream_get_contents($pipes[1]); stream_get_contents($pipes[2]);
+                proc_close($p);
+            }
+        };
+        $oldUsers = $db->run('SELECT id, email FROM ' . $db->table('users') . " WHERE email LIKE 'web-test-%@example.test'")->fetchAll();
+        foreach ($oldUsers as ['id' => $id, 'email' => $oldEmail]) {
+            if (str_ends_with((string) $oldEmail, '-stream@example.test')) {
+                $helper('stream-clean', (string) $id);
+            } else {
+                $blocks = $db->run('SELECT id FROM ' . $db->table('schedule') . " WHERE dj_user_id = ? AND title LIKE '[test]%'", [$id])->fetchAll(PDO::FETCH_COLUMN);
+                foreach ($blocks ?: [0] as $blockId) {
+                    $helper('studio-cleanup', (string) $id, (string) $blockId);
+                }
+            }
+            $db->run('DELETE FROM ' . $db->table('users') . ' WHERE id = ?', [$id]);
+            $db->run('DELETE FROM ' . $db->table('running_orders') . ' WHERE scope = ?', ["user:$id"]);
+        }
+        // a test live block whose DJ was deleted without that clean-up lets any DJ go live in it: it goes too
+        $orphans = $db->run('SELECT id FROM ' . $db->table('schedule') . " WHERE kind = 'live' AND dj_user_id IS NULL AND title LIKE '[test]%'")->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($orphans as $blockId) {
+            $db->run('DELETE FROM ' . $db->table('running_orders') . ' WHERE scope = ?', ["block:$blockId"]);
+            $db->run('DELETE FROM ' . $db->table('schedule') . ' WHERE id = ?', [$blockId]);
+        }
+        $db->run('DELETE FROM ' . $db->table('playlists') . " WHERE name LIKE 'Web test list %'");
+        $db->run('DELETE FROM ' . $db->table('roles') . " WHERE `key` LIKE 'web-test-%' OR name LIKE 'Web Test %'");
+        $leftUsers = (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('users') . " WHERE email LIKE 'web-test-%'")->fetchColumn();
+        $leftBlocks = (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('schedule') . ' s LEFT JOIN ' . $db->table('users') . " u ON u.id = s.dj_user_id
+            WHERE s.kind = 'live' AND s.title LIKE '[test]%' AND (u.id IS NULL OR u.email LIKE 'web-test-%')")->fetchColumn();
+        check('no throwaway account of an earlier run, nor its test live block, is left (' . count($oldUsers) . ' accounts, ' . count($orphans) . ' blocks without a DJ removed)',
+            $leftUsers === 0 && $leftBlocks === 0, "$leftUsers accounts, $leftBlocks blocks left");
         $email = 'web-test-' . bin2hex(random_bytes(4)) . '@example.test';
         $pass = bin2hex(random_bytes(12));
         $created = $db->insert('users', ['email' => $email, 'name' => 'Web Test DJ', 'password_hash' => password_hash($pass, PASSWORD_DEFAULT), 'role' => 'dj', 'created_at' => gmdate('Y-m-d H:i:s')]);
@@ -1244,31 +1338,11 @@ try {
         if (isset($origSettings) && $origSettings !== false) {
             $db->run('UPDATE ' . $db->table('stations') . ' SET settings = ? WHERE id = ?', [$origSettings, $stationId]);
         }
-        $planner = \Stationwagon\Planner::forFirstStation(); // with the station's own settings again
-        $lib = new \Stationwagon\Library($db, $planner->station(), SW_ROOT);
-        $kept = 0;
-        // Test songs hidden by an earlier run (they were on air then) go now, if they can
-        $old = $db->run('SELECT id FROM ' . $db->table('tracks') . " WHERE status = 'error' AND title LIKE '[test] Web Test Song %'")->fetchAll(PDO::FETCH_COLUMN);
-        foreach ($old as $id) {
-            $lib->delete((int) $id, $planner, microtime(true));
-        }
-        foreach (array_filter($tracks ?? []) as $id) {
-            if ($lib->get($id) !== null && $lib->delete($id, $planner, microtime(true)) !== null) {
-                // On air right now: hide it from the AutoDJ; it can be removed later
-                $db->run('UPDATE ' . $db->table('tracks') . " SET status = 'error', title = CONCAT('[test] ', title) WHERE id = ?", [$id]);
-                $kept++;
-                // and if it's playing at the live edge, skip it, so the silent test song doesn't stay on air
-                $t = microtime(true);
-                foreach ($planner->timeline($t) as $e) {
-                    if ($e['type'] === 'song' && $e['track_id'] === $id && $e['start'] <= $t && $e['end'] > $t + 5) {
-                        $skipped = $planner->skip($t)['cut_at'] ?? null;
-                    }
-                }
-            }
-        }
-        $planner->replan(microtime(true)); // nothing planned may use a hidden song
+        // this run's songs, and any an earlier run left (one on air now is hidden, and removed by a later run)
+        $sw = sweep_test_songs($db, \Stationwagon\Planner::forFirstStation(), $tracks ?? []); // with the station's own settings again
         $left = (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('users') . " WHERE email LIKE 'web-test-%'")->fetchColumn();
-        echo "Cleanup: throwaway accounts deleted ($left left)" . ($kept ? ", $kept test song hidden (it was on air)" . (!empty($skipped) ? ' and skipped' : '') : '') . "\n";
+        echo "Cleanup: throwaway accounts deleted ($left left), {$sw['removed']} test clips removed"
+            . ($sw['hidden'] ? ", {$sw['hidden']} hidden (on air)" . ($sw['skipped'] ? ' and skipped' : '') : '') . "\n";
     }
     if (isset($tmpDir)) {
         remove_tree($tmpDir);
