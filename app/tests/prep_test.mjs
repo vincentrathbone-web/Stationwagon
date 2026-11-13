@@ -53,25 +53,26 @@ console.log("Trim, level, fade");
 const R = 44100;
 const span = core.soundSpan(tone([[null, 1], [-20, 2], [null, 1]], R), R);
 check("silence at both ends is found, 50 ms kept", span && near(span[0] / R, 0.95, 0.002) && near(span[1] / R, 3.05, 0.002), span && `${(span[0] / R).toFixed(3)}–${(span[1] / R).toFixed(3)} s`);
-let r = core.prepare(tone([[null, 1.5], [-26, 8], [null, 2]], R), R);
+const L16 = { target: -16 }; // the levelling maths at -16 LUFS (the default target is -11 since round 86, checked below)
+let r = core.prepare(tone([[null, 1.5], [-26, 8], [null, 2]], R), R, L16);
 check("a quiet song comes up to -16 LUFS", near(r.info.lufs, -16, 0.05) && near(core.loudness(r.channels, R), -16, 0.15), JSON.stringify(r.info));
 check("  with the silence trimmed", near(r.info.trimmed_start_s, 1.45, 0.01) && near(r.info.trimmed_end_s, 1.95, 0.01) && near(r.info.seconds, 8.1, 0.01));
 check("  starting and ending at zero (no click)", r.channels[0][0] === 0 && r.channels[1][r.channels[1].length - 1] === 0);
-r = core.prepare(tone([[-6, 8]], R), R);
+r = core.prepare(tone([[-6, 8]], R), R, L16);
 check("a loud song comes down to -16 LUFS", near(core.loudness(r.channels, R), -16, 0.15) && r.info.gain_db < -9 && !r.info.capped, JSON.stringify(r.info));
 const spiky = tone([[-30, 8]], R);
 spiky[0][R * 4] = 0.9; spiky[1][R * 4] = 0.9;
-r = core.prepare(spiky, R);
+r = core.prepare(spiky, R, L16);
 check("a loud click stops the gain at -1 dBFS peak", r.info.capped && near(r.info.peak_db, -1, 0.01) && r.info.lufs < -16, JSON.stringify(r.info));
 r = core.prepare(tone([[-45, 8]], R), R);
 check("a very quiet recording gets at most +12 dB", r.info.capped && near(r.info.gain_db, 12, 0.001), JSON.stringify(r.info));
 check("a silent file is left alone", core.prepare(tone([[null, 5]], R), R).skip !== undefined);
-r = core.prepare(tone([[-20, 4]], R, { mono: true }), R);
+r = core.prepare(tone([[-20, 4]], R, { mono: true }), R, L16);
 check("mono comes out as stereo", r.channels.length === 2 && near(core.loudness(r.channels, R), -16, 0.15));
 const tail = core.outro(tone([[-23, 10], [null, 5]], 48000), 48000);
 check("the last minute is measured second by second, silence as -99", tail.length === 15 && tail.slice(0, 10).every((v) => near(v, -23, 0.2)) && tail.slice(10).every((v) => v === -99), JSON.stringify(tail));
 check("  a long song gives 60 values", core.outro(tone([[-23, 70]], 44100), 44100).length === core.P.OUTRO_S);
-r = core.prepare(tone([[-26, 8]], R), R);
+r = core.prepare(tone([[-26, 8]], R), R, L16);
 check("  and song prep keeps them, levelled like the song", r.info.outro.length === 8 && r.info.outro.every((v) => near(v, -16, 0.3)), JSON.stringify(r.info.outro));
 
 console.log("Tags and MP3");
@@ -125,7 +126,7 @@ console.log("The loudness target (round 41)");
 const quiet = tone([[null, 1], [-20, 12], [null, 1]], R, { freq: 440 });
 const at = (target) => core.prepare(quiet.map((x) => x.slice()), R, { target });
 check("a song is levelled to the station's target", near(at(-14).info.lufs, -14, 0.05) && at(-14).info.target === -14 && near(at(-20).info.lufs, -20, 0.05), `${at(-14).info.lufs} / ${at(-20).info.lufs} LUFS`);
-check("  without one, to -16 LUFS", near(core.prepare(quiet.map((x) => x.slice()), R).info.lufs, -16, 0.05) && core.prepare(quiet.map((x) => x.slice()), R).info.target === -16);
+check("  without one, to -11 LUFS (WordWave's, the default since round 86)", core.P.TARGET_LUFS === -11 && near(core.prepare(quiet.map((x) => x.slice()), R).info.lufs, -11, 0.05) && core.prepare(quiet.map((x) => x.slice()), R).info.target === -11);
 // a song with a few loud hits (-20 dBFS with spikes near full scale): at -8 LUFS its peaks would clip
 const hits = tone([[-20, 8]], R); for (const k of [2, 4, 6]) { hits[0][R * k] = 0.5; hits[1][R * k] = 0.5; }
 const loud = core.prepare(hits, R, { target: -8 });
@@ -154,9 +155,13 @@ try {
 // ---- Mastering (master-core.js) against what Audition did with the station's chain ----------
 // Audition's own numbers, measured from its exports of the test signals (tools/mastering-signals.mjs):
 // the gain (dB) the multiband step gave a steady tone at each level (dBFS RMS), and the gain of
-// the whole chain on quiet tones.
+// the whole chain on quiet tones. The stages are checked with Audition's settings (the built-in chain
+// until round 86, kept here as test data); the built-in is WordWave's tuning since then (checked below).
 console.log("Mastering, against Audition's measured response");
 const master = createRequire(import.meta.url)("../assets/master-core.js");
+const AUDITION = { cross: [137, 1147, 6910], threshold: [-20.2, -17.6, -24.8, -25], ratio: [3, 2, 2, 3], knee: 3, gain: [1, 0, 0, 3],
+  attackMs: 0.5, releaseMs: 38, mbThresh: -5.5, mbMargin: -0.6, shelfDb: 1.6, exciteDb: -48, sideDb: 4.3, maxGain: 3.9, ceiling: -0.87,
+  eqOn: true, compOn: true, finishOn: true };
 const MR = 44100;
 const rmsDb = (x, from, to) => { let s = 0; for (let i = from; i < to; i++) s += x[i] * x[i]; return 10 * Math.log10(s / (to - from)); };
 function sine(hz, db, sec = 1.5, side = false) {
@@ -172,15 +177,16 @@ const audition = {
   12000: [[-36, 7.8], [-24, 5.5], [-21, 3.6], [-18, 1.8], [-15, -0.1], [-12, -1.9]],
 };
 for (const [hz, points] of Object.entries(audition)) {
-  const diffs = points.map(([db, want]) => gainOf(master.multiband, sine(Number(hz), db)) - want);
+  const diffs = points.map(([db, want]) => gainOf((x, rate) => master.multiband(x, rate, null, AUDITION), sine(Number(hz), db)) - want);
   check(`multiband at ${hz} Hz: within 1 dB of Audition at every level`, diffs.every((d) => Math.abs(d) <= 1), diffs.map((d) => (d >= 0 ? "+" : "") + d.toFixed(2)).join(" "));
 }
 const whole = { 60: 9.8, 400: 8.8, 3000: 9.1, 12000: 13.0 };
-const wd = Object.entries(whole).map(([hz, want]) => gainOf(master.master, sine(Number(hz), -36)) - want);
+const wd = Object.entries(whole).map(([hz, want]) => gainOf((x, rate) => master.master(x, rate, null, AUDITION), sine(Number(hz), -36)) - want);
 check("the whole chain on quiet tones: within 0.3 dB of Audition", wd.every((d) => Math.abs(d) <= 0.3), wd.map((d) => (d >= 0 ? "+" : "") + d.toFixed(2)).join(" "));
 // the widener brightens the sides only: Audition gave the sides +4.3 dB over the middle above 3 kHz, none below 1 kHz
-const sideLow = gainOf(master.mastering, sine(200, -30, 1.5, true)) - gainOf(master.mastering, sine(200, -30));
-const sideHigh = gainOf(master.mastering, sine(8000, -30, 1.5, true)) - gainOf(master.mastering, sine(8000, -30));
+const aMastering = (x, rate) => master.mastering(x, rate, AUDITION);
+const sideLow = gainOf(aMastering, sine(200, -30, 1.5, true)) - gainOf(aMastering, sine(200, -30));
+const sideHigh = gainOf(aMastering, sine(8000, -30, 1.5, true)) - gainOf(aMastering, sine(8000, -30));
 check("the widener lifts the sides by about 4.3 dB in the highs and leaves the lows", near(sideHigh, 4.3, 0.3) && Math.abs(sideLow) < 0.3, `8 kHz ${sideHigh.toFixed(2)} dB, 200 Hz ${sideLow.toFixed(2)} dB`);
 {
   // the band split adds back up exactly, with no delay or phase shift
@@ -196,12 +202,15 @@ check("the widener lifts the sides by about 4.3 dB in the highs and leaves the l
   const share = 1 / (1 + Math.pow(60 / 137, 4)); // the crossover's slope: 96.4 % of a 60 Hz tone is in the low band
   for (let i = MR; i < 2 * MR; i++) lowOnly = Math.max(lowOnly, Math.abs(LL[0][i] - share * lowTone[0][i]));
   check("  a 60 Hz tone's low-band part is in phase with it, at the crossover's share", lowOnly < 1e-3, lowOnly.toExponential(1));
-  // loud noise: no peak above the maximizer's ceiling (−0.87 dBFS)
+  // loud noise: no peak above the maximizer's ceiling (the built-in's −0.1 dBFS; Audition's −0.87)
   for (let i = 0; i < n; i++) { l[i] = rnd() * 0.9; r[i] = rnd() * 0.9; }
   let pk = 0, last = 0;
   const y = master.master([l, r], MR, (p) => { last = p; });
   for (const c of y) for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(c[i]));
-  check("loud music never peaks above −0.87 dBFS", 20 * Math.log10(pk) <= -0.869, (20 * Math.log10(pk)).toFixed(3) + " dBFS");
+  let pa = 0;
+  for (const c of master.master([l, r], MR, null, AUDITION)) for (let i = 0; i < n; i++) pa = Math.max(pa, Math.abs(c[i]));
+  check("loud music never peaks above the ceiling: −0.1 dBFS built in, −0.87 with Audition's", 20 * Math.log10(pk) <= -0.099 && 20 * Math.log10(pa) <= -0.869,
+    (20 * Math.log10(pk)).toFixed(3) + " / " + (20 * Math.log10(pa)).toFixed(3) + " dBFS");
   check("  and mastering reports progress up to 100 %", last === 1);
   const silent = master.master([new Float32Array(MR), new Float32Array(MR)], MR);
   check("silence stays silent", silent.every((c) => c.every((v) => Math.abs(v) < 1e-9)));
@@ -212,12 +221,19 @@ console.log("Presets (the Song prep screen)");
 {
   const loud = sine(1000, -12, 2);
   const a = master.master(loud, MR), b = master.master(loud, MR, null, {});
-  check("an empty preset is the Audition chain, sample for sample", a[0].every((v, i) => v === b[0][i]) && a[1].every((v, i) => v === b[1][i]));
+  check("an empty preset is the built-in chain, sample for sample", a[0].every((v, i) => v === b[0][i]) && a[1].every((v, i) => v === b[1][i]));
+  // round 86: the built-in is WordWave's "Audition2", as stored on the live stations (with their long decimals)
+  const WORDWAVE = JSON.parse("{\"cross\":[137,1147,7941],\"threshold\":[-18,-15.4000000000000003552713678800500929355621337890625,-22.60000000000000142108547152020037174224853515625,-22.800000000000000710542735760100185871124267578125],\"ratio\":[2.439999999999999946709294817992486059665679931640625,1.7199999999999999733546474089962430298328399658203125,1.7199999999999999733546474089962430298328399658203125,2.439999999999999946709294817992486059665679931640625],\"knee\":2,\"gain\":[1.5,0,0,3],\"attackMs\":0.299999999999999988897769753748434595763683319091796875,\"releaseMs\":411,\"mbThresh\":-5.5,\"mbMargin\":-0.59999999999999997779553950749686919152736663818359375,\"shelfDb\":-1.6999999999999999555910790149937383830547332763671875,\"exciteDb\":-72,\"sideDb\":6.79999999999999982236431605997495353221893310546875,\"maxGain\":2.70000000000000017763568394002504646778106689453125,\"ceiling\":-0.1000000000000000055511151231257827021181583404541015625,\"eqOn\":false,\"compOn\":true,\"finishOn\":true,\"eq\":{\"hp\":{\"on\":false,\"hz\":30},\"low\":{\"hz\":100,\"db\":0},\"bells\":[{\"hz\":250,\"db\":0,\"q\":1},{\"hz\":1000,\"db\":0,\"q\":1},{\"hz\":4000,\"db\":0,\"q\":1}],\"high\":{\"hz\":10000,\"db\":0}},\"simple\":{\"amount\":0.35999999999999998667732370449812151491641998291015625,\"punch\":0.11000000000000000055511151231257827021181583404541015625,\"loudness\":2.70000000000000017763568394002504646778106689453125,\"ceiling\":-0.1000000000000000055511151231257827021181583404541015625}}");
+  const ww = master.master(loud, MR, null, WORDWAVE);
+  check("the built-in chain is WordWave's Audition2, sample for sample", a[0].every((v, i) => v === ww[0][i]) && a[1].every((v, i) => v === ww[1][i])
+    && JSON.stringify(master.preset(WORDWAVE)) === JSON.stringify(master.P));
+  const old = master.master(loud, MR, null, AUDITION);
+  check("  and it sounds different from Audition's own settings", old[0].some((v, i) => Math.abs(v - a[0][i]) > 1e-3));
   const q = master.preset({ ratio: [99, 2, "x"], ceiling: 5, cross: [5000, 200, 900], eq: { bells: [{ hz: 1e6, db: -40, q: 0 }] }, compOn: "no", junk: 1 });
   check("a preset is kept in range: too big, wrong types and unknown keys", q.ratio[0] === 20 && q.ratio[2] === master.P.ratio[2] && q.ceiling === -0.1 && q.eq.bells[0].hz === 20000 && q.eq.bells[0].db === -15 && q.eq.bells[0].q === 0.2 && q.compOn === true && !("junk" in q),
     JSON.stringify({ ratio: q.ratio, ceiling: q.ceiling, bell: q.eq.bells[0], compOn: q.compOn }));
   check("  crossovers come out in order, apart and in range", q.cross.join() === "200,900,5000" && master.preset({ cross: [390, 395, 2000] }).cross.every((v, i, a) => !i || v >= a[i - 1] * 1.5), q.cross.join(" / ") + "; " + master.preset({ cross: [390, 395, 2000] }).cross.join(" / "));
-  const off = { compOn: false, finishOn: false };
+  const off = { compOn: false, finishOn: false, eqOn: true }; // the built-in has the flat EQ off: on here to test it
   const thru = master.master(loud, MR, null, off);
   check("with everything off and a flat EQ the song comes through untouched", thru[0].every((v, i) => v === loud[0][i]));
   const gainAt = (hz, eq) => { const x = sine(hz, -20, 1); return rmsDb(master.master(x, MR, null, { ...off, eq })[0], MR / 2, MR) - rmsDb(x[0], MR / 2, MR); };
@@ -233,14 +249,16 @@ console.log("Presets (the Song prep screen)");
   const lim = master.master(sine(1000, -3, 2), MR, null, {}, 4410).meter.lim;
   check("  one value per step, and the final limiter's reduction too", m.bands[0].length === Math.ceil(2 * MR / 4410) && most(lim) > 1, `${m.bands[0].length} values, limiter ${most(lim).toFixed(1)} dB`);
   const s0 = master.simple({});
-  check("the simple view in the middle is the Audition chain", s0.ratio.every((v, i) => v === master.P.ratio[i]) && s0.threshold.every((v, i) => v === master.P.threshold[i]) && s0.maxGain === master.P.maxGain);
+  check("the simple view in the middle is the built-in chain", s0.ratio.every((v, i) => v === master.P.ratio[i]) && s0.threshold.every((v, i) => v === master.P.threshold[i]) && s0.maxGain === master.P.maxGain);
   const soft = master.simple({ amount: 0 }), hard = master.simple({ amount: 1 }), slow = master.simple({ punch: 1 });
   check("  amount 0 lets the dynamics through (ratio 1), amount 1 squeezes harder", soft.ratio.every((v) => v === 1) && hard.ratio.every((v, i) => v > master.P.ratio[i]) && hard.threshold.every((v, i) => v < master.P.threshold[i]), `${soft.ratio} / ${hard.ratio}`);
   check("  more punch is a slower attack and release", slow.attackMs > 20 && slow.releaseMs > master.P.releaseMs, `${slow.attackMs} / ${slow.releaseMs} ms`);
   const music = sine(220, -10, 3);
   for (let i = 0; i < music[0].length; i++) { const e = (i % 22050) < 2205 ? 1 : 0.15; music[0][i] *= e; music[1][i] *= e; } // a hit every 0.5 s
   const spread = (y) => { const v = []; for (let i = 0; i + 2205 <= y[0].length; i += 2205) v.push(rmsDb(y[0], i, i + 2205)); v.sort((x, z) => x - z); return v[v.length - 1] - v[0]; };
-  const lowAmt = spread(master.master(music, MR, null, { ...master.simple({ amount: 0.1 }), finishOn: false })), highAmt = spread(master.master(music, MR, null, { ...master.simple({ amount: 0.9 }), finishOn: false }));
+  // a fast release (Audition's 38 ms) so each hit is measured on its own; the built-in's 411 ms holds across the gaps
+  const fast = (amount) => ({ ...master.simple({ amount }), attackMs: 0.5, releaseMs: 38, finishOn: false });
+  const lowAmt = spread(master.master(music, MR, null, fast(0.1))), highAmt = spread(master.master(music, MR, null, fast(0.9)));
   check("  a lower amount keeps more of the music's swing", lowAmt > highAmt + 3, `${lowAmt.toFixed(1)} dB against ${highAmt.toFixed(1)} dB`);
 }
 

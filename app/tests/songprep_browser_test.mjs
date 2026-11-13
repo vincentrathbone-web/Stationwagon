@@ -197,7 +197,9 @@ try {
   await setBox("#spCompOn", true); await setBox("#spFinishOn", true);
   await setRange("#sps-amount", 0.9);
   s = await st();
-  check("the simple view's Amount sets the full view's ratios", s.settings.ratio.every((v, i) => v > [3, 2, 2, 3][i]) && Number(await evaluate("document.getElementById('spa-rat0').value")) === s.settings.ratio[0], s.settings.ratio.join(" / "));
+  const builtIn = await evaluate("SwMaster.P.ratio"); // the built-in chain's (WordWave's since round 86)
+  const rat0 = Number(await evaluate("document.getElementById('spa-rat0').value"));
+  check("the simple view's Amount sets the full view's ratios", Array.isArray(builtIn) && s.settings.ratio.every((v, i) => v > builtIn[i]) && rat0 === s.settings.ratio[0], s.settings.ratio.join(" / ") + " over " + JSON.stringify(builtIn) + "; the box says " + rat0);
   await setRange("#spa-rat2", 7.5);
   check("  and a full-view setting changes only itself", (await st()).settings.ratio[2] === 7.5 && (await st()).settings.ratio[0] === s.settings.ratio[0]);
 

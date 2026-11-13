@@ -114,8 +114,8 @@
   const advanced = [
     ["Crossovers", [0, 1, 2].map((i) => [`cross${i}`, ["Low / low mid", "Low mid / high mid", "High mid / high"][i], ...A("cross", i), ...M.RANGES.cross[i], 1, "Hz"])],
     ...BANDS.map((b, i) => [b + " band", [
-      [`thr${i}`, "Threshold", ...A("threshold", i), ...M.RANGES.threshold, 0.5, "dB"],
-      [`rat${i}`, "Ratio", ...A("ratio", i), ...M.RANGES.ratio, 0.1, ":1"],
+      [`thr${i}`, "Threshold", ...A("threshold", i), ...M.RANGES.threshold, 0.1, "dB"], // 0.1 and 0.01 (round 86): WordWave's values exactly
+      [`rat${i}`, "Ratio", ...A("ratio", i), ...M.RANGES.ratio, 0.01, ":1"],
       [`gain${i}`, "Gain", ...A("gain", i), ...M.RANGES.gain, 0.5, "dB"],
     ]]),
     ["Timing", [["knee", "Knee", ...S("knee"), ...M.RANGES.knee, 0.5, "dB"], ["att", "Attack", ...S("attackMs"), ...M.RANGES.attackMs, 0.1, "ms"], ["rel", "Release", ...S("releaseMs"), ...M.RANGES.releaseMs, 1, "ms"]]],

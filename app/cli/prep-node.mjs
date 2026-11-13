@@ -54,7 +54,7 @@ async function prepare(job) {
   };
   let notice = null;
   const env = { core, master: SwMaster, lame, decoder, post };
-  const base = { kbps: opts.kbps || 160, master: opts.master && typeof opts.master === "object" ? opts.master : !!opts.master,
+  const base = { kbps: opts.kbps || 224, master: opts.master && typeof opts.master === "object" ? opts.master : !!opts.master,
     level: opts.level !== false, target: opts.target, quality: opts.quality || {} };
   const kind = core.sniff(bytes.subarray(0, 65536), name);
   const out = (r) => Object.assign({ name, kind, song: false, original: false }, r, notice ? { notice } : {});

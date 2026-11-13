@@ -22,7 +22,7 @@
   const ds = document.currentScript.dataset;
   const workerUrl = ds.worker || here + "prep-worker.js"; // tagged by content
   const num = (v, d) => (v !== undefined && v !== "" && isFinite(Number(v)) ? Number(v) : d);
-  const KBPS = num(ds.kbps, 160);
+  const KBPS = num(ds.kbps, 224); // the station's; 224 is the default since round 86
   const QUALITY = { rate: num(ds.rate, 44100), precision: num(ds.precision, 32), dither: num(ds.dither, 1) === 1, q: num(ds.quality, 0) };
   const MAX_BYTES = 60 * 1024 * 1024; // about an hour at 128 kbps; longer would need too much memory
   const MAX_OTHER = 400 * 1024 * 1024; // a WAV or FLAC: about 40 minutes of 24-bit 48 kHz WAV

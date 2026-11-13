@@ -55,15 +55,15 @@ try {
 
     echo "The jingle settings\n";
     $jin = new Jingles($db, $station);
-    check('they start on: a jingle after every 4 songs, blending over 1 s', Jingles::settings($station) === ['enabled' => true, 'every' => 4, 'crossfade' => 1.0], json_encode(Jingles::settings($station)));
+    check('they start on: a jingle after every 3 songs (WordWave\x27s, round 86), blending over 1 s', Jingles::settings($station) === ['enabled' => true, 'every' => 3, 'crossfade' => 1.0], json_encode(Jingles::settings($station)));
     [$u, $why] = $jin->saveSettings(['enabled' => '1', 'every' => '25']);
-    check('25 songs is refused, and nothing is stored', $u === null && $why !== null && Jingles::settings($fresh())['every'] === 4);
+    check('25 songs is refused, and nothing is stored', $u === null && $why !== null && Jingles::settings($fresh())['every'] === 3);
     [$u, $why] = $jin->saveSettings(['enabled' => '1', 'every' => 'often']);
     check('  so is a word', $u === null && $why !== null);
     [$u, $why] = $jin->saveSettings(['enabled' => '1', 'every' => '2']);
     $station = $fresh();
     $jin = new Jingles($db, $station);
-    check('2 songs is saved, and the other settings are kept', $u !== null && $why === null && Jingles::settings($station)['every'] === 2 && (float) Planner::settings($station)['crossfade_seconds'] === 6.0 && Ads::settings($station)['every'] === 3);
+    check('2 songs is saved, and the other settings are kept', $u !== null && $why === null && Jingles::settings($station)['every'] === 2 && (float) Planner::settings($station)['crossfade_seconds'] === 8.0 && Ads::settings($station)['every'] === 3);
     [$u] = $jin->saveSettings(['every' => '2']); // an unchecked box sends nothing
     check('the switch off is saved', $u !== null && Jingles::settings($fresh())['enabled'] === false);
     $jin->saveSettings(['enabled' => '1', 'every' => '2']);
@@ -109,7 +109,7 @@ try {
     check('a jingle shows the station’s name, never its own title, and no artist, album, art or copyright line', $first['title'] === $station['name'] && $first['jingle_title'] === 'Jingle Alpha'
         && $first['artist'] === null && $first['album'] === null && $first['art'] === null && $first['rights'] === null && $first['track_id'] === $j1);
     $ji = array_keys(array_filter($kinds($es), fn($x) => $x === 'J'))[0];
-    check('it blends over its own short crossfade, and the song before it fades out over it too', abs($es[$ji]['fade_out'] - 1.0) < 1e-9 && abs($es[$ji - 1]['fade_out'] - 1.0) < 1e-9 && abs($es[$ji + 1]['fade_out'] - 6.0) < 1e-9);
+    check('it blends over its own short crossfade, and the song before it fades out over it too', abs($es[$ji]['fade_out'] - 1.0) < 1e-9 && abs($es[$ji - 1]['fade_out'] - 1.0) < 1e-9 && abs($es[$ji + 1]['fade_out'] - 8.0) < 1e-9);
     check('  a jingle plays whole (its whole length, give or take a piece)', $es[$ji]['play'] > 0 && $es[$ji]['play'] <= $lib->get($j1)['duration_s'] + 0.01);
     check('songs never repeat because of jingles (the recent songs ignore them)', count(array_unique(array_map(fn($e) => $e['track_id'], array_slice(array_filter($es, fn($e) => empty($e['jingle'])), 0, 4)))) === 4);
 

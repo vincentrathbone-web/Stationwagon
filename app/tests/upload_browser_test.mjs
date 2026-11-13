@@ -669,7 +669,7 @@ try {
   prepBefore = helper("prep");
   srvBefore = helper("server-prep", "state").state;
   helper("server-prep", "off"); // songs are prepared in this browser, except in the server part (round 85)
-  helper("prep", "1", "1", "-16"); // both on (a new station has mastering off; this tries it on), at -16 LUFS as the checks below say
+  helper("prep", "1", "1", "-16"); // both on (a new station has both on since round 86; set anyway), at -16 LUFS as the checks below say
   for (let i = 0; i < 50; i++) { await sleep(200); try { await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; } catch { /* starting */ } }
   const target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === "page");
   ws = new WebSocket(target.webSocketDebuggerUrl);
@@ -820,7 +820,7 @@ try {
 } catch (ex) {
   if (ex !== SKIP) throw ex;
 } finally {
-  if (prepBefore) helper("prep", prepBefore.master ? "1" : "0", prepBefore.level ? "1" : "0", String(prepBefore.target ?? -16));
+  if (prepBefore) helper("prep", prepBefore.master ? "1" : "0", prepBefore.level ? "1" : "0", String(prepBefore.target ?? -11));
   if (srvBefore !== null) helper("server-prep", "restore", JSON.stringify(srvBefore));
   if (user) helper("prep-clean", String(user.id), ...(admin ? [String(admin.id)] : []));
   if (admin) helper("cleanup", String(admin.id));

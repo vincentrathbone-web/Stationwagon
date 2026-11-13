@@ -128,7 +128,7 @@ try {
     $live = $r['result']['live'] ?? null;
     check('go live opens a live block', $live && $live['open'] && $live['start'] >= $now + 1, $live ? sprintf('starts +%.2f s', $live['start'] - $now) : json_encode($r['result']));
     check('no AutoDJ songs planned during the show', end($r['entries'])['type'] === 'live');
-    check('the song before hands over with the full crossfade', $r['result']['handover']['fade_out'] == $xf && $r['result']['handover']['cut']);
+    check('the song before hands over with the go-live fade', $r['result']['handover']['fade_out'] == $p->setting('live_fade_seconds') && $r['result']['handover']['cut']);
     $again = $p->goLive($now + 1, 'Second DJ')['result'];
     check('a second go-live is refused while on air', isset($again['error']));
     // Skip in the seconds between Go live and the show's start used to cut the song on air and
@@ -270,7 +270,7 @@ try {
     $empty = new Planner($db, ['id' => $sid, 'name' => 'Empty FM', 'timezone' => 'UTC', 'settings' => null], $root);
     check('a station without songs has an empty timeline', $empty->timeline($t0) === []);
     check('and its playlist says so with 503', Stream::playlist($empty, $t0)['status'] === 503);
-    check('station settings fall back to the proven defaults', $empty->setting('crossfade_seconds') == 6 && $empty->setting('segment_seconds') == 6);
+    check('station settings fall back to the defaults (WordWave\x27s 8 s crossfade since round 86)', $empty->setting('crossfade_seconds') == 8 && $empty->setting('segment_seconds') == 6);
 
     echo "Player feed\n";
     $w = $p->window($t0 + 50, $t0 + 20, $t0 + 900);

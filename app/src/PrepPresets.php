@@ -8,7 +8,7 @@ namespace Stationwagon;
  * assets/master-core.js, kept as JSON. The chain keeps every value in range itself (SwMaster.preset);
  * here a preset is only checked for its shape: known keys, numbers, true/false and short lists.
  * The station's default for imports is its `prep_preset` setting: a preset's id, or 0 for the
- * built-in Audition chain (master-core.js's P), which can't be changed or removed.
+ * built-in Audition chain (master-core.js's P; WordWave's tuning since round 86), which can't be changed or removed.
  */
 final class PrepPresets
 {

@@ -16,7 +16,7 @@ final class StationSettings
     /** The station's loudness target for song prep's normalization (LUFS): its range and default. */
     public const TARGET_MIN = -23.0;
     public const TARGET_MAX = -8.0;
-    public const TARGET_DEFAULT = -16.0;
+    public const TARGET_DEFAULT = -11.0; // WordWave's (round 86; it was -16)
     private const QUALITY = [96 => '96 kbps', 128 => '128 kbps', 160 => '160 kbps', 192 => '192 kbps', 256 => '256 kbps'];
     // prepared songs (round 51): up to 320 kbps, MP3's most
     private const PREP_QUALITY = [96 => '96 kbps', 128 => '128 kbps', 160 => '160 kbps', 192 => '192 kbps', 224 => '224 kbps', 256 => '256 kbps', 320 => '320 kbps'];

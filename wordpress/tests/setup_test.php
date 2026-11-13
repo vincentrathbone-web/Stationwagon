@@ -240,7 +240,7 @@ try {
     $peoplePage = "$site/wp-admin/admin.php?page=stationwagon-people";
     $pp = http('GET', $peoplePage);
     check('Stationwagon → People lists the station’s own accounts', $pp['code'] === 200 && str_contains($pp['body'], 'admin.php?page=stationwagon-people') && str_contains($pp['body'], $admin['email'])
-        && str_contains($pp['body'], 'not WordPress users') && str_contains($pp['body'], 'id="roles"') && substr_count($pp['body'], 'name="perm[]"') === 9, (string) $pp['code']);
+        && str_contains($pp['body'], 'not WordPress users') && str_contains($pp['body'], 'id="roles"') && substr_count($pp['body'], 'name="perm[]"') === 10 /* ten ticks since Download clips (v1.2) */, (string) $pp['code']);
     $people = function (string $do, array $fields) use ($peoplePage): array {
         $form = http('GET', $peoplePage . (isset($fields['id']) ? '&person=' . $fields['id'] : ''));
         $nonce = between($form['body'], 'name="_wpnonce" value="', '"');

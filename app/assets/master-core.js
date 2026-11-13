@@ -1,37 +1,42 @@
 // Song mastering, modelled on the user's Adobe Audition chain: the Multiband Compressor preset
-// "Broadcast1", then the Mastering preset "Master1". Measured from Audition's own output (test
-// signals and four songs, see tools/mastering-signals.mjs and HANDOVER.md) and fitted to it.
+// "Broadcast1", then the Mastering preset "Master1". The stages were measured from Audition's own
+// output (test signals and four songs, see tools/mastering-signals.mjs and HANDOVER.md) and fitted
+// to it; prep_test.mjs still checks them against those measurements with Audition's settings.
+// Since round 86 the built-in settings (P) are WordWave's tuning of that chain, its "Audition2"
+// preset (the user, 2026-11-13: WordWave's sound is the default for every station).
 // No DOM: song prep runs it in its worker, the Node tests and the fitting tool run it directly.
 // It streams through the song in blocks, so it needs little memory beyond the song and its copy.
 // A preset (the Song prep screen's, round 40) changes any setting; without one it is P, the
-// Audition chain. In front of it there is a five-band EQ, flat in P.
+// built-in "Audition chain" (WordWave's Audition2 since round 86). In front of it there is a five-band EQ, flat in P.
 //   SwMaster.master(channels, rate, onProgress?, preset?, meterStep?) -> [left, right] (Float32Array),
 //   with .meter (dB of reduction every meterStep samples: .bands[4], .mb, .lim) when meterStep is given
 (function (root) {
   "use strict";
 
+  // The values a preset can set are WordWave's "Audition2" (round 86); the comments give what Audition's
+  // own presets measured as (prep_test.mjs keeps those numbers to check the stages against Audition).
   const P = {
     // Multiband Compressor ("Broadcast1"): four bands, split with no phase shift as Audition does
-    cross: [137, 1147, 6910],
-    threshold: [-20.2, -17.6, -24.8, -25],  // dBFS, on the band's level read as a sine's peak
-    ratio: [3, 2, 2, 3],
-    knee: 3,                                  // dB, soft knee width
-    gain: [1, 0, 0, 3],                       // dB, each band's gain
+    cross: [137, 1147, 7941],                 // Hz (Audition: 137, 1147, 6910)
+    threshold: [-18, -15.4, -22.6, -22.8],    // dBFS, on the band's level read as a sine's peak (Audition: -20.2, -17.6, -24.8, -25)
+    ratio: [2.44, 1.72, 1.72, 2.44],          // (Audition: 3, 2, 2, 3)
+    knee: 2,                                  // dB, soft knee width (Audition: 3)
+    gain: [1.5, 0, 0, 3],                     // dB, each band's gain (Audition: 1, 0, 0, 3)
     detector: "peak",                        // "peak" (held, falling over rmsMs) or "rms"
     rmsMs: 3,                                 // level detector's averaging (or fall) time
-    attackMs: 0.5,                            // fitted (the preset says 1 ms; its release 100 ms is the
-    releaseMs: 38,                            // detector and gain together, fitted as 3 + 38 ms here)
+    attackMs: 0.3,                            // (Audition fitted: 0.5; its preset says 1 ms)
+    releaseMs: 411,                           // (Audition fitted: 38, with the detector's 3 ms; its preset says 100)
     // its brickwall limiter: "Thresh" −5.5 and "Margin" −0.6 make 4.9 dB more gain, peaks held at −0.6
     mbThresh: -5.5, mbMargin: -0.6, mbAttackMs: 4, mbReleaseMs: 500,
     // Mastering ("Master1")
-    shelfHz: 5000, shelfDb: 1.6, shelfQ: 0.6, // the exciter's ("Tube", 5 %) brightness; the EQ is flat
-    exciteHz: 3000, exciteDb: -48,            // the overtones' level against the band they come from
-    sideHz: 1800, sideDb: 4.3, sideQ: 0.9,    // stereo widener ("64 %"): a high shelf on the sides only
-    maxGain: 3.9,                             // dB, the loudness maximizer's gain
-    ceiling: -0.87,                           // dBFS, where the maximizer stops every peak
+    shelfHz: 5000, shelfDb: -1.7, shelfQ: 0.6, // the exciter's ("Tube") brightness (Audition: +1.6 dB at 5 %)
+    exciteHz: 3000, exciteDb: -72,            // the overtones' level against the band they come from (Audition: -48)
+    sideHz: 1800, sideDb: 6.8, sideQ: 0.9,    // stereo widener: a high shelf on the sides only (Audition "64 %": 4.3)
+    maxGain: 2.7,                             // dB, the loudness maximizer's gain (Audition: 3.9)
+    ceiling: -0.1,                            // dBFS, where the maximizer stops every peak (Audition: -0.87)
     limAttackMs: 1.5, limReleaseMs: 4,        // the maximizer's limiter ("24 %")
-    // round 40: the EQ in front (flat here), and each section can be switched off
-    eqOn: true, compOn: true, finishOn: true,
+    // round 40: the EQ in front (flat), and each section can be switched off; the flat EQ is off (round 86)
+    eqOn: false, compOn: true, finishOn: true,
     eq: { hp: { on: false, hz: 30 }, low: { hz: 100, db: 0 }, bells: [{ hz: 250, db: 0, q: 1 }, { hz: 1000, db: 0, q: 1 }, { hz: 4000, db: 0, q: 1 }], high: { hz: 10000, db: 0 } },
   };
 
@@ -65,8 +70,8 @@
   }
 
   /**
-   * The simple view's four controls, worked out into the full settings (from the Audition chain):
-   * amount 0..1 (0.5 is the Audition chain; 0 lets everything through, 1 squeezes hard), punch 0..1
+   * The simple view's four controls, worked out into the full settings (from the built-in chain, P):
+   * amount 0..1 (0.5 is the built-in chain; 0 lets everything through, 1 squeezes hard), punch 0..1
    * (slower attack and release let the starts of notes through), loudness (the maximizer's dB) and
    * ceiling (dBFS).
    */
@@ -326,23 +331,23 @@
 
   const stereo = (channels) => (channels.length === 1 ? [channels[0], channels[0]] : channels);
 
-  /** The Multiband Compressor step only. */
-  function multiband(channels, rate, onProgress) {
+  /** The Multiband Compressor step only (with a preset's settings when given, else P). */
+  function multiband(channels, rate, onProgress, given) {
     const [l, r] = stereo(channels), outL = new Float32Array(l.length), outR = new Float32Array(l.length);
-    multibandInto(l, r, outL, outR, rate, onProgress);
+    multibandInto(l, r, outL, outR, rate, onProgress, given ? preset(given) : P);
     return [outL, outR];
   }
 
-  /** The Mastering step only (on a copy). */
-  function mastering(channels, rate) {
+  /** The Mastering step only (on a copy; with a preset's settings when given, else P). */
+  function mastering(channels, rate, given) {
     const [l, r] = stereo(channels).map((x) => Float32Array.from(x));
-    masterInPlace(l, r, rate);
+    masterInPlace(l, r, rate, given ? preset(given) : P);
     return [l, r];
   }
 
   /**
    * The whole chain: the EQ, the Multiband Compressor, then the Mastering step, each as the preset
-   * says (P, the Audition chain, without one). onProgress(0..1) is told how far it is. With
+   * says (P, the built-in chain, without one). onProgress(0..1) is told how far it is. With
    * meterStep, the result carries .meter: each band's, the multiband limiter's and the final
    * limiter's dB of reduction, the most in each meterStep samples (0 for a section switched off).
    */

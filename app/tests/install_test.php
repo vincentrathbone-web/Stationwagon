@@ -86,7 +86,9 @@ check('missing database explained', $missing !== null && (str_contains($missing,
     check('schema version recorded', $db->run('SELECT value FROM ' . $db->table('settings') . " WHERE name = 'schema_version'")->fetchColumn() === (string) Schema::VERSION);
     $station = $db->run('SELECT * FROM ' . $db->table('stations'))->fetch();
     check('station saved', $station['slug'] === 'radio-wordwave-radio-woordgolf' && $station['timezone'] === 'Africa/Johannesburg');
-    check('station has the POC defaults', (json_decode($station['settings'], true)['crossfade_seconds'] ?? null) == 6);
+    $sv = json_decode($station['settings'], true);
+    check('station has the defaults: WordWave\'s sound (round 86)', ($sv['crossfade_seconds'] ?? null) == 8 && ($sv['prep_kbps'] ?? null) == 224 && ($sv['prep_master'] ?? null) == 1
+        && ($sv['prep_target'] ?? null) == -11 && !isset($sv['prep_preset']), json_encode($sv));
     $user = $db->run('SELECT * FROM ' . $db->table('users'))->fetch();
     check('admin saved with a hashed password', $user['role'] === 'admin' && $user['email'] === 'admin@example.test' && password_verify($form['admin_password'], $user['password_hash']) && !str_contains($user['password_hash'], $form['admin_password']));
     check('admin linked to the station', (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('station_users'))->fetchColumn() === 1);

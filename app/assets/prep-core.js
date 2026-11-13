@@ -5,7 +5,7 @@
   "use strict";
 
   const P = {
-    TARGET_LUFS: -16,      // every song is levelled to this, unless the station sets its own target (opts.target)
+    TARGET_LUFS: -11,      // every song is levelled to this, unless the station sets its own target (opts.target); -11 since round 86 (was -16)
     PEAK_CEILING_DB: -1,   // ...unless that would push a sample peak above this (no limiter)
     MAX_GAIN_DB: 12,       // and never louder than this, so a quiet hiss isn't turned into noise
     SILENCE_DB: -50,       // quieter than this at the very start or end counts as silence

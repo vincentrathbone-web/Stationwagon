@@ -162,10 +162,10 @@ try {
 
     echo "The loudness target and each song's normalization (round 41)\n";
     $ss = new StationSettings($db, $station);
-    check('the station starts at -16 LUFS', StationSettings::prep($station)[2] === -16.0);
+    check('the station starts at -11 LUFS (WordWave\'s, round 86)', StationSettings::prep($station)[2] === -11.0);
     $station = $ss->savePrep(false, true, -14.3);
     check('a target is kept in half-dB steps', StationSettings::prep($station)[2] === -14.5);
-    check('  and in range (-23 to -8 LUFS)', StationSettings::target(-40) === -23.0 && StationSettings::target(0) === -8.0 && StationSettings::target('loud') === -16.0);
+    check('  and in range (-23 to -8 LUFS)', StationSettings::target(-40) === -23.0 && StationSettings::target(0) === -8.0 && StationSettings::target('loud') === -11.0);
     $station = (new StationSettings($db, $station))->savePrep(false, true);
     check('  saving the switches alone keeps it', StationSettings::prep($station)[2] === -14.5);
     $station = (new StationSettings($db, $station))->savePrep(false, true, -16.0);
@@ -295,10 +295,11 @@ try {
     echo "Sound & safety\n";
     $fresh = fn() => $db->run('SELECT * FROM ' . $db->table('stations') . ' WHERE id = ?', [$station['id']])->fetch();
     $set = new StationSettings($db, $fresh());
-    $defaults = ['crossfade_seconds' => 6, 'ads_crossfade_seconds' => 2.0, 'jingles_crossfade_seconds' => 1.0, 'fade_shape' => 'equal_power', 'skip_fade_seconds' => 2.0, 'live_fade_seconds' => 6.0, 'duck_db' => -12,
-        'live_timeout_seconds' => 8, 'rejoin_minutes' => 10, 'silence_db' => -40, 'recent_tracks' => 5, 'ratings_influence' => 0, 'prep_master' => 0, 'prep_level' => 1, 'prep_target' => -16.0, 'live_kbps' => 192, 'prep_kbps' => 160,
+    // WordWave's since round 86: crossfade 8 s, ads 1 s, skip fade 4 s, 224 kbps (mastering on and -11 LUFS: checked above and below)
+    $defaults = ['crossfade_seconds' => 8, 'ads_crossfade_seconds' => 1.0, 'jingles_crossfade_seconds' => 1.0, 'fade_shape' => 'equal_power', 'skip_fade_seconds' => 4.0, 'live_fade_seconds' => 6.0, 'duck_db' => -12,
+        'live_timeout_seconds' => 8, 'rejoin_minutes' => 10, 'silence_db' => -40, 'recent_tracks' => 5, 'ratings_influence' => 0, 'prep_master' => 0, 'prep_level' => 1, 'prep_target' => -16.0, 'live_kbps' => 192, 'prep_kbps' => 224, // master and target as the loudness checks above saved them
         'prep_rate' => 44100, 'prep_precision' => 32, 'prep_dither' => 1, 'prep_quality' => 9, 'look' => 'green'];
-    check('the defaults are the values the POC proved', $set->values() === $defaults, json_encode($set->values()));
+    check('the defaults are WordWave\'s sound (round 86)', $set->values() === $defaults, json_encode($set->values()));
     check('with 6 s pieces a DJ gets at least 8 s', $set->minLiveTimeout() === 8);
     $good = ['crossfade_seconds' => '4', 'ads_crossfade_seconds' => '1.5', 'jingles_crossfade_seconds' => '0.5', 'fade_shape' => 'linear', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '3', 'duck_db' => '-18',
         'live_timeout_seconds' => '12', 'rejoin_minutes' => '0', 'silence_db' => '0', 'recent_tracks' => '1', 'ratings_influence' => '1', 'prep_master' => '1', 'prep_level' => '0', 'prep_target' => '-14.5', 'live_kbps' => '128', 'prep_kbps' => '256',
@@ -335,7 +336,7 @@ try {
     check('  and the show times out after the new 12 s', !$p2->needsPlan($live, $show['last_piece_at'] + 11) && $p2->needsPlan($live, $show['last_piece_at'] + 13));
     $p2->endLive($later + 20, $show['public_id']);
     check('numbers show without needless decimals', StationSettings::show(6.0) === '6' && StationSettings::show(1.5) === '1.5');
-    check('a new station levels songs to -16 LUFS but leaves mastering off', StationSettings::prep(['settings' => '{}']) === [false, true, -16.0]);
+    check('a new station masters songs and levels them to -11 LUFS (WordWave\'s, round 86)', StationSettings::prep(['settings' => '{}']) === [true, true, -11.0]);
 
     echo "Silence detection\n";
     $tail = array_merge(array_fill(0, 40, -14.0), array_fill(0, 20, -99.0));   // 20 silent seconds at the end

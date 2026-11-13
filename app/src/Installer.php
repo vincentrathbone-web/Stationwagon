@@ -245,30 +245,33 @@ final class Installer
 
     public static function defaultStationSettings(): array
     {
-        // The values the POC proved (see docs/POC-PLAN.md)
+        // The values the POC proved (see docs/POC-PLAN.md); since round 86 the sound is WordWave's tuning (the user,
+        // 2026-11-13: WordWave's Sound & safety and Song prep settings are the best for every new station)
         return [
-            'segment_seconds' => 6.0, 'crossfade_seconds' => 6.0, 'skip_fade_seconds' => 2.0,
+            'segment_seconds' => 6.0, 'crossfade_seconds' => 8.0, 'skip_fade_seconds' => 4.0, // WordWave's (round 86; were 6 and 2)
             'plan_ahead_seconds' => 10800, 'recent_tracks' => 5, 'ratings_influence' => 0, 'cut_lead_seconds' => 1.0,
             // ads (round 63): a break after every 3 songs with one ad, no minimum gap (set on the Ads screen)
             'ads_enabled' => 1, 'ads_every_songs' => 3, 'ads_per_break' => 1, 'ads_gap_minutes' => 0,
-            // ads are short, so they blend with the songs around them over 2 s, not the songs' 6 s (round 64)
-            'ads_crossfade_seconds' => 2.0,
-            // jingles (round 70): one after every 4 songs; they blend over 1 s (the Jingles screen, Sound & safety)
-            'jingles_enabled' => 1, 'jingles_every_songs' => 4, 'jingles_crossfade_seconds' => 1.0,
+            // ads are short, so they blend with the songs around them over 1 s, not the songs' 8 s (WordWave's, round 86;
+            // it was 2 s from round 64)
+            'ads_crossfade_seconds' => 1.0,
+            // jingles (round 70): one after every 3 songs (WordWave's, round 86; it was 4); they blend over 1 s (the Jingles
+            // screen, Sound & safety)
+            'jingles_enabled' => 1, 'jingles_every_songs' => 3, 'jingles_crossfade_seconds' => 1.0,
             'live_timeout_seconds' => 8, 'listener_delay_seconds' => 20,
             'live_fade_seconds' => 6.0, // the go-live fade; until 2026-10-20 it was the crossfade
             // v0.4 Sound & safety (round 25)
             'fade_shape' => 'equal_power', 'duck_db' => -12, 'rejoin_minutes' => 10, 'silence_db' => -40,
-            'live_kbps' => 192, 'prep_kbps' => 160, // prepared songs at 160 kbps since round 51 (it was 192)
+            'live_kbps' => 192, 'prep_kbps' => 224, // prepared songs at 224 kbps, WordWave's (round 86; 160 from round 51, 192 before)
             // round 51, how songs are prepared: every song at 44.1 kHz (one rate in the stream: Firefox's hls.js
             // pages fall about 5 s behind, with a gap, at a 44.1/48 kHz change), 32-bit float between the steps,
             // TPDF dither when rounding, LAME's best quality (the setting 9 is -q 0)
             'prep_rate' => 44100, 'prep_precision' => 32, 'prep_dither' => 1, 'prep_quality' => 9,
-            // song prep on upload (round 34): level to -16 LUFS; mastering like the station's Audition
-            // chain is off unless chosen (round 39: it squeezed real music flat and pushed the treble)
-            'prep_master' => 0, 'prep_level' => 1,
-            // the loudness songs are levelled to (round 41: set with a slider in the Music library)
-            'prep_target' => -16.0,
+            // song prep on upload: mastered with the station's import preset (the built-in "Audition chain", WordWave's
+            // tuning) and levelled; mastering is on since round 86 (WordWave's; it was off from round 39)
+            'prep_master' => 1, 'prep_level' => 1,
+            // the loudness songs are levelled to (round 41: a slider; -11 LUFS is WordWave's since round 86, it was -16)
+            'prep_target' => -11.0,
         ];
     }
 

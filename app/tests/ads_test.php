@@ -64,7 +64,7 @@ try {
         $station = $db->run('SELECT * FROM ' . $db->table('stations'))->fetch();
     };
     $save(['enabled' => '1', 'every' => '4', 'per_break' => '2', 'gap_minutes' => '30']);
-    check('good values are saved and the other settings kept', Ads::settings($station) === ['enabled' => true, 'every' => 4, 'per_break' => 2, 'gap_minutes' => 30] && (float) Planner::settings($station)['crossfade_seconds'] === 6.0);
+    check('good values are saved and the other settings kept', Ads::settings($station) === ['enabled' => true, 'every' => 4, 'per_break' => 2, 'gap_minutes' => 30] && (float) Planner::settings($station)['crossfade_seconds'] === 8.0);
     $save(['every' => '3', 'per_break' => '1', 'gap_minutes' => '0']);
     check('the switch off is saved (an unchecked box sends nothing)', Ads::settings($station)['enabled'] === false);
     $save(['enabled' => '1', 'every' => '3', 'per_break' => '1', 'gap_minutes' => '0']);
@@ -169,8 +169,8 @@ try {
     $songBefore = $entries[$adAt[0] - 1];
     $plainSong = null;
     foreach ($entries as $k => $e) { if (empty($e['ad']) && empty($entries[$k + 1]['ad']) && !empty($entries[$k + 1])) { $plainSong = $e; break; } }
-    check('  an ad blends over the ads’ crossfade (2 s), and so does the song before it; other songs keep their 6 s', $xfAd['fade_out'] === 2.0 && $songBefore['fade_out'] === 2.0 && $plainSong !== null && $plainSong['fade_out'] === 6.0
-        && $xfAd['full'] - $xfAd['play'] >= 2.0 - 1e-6 && $xfAd['full'] - $xfAd['play'] < 2.0 + 6.1, json_encode([$xfAd['fade_out'], $songBefore['fade_out'], $plainSong['fade_out'] ?? null]));
+    check('  an ad blends over the ads’ crossfade (1 s since round 86), and so does the song before it; other songs keep their 8 s', $xfAd['fade_out'] === 1.0 && $songBefore['fade_out'] === 1.0 && $plainSong !== null && $plainSong['fade_out'] === 8.0
+        && $xfAd['full'] - $xfAd['play'] >= 1.0 - 1e-6 && $xfAd['full'] - $xfAd['play'] < 1.0 + 8.1, json_encode([$xfAd['fade_out'], $songBefore['fade_out'], $plainSong['fade_out'] ?? null]));
     $joined = true;
     foreach ($entries as $k => $e) { if ($k > 0) { $joined = $joined && abs($e['start'] - $entries[$k - 1]['end']) < 0.002; } }
     check('  and the entries still follow each other with no gap', $joined);

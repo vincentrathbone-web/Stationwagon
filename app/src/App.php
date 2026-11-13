@@ -50,7 +50,9 @@ final class App
                 (new ManagePage())->playlist((int) $m[1]);
                 return;
             }
-            if (preg_match('#^([a-z0-9][a-z0-9-]*)(/embed|/now)?$#', $route, $m) === 1 && ($stream = Streams::bySlug(Db::fromConfig(), $m[1])) !== null && !$stream['main']) {
+            // a stream's own address (v1.3); not before the station is installed: "install" looks like one, and there is no
+            // database yet to ask (round 86: a fresh install's installer answered 500 since v1.3)
+            if (Config::isInstalled() && preg_match('#^([a-z0-9][a-z0-9-]*)(/embed|/now)?$#', $route, $m) === 1 && ($stream = Streams::bySlug(Db::fromConfig(), $m[1])) !== null && !$stream['main']) {
                 match ($m[2] ?? '') {
                     '/embed' => self::embed(false, $m[1]),
                     '/now' => self::now($m[1]),
