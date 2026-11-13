@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "gbcr-brand",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/brandkit/serve-gansbaai.mjs"],
+      "port": 8765
+    }
+  ]
+}

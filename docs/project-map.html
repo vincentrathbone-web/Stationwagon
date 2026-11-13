@@ -188,8 +188,8 @@ details.built summary:hover{background:var(--ground)}
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
   updated: "13 Nov",
-  commits: 94,
-  version: "0.9.16-dev",
+  commits: 97,
+  version: "0.9.17-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
     { v: "v0.4", name: "Player & studio", when: "done 22 Oct" },
@@ -206,8 +206,8 @@ const MAP = {
     { v: "v1.5", name: "Stream selector in the bar", when: "live 12 Nov" },
     { v: "v1.6", name: "Compact libraries", when: "live 12 Nov" },
     { v: "v1.7", name: "Ads and jingles like the music library", when: "live 12 Nov" },
-    { v: "v1.8", name: "Gansbaai Community Radio", when: "planned" },
-    { v: "v1.9", name: "Gansbaai branding", when: "planned" },
+    { v: "v1.8", name: "Gansbaai Community Radio", when: "up 13 Nov, needs your details" },
+    { v: "v1.9", name: "Gansbaai branding", when: "live 13 Nov" },
     { v: "v1.10", name: "Gansbaai Android app", when: "planned" },
     { v: "v1.11", name: "Many stations in the studio apps", when: "planned" },
     { v: "v1.12", name: "Stream quality for listeners", when: "planned" }
@@ -279,8 +279,10 @@ const MAP = {
       { text: "Its own Stationwagon installation and stream", v: "v1.8", state: "done" },
       { text: "Line-up, privacy details, staff and first music", v: "v1.8", state: "waiting" },
       { text: "Go live: tests, backups, the website's player", v: "v1.8", state: "done" },
-      { text: "Branding package: logo, icons, favicon, colours", v: "v1.9", state: "later" },
-      { text: "Applied to the station and the site", v: "v1.9", state: "later" },
+      { text: "Branding package: logo, icons, favicon, colours", v: "v1.9", state: "done" },
+      { text: "Home page hero video: slow-motion sea clips", v: "v1.9", state: "done" },
+      { text: "Site design: home, line-up and contact pages", v: "v1.9", state: "done" },
+      { text: "Applied to the station and the site", note: "the WordPress theme with a contact form that emails the station; the player bar in the Gansbaai colours", v: "v1.9", state: "done" },
       { text: "Listener app from the config file", v: "v1.10", state: "later" },
       { text: "Test on the phone, release", v: "v1.10", state: "later" }
     ]},
@@ -325,13 +327,16 @@ const MAP = {
     ]}
   ],
   next: {
-    title: "Next: the Gansbaai phases (v1.8 to v1.10)",
-    text: "Jingles, downloads, compact lists and streams (v1.1 to v1.4, v1.6, v1.7) are live since 12 Nov, and so is the bar's stream picker (v1.5), in the browser, the Windows app and the Android app. The Gansbaai phases (v1.8 to v1.10) need details from you, and the studio apps (v1.11) and listener quality (v1.12) need a decision.",
-    order: ["v1.8 Gansbaai: your line-up, staff, privacy email and music","v1.12 Stream quality (needs a decision)"]
+    title: "Next: Gansbaai's details, then its Android app (v1.8, v1.10)",
+    text: "Gansbaai Community Radio's new website is live at gbcr.controll.co.za (v1.9): the home page with the sea video, the line-up and a contact page whose form emails the station (for now to the site's admin email, yours), and the player along the bottom in the Gansbaai colours. What it needs from you now: the shows and DJs, the station's email, WhatsApp number and studio address for the contact page, a privacy contact, and real music; until then it shows a sample week and the four test songs. After that comes the Gansbaai Android app (v1.10).",
+    order: ["v1.8 Gansbaai: your line-up, contact details, privacy email and music","v1.10 Gansbaai Android app","v1.12 Stream quality (needs a decision)"]
   },
   call: null,
   feedTitle: "Recent changes",
   feed: [
+    { what: "Gansbaai's new website is live", to: "gbcr.controll.co.za now has the home page with the sea video, the line-up and a contact page in the new look; the form really emails the station (a test message reached your inbox), and the player along the bottom wears the Gansbaai colours. The contact details read \"to come\" until you send them", at: "13 Nov" },
+    { what: "Gansbaai's site design", to: "three pages in the new look: a home page with the video, the song on air and today's shows; a line-up page with what's on now, what's next and a tab for each day; a contact page with a form for shout-outs, song requests, notices and adverts. The line-up and the song come live from the station", at: "13 Nov" },
+    { what: "Gansbaai's logo, colours and hero video", to: "Swell: sound bars that rise and fall like the sea with a white foam line through them, the name in Sora; seven blue and turquoise colours with a coral for On air; light, dark and one-colour versions, app icons and a favicon; and a 21-second loop of slow-motion sea clips (waves, rocks, a fishing boat, kelp, the shore) for the home page. A first lighthouse design was dropped as too old-school", at: "13 Nov" },
     { what: "Gansbaai Community Radio is up", to: "a WordPress site with the station's player at gbcr.controll.co.za (a stand-in until the real domain), its own Stationwagon at /radio with the AutoDJ on test songs; the line-up, staff, privacy email and music wait for your details", at: "13 Nov" },
     { what: "The bar's stream list checked by eye", to: "in the Windows and Android apps the bar's list opens the system's own list with every stream, and on the phone a real tap on a stream's name picks it; the phone test now waits for you to unlock the phone after its screen-off step (all 96 phone checks and 97 Windows checks pass)", at: "13 Nov" },
     { what: "WordWave app: the live stream plays again", to: "the Android app sat on buffering because Android's player read only three frames of each piece; the station now gives each piece its own address (the app already on phones plays again), and the app got its own fix in 0.1.1; live since 12 Nov", at: "12 Nov" },

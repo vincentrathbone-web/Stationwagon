@@ -50,3 +50,7 @@ wordpress/stationwagon/app.version
 
 # local Claude Code settings (permission rules for this PC)
 .claude/settings.local.json
+
+# downloaded fonts and packages for the brand scripts (only their outlines are kept)
+tools/brandkit/fonts/
+tools/brandkit/.edge-profile/

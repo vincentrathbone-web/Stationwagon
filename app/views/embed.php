@@ -1,9 +1,9 @@
 <?php use function Stationwagon\h; use Stationwagon\App; use Stationwagon\Skins;
-/** @var ?array $station @var bool $light: the light look for websites with a light background (?look=light) @var int $delay: the listener delay @var bool $bar: the long, flat bar under the staff's screens (round 61) */
+/** @var ?array $station @var string $look: '', 'light' (websites with a light background) or 'ocean' (Gansbaai's site, round 79), from ?look= @var int $delay: the listener delay @var bool $bar: the long, flat bar under the staff's screens (round 61) */
 $name = $station['name'] ?? 'Stationwagon';
 ?>
 <!doctype html>
-<html lang="en"<?= $light ? ' class="light"' : '' ?>>
+<html lang="en"<?= $look !== '' ? ' class="' . h($look) . '"' : '' ?>>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,7 +11,7 @@ $name = $station['name'] ?? 'Stationwagon';
 <?= Skins::headScript() ?>
 <?= App::icons() ?>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=Share+Tech+Mono&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=Share+Tech+Mono<?= $look === 'ocean' ? '&family=Sora:wght@300;400;600;700' : '' ?>&display=swap">
 <link rel="stylesheet" href="<?= h(App::asset('assets/app.css')) ?>">
 </head>
 <body class="embed<?= $bar ? ' barpage' : '' ?>">

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gansbaai Community Radio brand</title><link rel="icon" href="favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+:root{--midnight:#03182B;--deep:#0A6FA8;--boat:#0A8FD8;--turq:#0FB5BA;--neon:#3EF0D8;--foam:#E6FFFB;--coral:#FF5A4E;--line:#163B57}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.6 Sora,system-ui,sans-serif;font-weight:300;background:var(--midnight);color:var(--foam)}
+b{font-weight:600}
+.hero{position:relative;min-height:78vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;overflow:hidden;padding:48px 16px;text-align:center}
+.hero video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2}
+.hero::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(3,24,43,.55),rgba(3,24,43,.25) 40%,rgba(3,24,43,.9))}
+.hero img{width:min(560px,90%)}
+.hero .tag{font-size:clamp(18px,3vw,26px);font-weight:400;max-width:640px;margin:0}
+.btns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:13px 24px;border-radius:999px;font:600 15px Sora,sans-serif;text-decoration:none;color:var(--midnight);background:linear-gradient(90deg,var(--neon),var(--boat));box-shadow:0 0 28px rgba(62,240,216,.35)}
+.btn.ghost{background:rgba(230,255,251,.1);color:var(--foam);box-shadow:none;border:1px solid rgba(230,255,251,.35);backdrop-filter:blur(6px)}
+.live{width:10px;height:10px;border-radius:50%;background:var(--coral);box-shadow:0 0 0 0 rgba(255,90,78,.7);animation:p 1.6s infinite}
+@keyframes p{70%{box-shadow:0 0 0 10px rgba(255,90,78,0)}100%{box-shadow:0 0 0 0 rgba(255,90,78,0)}}
+@media (prefers-reduced-motion:reduce){.live{animation:none}}
+main{max-width:1080px;margin:0 auto;padding:24px 16px 64px}
+h2{font-size:20px;font-weight:600;margin:40px 0 14px}
+a{color:var(--neon)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.tile{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#06213a}
+.tile .art{height:180px;display:flex;align-items:center;justify-content:center;gap:14px;padding:16px}
+.tile .art img{max-width:100%;max-height:100%}
+.tile p{margin:0;padding:8px 12px;font-size:13px;border-top:1px solid var(--line);overflow-wrap:anywhere}
+.d{background:var(--midnight)}.l{background:#fff}.f{background:var(--foam)}.k{background:#0a6fa8}
+.sw{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+.sw div{border-radius:12px;height:64px;border:1px solid #2c5878}.sw p{margin:6px 0 0;font-size:13px}
+.vid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.vid video,.vid img{width:100%;border-radius:12px;display:block}
+</style></head><body>
+<section class="hero">
+  <video src="../theme/gansbaai-radio/hero/gbcr-hero-1280.mp4" poster="../theme/gansbaai-radio/hero/gbcr-hero-poster.jpg" autoplay muted loop playsinline></video>
+  <img src="svg/gbcr-logo-stacked.svg" alt="Gansbaai Community Radio">
+  <p class="tag">The voice of the bay, from the harbour to the hills.</p>
+  <div class="btns"><a class="btn" href="#"><span class="live"></span>Listen live</a><a class="btn ghost" href="#">Shows and line-up</a></div>
+</section>
+<main>
+<p style="margin-bottom:8px"><a class="btn" href="../site/index.html" style="font-size:14px;padding:10px 20px">Open the site design: home, line-up and contact →</a></p>
+<p>The logo is <b>Swell</b>: sound bars that rise and fall like the sea, with a line of white foam running through them. The name is set in <b>Sora</b>. Every file comes as an editable <b>SVG</b> (lettering as outlines) and a transparent <b>PNG</b>. See README.md for which to use where. The top of this page is a preview of the home page hero with the video loop.</p>
+<h2>Logos</h2><div class="grid">
+<div class="tile"><div class="art d"><img src="svg/gbcr-logo-horizontal.svg"></div><p>gbcr-logo-horizontal</p></div>
+<div class="tile"><div class="art l"><img src="svg/gbcr-logo-horizontal-light-bg.svg"></div><p>gbcr-logo-horizontal-light-bg</p></div>
+<div class="tile"><div class="art k"><img src="svg/gbcr-logo-horizontal-white.svg"></div><p>gbcr-logo-horizontal-white</p></div>
+<div class="tile"><div class="art f"><img src="svg/gbcr-logo-horizontal-black.svg"></div><p>gbcr-logo-horizontal-black</p></div>
+<div class="tile"><div class="art d"><img src="svg/gbcr-logo-stacked.svg"></div><p>gbcr-logo-stacked</p></div>
+<div class="tile"><div class="art l"><img src="svg/gbcr-logo-stacked-light-bg.svg"></div><p>gbcr-logo-stacked-light-bg</p></div>
+<div class="tile"><div class="art d"><img src="svg/gbcr-wordmark.svg"></div><p>gbcr-wordmark</p></div>
+<div class="tile"><div class="art l"><img src="svg/gbcr-wordmark-light-bg.svg"></div><p>gbcr-wordmark-light-bg</p></div>
+</div>
+<h2>The Swell mark on its own</h2><div class="grid">
+<div class="tile"><div class="art d"><img src="svg/gbcr-mark.svg"></div><p>gbcr-mark</p></div>
+<div class="tile"><div class="art l"><img src="svg/gbcr-mark-light-bg.svg"></div><p>gbcr-mark-light-bg</p></div>
+<div class="tile"><div class="art k"><img src="svg/gbcr-mark-white.svg"></div><p>gbcr-mark-white</p></div>
+<div class="tile"><div class="art f"><img src="svg/gbcr-mark-black.svg"></div><p>gbcr-mark-black</p></div>
+</div>
+<h2>Icons</h2><div class="grid">
+<div class="tile"><div class="art l"><img src="svg/gbcr-app-icon.svg"></div><p>gbcr-app-icon</p></div>
+<div class="tile"><div class="art l"><img src="svg/gbcr-app-icon-teal.svg"></div><p>gbcr-app-icon-teal</p></div>
+<div class="tile"><div class="art l"><img src="svg/gbcr-favicon.svg" style="width:96px"><img src="png/favicon-32.png"><img src="png/favicon-16.png"></div><p>gbcr-favicon (96, 32 and 16 px)</p></div>
+<div class="tile"><div class="art l"><img src="png/apple-touch-icon-180.png" style="width:120px;border-radius:26px"></div><p>apple-touch-icon-180</p></div>
+</div>
+<h2>Hero video</h2>
+<p>A 21-second loop of five slow-motion sea clips (free Pexels stock): waves from above, rocks in the surf, a fishing boat, kelp in the waves and the rocky shore. It loops without a jump. Files are in <code>stations/gansbaai/site/hero/</code>.</p>
+<div class="vid">
+<div class="tile"><video src="../theme/gansbaai-radio/hero/gbcr-hero-854.mp4" poster="../theme/gansbaai-radio/hero/gbcr-hero-poster.jpg" controls muted loop playsinline preload="metadata"></video><p>gbcr-hero-1280.mp4 (3.9 MB) and gbcr-hero-854.mp4 (2.1 MB, phones)</p></div>
+<div class="tile"><img src="../theme/gansbaai-radio/hero/gbcr-hero-poster.jpg" alt=""><p>gbcr-hero-poster.jpg (shown while the video loads, and to people who turn motion off)</p></div>
+</div>
+<h2>Colours</h2><div class="sw">
+<div><div style="background:#03182B"></div><p>Midnight sea #03182B</p></div>
+<div><div style="background:#0A6FA8"></div><p>Deep blue #0A6FA8</p></div>
+<div><div style="background:#0A8FD8"></div><p>Boat blue #0A8FD8</p></div>
+<div><div style="background:#0FB5BA"></div><p>Turquoise #0FB5BA</p></div>
+<div><div style="background:#3EF0D8"></div><p>Neon surf #3EF0D8</p></div>
+<div><div style="background:#E6FFFB"></div><p>Foam #E6FFFB</p></div>
+<div><div style="background:#FF5A4E"></div><p>On-air coral #FF5A4E</p></div>
+</div>
+</main>
+<script>
+// Respect "reduce motion": show the still picture instead of the moving video.
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) { const v = document.querySelector(".hero video"); v.removeAttribute("autoplay"); v.pause(); }
+</script>
+</body></html>

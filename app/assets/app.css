@@ -872,6 +872,16 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
   --ground: #ffffff; --panel: #f3f4f2; --raised: #e4e7e3; --edge: #d5d9d4;
   --ink: #141414; --muted: #4f554f; --faint: #6b716b; --amber: #12873f; --amber-soft: #107a39; --amber-dim: #bfe3cc; --onair: #c8283a;
   --on-accent: #ffffff; --card-shadow: none; --card-edge: 0; }
+/* ?look=ocean (round 79), for Gansbaai Community Radio's site: its midnight sea, neon surf and Sora over the viewer's skin (its shapes stay) */
+:root.ocean { color-scheme: dark;
+  --ground: #03182B; --panel: #06213A; --raised: #0A2F52; --edge: #163B57; --raised-hover: #0E3A63; --raised-soft: #072640; --edge-soft: #10304A;
+  --ink: #E6FFFB; --muted: #9FC3D3; --faint: #7FA3B5; --amber: #3EF0D8; --amber-soft: #0FB5BA; --amber-dim: #0B4E5C; --onair: #FF5A4E;
+  --on-accent: #03182B; --accent-hover: #7FF5E5; --accent-bg: #08323F; --now-bg: #0A3A47; --on-onair: #ffffff;
+  --lcd: #041E33; --well: #020F1C; --track: #163B57; --wave-grid: rgba(230, 255, 251, .1); --wave-label-bg: rgba(3, 24, 43, .55);
+  --spec-hi: #B5FFF4; --spec-mid: #3EF0D8; --spec-lo: #0A8FD8; --spec-peak: #0A6FA8; --lcd-glow: 0 0 8px rgba(62, 240, 216, .35);
+  --f-ui: "Sora", system-ui, -apple-system, "Segoe UI", sans-serif; --f-body: var(--f-ui); --f-lcd: var(--f-ui);
+  /* the embed's play button: a neon-to-blue gradient with a glow (the other looks: the accent, no glow) */
+  --play-bg: linear-gradient(135deg, #3EF0D8, #0A8FD8); --play-glow: 0 0 18px rgba(62, 240, 216, .35); }
 body.embed { padding: 0; background: transparent; }
 html:has(body.embed) { background: transparent; height: 100%; }
 body.embed { height: 100%; }
@@ -882,7 +892,7 @@ body.embed { height: 100%; }
 .em-prog { grid-area: prog; align-self: start; min-width: 0; }
 .em-side { grid-area: side; }
 .em-art, .em-rights, .em-spec, .em-wave { display: none; } /* the full layout's parts, below */
-.em-play { appearance: none; border: 0; width: 52px; height: 52px; border-radius: 50%; background: var(--amber); color: var(--on-accent);
+.em-play { appearance: none; border: 0; width: 52px; height: 52px; border-radius: 50%; background: var(--play-bg, var(--amber)); box-shadow: var(--play-glow, none); color: var(--on-accent);
   display: grid; place-items: center; cursor: pointer; }
 .em-play:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 .em-play svg { width: 20px; height: 20px; fill: currentColor; }

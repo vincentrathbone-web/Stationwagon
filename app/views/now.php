@@ -3,13 +3,13 @@
  * The small Now playing card other websites frame (round 61): album art, the song and artist, a thin
  * progress line and a link to where people listen. No sound. `?link=` (an http(s) address) is where it
  * leads (the station page by default), `?target=new` opens that in a new tab (else the whole page goes
- * there), `?look=light` suits a light website.
- * @var ?array $station @var bool $light @var string $link @var bool $newTab
+ * there), `?look=light` suits a light website, `?look=ocean` Gansbaai's (round 79).
+ * @var ?array $station @var string $look @var string $link @var bool $newTab
  */
 $name = $station['name'] ?? 'Stationwagon';
 ?>
 <!doctype html>
-<html lang="en"<?= $light ? ' class="light"' : '' ?>>
+<html lang="en"<?= $look !== '' ? ' class="' . h($look) . '"' : '' ?>>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,7 +17,7 @@ $name = $station['name'] ?? 'Stationwagon';
 <?= Skins::headScript() ?>
 <?= App::icons() ?>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=Share+Tech+Mono&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=Share+Tech+Mono<?= $look === 'ocean' ? '&family=Sora:wght@300;400;600;700' : '' ?>&display=swap">
 <link rel="stylesheet" href="<?= h(App::asset('assets/app.css')) ?>">
 </head>
 <body class="embed nowcard">

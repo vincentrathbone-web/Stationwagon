@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gansbaai Community Radio · The voice of the bay</title>
+<meta name="description" content="Gansbaai Community Radio: local voices, music all day and the news from the harbour to the hills. Listen live, free, on any device.">
+<meta name="theme-color" content="#03182B">
+<link rel="icon" href="favicon.ico"><link rel="apple-touch-icon" href="../theme/gansbaai-radio/assets/img/apple-touch-icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../theme/gansbaai-radio/assets/site.css">
+</head>
+<body class="home">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-head">
+  <div class="wrap">
+    <a class="logo" href="index.html"><img src="../theme/gansbaai-radio/assets/img/gbcr-logo-horizontal.svg" alt="Gansbaai Community Radio"></a>
+    <button class="menu-btn" type="button" aria-expanded="false" aria-controls="nav" aria-label="Menu"><svg class="icon" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+    <nav class="site-nav" id="nav" aria-label="Main">
+      <a href="index.html" aria-current="page">Home</a>
+      <a href="schedule.html">Line-up</a>
+      <a href="contact.html">Contact</a>
+      <a class="btn small" href="#listen" data-listen><span class="live-dot"></span>Listen live</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" aria-label="Welcome">
+    <video muted loop playsinline autoplay poster="../theme/gansbaai-radio/hero/gbcr-hero-poster.jpg" data-src-large="../theme/gansbaai-radio/hero/gbcr-hero-1280.mp4" data-src-small="../theme/gansbaai-radio/hero/gbcr-hero-854.mp4" aria-hidden="true"></video>
+    <div class="wrap">
+      <img class="logo-big" src="../theme/gansbaai-radio/assets/img/gbcr-logo-stacked.svg" alt="Gansbaai Community Radio">
+      <p class="tag">The voice of the bay, from the harbour to the hills.</p>
+      <div class="onair" aria-live="polite"><span class="live-dot"></span><b>On air</b><span data-nowplaying>Gansbaai Community Radio</span></div>
+      <div class="btn-row">
+        <a class="btn" href="#listen" data-listen><svg class="icon" viewBox="0 0 24 24" style="width:18px;height:18px"><polygon points="6 3 20 12 6 21 6 3" fill="currentColor"/></svg>Listen live</a>
+        <a class="btn ghost" href="schedule.html">See the line-up</a>
+      </div>
+    </div>
+    <svg class="icon scroll-cue" viewBox="0 0 24 24" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="section-head center">
+        <span class="eyebrow">Made in Gansbaai</span>
+        <h2>Your town, on air</h2>
+        <p class="lead">A radio station run by and for the people of Gansbaai, Kleinbaai, De Kelders, Franskraal and the whole Overberg coast.</p>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <div class="badge-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></div>
+          <h3>Local voices</h3>
+          <p>News, notices, sport and stories from the harbour, the schools, the churches and the clubs.</p>
+        </div>
+        <div class="card">
+          <div class="badge-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
+          <h3>Music all day</h3>
+          <p>Between the live shows the music never stops: day and night, seven days a week.</p>
+        </div>
+        <div class="card">
+          <div class="badge-icon"><svg class="icon" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></div>
+          <h3>Free on any device</h3>
+          <p>Listen on your phone, tablet or computer, at sea or at home. No app or sign-up needed.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section alt" aria-labelledby="today-h">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Still to come today</span>
+        <h2 id="today-h">On today</h2>
+      </div>
+      <p class="sample-note" hidden><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Sample shows: the station's own line-up shows here as soon as it is set up.</p>
+      <ul class="slots" id="today-slots"><li class="slot gap"><time></time><div class="name">Loading the line-up…</div><span></span></li></ul>
+      <p class="note"><a href="schedule.html">See the whole week →</a> All times are South African time.</p>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="join-h">
+    <div class="wrap">
+      <div class="section-head center">
+        <span class="eyebrow">Get involved</span>
+        <h2 id="join-h">This is your station</h2>
+      </div>
+      <div class="cards">
+        <a class="card" href="contact.html?topic=Shout-out">
+          <div class="badge-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div>
+          <h3>Send a shout-out</h3>
+          <p>A birthday, a song for someone special, or a hello to the boats at sea.</p>
+          <span class="more">Send one →</span>
+        </a>
+        <a class="card" href="contact.html?topic=Community notice">
+          <div class="badge-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg></div>
+          <h3>Share a notice</h3>
+          <p>A market, a meeting, a lost dog or a fundraiser: we read the notices on air.</p>
+          <span class="more">Share it →</span>
+        </a>
+        <a class="card" href="contact.html?topic=Advertise">
+          <div class="badge-icon"><svg class="icon" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div>
+          <h3>Advertise with us</h3>
+          <p>Reach the whole coast with an advert or a sponsored show, at a local price.</p>
+          <span class="more">Ask us →</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" style="padding-top:0">
+    <div class="wrap">
+      <div class="band">
+        <div><h2>Tune in now</h2><p>Live from Gansbaai, free, wherever you are.</p></div>
+        <a class="btn" href="#listen" data-listen><span class="live-dot"></span>Listen live</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="cols">
+      <div><img src="../theme/gansbaai-radio/assets/img/gbcr-logo-horizontal.svg" alt="Gansbaai Community Radio"><p>The voice of the bay, from the harbour to the hills.</p></div>
+      <div><h3>Listen</h3><ul><li><a href="#listen" data-listen>Listen live</a></li><li><a href="schedule.html">Line-up</a></li></ul></div>
+      <div><h3>Talk to us</h3><ul><li><a href="contact.html">Contact us</a></li><li><a href="contact.html?topic=Shout-out">Send a shout-out</a></li><li><a href="contact.html?topic=Advertise">Advertise</a></li></ul></div>
+    </div>
+    <div class="legal"><span>© <span data-year>2026</span> Gansbaai Community Radio</span><a href="#privacy">Privacy policy</a></div>
+  </div>
+</footer>
+
+<div class="player-bar" role="region" aria-label="Live radio player" inert>
+  <div class="wrap">
+    <img src="../theme/gansbaai-radio/assets/img/gbcr-mark.svg" alt="">
+    <iframe title="Gansbaai Community Radio live player" allow="autoplay"></iframe>
+    <button class="close" type="button" aria-label="Close the player"><svg class="icon" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+  </div>
+</div>
+<script src="../theme/gansbaai-radio/assets/site.js"></script>
+</body>
+</html>

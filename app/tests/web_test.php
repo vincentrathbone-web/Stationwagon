@@ -301,6 +301,10 @@ try {
     check('  with the full layout’s parts for a tall frame: album art, the copyright line, the spectrum and the strip', str_contains($r['body'], 'id="emArt"') && str_contains($r['body'], 'class="cd-disc"') && str_contains($r['body'], 'id="emRights"') && str_contains($r['body'], 'id="emSpec"') && str_contains($r['body'], 'id="emWave"')
         && preg_match('~assets/spectrum\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1 && preg_match('~assets/outwave\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1);
     check('  ?look=light gives the light look', str_contains($e->go('embed?look=light')['body'], '<html lang="en" class="light">') && !str_contains($r['body'], 'class="light"'));
+    // round 79: Gansbaai's site asks for its own colours and font
+    $b = $e->go('embed?look=ocean')['body'];
+    check('  ?look=ocean gives the ocean look, with the Sora font', str_contains($b, '<html lang="en" class="ocean">') && str_contains($b, 'family=Sora:') && !str_contains($r['body'], 'family=Sora:'));
+    check('  an unknown look is ignored (nothing from the address reaches the page)', str_contains($e->go('embed?look=%22%3E%3Cb%3Ex')['body'], '<html lang="en">'));
     // round 61: the bar under the staff's screens (the embed's long, flat form) and the small Now playing card
     $r = $e->go('bar');
     check('the bar opens: the station page\'s player, long and flat, with a speaker and its volume slider, no play button', $r['status'] === 200 && str_contains($r['body'], 'class="em bar"')
@@ -311,6 +315,8 @@ try {
     check('the Now playing card opens, with its link and no sound', $r['status'] === 200 && str_contains($r['body'], 'id="nwLink" href="https://radio.example.org/listen/" target="_top"')
         && preg_match('~assets/now\.js\?v=[0-9a-f]{10}"~', $r['body']) === 1 && !str_contains($r['body'], 'player.js') && !str_contains($r['body'], '<audio'), (string) $r['status']);
     check('  any website may frame it', str_contains(implode(',', $r['headers']['content-security-policy'] ?? []), 'frame-ancestors *'));
+    check('  ?look=ocean gives it the ocean look too, and the bar never takes a look', str_contains($e->go('now?look=ocean')['body'], '<html lang="en" class="ocean">')
+        && str_contains($e->go('bar?look=ocean')['body'], '<html lang="en">'));
     $r = $e->go('now?link=' . rawurlencode('javascript:alert(1)') . '&target=new');
     check('  a link that isn\'t http(s) is refused (the station page instead); ?target=new opens a new tab', str_contains($r['body'], 'id="nwLink" href="' . $basePath . '/" target="_blank" rel="noopener"'));
     check('  signed out, a screen opened in a browser isn\'t framed: the sign-in page', !str_contains((new Browser($base))->go('manage/library', null, ['Sec-Fetch-Dest: document'])['body'], 'id="swScreen"'));
@@ -369,10 +375,10 @@ try {
     check('  picking a look sets no cookie (it stays in the browser)', $sk->setCookies === []);
     $css = $sk->go(preg_replace('~^.*?(assets/app\.css\?v=[0-9a-f]{10}).*$~s', '$1', $page))['body'];
     $css = str_replace("\r\n", "\n", $css); // a Windows checkout may serve it with CRLF
-    $blocks = preg_match_all('~^(:root|:root\[data-skin="[a-z0-9-]+"\]|:root\.light) \{.*?\n\}?~ms', $css, $m);
-    $rest = preg_replace('~^(:root|:root\[data-skin="[a-z0-9-]+"\]|:root\.light) \{.*?\}\n~ms', '', $css);
+    $blocks = preg_match_all('~^(:root|:root\[data-skin="[a-z0-9-]+"\]|:root\.light|:root\.ocean) \{.*?\n\}?~ms', $css, $m);
+    $rest = preg_replace('~^(:root|:root\[data-skin="[a-z0-9-]+"\]|:root\.light|:root\.ocean) \{.*?\}\n~ms', '', $css);
     preg_match_all('~#[0-9a-fA-F]{3,8}\b(?![-\w])|rgba?\(~', preg_replace('~#[a-zA-Z][\w-]*\s*[{,]~', '', $rest), $raw);
-    check('the stylesheet keeps every colour in its token blocks (green, hi-fi, light): none in the components', $blocks === 3 && $raw[0] === [], $blocks . ' blocks; ' . implode(' ', array_slice($raw[0], 0, 6)));
+    check('the stylesheet keeps every colour in its token blocks (green, hi-fi, light, ocean): none in the components', $blocks === 4 && $raw[0] === [], $blocks . ' blocks; ' . implode(' ', array_slice($raw[0], 0, 6)));
     preg_match_all('~border-radius: (\d+px)~', $rest, $radii);
     check('  and every corner size except the tiny ones (1–2 px) and circles', array_diff(array_unique($radii[1]), ['1px', '2px']) === [], implode(' ', array_unique($radii[1])));
     foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/', 'storage/geo/dbip-city-lite.mmdb', 'storage/podcasts/ep-x/raw/1-music-0000.chunk', 'storage/podcasts/ep-x/episode.chunk', 'storage/originals/', 'storage/originals/0000000000000000000000000000000000000000.mp3'] as $private) {

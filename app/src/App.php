@@ -256,7 +256,7 @@ final class App
         }
         $station = $planner->station();
         $streamSlug = ($station['parent_id'] ?? null) === null ? '' : (string) $station['slug'];
-        $light = !$bar && ($_GET['look'] ?? '') === 'light';
+        $look = $bar ? '' : self::look();
         // the bar's stream picker (round 75, v1.5): every stream, when there is more than one; the bar is a monitor, the screens keep their own switch
         $barStreams = $bar ? Streams::all(Db::fromConfig()) : [];
         $delay = 20; // the listener delay, which the embed's player holds as the station's page does (round 60)
@@ -325,7 +325,7 @@ final class App
         }
         $station = $planner->station();
         $streamSlug = ($station['parent_id'] ?? null) === null ? '' : (string) $station['slug'];
-        $light = ($_GET['look'] ?? '') === 'light';
+        $look = self::look();
         $link = (string) ($_GET['link'] ?? '');
         if (!preg_match('#^https?://[^\s"<>]+$#i', $link) || strlen($link) > 500) {
             $link = self::url($streamSlug);
@@ -335,6 +335,16 @@ final class App
         header('Content-Security-Policy: frame-ancestors *');
         header('Content-Type: text/html; charset=utf-8');
         require SW_ROOT . '/views/now.php';
+    }
+
+    /**
+     * The look a website asks its embed or Now playing card for: `?look=light` (light websites) or
+     * `?look=ocean` (round 79: Gansbaai's blues and Sora, for its site); colours over the viewer's skin.
+     */
+    private static function look(): string
+    {
+        $look = $_GET['look'] ?? '';
+        return in_array($look, ['light', 'ocean'], true) ? $look : '';
     }
 
     /** What the station keeps about listeners, and why (linked under the player and in the embed). */
