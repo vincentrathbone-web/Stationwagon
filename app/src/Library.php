@@ -129,12 +129,12 @@ final class Library
         return json_encode(array_map(fn($v) => round(max(-99.0, min(0.0, (float) $v)), 1), array_values($values)));
     }
 
-    /** Ready tracks, without their piece lists; $search matches title or artist. */
-    public function tracks(string $search = ''): array
+    /** Ready tracks, without their piece lists; $search matches title or artist; $onlyOn leaves out the songs turned off (round 84). */
+    public function tracks(string $search = '', bool $onlyOn = false): array
     {
         $t = $this->db->table('tracks');
         $pt = $this->db->table('playlist_tracks');
-        $where = "t.station_id = ? AND t.status = 'ready' AND t.kind = 'song'";
+        $where = "t.station_id = ? AND t.status = 'ready' AND t.kind = 'song'" . ($onlyOn ? ' AND t.active = 1' : '');
         $args = [$this->station['id']];
         if (trim($search) !== '') {
             $where .= ' AND (t.title LIKE ? OR t.artist LIKE ?)';
@@ -142,7 +142,7 @@ final class Library
             array_push($args, $like, $like);
         }
         return $this->db->run(
-            "SELECT t.id, t.file, t.sha1, t.title, t.artist, t.album, t.duration_s, t.bitrate_kbps, t.bytes, t.loudness_lufs, t.source_lufs, t.level_gain_db, t.level_target, t.mastered, t.preset, t.preset_settings, t.art, t.rights, t.rating, t.created_at,
+            "SELECT t.id, t.file, t.sha1, t.title, t.artist, t.album, t.duration_s, t.bitrate_kbps, t.bytes, t.loudness_lufs, t.source_lufs, t.level_gain_db, t.level_target, t.mastered, t.preset, t.preset_settings, t.art, t.rights, t.rating, t.active, t.created_at,
                     (SELECT COUNT(*) FROM $pt pt WHERE pt.track_id = t.id) AS playlists
              FROM $t t WHERE $where ORDER BY t.title, t.id",
             $args
@@ -325,7 +325,9 @@ final class Library
         foreach ($planners as $pl) {
             foreach ($pl->timeline($now) as $e) {
                 if ($e['type'] === 'song' && $e['track_id'] === $id && $e['start'] <= $now + 2 * (float) $pl->setting('cut_lead_seconds') + 1 && $e['end'] > $now - self::LISTENER_GRACE_SECONDS) {
-                    return '“' . $track['title'] . '” is on air (or just was). Try again in a few minutes.';
+                    // round 84: a song that is on keeps coming back; turning it off stops that
+                    return '“' . $track['title'] . '” is on air (or just was). ' . ((int) ($track['active'] ?? 1)
+                        ? 'Turn it off so the AutoDJ doesn’t play it again, then remove it in a few minutes.' : 'It’s off now, so try again in a few minutes.');
                 }
             }
         }
@@ -340,6 +342,65 @@ final class Library
             @unlink($this->originalsDir() . '/' . $track['sha1'] . '.mp3');
         }
         return null;
+    }
+
+    /**
+     * Turn songs on or off (round 84). A song that is off is left out by the AutoDJ (what is planned is planned
+     * again at once, so it stops coming back) and by the studio; the one on air plays to its end. Every song may be
+     * off: the station is quiet then (the library and the overview say so). Returns how many songs it was.
+     */
+    public function setActive(array $ids, bool $on, Planner $planner, float $now): int
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn(int $i) => $i > 0)));
+        if (!$ids) {
+            return 0;
+        }
+        $t = $this->db->table('tracks');
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $n = (int) $this->db->run("SELECT COUNT(*) FROM $t WHERE station_id = ? AND kind = 'song' AND id IN ($in)", [$this->station['id'], ...$ids])->fetchColumn();
+        if ($n === 0) {
+            return 0;
+        }
+        $this->db->run("UPDATE $t SET active = ? WHERE station_id = ? AND kind = 'song' AND id IN ($in)", [$on ? 1 : 0, $this->station['id'], ...$ids]);
+        foreach ($this->everyPlanner($planner) as $pl) {
+            $pl->replan($now);
+        }
+        return $n;
+    }
+
+    /**
+     * Which of these file hashes are songs in the library already (round 84: upload.js asks before preparing a song,
+     * so picking the same songs again skips the finished ones). The same match as import() makes, and only songs whose
+     * original is kept (finished). @return list<string>
+     */
+    public function haveSongs(array $sums): array
+    {
+        $sums = array_values(array_unique(array_filter(array_map(fn($s) => strtolower((string) $s), $sums), fn(string $s) => preg_match('/^[0-9a-f]{40}$/', $s) === 1)));
+        if (!$sums) {
+            return [];
+        }
+        $in = implode(',', array_fill(0, count($sums), '?'));
+        $files = array_map(fn(string $s) => "$s.mp3", $sums);
+        $rows = $this->db->run('SELECT sha1, file FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND kind = 'song' AND (sha1 IN ($in) OR file IN ($in))",
+            [$this->station['id'], ...$sums, ...$files])->fetchAll();
+        $found = [];
+        foreach ($rows as $r) {
+            if ($this->original($r) === null) {
+                continue; // its original never arrived (the page closed just then): it goes the usual way, which keeps it
+            }
+            foreach ([$r['sha1'], basename((string) $r['file'], '.mp3')] as $s) {
+                if (in_array($s, $sums, true)) {
+                    $found[$s] = true;
+                }
+            }
+        }
+        return array_keys($found);
+    }
+
+    /** How many songs are on (round 84): none means the AutoDJ has nothing to play. */
+    public function onCount(): int
+    {
+        return (int) $this->db->run('SELECT COUNT(*) FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND status = 'ready' AND kind = 'song' AND active = 1", [$this->station['id']])->fetchColumn();
     }
 
     /** The planner it was given and one for every other stream (the songs are every stream's), round 73. @return list<Planner> */

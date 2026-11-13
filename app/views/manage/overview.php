@@ -1,5 +1,5 @@
 <?php use function Stationwagon\{h, clock, duration, megabytes}; use Stationwagon\{App, Auth};
-/** @var array $me @var array $station @var array $onAir @var float $now @var ?float $plannedUntil @var int $songs @var int $bytes @var int $playlists @var int $blocks @var ?array $block @var int $listening @var int $todayPeak @var array $jobs */
+/** @var array $me @var array $station @var array $onAir @var float $now @var ?float $plannedUntil @var int $songs @var int $songsOn @var int $bytes @var int $playlists @var int $blocks @var ?array $block @var int $listening @var int $todayPeak @var array $jobs */
 $tz = $station['timezone'];
 $hour = (int) clock($now, $tz, 'G');
 $hello = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good evening');
@@ -14,11 +14,14 @@ $next = $onAir['next'];
   <a class="btn primary" href="<?= h(App::url('studio')) ?>">Open the studio</a>
 </div>
 
+<?php if ($songs > 0 && $songsOn === 0): /* round 84: every song is turned off */ ?>
+<p class="alert bad noplay" role="alert"><b>Nothing to play.</b> Every song in the Music library is turned off, so the AutoDJ is quiet. <a href="<?= h(App::url('manage/library')) ?>">Turn songs on or upload new ones</a>.</p>
+<?php endif ?>
 <div class="cols">
   <section class="card">
     <h2>On air now</h2>
     <?php if (!$cur): ?>
-      <p class="muted">Nothing is playing: <?= $songs ? 'the timeline is being planned.' : 'the library is empty. Add songs in Music library.' ?></p>
+      <p class="muted">Nothing is playing: <?= $songs ? ($songsOn ? 'the timeline is being planned.' : 'every song is turned off.') : 'the library is empty. Add songs in Music library.' ?></p>
     <?php else: $pct = $cur['type'] === 'song' && $cur['play'] > 0 ? max(0, min(100, ($now - $cur['start']) / $cur['play'] * 100)) : 100; ?>
       <div class="lcdbox onair">
         <b class="ttl"><?= h($label($cur)) ?></b>
@@ -42,7 +45,7 @@ $next = $onAir['next'];
     <h2>Health</h2>
     <ul class="checks">
       <li class="<?= $plannedUntil && $plannedUntil > $now + 1800 ? 'ok' : 'warn' ?>"><span class="dot"></span><span class="what"><b>Timeline planned</b><small>until <?= $plannedUntil ? h(clock($plannedUntil, $tz, 'H:i')) : '—' ?></small></span><span class="found"><?= $plannedUntil ? h(duration($plannedUntil - $now)) : '0:00' ?> ahead</span></li>
-      <li class="<?= $songs ? 'ok' : 'warn' ?>"><span class="dot"></span><span class="what"><b>Music library</b><small><?= h(megabytes($bytes)) ?> stored</small></span><span class="found"><?= $songs ?> songs</span></li>
+      <li class="<?= $songsOn ? 'ok' : 'warn' ?>"><span class="dot"></span><span class="what"><b>Music library</b><small><?= h(megabytes($bytes)) ?> stored</small></span><span class="found"><?= $songs ?> songs<?= $songsOn < $songs ? ' · ' . $songsOn . ' on' : '' ?></span></li>
       <li class="ok"><span class="dot"></span><span class="what"><b>Playlists and schedule</b><small><?= $blocks ? 'The schedule picks the playlist' : 'No schedule yet: AutoDJ plays the whole library' ?></small></span><span class="found"><?= $playlists ?> / <?= $blocks ?></span></li>
       <li class="<?= $jobs['ok'] ? 'ok' : 'warn' ?>"><span class="dot"></span><span class="what"><b>Background jobs</b><small><?= h($jobs['what']) ?></small></span><span class="found"><?= h($jobs['found']) ?></span></li>
     </ul>

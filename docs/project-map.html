@@ -210,7 +210,8 @@ const MAP = {
     { v: "v1.9", name: "Gansbaai branding", when: "live 13 Nov" },
     { v: "v1.10", name: "Gansbaai Android app", when: "planned" },
     { v: "v1.11", name: "Many stations in the studio apps", when: "live 13 Nov" },
-    { v: "v1.12", name: "Stream quality for listeners", when: "planned" }
+    { v: "v1.12", name: "Stream quality for listeners", when: "planned" },
+    { v: "v1.13", name: "Song prep on the server", when: "next phase" }
   ],
   areas: [
     { name: "Listener player", blurb: "The station page, the embed and the data for other sites and apps.", features: [
@@ -258,7 +259,12 @@ const MAP = {
       { text: "Ads and jingles: Edit and Remove stay where you are", v: "v1.11", state: "done" },
       { text: "Bulk upload: skip the details window, fill them in later", v: "v1.11", state: "done" },
       { text: "The station's logo next to Stationwagon's at the top", v: "v1.11", state: "done" },
-      { text: "Ocean look, and a station's own look for new devices", note: "Gansbaai is Ocean, WordWave stays Green", v: "v1.11", state: "done" }
+      { text: "Ocean look, and a station's own look for new devices", note: "Gansbaai is Ocean, WordWave stays Green", v: "v1.11", state: "done" },
+      { text: "Songs turned on and off (Status), so one on air can be removed later", note: "off means off for the AutoDJ and the studio; all off shows Nothing to play", v: "v1.11", state: "done" },
+      { text: "Bulk upload guard: progress, a Leave site? question, the unfinished list after a refresh", v: "v1.11", state: "done" },
+      { text: "Song prep on the server: an upload keeps going when the page is closed", note: "next phase: needs the server's own audio tools and a queue", v: "v1.13", state: "later" },
+      { text: "Uploads still being prepared, seen from any device", v: "v1.13", state: "later" },
+      { text: "Tests and deploy", v: "v1.13", state: "later" }
     ]},
     { name: "Multi-stream", blurb: "Several radio streams on one installation, each with its own AutoDJ.", features: [
       { text: "Streams: a stream table, the current station becomes stream 1", v: "v1.3", state: "done" },
@@ -342,6 +348,7 @@ const MAP = {
   call: null,
   feedTitle: "Recent changes",
   feed: [
+    { what: "Songs on and off, and a safer bulk upload", to: "The Music library has a Status column with Turn off and Turn on, so a song on air can be turned off and removed once it has finished; when every song is off, the library and the Overview say Nothing to play. A bulk upload now shows how far it has got, asks before the page is closed, and after a refresh lists the songs that didn't finish (picking them again skips the ones already added). Preparing on the server is the next phase (v1.13). Live on both stations", at: "13 Nov" },
     { what: "Studio login, bulk upload, logos and the Ocean look", to: "Gansbaai's website has Studio login in its menu and footer; the Music library has a tick box to upload many songs without the details window; each station's logo sits next to Stationwagon's at the top of every screen (WordWave's and Gansbaai's); Ocean, the Gansbaai mini-player's look, is in everyone's Look menu and Gansbaai opens in it; live on both stations", at: "13 Nov" },
     { what: "Ads and Jingles: no more jumping to the top", to: "Edit, Remove and Pause or Turn off now happen in place, like the Music library; live since 13 Nov", at: "13 Nov" },
     { what: "A spam check on Gansbaai's contact form", to: "Cloudflare's Turnstile box above Send: it usually ticks itself, robots are stopped, and the website checks each tick with Cloudflare before any email goes out (a tick works only once, only for this form on this site). If Cloudflare is ever down, messages still go through. Tested with a real message from your phone", at: "13 Nov" },

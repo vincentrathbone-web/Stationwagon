@@ -6,6 +6,8 @@
 //   php browser_helper.php look [<green|hifi|ocean>]  -> {"look"}: the station's own look (round 83), set first if given
 //   php browser_helper.php presets [clear <name prefix> | default <id>]  -> {"presets", "default"}
 //   php browser_helper.php cleanup <user id> [<title> ...]
+//   php browser_helper.php songs-on         -> {on: [ids]}: the songs turned on now (round 84);  songs-restore <id,id,...>  (exactly those on again, the rest off)
+//   php browser_helper.php on-air           -> {id, title, end} of the song on air now, or null
 //   php browser_helper.php make-old <title>  (its stored file made to look prepared before round 51: the LAME 3.100 tag renamed, a new file name) -> {file}
 //   php browser_helper.php cleanup-like <SQL LIKE pattern> ...   (songs a killed run left, e.g. "Loudness %"; one on air is hidden) -> {removed, hidden}
 //   php browser_helper.php lib-songs <n>    -> n throwaway songs "Web Test Lib NN" and one tagged with a cover and copyright: {"ids", "tagged"}
@@ -54,7 +56,7 @@ if ($cmd === 'manager') {
     $db->insert('station_users', ['station_id' => $station['id'], 'user_id' => $id]);
     echo json_encode(['id' => $id, 'email' => $email, 'password' => $password]);
 } elseif ($cmd === 'track') {
-    $row = $db->run('SELECT id, file, sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs, source_lufs, level_gain_db, level_target, mastered, preset, preset_settings, outro, album, art, rights FROM ' . $db->table('tracks') .
+    $row = $db->run('SELECT id, file, sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs, source_lufs, level_gain_db, level_target, mastered, preset, preset_settings, outro, album, art, rights, active FROM ' . $db->table('tracks') .
         " WHERE station_id = ? AND title = ? AND status = 'ready' ORDER BY id DESC LIMIT 1", [$station['id'], $argv[2] ?? ''])->fetch();
     echo json_encode($row ?: null);
 } elseif ($cmd === 'make-old') {
@@ -263,6 +265,20 @@ if ($cmd === 'manager') {
     }
     $planner->replan(microtime(true));
     echo json_encode(['hidden' => $hidden]);
+} elseif ($cmd === 'songs-on') {
+    echo json_encode(['on' => array_map('intval', $db->run('SELECT id FROM ' . $db->table('tracks') . " WHERE station_id = ? AND kind = 'song' AND status = 'ready' AND active = 1", [$station['id']])->fetchAll(PDO::FETCH_COLUMN))]);
+} elseif ($cmd === 'songs-restore') {
+    $ids = array_values(array_filter(array_map('intval', explode(',', (string) ($argv[2] ?? '')))));
+    $t = $db->table('tracks');
+    $db->run("UPDATE $t SET active = 0 WHERE station_id = ? AND kind = 'song' AND status = 'ready'", [$station['id']]);
+    foreach (array_chunk($ids, 500) as $chunk) {
+        $db->run("UPDATE $t SET active = 1 WHERE station_id = ? AND id IN (" . implode(',', array_fill(0, count($chunk), '?')) . ')', [$station['id'], ...$chunk]);
+    }
+    $planner->replan(microtime(true));
+    echo json_encode(['on' => (new Library($db, $station, SW_ROOT))->onCount()]);
+} elseif ($cmd === 'on-air') {
+    $c = $planner->nowPlaying(microtime(true))['current'] ?? null;
+    echo json_encode($c && ($c['type'] ?? '') === 'song' ? ['id' => (int) $c['track_id'], 'title' => $c['title'] ?? '', 'end' => $c['end'] ?? null] : null);
 } elseif ($cmd === 'cleanup-like') {
     $lib = new Library($db, $station, SW_ROOT);
     $removed = $hidden = 0;

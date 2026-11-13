@@ -38,10 +38,11 @@ namespace Stationwagon;
  *   v19 the Manager role gets the new 'download' tick (Download clips); no table changes
  *   v20 streams: stations.parent_id (a stream is a station row whose parent is the main station, which shares its library, settings and people;
  *       its timeline, schedule, live shows and listeners are its own) and user_streams (which streams a person may go live on)
+ *   v21 tracks.active: a song can be turned off (round 84): the AutoDJ and the studio leave it out, and it can be removed once it is off air
  */
 final class Schema
 {
-    public const VERSION = 20;
+    public const VERSION = 21;
 
     /** Where the station's storage is, for upgrade steps that read files (the app's folder unless a test says otherwise). */
     private static ?string $root = null;
@@ -135,6 +136,7 @@ final class Schema
                 `kind` ENUM('song','ad','jingle') NOT NULL DEFAULT 'song' COMMENT 'an ad belongs to the Ads screen and a jingle to the Jingles screen, not the Music library',
                 `outro` MEDIUMTEXT NULL COMMENT 'JSON: loudness (LUFS) of each second of the last minute, from song prep',
                 `status` ENUM('processing','ready','error') NOT NULL DEFAULT 'ready',
+                `active` TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'a song that is off: the AutoDJ and the studio leave it out',
                 `created_at` DATETIME NOT NULL,
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `{$p}tracks_station_sha1` (`station_id`, `sha1`),
@@ -662,6 +664,11 @@ final class Schema
                     : $db->pdo->exec("ALTER TABLE `{$p}stations` ADD COLUMN `parent_id` INT UNSIGNED NULL COMMENT 'a stream: the main station it belongs to (NULL: the main station)' AFTER `settings`"),
                 self::userStreams($p, $opts),
                 fn(Db $db) => $db->pdo->exec("INSERT IGNORE INTO `{$p}user_streams` (user_id, station_id) SELECT su.user_id, su.station_id FROM `{$p}station_users` su JOIN `{$p}stations` s ON s.id = su.station_id AND s.parent_id IS NULL"),
+            ],
+            // a song can be turned off (round 84): every song there now stays on
+            21 => [
+                fn(Db $db) => $db->run("SHOW COLUMNS FROM `{$p}tracks` LIKE 'active'")->fetch() ? null
+                    : $db->pdo->exec("ALTER TABLE `{$p}tracks` ADD COLUMN `active` TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'a song that is off: the AutoDJ and the studio leave it out' AFTER `status`"),
             ],
         ];
     }

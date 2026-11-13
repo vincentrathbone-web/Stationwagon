@@ -185,7 +185,7 @@ try {
         $db->run('UPDATE ' . $db->table('settings') . " SET value = '17' WHERE name = 'schema_version'");
         $ran = Schema::upgrade($db, $root);
         $type = (string) $db->run('SHOW COLUMNS FROM ' . $db->table('tracks') . " LIKE 'kind'")->fetch()['Type'];
-        return $ran === [18, 19, 20] && str_contains($type, "'jingle'") && $db->run("SHOW TABLES LIKE 'sw\_jingles'")->fetch() !== false && Schema::upgrade($db, $root) === [];
+        return $ran === range(18, Schema::VERSION) && str_contains($type, "'jingle'") && $db->run("SHOW TABLES LIKE 'sw\_jingles'")->fetch() !== false && Schema::upgrade($db, $root) === [];
     })());
 } finally {
     drop_test_database($t);

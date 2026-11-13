@@ -14,6 +14,11 @@
 // uploads straight away as before.)
 // Round 83: the tick box "Do bulk upload now and enter details later" skips the window for the songs picked
 // then: they go up one after another with their files' own details, prepared as usual.
+// Round 84: the songs are prepared in this page, so closing or refreshing it stops the rest (a closed page can't keep
+// working; moving the preparing to the server is a later phase). So while songs are still going: the browser asks
+// before leaving, a line says how many are done and to keep the page open, and the names not finished yet are kept in
+// this browser; after a refresh the page lists them so they can be picked again. On the Music library each song's
+// file is first checked against the library (by its hash), so songs already added are skipped at once.
 (() => {
   const form = document.getElementById("drop");
   if (!form || !window.FormData || !window.XMLHttpRequest) return;
@@ -31,6 +36,56 @@
   let preset = {};
   try { preset = JSON.parse(form.dataset.preset || "{}") || {}; } catch (_) { /* the built-in one */ }
   const presetName = form.dataset.presetName || "";
+
+  // ---- What's still to do, kept in this browser (round 84) ----
+  const leftKey = "sw-upload-left:" + form.getAttribute("action");
+  const store = {
+    get() { try { const v = JSON.parse(localStorage.getItem(leftKey) || "[]"); return Array.isArray(v) ? v : []; } catch (_) { return []; } },
+    set(v) { try { if (v.length) localStorage.setItem(leftKey, JSON.stringify(v)); else localStorage.removeItem(leftKey); } catch (_) { /* private window */ } },
+  };
+  const keyOf = (f) => f.name + "|" + f.size;
+  const finished = (f) => store.set(store.get().filter((x) => x.k !== keyOf(f)));
+  const progress = document.createElement("p");
+  progress.className = "upprogress"; progress.id = "upProgress"; progress.setAttribute("aria-live", "polite"); progress.hidden = true;
+  list.before(progress);
+  // left over from last time: the page was closed or refreshed before these were done
+  const showLeft = () => {
+    const left = store.get(), old = document.getElementById("upLeft");
+    if (old) old.remove();
+    if (!left.length) return;
+    const box = document.createElement("div");
+    box.className = "alert bad upleft"; box.id = "upLeft"; box.setAttribute("role", "status");
+    const p = document.createElement("p");
+    p.textContent = left.length + (left.length === 1 ? " song" : " songs") + " from your last upload didn’t finish: the page was closed or refreshed before "
+      + (left.length === 1 ? "it was" : "they were") + " done. Pick " + (left.length === 1 ? "it" : "them") + " again (songs already added are skipped):";
+    const ul = document.createElement("ul");
+    left.slice(0, 50).forEach((x) => { const li = document.createElement("li"); li.textContent = x.n; ul.appendChild(li); });
+    if (left.length > 50) { const li = document.createElement("li"); li.textContent = "and " + (left.length - 50) + " more"; ul.appendChild(li); }
+    const clear = document.createElement("button");
+    clear.type = "button"; clear.className = "btn sm"; clear.textContent = "Forget this list";
+    clear.addEventListener("click", () => { store.set([]); box.remove(); });
+    box.append(p, ul, clear);
+    form.after(box);
+  };
+  showLeft();
+  let busy = false;
+  window.addEventListener("beforeunload", (e) => { if (busy) { e.preventDefault(); e.returnValue = ""; } });
+  // the file's hash (as prep.js makes it), to ask whether the library has it already
+  const hashOf = async (f) => {
+    try {
+      if (!window.crypto || !crypto.subtle) return null;
+      return [...new Uint8Array(await crypto.subtle.digest("SHA-1", await f.arrayBuffer()))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    } catch (_) { return null; }
+  };
+  const have = async (sum) => {
+    if (!bulk || !sum) return false; // the Music library only
+    const data = new FormData();
+    data.append("csrf", csrf); data.append("action", "have"); data.append("sha1[]", sum);
+    try {
+      const j = await fetch(form.getAttribute("action"), { method: "POST", body: data, headers: { Accept: "application/json" }, credentials: "same-origin" }).then((x) => x.json());
+      return !!(j && j.have && j.have.includes(sum));
+    } catch (_) { return false; }
+  };
 
   const row = (name) => {
     const li = document.createElement("li");
@@ -105,12 +160,37 @@
     list.hidden = false;
     list.innerHTML = "";
     const rows = files.map((f) => row(f.name));
-    let ok = 0;
+    let ok = 0, done = 0;
+    // round 84: keep the names still to do in this browser, warn before leaving, and say how far it has got
+    const mine = new Set(files.map(keyOf));
+    store.set([...store.get().filter((x) => !mine.has(x.k)), ...files.map((f) => ({ k: keyOf(f), n: f.name }))]);
+    const old = document.getElementById("upLeft");
+    if (old) old.remove();
+    busy = true;
+    const tell = () => {
+      progress.hidden = false;
+      progress.className = "upprogress" + (done < files.length ? "" : " done");
+      progress.textContent = done < files.length
+        ? done + " of " + files.length + " done. Keep this page open until all are finished: closing or refreshing it stops the rest."
+        : "All " + files.length + " done.";
+    };
+    tell();
+    const next = (i) => { finished(files[i]); done++; tell(); };
     // "Do bulk upload now and enter details later" (round 83) skips the window: the songs keep their files' own details
     const later = bulk && bulk.checked;
     const ask = window.SwSongDetails && !window.swUploadNoWindow && !later ? window.SwSongDetails.ask : null;
     for (let i = 0; i < files.length; i++) {
       const li = rows[i], status = li.querySelector(".s");
+      // already in the library (picked again after the page was closed): skipped at once
+      if (bulk) {
+        status.textContent = "Checking";
+        if (await have(await hashOf(files[i]))) {
+          li.className = "ok"; status.textContent = "Already there"; li.querySelector(".bar i").style.width = "100%";
+          next(i);
+          continue;
+        }
+        status.textContent = "Waiting";
+      }
       // the window first, filled from an MP3's tag at once (another format's tags come once it's decoded)
       let win = null;
       if (ask) {
@@ -154,8 +234,9 @@
           gone = true;
           li.className = "bad";
           status.textContent = "Not added: skipped";
+          next(i);
           if (choice.action === "stop") {
-            for (let k = i + 1; k < files.length; k++) { rows[k].className = "bad"; rows[k].querySelector(".s").textContent = "Not added: cancelled"; }
+            for (let k = i + 1; k < files.length; k++) { rows[k].className = "bad"; rows[k].querySelector(".s").textContent = "Not added: cancelled"; next(k); }
             break;
           }
           continue;
@@ -168,6 +249,7 @@
         // not an MP3 and not converted: nothing to send (the station takes MP3s only)
         li.className = "bad";
         status.textContent = "Not added: " + p.note;
+        next(i);
         continue;
       }
       if (p.prepared && maxBytes && p.file.size > maxBytes && files[i].size <= maxBytes && !p.original) {
@@ -187,7 +269,9 @@
           .then((x) => x.json()).catch(() => ({ ok: false, error: "connection lost" }));
         status.textContent = said + (kept.ok ? " · original kept" : " · original not kept: " + (kept.error || "failed"));
       }
+      next(i);
     }
+    busy = false;
     if (ok) setTimeout(() => location.reload(), 900);
   };
 

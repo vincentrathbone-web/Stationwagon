@@ -5,7 +5,7 @@
 //   php app/tests/manage_test.php      (same SW_TEST_DB_* settings as install_test.php)
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
-use Stationwagon\{Auth, Db, DiagReports, Library, Permissions, Planner, Playlists, PrepPresets, Roles, Schedule, Schema, Staff, StationSettings};
+use Stationwagon\{Auth, Db, DiagReports, Library, Permissions, Planner, Playlists, PrepPresets, Roles, Schedule, Schema, Staff, StationSettings, Studio};
 
 $t = test_database('manage');
 $root = temp_root('manage');
@@ -595,6 +595,47 @@ try {
     $lib->delete($s1, $p, $now);
     $lib->delete($s2, $p, $now);
 
+    echo "Songs on and off (round 84)\n";
+    $tt = $db->table('tracks');
+    $idsOf = fn(array $rows) => array_map('intval', array_column($rows, 'id'));
+    $all = $idsOf($lib->tracks());
+    check('songs start on', count($all) >= 2 && $lib->onCount() === count($all) && $idsOf($lib->tracks('', true)) === $all);
+    $cur = $p->nowPlaying($now)['current'];
+    $onAir = (int) $cur['track_id'];
+    $refused = (string) $lib->delete($onAir, $p, $now);
+    check('Remove refused on air says to turn the song off', str_contains($refused, 'Turn it off'), $refused);
+    check('turning it off counts only real songs', $lib->setActive([$onAir, 0, 'x', 99999999], false, $p, $now) === 1 && (int) $lib->get($onAir)['active'] === 0);
+    check('  the songs on are one fewer; the studio’s search leaves it out', $lib->onCount() === count($all) - 1 && !in_array($onAir, $idsOf($lib->tracks('', true)), true)
+        && !in_array($onAir, array_map(fn($s) => $s['track_id'], (new Studio($p))->songs('')), true));
+    check('  the library list still shows it, as off', in_array($onAir, $idsOf($lib->tracks()), true)
+        && (int) array_column($lib->tracks(), null, 'id')[$onAir]['active'] === 0);
+    $lead = (float) $p->setting('cut_lead_seconds');
+    $planned = array_filter($p->timeline($now), fn($e) => $e['type'] === 'song' && $e['start'] > $now + $lead + 1);
+    check('  the AutoDJ plans it no more (the play on air goes on)', $planned !== [] && !in_array($onAir, array_column($planned, 'track_id'), true)
+        && (int) $p->nowPlaying($now)['current']['track_id'] === $onAir);
+    $refused = (string) $lib->delete($onAir, $p, $now);
+    check('  Remove still waits while it is on air, and says it is off', str_contains($refused, 'It’s off now'), $refused);
+    $after = (float) $cur['end'] + Library::LISTENER_GRACE_SECONDS + 1;
+    $gone = $lib->delete($onAir, $p, $after);
+    check('  once it has played (and the listeners’ grace), it can be removed', $gone === null, (string) $gone);
+    $rest = array_values(array_diff($all, [$onAir]));
+    $known = $db->run("SELECT sha1, file FROM $tt WHERE id = ?", [$rest[0]])->fetch();
+    $sums = array_values(array_unique([$known['sha1'], basename($known['file'], '.mp3')]));
+    $found = $lib->haveSongs([...array_map('strtoupper', $sums), sha1('not here'), 'junk', $known['sha1']]);
+    sort($found); sort($sums);
+    check('the upload check finds songs already here by their hash, and nothing else', $found === $sums && $lib->haveSongs([]) === [], json_encode($found));
+    $songsAt = fn(float $t) => array_filter($p->timeline($t), fn($e) => $e['type'] === 'song' && $e['start'] > $t + $lead + 1);
+    check('every song may be off', $lib->setActive($rest, false, $p, $after) === count($rest) && $lib->onCount() === 0);
+    $t3 = $after + 3600;
+    check('  then the AutoDJ has nothing to play (the station is quiet)', $songsAt($t3) === []);
+    check('  and on again, they play again', $lib->setActive($rest, true, $p, $t3) === count($rest) && $lib->onCount() === count($rest) && $songsAt($t3) !== []);
+    check('nothing chosen turns nothing', $lib->setActive([], false, $p, $t3) === 0 && $lib->onCount() === count($rest));
+    $lib->setActive([$rest[0]], false, $p, $t3);
+    $db->pdo->exec("ALTER TABLE $tt DROP COLUMN active");
+    $db->run('UPDATE ' . $db->table('settings') . " SET value = '20' WHERE name = 'schema_version'");
+    check('the upgrade to 21 adds the on/off column, with every song on', Schema::upgrade($db, $root) === [21] && $lib->onCount() === count($rest));
+    check('  and a second upgrade has nothing to do', Schema::upgrade($db, $root) === []);
+
     echo "Diagnostics reports\n";
     $reports = new DiagReports("$root/storage/diag");
     $now = 1_800_000_000.0;
@@ -632,7 +673,7 @@ try {
         $mgr = json_decode((string) $db->run("SELECT permissions FROM $rt WHERE `key` = 'manager' AND station_id = ?", [$station['id']])->fetchColumn(), true);
         $cus = json_decode((string) $db->run("SELECT permissions FROM $rt WHERE `key` = 'custom-dl' AND station_id = ?", [$station['id']])->fetchColumn(), true);
         $dj = json_decode((string) $db->run("SELECT permissions FROM $rt WHERE `key` = 'dj' AND station_id = ?", [$station['id']])->fetchColumn(), true);
-        return $ran === [19, 20] && $mgr === ['library', 'download', 'sound'] && $cus === ['library'] && !in_array('download', $dj ?: [], true) && Schema::upgrade($db) === [];
+        return $ran === range(19, Schema::VERSION) && $mgr === ['library', 'download', 'sound'] && $cus === ['library'] && !in_array('download', $dj ?: [], true) && Schema::upgrade($db) === [];
     })());
 } finally {
     drop_test_database($t);

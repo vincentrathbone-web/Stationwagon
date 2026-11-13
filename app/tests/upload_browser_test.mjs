@@ -5,7 +5,11 @@
 // Round 54: songs in WAV (16-bit, 24-bit 96 kHz), FLAC, M4A (AAC, ALAC), Ogg Vorbis, Opus and WMA
 // are converted in the browser, each with its tags, cover and songwriter, and a 320 kbps MP3 original
 // kept (samples from make_format_samples.mjs; skipped with a note when the lossless music isn't here).
+// Round 84: songs turned off and on (the Status column, the bulk bar, the On/Off filter, Remove refused on air
+// offering Turn off, the "Nothing to play" banner) and the upload guard (the progress line, the browser asking
+// before leaving, the unfinished songs listed after a refresh, songs already added skipped when picked again).
 //   node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app [--only=bulk]
+// (--only=bulk runs the Music library's own bulk parts: round 83's tick box and round 84's)
 // Needs SW_PHP (php.exe) unless php is on PATH. Signs in a throwaway account: not for a public server.
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from "node:fs";
@@ -97,6 +101,12 @@ const evaluate = async (expression) => {
   if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || "page error");
   return r.result?.result?.value;
 };
+// a real click (the page counts it as the person using it: the browser asks before leaving only then)
+async function realClick(sel) {
+  const r = await evaluate(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); e.scrollIntoView({ block: "center" }); const b = e.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; })()`);
+  for (const type of ["mousePressed", "mouseReleased"]) await call("Input.dispatchMouseEvent", { type, x: r[0], y: r[1], button: "left", clickCount: 1 });
+}
+const dialogs = []; // the browser's own questions (round 84: "Leave site?"), answered Leave
 const loaded = async () => { for (let i = 0; i < 100; i++) { if ((await evaluate("document.readyState").catch(() => "")) === "complete") return; await sleep(100); } };
 const go = async (url) => { await call("Page.navigate", { url }); await sleep(300); await loaded(); };
 
@@ -276,6 +286,137 @@ async function bulkTest() {
   check("the Ads screen (no details window there) has no such box", await evaluate(`!!document.getElementById('drop') && !document.getElementById('bulkUp')`));
 }
 
+// ---- Songs on and off (round 84) ---------------------------------------------------------------------
+// The two songs bulkTest added: turned off and on again with the bulk bar (in place), the On/Off filter, the
+// database; the song on air: Remove refused, Turn off offered in its row; every song off: the "Nothing to play"
+// banner on the library and the overview. Which songs were on is put back afterwards whatever happens.
+async function stateTest() {
+  const before = helper("songs-on").on;
+  try {
+    await go(`${base}/manage/library`);
+    const [a, b] = bulkTitles.map((x) => helper("track", x));
+    const rowState = (tid) => evaluate(`(() => { const tr = document.getElementById('t${tid}'); return tr ? { state: tr.dataset.state, pill: tr.querySelector('.c-status .pill').textContent, hidden: tr.hidden } : null; })()`);
+    const ra = await rowState(a.id);
+    check("a new song shows Status On", ra && ra.state === "on" && ra.pill === "On" && Number(a.active) === 1, JSON.stringify(ra));
+    check("  the Status column and the On/Off filter are there, the banner isn't", await evaluate(`!!document.querySelector('th[data-col="status"] .sortb') && !document.getElementById('stateFilter').hidden && document.getElementById('noPlay').hidden`));
+    await evaluate(`window.__stay = 1; ['t${a.id}', 't${b.id}'].forEach((x) => { const c = document.querySelector('#' + x + ' .sel'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); }); document.getElementById('bulkOff').click(); 1`);
+    let note = "";
+    for (let i = 0; i < 100 && !/turned off/.test(note); i++) { await sleep(100); note = await evaluate(`document.getElementById('libNote').textContent`); }
+    const offA = await rowState(a.id), offB = await rowState(b.id);
+    check("Turn off on two ticked songs: both show Off at once", offA.pill === "Off" && offB.pill === "Off" && offA.state === "off" && /2 songs turned off/.test(note), note);
+    check("  saved: the AutoDJ and the studio leave them out", Number(helper("track", bulkTitles[0]).active) === 0 && Number(helper("track", bulkTitles[1]).active) === 0);
+    check("  in place: the page didn't reload", await evaluate(`window.__stay === 1`));
+    await evaluate(`(() => { const f = document.getElementById('stateFilter'); f.value = 'off'; f.dispatchEvent(new Event('change')); return 1; })()`);
+    const shownOff = await evaluate(`[...document.querySelectorAll("#libBody tr[id^='t']")].filter((tr) => !tr.hidden).map((tr) => tr.dataset.state)`);
+    check("the filter Off shows only the songs that are off", shownOff.length >= 2 && shownOff.every((x) => x === "off"), JSON.stringify(shownOff.slice(0, 5)));
+    await evaluate(`(() => { const f = document.getElementById('stateFilter'); f.value = 'on'; f.dispatchEvent(new Event('change')); return 1; })()`);
+    check("  On leaves them out", (await rowState(a.id)).hidden && (await rowState(b.id)).hidden);
+    await evaluate(`(() => { const f = document.getElementById('stateFilter'); f.value = ''; f.dispatchEvent(new Event('change')); return 1; })()`);
+    await evaluate(`document.getElementById('bulkOn').click(); 1`);
+    for (let i = 0; i < 100 && !/turned on/.test(note); i++) { await sleep(100); note = await evaluate(`document.getElementById('libNote').textContent`); }
+    check("Turn on puts them back", (await rowState(a.id)).pill === "On" && Number(helper("track", bulkTitles[0]).active) === 1 && Number(helper("track", bulkTitles[1]).active) === 1, note);
+    await go(`${base}/manage/library`);
+    check("  and after a reload the Status column says On", (await rowState(a.id)).pill === "On");
+
+    // the song on air: Remove is refused and Turn off is offered right there
+    let air = null;
+    for (let i = 0; i < 60 && !air; i++) { air = helper("on-air"); if (!air) await sleep(1000); }
+    check("a song is on air on this station", !!air);
+    if (air) {
+      await evaluate(`document.querySelector('#t${air.id} a[data-act="remove"]').click(); 1`);
+      await evaluate(`[...document.querySelectorAll('#t${air.id} td.acts button')].find((x) => x.textContent === 'Yes, remove').click(); 1`);
+      let cell = null;
+      for (let i = 0; i < 50; i++) { await sleep(100); cell = await evaluate(`(() => { const c = document.querySelector('#t${air.id} td.acts'); return { text: c.querySelector('.warn2').textContent, buttons: [...c.querySelectorAll('button')].map((x) => x.textContent) }; })()`); if (/on air/.test(cell.text)) break; }
+      check("Remove on the song on air is refused, saying to turn it off", /is on air \(or just was\)\. Turn it off/.test(cell.text), cell.text);
+      check("  with a Turn off button in its row", cell.buttons.includes("Turn off"), JSON.stringify(cell.buttons));
+      await evaluate(`[...document.querySelectorAll('#t${air.id} td.acts button')].find((x) => x.textContent === 'Turn off').click(); 1`);
+      for (let i = 0; i < 50; i++) { await sleep(100); cell = await evaluate(`(() => { const c = document.querySelector('#t${air.id} td.acts'); return { text: c.querySelector('.warn2').textContent, buttons: [...c.querySelectorAll('button')].map((x) => x.textContent) }; })()`); if (/Turned off/.test(cell.text)) break; }
+      check("  Turn off: said, the song shows Off, saved, and it is still in the list", /^Turned off: the AutoDJ won’t play it again/.test(cell.text) && (await rowState(air.id)).pill === "Off"
+        && !helper("songs-on").on.includes(air.id) && !!(await rowState(air.id)), cell.text);
+      helper("songs-restore", before.join(","));
+    }
+
+    // every song off: the station is quiet and both screens say so
+    await go(`${base}/manage/library`);
+    await evaluate(`(() => { const s = document.getElementById('selAll'); if (!s.checked) s.click(); document.getElementById('bulkOff').click(); return 1; })()`);
+    for (let i = 0; i < 150; i++) { await sleep(100); if (await evaluate(`!document.getElementById('noPlay').hidden`)) break; }
+    check("every song turned off: the “Nothing to play” banner shows at once", await evaluate(`!document.getElementById('noPlay').hidden && /Nothing to play/.test(document.getElementById('noPlay').textContent)`));
+    check("  none is on in the database", helper("songs-on").on.length === 0, JSON.stringify(helper("songs-on").on.slice(0, 5)));
+    await go(`${base}/manage`);
+    check("  the Overview warns too", await evaluate(`(() => { const n = document.querySelector('.noplay'); return !!n && /Nothing to play/.test(n.textContent) && /Music library/.test(n.textContent); })()`));
+    await go(`${base}/manage/library`);
+    check("  the library shows the banner when it opens", await evaluate(`!document.getElementById('noPlay').hidden`));
+    await evaluate(`(() => { const s = document.getElementById('selAll'); if (!s.checked) s.click(); document.getElementById('bulkOn').click(); return 1; })()`);
+    for (let i = 0; i < 150; i++) { await sleep(100); if (await evaluate(`document.getElementById('noPlay').hidden`)) break; }
+    check("  Turn on for all: the banner goes", await evaluate(`document.getElementById('noPlay').hidden`) && helper("songs-on").on.length > 0);
+    await go(`${base}/manage`);
+    check("  and the Overview's warning too", await evaluate(`!document.querySelector('.noplay')`));
+  } finally {
+    helper("songs-restore", before.join(","));
+  }
+}
+
+// ---- The upload guard (round 84) -------------------------------------------------------------------
+// Three songs picked with "details later", the upload slowed down: while they go, a line says how far it has
+// got; the names not finished are kept in this browser; a refresh makes the browser ask first; after it the
+// page lists the unfinished ones; picked again, the one already added is skipped at once and the others go up.
+const guardTitles = [`Guard A ${tag}`, `Guard B ${tag}`, `Guard C ${tag}`];
+async function guardTest() {
+  const files = guardTitles.map((t, i) => {
+    const f = join(dir, `guard ${i + 1}.mp3`);
+    writeFileSync(f, taggedMp3({ title: t, artist: "Guard Artist", album: "Guard Album" }, null));
+    return f;
+  });
+  const leftOf = `JSON.parse(localStorage.getItem('sw-upload-left:' + document.getElementById('drop').getAttribute('action')) || '[]').map((x) => x.n)`;
+  const pick = async () => {
+    const doc = await call("DOM.getDocument", {});
+    const input = await call("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: "#files" });
+    await call("DOM.setFileInputFiles", { nodeId: input.result.nodeId, files });
+  };
+  await go(`${base}/manage/library`);
+  await evaluate(`localStorage.removeItem('sw-upload-left:' + document.getElementById('drop').getAttribute('action')); 1`);
+  await realClick("#bulkUp");
+  check("the tick box is ticked by a real click", await evaluate(`document.getElementById('bulkUp').checked`));
+  await call("Network.enable");
+  await call("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: 60 * 1024 }); // about 4 s a song
+  await pick();
+  let st = null;
+  for (let i = 0; i < 600; i++) {
+    st = await evaluate(`({ p: document.getElementById('upProgress').textContent, shown: !document.getElementById('upProgress').hidden, rows: [...document.querySelectorAll('#uplist li')].map((li) => li.className), left: ${leftOf} })`);
+    if (/^1 of 3/.test(st.p)) break; // the first song added and its original kept
+    await sleep(100);
+  }
+  check("while songs are going, a line says how far it has got and to keep the page open", st.shown && /^1 of 3 done\. Keep this page open until all are finished/.test(st.p), st.p);
+  check("  the names not finished yet are kept in this browser", JSON.stringify(st.left) === JSON.stringify(["guard 2.mp3", "guard 3.mp3"]), JSON.stringify(st.left));
+  dialogs.length = 0;
+  await evaluate(`setTimeout(() => location.reload(), 0); 1`);
+  await sleep(1500); await loaded();
+  await call("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  check("refreshing while songs are going: the browser asks first", dialogs.includes("beforeunload"), JSON.stringify(dialogs));
+  const box = await evaluate(`(() => { const b = document.getElementById('upLeft'); return b ? { text: b.textContent, items: [...b.querySelectorAll('li')].map((li) => li.textContent) } : null; })()`);
+  check("after the refresh the page lists the songs that didn't finish", box && /2 songs from your last upload didn’t finish/.test(box.text) && JSON.stringify(box.items) === JSON.stringify(["guard 2.mp3", "guard 3.mp3"]), JSON.stringify(box));
+  check("  the one that finished is in the library; the next one never arrived", !!helper("track", guardTitles[0]) && !helper("track", guardTitles[1]));
+  await realClick("#bulkUp");
+  await pick();
+  let rows = null;
+  for (let i = 0; i < 600; i++) {
+    const r = await evaluate(`[...document.querySelectorAll('#uplist li')].map((li) => ({ cls: li.className, text: li.querySelector('.s').textContent }))`).catch(() => null);
+    if (r && r.length === 3 && r.every((x) => (x.cls === "ok" || x.cls === "bad") && !x.text.includes("keeping the original"))) { rows = r; break; }
+    await sleep(100);
+  }
+  check("picked again: the list goes at once, the song already added is skipped without preparing it", rows && rows[0].text === "Already there", rows && rows[0].text);
+  check("  the other two are prepared and added", rows && rows.slice(1).every((x) => x.cls === "ok" && x.text.startsWith("Added, mastered, levelled")), rows && rows.map((x) => x.text).join(" | "));
+  check("  All 3 done, nothing kept", (await evaluate(`document.getElementById('upProgress').textContent`)) === "All 3 done." && (await evaluate(leftOf)).length === 0);
+  await sleep(1500); await loaded();
+  check("  after the page reloads there's no list of unfinished songs", await evaluate(`!document.getElementById('upLeft')`));
+  check("  all three are in the library", guardTitles.every((x) => !!helper("track", x)));
+  dialogs.length = 0;
+  await realClick("#bulkUp");
+  await evaluate(`setTimeout(() => location.reload(), 0); 1`);
+  await sleep(1500); await loaded();
+  check("with nothing going, a refresh isn't asked about", dialogs.length === 0, JSON.stringify(dialogs));
+}
+
 let user = null, prepBefore = null;
 const SKIP = Symbol("only");
 try {
@@ -285,7 +426,11 @@ try {
   const target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === "page");
   ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((ok, bad) => { ws.onopen = ok; ws.onerror = bad; });
-  ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); } };
+  ws.onmessage = (m) => {
+    const d = JSON.parse(m.data);
+    if (d.id && pending.has(d.id)) { pending.get(d.id)(d); pending.delete(d.id); }
+    if (d.method === "Page.javascriptDialogOpening") { dialogs.push(d.params.type); ws.send(JSON.stringify({ id: ++id, method: "Page.handleJavaScriptDialog", params: { accept: true } })); }
+  };
   await call("Page.enable");
   await call("DOM.enable");
 
@@ -299,6 +444,10 @@ try {
 
   console.log("Bulk upload, details later (round 83)");
   await bulkTest();
+  console.log("Songs on and off (round 84)");
+  await stateTest();
+  console.log("The upload guard (round 84)");
+  await guardTest();
   if (only === "bulk") throw SKIP;
 
   console.log("Upload with song prep");
@@ -420,7 +569,7 @@ try {
 } finally {
   if (prepBefore) helper("prep", prepBefore.master ? "1" : "0", prepBefore.level ? "1" : "0", String(prepBefore.target ?? -16));
   if (user) {
-    const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle, oddTitle, TAGS.title, winTitle, winEdited, ...bulkTitles);
+    const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle, oddTitle, TAGS.title, winTitle, winEdited, ...bulkTitles, ...guardTitles);
     console.log(`Cleanup: throwaway manager and test songs removed${r.hidden ? ` (${r.hidden} on air, hidden)` : ""}`);
   }
   try { ws && ws.close(); } catch { /* closed */ }

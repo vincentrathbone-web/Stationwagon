@@ -5,6 +5,9 @@
 // The song details window's "More information" is rich text of one kind: text, line breaks and links.
 // Pasting and dropping insert plain text (line breaks kept, web addresses made links); the server
 // cleans it again (Rights::cleanHtml), so nothing else can get in.
+// Round 84: songs can be turned off and on (the Status column, the bulk bar, the On/Off filter). A song that is
+// off is left out by the AutoDJ and the studio; when every song is off the "Nothing to play" banner shows.
+// Remove refused for a song on air that is still on offers Turn off right there.
 (() => {
   const wrap = document.getElementById("libWrap");
   if (!wrap || !window.fetch || !window.FormData) return;
@@ -25,9 +28,20 @@
       r = await fetch(action, { method: "POST", body: data, headers: { Accept: "application/json" }, credentials: "same-origin" });
       j = await r.json();
     } catch (_) { throw new Error("The connection dropped. Try again."); }
-    if (!r.ok || j.ok === false) throw new Error(j.error || "Not saved (" + r.status + ").");
+    if (!r.ok || j.ok === false) { const e = new Error(j.error || "Not saved (" + r.status + ")."); e.reply = j; throw e; }
     return j;
   };
+  /** Show a song as on or off (round 84): the row's state and its Status pill. */
+  function setState(tr, on) {
+    tr.dataset.state = on ? "on" : "off";
+    const c = tr.querySelector(".c-status");
+    if (c) { c.dataset.sort = on ? "0" : "1"; const p = c.querySelector(".pill"); p.textContent = on ? "On" : "Off"; p.classList.toggle("auto", on); }
+  }
+  /** The "Nothing to play" banner: shown when songs are left but none is on. */
+  function noPlay(onCount) {
+    const b = $("noPlay");
+    if (b) b.hidden = !(onCount === 0 && body.querySelector("tr[id^='t']"));
+  }
   const track = (tr) => { try { return JSON.parse(tr.dataset.track); } catch (_) { return null; } };
   const hasRights = (r) => r && Object.values(r).some((v) => v !== "" && v != null);
 
@@ -135,7 +149,25 @@
         if (open && open.previousElementSibling === tr) closeEditor();
         tr.remove();
         if (j.summary) $("libCount").textContent = j.summary;
-      } catch (ex) { q.textContent = ex.message; yes.remove(); }
+        if ("on" in j) noPlay(j.on);
+      } catch (ex) {
+        q.textContent = ex.message; yes.remove();
+        if (ex.reply && ex.reply.offerOff) {
+          // on air and still on: turn it off here, then Remove works once it has finished
+          const off = document.createElement("button"); off.type = "button"; off.className = "btn sm"; off.textContent = "Turn off";
+          no.before(off);
+          off.addEventListener("click", async () => {
+            off.disabled = true;
+            try {
+              const r = await send({ action: "active", id: track(tr).id, on: "0" });
+              setState(tr, false); noPlay(r.on);
+              q.textContent = "Turned off: the AutoDJ won’t play it again. Remove it in a few minutes, once it has finished.";
+              off.remove(); no.textContent = "OK";
+            } catch (e2) { q.textContent = e2.message; off.disabled = false; }
+          });
+          off.focus({ preventScroll: true });
+        }
+      }
     });
     no.focus({ preventScroll: true });
   }
@@ -233,25 +265,41 @@
   }
   bulkStars.addEventListener("click", (e) => { const s = e.target.closest(".star"); if (s) bulkRate(+s.dataset.stars); });
   $("bulkClear").addEventListener("click", () => bulkRate(0));
+  async function bulkActive(on) {
+    const trs = selected();
+    if (!trs.length) return;
+    say2("Saving…");
+    try {
+      const j = await send({ action: "active", ids: trs.map((tr) => track(tr).id), on: on ? "1" : "0" });
+      trs.forEach((tr) => setState(tr, on));
+      noPlay(j.on);
+      applyFilter();
+      say2(trs.length + (trs.length === 1 ? " song" : " songs") + " turned " + (on ? "on." : "off: the AutoDJ and the studio leave " + (trs.length === 1 ? "it" : "them") + " out."));
+    } catch (ex) { say2(ex.message, true); }
+  }
+  $("bulkOff").addEventListener("click", () => bulkActive(false));
+  $("bulkOn").addEventListener("click", () => bulkActive(true));
 
   // -- Showing songs by rating
-  const rf = $("ratingFilter");
+  const rf = $("ratingFilter"), sf = $("stateFilter");
   rf.hidden = false;
+  sf.hidden = false;
   function applyFilter() {
-    const v = rf.value;
+    const v = rf.value, s = sf.value;
     let n = 0, total = 0;
     for (const tr of rows()) {
-      const r = (track(tr) || {}).rating || 0, show = !v || (v === "none" ? r === 0 : r === +v);
+      const r = (track(tr) || {}).rating || 0, show = (!v || (v === "none" ? r === 0 : r === +v)) && (!s || tr.dataset.state === s);
       total++;
       if (show) n++;
       tr.hidden = !show;
       const ed = tr.nextElementSibling;
       if (ed && ed.classList.contains("editing")) ed.hidden = !show;
     }
-    if (v) say2("Showing " + n + " of " + total + " songs.");
+    if (v || s) say2("Showing " + n + " of " + total + " songs.");
     syncBulk();
   }
-  rf.addEventListener("change", () => { applyFilter(); if (!rf.value) say2(""); });
+  rf.addEventListener("change", () => { applyFilter(); if (!rf.value && !sf.value) say2(""); });
+  sf.addEventListener("change", () => { applyFilter(); if (!rf.value && !sf.value) say2(""); });
 
   // -- Sorting: a click on a heading; again for the other way. Empty values go last either way.
   const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });

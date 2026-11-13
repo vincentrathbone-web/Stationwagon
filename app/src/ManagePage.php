@@ -57,6 +57,7 @@ final class ManagePage
             'now' => $now,
             'plannedUntil' => $timeline ? end($timeline)['end'] : null,
             'songs' => count($library->tracks()),
+            'songsOn' => $library->onCount(),
             'bytes' => $library->bytes(),
             'playlists' => count((new Playlists($this->db, $this->station))->all()),
             'blocks' => count((new Schedule($this->db, $this->stream))->all()),
@@ -105,6 +106,11 @@ final class ManagePage
                 foreach ($results as $r) {
                     Session::flash($r['ok'] ? 'ok' : 'bad', $r['ok'] ? ($r['duplicate'] ? "Already in the library: {$r['title']}" : "Added: {$r['title']}") : "{$r['name']}: {$r['error']}");
                 }
+            } elseif ($action === 'have') {
+                // round 84: before preparing a picked song, upload.js asks whether its file is already here (by its hash),
+                // so picking the same songs again after the page was closed skips the finished ones at once
+                $sums = isset($_POST['sha1']) && is_array($_POST['sha1']) ? array_slice($_POST['sha1'], 0, 500) : [];
+                $this->json(['ok' => true, 'have' => $library->haveSongs($sums)]);
             } elseif ($action === 'original') {
                 // after an upload: the file the song was prepared from, kept for song prep (round 40)
                 $file = $_FILES['original'] ?? null;
@@ -154,6 +160,16 @@ final class ManagePage
                     $this->json($problem === null ? ['ok' => true, 'rating' => $stars, 'ids' => $rated] : ['ok' => false, 'error' => $problem]);
                 }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Rating saved.');
+            } elseif ($action === 'active') {
+                // round 84: turn the ticked songs on or off (the bulk bar, or the Turn off offered when Remove is refused)
+                $ids = isset($_POST['ids']) && is_array($_POST['ids']) ? array_slice($_POST['ids'], 0, 2000) : [$_POST['id'] ?? 0];
+                $on = (string) ($_POST['on'] ?? '') === '1';
+                $n = $library->setActive($ids, $on, $this->planner, microtime(true));
+                $problem = $n === 0 ? 'Choose at least one song first.' : null;
+                if ($wantsJson) {
+                    $this->json(['ok' => $problem === null, 'error' => $problem, 'count' => $n, 'active' => $on, 'on' => $library->onCount()]);
+                }
+                Session::flash($problem ? 'bad' : 'ok', $problem ?? $n . ($n === 1 ? ' song' : ' songs') . ' turned ' . ($on ? 'on.' : 'off.'));
             } elseif (in_array($action, ['update', 'art', 'art_remove', 'rights'], true)) {
                 // saved without leaving the page (library.js asks for JSON and updates the row); the forms still work without it
                 $id = (int) ($_POST['id'] ?? 0);
@@ -177,7 +193,9 @@ final class ManagePage
             } elseif ($action === 'delete') {
                 $problem = $library->delete((int) ($_POST['id'] ?? 0), $this->planner, microtime(true));
                 if ($wantsJson) {
-                    $this->json(['ok' => $problem === null, 'error' => $problem, 'summary' => count($library->tracks()) . ' songs · ' . megabytes($library->bytes())]);
+                    // round 84: a song refused because it is on air and still on gets a Turn off button in its row
+                    $this->json(['ok' => $problem === null, 'error' => $problem, 'offerOff' => $problem !== null && str_contains($problem, 'Turn it off'),
+                        'summary' => count($library->tracks()) . ' songs · ' . megabytes($library->bytes()), 'on' => $library->onCount()]);
                 }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Song removed from the library.');
             }
@@ -189,6 +207,7 @@ final class ManagePage
             'tracks' => $library->tracks($q),
             'q' => $q,
             'total' => count($library->tracks()),
+            'onCount' => $library->onCount(),
             'bytes' => $library->bytes(),
             'confirm' => (int) ($_GET['confirm'] ?? 0),
             'edit' => (int) ($_GET['edit'] ?? 0),

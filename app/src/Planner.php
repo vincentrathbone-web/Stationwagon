@@ -700,7 +700,8 @@ final class Planner
     private function tracks(): array
     {
         if ($this->tracks === null) {
-            $rows = $this->db->run('SELECT id, duration_s, outro FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND status = 'ready' AND kind = 'song'", [$this->lib])->fetchAll();
+            // only the songs that are on (round 84: a song turned off is never picked, even from a playlist)
+            $rows = $this->db->run('SELECT id, duration_s, outro FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND status = 'ready' AND kind = 'song' AND active = 1", [$this->lib])->fetchAll();
             $this->tracks = [];
             foreach ($rows as $r) {
                 $this->tracks[(int) $r['id']] = ['id' => (int) $r['id'], 'duration' => (float) $r['duration_s'], 'outro' => $r['outro']];

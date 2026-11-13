@@ -1,5 +1,5 @@
 <?php use function Stationwagon\{h, duration, megabytes}; use Stationwagon\App;
-/** @var array $tracks @var string $q @var int $total @var int $bytes @var int $confirm @var int $edit @var int $maxUpload @var array $prepQuality @var array $prep @var array $preset @var array $relevel @var string $csrf */
+/** @var array $tracks @var string $q @var int $total @var int $onCount @var int $bytes @var int $confirm @var int $edit @var int $maxUpload @var array $prepQuality @var array $prep @var array $preset @var array $relevel @var string $csrf */
 [$prepMaster, $prepLevel, $prepTarget] = $prep;
 $lufs = fn(float $v) => str_replace('-', '−', number_format($v, 1));
 // the usual loudness targets, marked on the slider (round 41)
@@ -9,9 +9,11 @@ $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 
 <div class="vhead">
   <div>
     <h1>Music library</h1>
-    <p><span id="libCount"><?= $total ?> songs · <?= h(megabytes($bytes)) ?></span>. New songs join the AutoDJ straight away; playlists and the schedule decide when they play.</p>
+    <p><span id="libCount"><?= $total ?> songs · <?= h(megabytes($bytes)) ?></span>. New songs join the AutoDJ straight away; playlists and the schedule decide when they play. A song that is turned off is left out by the AutoDJ and the studio.</p>
   </div>
 </div>
+<?php /* round 84: when every song is off the station is quiet (library.js shows and hides this as songs are turned on or off) */ ?>
+<p class="alert bad noplay" id="noPlay" role="alert"<?= $total > 0 && $onCount === 0 ? '' : ' hidden' ?>><b>Nothing to play.</b> Every song is turned off, so the AutoDJ is quiet. Tick songs and choose Turn on, or upload new ones.</p>
 
 <?php
 $dropRoute = 'manage/library';
@@ -26,7 +28,7 @@ require __DIR__ . '/_drop.php';
 $cols = ['artist' => 'Artist', 'album' => 'Album', 'length' => 'Length', 'badges' => 'Badges', 'playlists' => 'Playlists', 'added' => 'Added',
     'loudness' => 'Loudness', 'bitrate' => 'Bitrate', 'size' => 'Size', 'preset' => 'Mastering preset'];
 $hiddenCols = ['bitrate', 'size', 'preset'];
-$ncols = 14;
+$ncols = 15;
 $tz = new DateTimeZone((string) ($station['timezone'] ?? 'UTC') ?: 'UTC');
 // a song's stars are a radio group (arrow keys move, 1 to 5 and 0 rate); $action: plain buttons that rate the selected songs
 $stars = function (?int $r, string $label, bool $action = false): string {
@@ -44,6 +46,11 @@ $stars = function (?int $r, string $label, bool $action = false): string {
   <input type="search" name="q" value="<?= h($q) ?>" placeholder="Search title or artist" aria-label="Search the library">
   <button class="btn" type="submit">Search</button>
   <?php if ($q !== ''): ?><a class="btn" href="<?= h(App::url('manage/library')) ?>">Show all</a><?php endif ?>
+  <select id="stateFilter" aria-label="Show songs that are on or off" hidden>
+    <option value="">On and off</option>
+    <option value="on">On</option>
+    <option value="off">Off</option>
+  </select>
   <select id="ratingFilter" aria-label="Show songs by rating" hidden>
     <option value="">All ratings</option>
     <option value="none">Not rated yet</option>
@@ -61,6 +68,8 @@ $stars = function (?int $r, string $label, bool $action = false): string {
   <b id="bulkCount">0 selected</b>
   <span class="muted2">Rate them:</span> <span id="bulkStars"><?= $stars(null, 'Rate the selected songs', true) ?></span>
   <button class="btn sm" type="button" id="bulkClear">Clear rating</button>
+  <button class="btn sm" type="button" id="bulkOff" title="The AutoDJ and the studio leave them out">Turn off</button>
+  <button class="btn sm" type="button" id="bulkOn">Turn on</button>
   <button class="btn sm" type="button" id="bulkNone">Deselect</button>
 </div>
 <p class="muted2 libnote" id="libNote" role="status" aria-live="polite"></p>
@@ -75,6 +84,7 @@ $stars = function (?int $r, string $label, bool $action = false): string {
         <th data-col="<?= h($key) ?>"<?= $num ? ' class="num"' : '' ?>><?php if ($key === 'badges'): ?><?= h($label) ?><?php else: ?><button type="button" class="sortb" data-key="<?= h($key) ?>"<?= $num ? ' data-type="num"' : '' ?>><?= h($label) ?></button><?php endif ?></th>
       <?php endforeach ?>
       <th data-col="rating"><button type="button" class="sortb" data-key="rating" data-type="num">Rating</button></th>
+      <th data-col="status"><button type="button" class="sortb" data-key="status" data-type="num">Status</button></th>
       <th data-col="acts"><span class="vh">Actions</span></th>
     </tr></thead>
     <tbody id="libBody">
@@ -95,7 +105,8 @@ $stars = function (?int $r, string $label, bool $action = false): string {
           </form>
         </td></tr>
       <?php else: ?>
-        <tr id="t<?= $id ?>" data-track="<?= h(json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?>">
+        <?php $on = (int) ($t['active'] ?? 1) === 1; ?>
+        <tr id="t<?= $id ?>" data-state="<?= $on ? 'on' : 'off' ?>" data-track="<?= h(json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?>">
           <td class="c-sel" data-col="sel"><input type="checkbox" class="sel" aria-label="Select <?= h($t['title']) ?>"></td>
           <td class="c-title" data-col="title"><div class="tcell"><span class="arts"><?php if ($row['art']): ?><img src="<?= h(App::url($row['art'])) ?>" alt="Album art" width="40" height="40" loading="lazy"><?php endif ?></span><b class="tt"><?= h($t['title']) ?></b></div></td>
           <td class="c-artist" data-col="artist"><?= h($t['artist'] ?? '') ?></td>
@@ -111,6 +122,7 @@ $stars = function (?int $r, string $label, bool $action = false): string {
           <td class="num" data-col="size" data-sort="<?= (int) $t['bytes'] ?>"><?= h(megabytes((int) $t['bytes'])) ?></td>
           <td class="c-preset" data-col="preset"><?= (int) ($t['mastered'] ?? 0) ? h((string) ($t['preset'] ?? 'Audition chain')) : '—' ?></td>
           <td class="c-rating" data-col="rating" data-sort="<?= $row['rating'] ?? 3 ?>"><?= $stars($row['rating'], $t['title']) ?></td>
+          <td class="c-status" data-col="status" data-sort="<?= $on ? 0 : 1 ?>"><span class="pill<?= $on ? ' auto' : '' ?>"><?= $on ? 'On' : 'Off' ?></span></td>
           <td class="acts" data-col="acts">
             <?php if ($confirm === $id): ?>
               <span class="warn2">Remove from the library?</span>
