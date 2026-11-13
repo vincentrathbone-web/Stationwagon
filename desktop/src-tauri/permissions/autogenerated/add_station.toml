@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-add-station"
+description = "Enables the add_station command without any pre-configured scope."
+commands.allow = ["add_station"]
+
+[[permission]]
+identifier = "deny-add-station"
+description = "Denies the add_station command without any pre-configured scope."
+commands.deny = ["add_station"]

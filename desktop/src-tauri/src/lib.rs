@@ -24,8 +24,12 @@ use tauri_plugin_updater::UpdaterExt;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Settings {
-    /// The station's address, e.g. https://radio.example.com/stationwagon-app/ (always ends in "/")
+    /// The station the app opens (the default), e.g. https://radio.example.com/stationwagon-app/ (always ends in "/")
     pub station: Option<String>,
+    /// Every station saved in the app (round 81), picked on the station's sign-in page or in App settings. Older
+    /// settings have only `station`: it becomes the first (see `Settings::tidy`).
+    #[serde(default)]
+    pub stations: Vec<Saved>,
     pub port: u16,
     pub password: String,
     /// The look picked in the studio (Green or Hi-fi), for the app's own page and its update dialog
@@ -56,7 +60,63 @@ impl Look {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { station: None, port: 8000, password: new_password(), look: None }
+        Self { station: None, stations: Vec::new(), port: 8000, password: new_password(), look: None }
+    }
+}
+
+/// A station saved in the app: its base address (as `station_base` makes it) and its name (from the station).
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct Saved {
+    pub base: String,
+    pub name: String,
+}
+
+/// At most this many stations are kept (the oldest added goes first).
+const MAX_STATIONS: usize = 20;
+
+impl Settings {
+    /// The list as it should be: only good addresses, each once, the default station in it (named after its host
+    /// until the station gives its name), and the default one of them (or none when the list is empty).
+    fn tidy(&mut self) {
+        let mut seen: Vec<Saved> = Vec::new();
+        for s in self.stations.drain(..) {
+            if let Ok(b) = station_base(&s.base) {
+                let base = b.to_string();
+                if !seen.iter().any(|x| x.base == base) { seen.push(Saved { base, name: s.name.trim().chars().take(80).collect() }); }
+            }
+        }
+        self.stations = seen;
+        self.station = self.station.as_deref().and_then(|s| station_base(s).ok()).map(|b| b.to_string());
+        if let Some(cur) = self.station.clone() {
+            if !self.stations.iter().any(|x| x.base == cur) { self.stations.insert(0, Saved { name: String::new(), base: cur }); }
+        }
+        for s in self.stations.iter_mut() {
+            if s.name.is_empty() { s.name = url::Url::parse(&s.base).ok().and_then(|u| u.host_str().map(String::from)).unwrap_or_default(); }
+        }
+        while self.stations.len() > MAX_STATIONS {
+            let i = self.stations.iter().position(|x| Some(&x.base) != self.station.as_ref()).unwrap_or(0);
+            self.stations.remove(i);
+        }
+    }
+
+    /// Saves a station (or renames it) and makes it the default.
+    fn remember(&mut self, base: &url::Url, name: &str) {
+        let base = base.to_string();
+        match self.stations.iter_mut().find(|x| x.base == base) {
+            Some(s) => { if !name.trim().is_empty() { s.name = name.trim().chars().take(80).collect(); } }
+            None => self.stations.push(Saved { base: base.clone(), name: name.trim().chars().take(80).collect() }),
+        }
+        self.station = Some(base);
+        self.tidy();
+    }
+
+    /// Takes a station off the list; the default moves to the first one left (or none).
+    fn forget(&mut self, base: &str) -> bool {
+        let before = self.stations.len();
+        self.stations.retain(|x| x.base != base);
+        if self.station.as_deref() == Some(base) { self.station = self.stations.first().map(|x| x.base.clone()); }
+        self.tidy();
+        self.stations.len() != before
     }
 }
 
@@ -278,7 +338,12 @@ fn allow_station(app: &AppHandle, base: &url::Url) -> Result<(), String> {
         // the station's About screen: the app's version and Check for updates (round 68)
         .permission("allow-app-version")
         .permission("allow-check-update")
-        .permission("allow-install-update");
+        .permission("allow-install-update")
+        // the station picker on the sign-in page (round 81): the saved stations, opening one of them, adding one
+        // (only a real station: add_station asks it, as find_station does); taking one off is for App settings
+        .permission("allow-stations")
+        .permission("allow-switch-station")
+        .permission("allow-add-station");
     app.add_capability(cap).map_err(|e| e.to_string())?;
     allowed.push(origin);
     Ok(())
@@ -296,13 +361,13 @@ fn get_info(app: AppHandle, state: State<App>) -> Info {
 }
 
 #[tauri::command]
-fn save_settings(station: String, port: u16, state: State<App>) -> Result<Settings, String> {
+fn save_settings(station: String, port: u16, name: Option<String>, state: State<App>) -> Result<Settings, String> {
     let base = station_base(&station)?;
     if port < 1024 { return Err("Pick a port from 1024 to 65535 (8000 is usual).".into()); }
     let changed_port = {
         let mut s = state.settings.lock().unwrap();
         let changed = s.port != port;
-        s.station = Some(base.to_string());
+        s.remember(&base, name.as_deref().unwrap_or(""));
         s.port = port;
         changed
     };
@@ -443,14 +508,63 @@ async fn find_station(address: String) -> Station {
 #[tauri::command]
 fn open_station(app: AppHandle, state: State<App>) -> Result<(), String> {
     let station = state.settings.lock().unwrap().station.clone().ok_or("Type the station's address first.")?;
-    let base = station_base(&station)?;
-    allow_station(&app, &base)?;
+    open_base(&app, &station_base(&station)?)
+}
+
+/// The main window to a station's studio (its sign-in page first, when nobody is signed in there).
+fn open_base(app: &AppHandle, base: &url::Url) -> Result<(), String> {
+    allow_station(app, base)?;
     let studio = base.join("studio").map_err(|e| e.to_string())?;
     let main = app.get_webview("main").ok_or("The main window is gone.")?;
     main.navigate(studio).map_err(|e| e.to_string())?;
     if let Some(w) = app.get_window("main") { let _ = w.set_focus(); }
     if let Some(w) = app.get_webview_window("settings") { let _ = w.close(); }
     Ok(())
+}
+
+/// The saved stations and the default one, for the sign-in page's picker and App settings (round 81).
+#[derive(Serialize)]
+struct StationList { current: Option<String>, stations: Vec<Saved> }
+
+#[tauri::command]
+fn stations(state: State<App>) -> StationList {
+    let s = state.settings.lock().unwrap();
+    StationList { current: s.station.clone(), stations: s.stations.clone() }
+}
+
+/// Makes a saved station the default and opens it. Only a station on the list: a page can't send the app elsewhere.
+#[tauri::command]
+fn switch_station(base: String, app: AppHandle, state: State<App>) -> Result<(), String> {
+    let b = station_base(&base)?;
+    {
+        let mut s = state.settings.lock().unwrap();
+        if !s.stations.iter().any(|x| x.base == b.as_str()) { return Err("That station isn't saved in the app.".into()); }
+        let name = s.stations.iter().find(|x| x.base == b.as_str()).map(|x| x.name.clone()).unwrap_or_default();
+        s.remember(&b, &name);
+    }
+    state.save()?;
+    open_base(&app, &b)
+}
+
+/// Finds the station at an address (as find_station does), saves it, makes it the default and opens it.
+#[tauri::command]
+async fn add_station(address: String, app: AppHandle, state: State<'_, App>) -> Result<Station, String> {
+    let found = find_station(address).await;
+    if !found.found { return Ok(found); }
+    let b = station_base(&found.base)?;
+    state.settings.lock().unwrap().remember(&b, &found.name);
+    state.save()?;
+    open_base(&app, &b)?;
+    Ok(found)
+}
+
+/// Takes a station off the list (App settings only).
+#[tauri::command]
+fn forget_station(base: String, state: State<App>) -> Result<StationList, String> {
+    let b = station_base(&base)?.to_string();
+    if !state.settings.lock().unwrap().forget(&b) { return Err("That station isn't saved in the app.".into()); }
+    state.save()?;
+    Ok(stations(state))
 }
 
 /// A newer version and what it brings (the release's description on GitHub).
@@ -589,7 +703,8 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
             let path = dir.join("settings.json");
-            let settings: Settings = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+            let mut settings: Settings = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+            settings.tidy(); // older settings: their one station becomes the list (round 81)
             let handle = app.handle().clone();
             let bridge = Bridge::new(std::sync::Arc::new(move |e: Event| { let _ = handle.emit("bridge", e); }));
             bridge.set_password(&settings.password);
@@ -641,7 +756,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_info, save_settings, renew_password, open_station, check_update, install_update, find_station,
-            bridge_status, set_busy, quit_app, open_settings, set_look, bar_tall, app_version
+            bridge_status, set_busy, quit_app, open_settings, set_look, bar_tall, app_version,
+            stations, switch_station, add_station, forget_station
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stationwagon Studio");
@@ -649,7 +765,71 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{bar_route, base_from_link, station_base, station_links, Look};
+    use super::{bar_route, base_from_link, station_base, station_links, Look, Saved, Settings};
+
+    fn names(s: &Settings) -> Vec<String> { s.stations.iter().map(|x| x.name.clone()).collect() }
+
+    #[test]
+    fn older_settings_become_a_list() {
+        // settings from before round 81: one station, no list
+        let mut s: Settings = serde_json::from_str(r#"{"station":"https://wordwave.co.za/radio/","port":8000,"password":"x"}"#).unwrap();
+        s.tidy();
+        assert_eq!(s.stations.len(), 1);
+        assert_eq!(s.stations[0].base, "https://wordwave.co.za/radio/");
+        assert_eq!(s.stations[0].name, "wordwave.co.za"); // named after its host until the station gives its name
+        assert_eq!(s.station.as_deref(), Some("https://wordwave.co.za/radio/"));
+    }
+
+    #[test]
+    fn remember_adds_renames_and_makes_default() {
+        let mut s = Settings::default();
+        let b = |x: &str| station_base(x).unwrap();
+        s.remember(&b("https://a.example/radio"), "Radio A");
+        s.remember(&b("https://b.example/radio/studio"), "Radio B");
+        assert_eq!(names(&s), vec!["Radio A", "Radio B"]);
+        assert_eq!(s.station.as_deref(), Some("https://b.example/radio/"));
+        s.remember(&b("https://a.example/radio/"), ""); // known again: no new row, the name stays, and it is the default
+        assert_eq!(names(&s), vec!["Radio A", "Radio B"]);
+        assert_eq!(s.station.as_deref(), Some("https://a.example/radio/"));
+        s.remember(&b("https://a.example/radio/"), "Radio Alpha"); // renamed
+        assert_eq!(names(&s), vec!["Radio Alpha", "Radio B"]);
+    }
+
+    #[test]
+    fn tidy_drops_bad_and_double_addresses_and_keeps_the_default() {
+        let mut s = Settings::default();
+        s.stations = vec![
+            Saved { base: "https://a.example/radio/".into(), name: "A".into() },
+            Saved { base: "https://a.example/radio/".into(), name: "A again".into() },
+            Saved { base: "not an address".into(), name: "Bad".into() },
+        ];
+        s.station = Some("https://c.example/radio/".into()); // the default is not on the list: it is added first
+        s.tidy();
+        assert_eq!(s.stations.iter().map(|x| x.base.as_str()).collect::<Vec<_>>(), vec!["https://c.example/radio/", "https://a.example/radio/"]);
+        assert_eq!(s.stations[1].name, "A");
+    }
+
+    #[test]
+    fn forget_moves_the_default_and_refuses_unknown() {
+        let mut s = Settings::default();
+        let b = |x: &str| station_base(x).unwrap();
+        s.remember(&b("https://a.example/radio"), "A");
+        s.remember(&b("https://b.example/radio"), "B");
+        assert!(!s.forget("https://zzz.example/radio/"));
+        assert!(s.forget("https://b.example/radio/")); // the default goes: the first left takes its place
+        assert_eq!(s.station.as_deref(), Some("https://a.example/radio/"));
+        assert!(s.forget("https://a.example/radio/"));
+        assert!(s.stations.is_empty() && s.station.is_none());
+    }
+
+    #[test]
+    fn the_list_is_capped_without_losing_the_default() {
+        let mut s = Settings::default();
+        for i in 0..25 { s.remember(&station_base(&format!("https://s{i}.example/radio")).unwrap(), &format!("S{i}")); }
+        assert_eq!(s.stations.len(), 20);
+        assert_eq!(s.station.as_deref(), Some("https://s24.example/radio/"));
+        assert!(s.stations.iter().any(|x| x.base == "https://s24.example/radio/"));
+    }
 
     #[test]
     fn bar_under_screens() {

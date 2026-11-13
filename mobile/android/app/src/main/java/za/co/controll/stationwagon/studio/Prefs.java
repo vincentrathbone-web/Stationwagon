@@ -21,7 +21,69 @@ final class Prefs {
     }
 
     void station(String base) {
+        remember(base, "");
+    }
+
+    /** At most this many saved stations (the oldest added goes first, never the default one). */
+    private static final int MAX_STATIONS = 20;
+
+    /** The saved stations (round 81): { base, name } each once; the default one is always in it (older settings had only that). */
+    java.util.List<String[]> stations() {
+        java.util.List<String[]> out = new java.util.ArrayList<>();
+        try {
+            org.json.JSONArray a = new org.json.JSONArray(p.getString("stations", "[]"));
+            for (int i = 0; i < a.length(); i++) {
+                org.json.JSONObject o = a.getJSONObject(i);
+                String b = base(o.optString("base", ""));
+                boolean dup = false;
+                for (String[] x : out) if (x[0].equals(b)) dup = true;
+                if (!dup) out.add(new String[] { b, o.optString("name", "").trim() });
+            }
+        } catch (Exception e) { /* a damaged list: start from the default station */ }
+        String cur = station();
+        if (cur != null) {
+            boolean has = false;
+            for (String[] x : out) if (x[0].equals(cur)) has = true;
+            if (!has) out.add(0, new String[] { cur, "" });
+        }
+        for (String[] x : out) if (x[1].isEmpty()) x[1] = Uri.parse(x[0]).getHost();
+        return out;
+    }
+
+    private void saveStations(java.util.List<String[]> list) {
+        org.json.JSONArray a = new org.json.JSONArray();
+        try {
+            for (String[] x : list) a.put(new org.json.JSONObject().put("base", x[0]).put("name", x[1]));
+        } catch (org.json.JSONException e) { return; }
+        p.edit().putString("stations", a.toString()).apply();
+    }
+
+    /** Saves a station (or renames it; an empty name keeps the one it had) and makes it the default. */
+    void remember(String base, String name) {
+        java.util.List<String[]> list = stations();
+        String n = name == null ? "" : name.trim();
+        if (n.length() > 80) n = n.substring(0, 80);
+        boolean found = false;
+        for (String[] x : list) if (x[0].equals(base)) { found = true; if (!n.isEmpty()) x[1] = n; }
+        if (!found) list.add(new String[] { base, n.isEmpty() ? Uri.parse(base).getHost() : n });
+        while (list.size() > MAX_STATIONS) {
+            for (int i = 0; i < list.size(); i++) if (!list.get(i)[0].equals(base)) { list.remove(i); break; }
+        }
+        saveStations(list);
         p.edit().putString("station", base).apply();
+    }
+
+    /** Takes a station off the list; the default moves to the first one left (or none). Returns whether it was there. */
+    boolean forget(String base) {
+        java.util.List<String[]> list = stations();
+        boolean had = false;
+        for (int i = list.size() - 1; i >= 0; i--) if (list.get(i)[0].equals(base)) { list.remove(i); had = true; }
+        if (!had) return false;
+        saveStations(list);
+        if (base.equals(station())) {
+            if (list.isEmpty()) p.edit().remove("station").apply(); else p.edit().putString("station", list.get(0)[0]).apply();
+        }
+        return true;
     }
 
     /** What the next start opens ("studio" or "settings"), once; null: opening the app (check for updates, then the studio). */

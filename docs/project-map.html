@@ -188,7 +188,7 @@ details.built summary:hover{background:var(--ground)}
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
   updated: "13 Nov",
-  commits: 97,
+  commits: 98,
   version: "0.9.17-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
@@ -209,7 +209,7 @@ const MAP = {
     { v: "v1.8", name: "Gansbaai Community Radio", when: "up 13 Nov, needs your details" },
     { v: "v1.9", name: "Gansbaai branding", when: "live 13 Nov" },
     { v: "v1.10", name: "Gansbaai Android app", when: "planned" },
-    { v: "v1.11", name: "Many stations in the studio apps", when: "planned" },
+    { v: "v1.11", name: "Many stations in the studio apps", when: "station picker built 13 Nov, not released" },
     { v: "v1.12", name: "Stream quality for listeners", when: "planned" }
   ],
   areas: [
@@ -283,6 +283,7 @@ const MAP = {
       { text: "Home page hero video: slow-motion sea clips", v: "v1.9", state: "done" },
       { text: "Site design: home, line-up and contact pages", v: "v1.9", state: "done" },
       { text: "Applied to the station and the site", note: "the WordPress theme with a contact form that emails the station; the player bar in the Gansbaai colours", v: "v1.9", state: "done" },
+      { text: "Spam check on the contact form (Cloudflare Turnstile)", note: "added after the site went live, at your request", v: "v1.9", state: "done" },
       { text: "Listener app from the config file", v: "v1.10", state: "later" },
       { text: "Test on the phone, release", v: "v1.10", state: "later" }
     ]},
@@ -299,7 +300,8 @@ const MAP = {
       { text: "Finds the station from the website's address", v: "v0.6", state: "done" },
       { text: "About screen with Check for updates (0.6.8)", v: "v0.9", state: "done" },
       { text: "Windows: several stations and streams in one app", v: "v1.11", state: "later" },
-      { text: "Windows: station and stream picker, a sign-in for each", v: "v1.11", state: "later" },
+      { text: "Windows: saved stations, picked or added on the sign-in card", v: "v1.11", state: "done" },
+      { text: "Windows: a stream picker", v: "v1.11", state: "later" },
       { text: "Windows: tests and release", v: "v1.11", state: "later" }
     ]},
     { name: "Android app", blurb: "The studio as an Android app; iPhones keep the browser studio.", features: [
@@ -307,7 +309,8 @@ const MAP = {
       { text: "Shows go on with the screen off", v: "v0.7", state: "done" },
       { text: "Updates that ask first; finds the station", v: "v0.7", state: "done" },
       { text: "Android: several stations and streams in one app", v: "v1.11", state: "later" },
-      { text: "Android: station and stream picker, a sign-in for each", v: "v1.11", state: "later" },
+      { text: "Android: saved stations, picked or added on the sign-in card", v: "v1.11", state: "done" },
+      { text: "Android: a stream picker", v: "v1.11", state: "later" },
       { text: "Android: tests on the phone and release", v: "v1.11", state: "later" }
     ]},
     { name: "Listener app (Android)", blurb: "A listener-only app per station, made from one config file (in WordWave's repo).", features: [
@@ -334,6 +337,7 @@ const MAP = {
   call: null,
   feedTitle: "Recent changes",
   feed: [
+    { what: "A spam check on Gansbaai's contact form", to: "Cloudflare's Turnstile box above Send: it usually ticks itself, robots are stopped, and the website checks each tick with Cloudflare before any email goes out (a tick works only once, only for this form on this site). If Cloudflare is ever down, messages still go through. Tested with a real message from your phone", at: "13 Nov" },
     { what: "Gansbaai's new website is live", to: "gbcr.controll.co.za now has the home page with the sea video, the line-up and a contact page in the new look; the form really emails the station (a test message reached your inbox), and the player along the bottom wears the Gansbaai colours. The contact details read \"to come\" until you send them", at: "13 Nov" },
     { what: "Gansbaai's site design", to: "three pages in the new look: a home page with the video, the song on air and today's shows; a line-up page with what's on now, what's next and a tab for each day; a contact page with a form for shout-outs, song requests, notices and adverts. The line-up and the song come live from the station", at: "13 Nov" },
     { what: "Gansbaai's logo, colours and hero video", to: "Swell: sound bars that rise and fall like the sea with a white foam line through them, the name in Sora; seven blue and turquoise colours with a coral for On air; light, dark and one-colour versions, app icons and a favicon; and a 21-second loop of slow-motion sea clips (waves, rocks, a fishing boat, kelp, the shore) for the home page. A first lighthouse design was dropped as too old-school", at: "13 Nov" },

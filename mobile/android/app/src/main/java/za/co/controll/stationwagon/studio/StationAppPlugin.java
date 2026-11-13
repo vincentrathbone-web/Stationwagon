@@ -93,11 +93,71 @@ public class StationAppPlugin extends Plugin {
         if (!fromStartPage(call)) return;
         try {
             String base = Prefs.base(call.getString("station", ""));
-            prefs().station(base);
+            prefs().remember(base, call.getString("name", ""));
             call.resolve(new JSObject().put("station", base));
         } catch (IllegalArgumentException e) {
             call.reject(e.getMessage());
         }
+    }
+
+    // ---- the saved stations (round 81): the start page and the station's sign-in card -------------
+
+    private JSObject stationList() {
+        org.json.JSONArray a = new org.json.JSONArray();
+        for (String[] x : prefs().stations()) {
+            try { a.put(new JSObject().put("base", x[0]).put("name", x[1])); } catch (Exception e) { /* left out */ }
+        }
+        return new JSObject().put("current", prefs().station()).put("stations", a);
+    }
+
+    /** { current, stations: [{ base, name }] }: for the picker on the sign-in card and the start page. */
+    @PluginMethod
+    public void stations(PluginCall call) {
+        call.resolve(stationList());
+    }
+
+    /** Makes a saved station the default and opens it. Only a station on the list: a page can't send the app elsewhere. */
+    @PluginMethod
+    public void switchStation(PluginCall call) {
+        String base;
+        try { base = Prefs.base(call.getString("base", "")); } catch (IllegalArgumentException e) { call.reject(e.getMessage()); return; }
+        for (String[] x : prefs().stations()) {
+            if (x[0].equals(base)) {
+                prefs().remember(base, x[1]);
+                call.resolve();
+                main().restart(true);
+                return;
+            }
+        }
+        call.reject("That station isn’t saved in the app.");
+    }
+
+    /** Finds the station at an address (as findStation does), saves it, makes it the default and opens it. */
+    @PluginMethod
+    public void addStation(PluginCall call) {
+        String address = call.getString("address", "");
+        new Thread(() -> {
+            StationFinder.Result r = StationFinder.find(address);
+            JSObject o = new JSObject().put("found", r.found).put("base", r.base).put("name", r.name)
+                .put("exact", r.exact).put("reachable", r.reachable).put("message", r.message);
+            if (r.found) {
+                prefs().remember(r.base, r.name);
+                call.resolve(o);
+                main().runOnUiThread(() -> main().restart(true));
+            } else {
+                call.resolve(o);
+            }
+        }).start();
+    }
+
+    /** Takes a station off the list (the app's own page only). */
+    @PluginMethod
+    public void forgetStation(PluginCall call) {
+        if (!fromStartPage(call)) return;
+        String base;
+        try { base = Prefs.base(call.getString("base", "")); } catch (IllegalArgumentException e) { call.reject(e.getMessage()); return; }
+        if (!prefs().forget(base)) { call.reject("That station isn’t saved in the app."); return; }
+        call.resolve(stationList());
     }
 
     /**

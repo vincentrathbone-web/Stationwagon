@@ -16,6 +16,10 @@
     "allow-quit-app",
     "allow-open-settings",
     "allow-set-look",
-    "allow-find-station"
+    "allow-find-station",
+    "allow-stations",
+    "allow-switch-station",
+    "allow-add-station",
+    "allow-forget-station"
   ]
 }

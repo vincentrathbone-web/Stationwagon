@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-forget-station"
+description = "Enables the forget_station command without any pre-configured scope."
+commands.allow = ["forget_station"]
+
+[[permission]]
+identifier = "deny-forget-station"
+description = "Denies the forget_station command without any pre-configured scope."
+commands.deny = ["forget_station"]

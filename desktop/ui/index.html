@@ -39,6 +39,9 @@
   dt { color: var(--muted); } dd { margin: 0; font-family: Consolas, monospace; word-break: break-all; }
   details { margin-top: 12px; color: var(--ink-2); font-size: 14px; } summary { cursor: pointer; color: var(--ink); }
   ol { padding-left: 20px; margin: 8px 0; } code { font-family: Consolas, monospace; color: var(--ink); }
+  .stl { list-style: none; margin: 0; padding: 0; } .stl li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--edge); }
+  .stl li:first-child { border-top: 0; } .stl .n { flex: 1; min-width: 0; } .stl .n b { display: block; } .stl .n span { color: var(--ink-2); font-size: 13px; word-break: break-all; }
+  .stl .cur { color: var(--accent); font-weight: 600; font-size: 13px; }
   #boot { text-align: center; padding: 60px 0; color: var(--ink-2); }
 </style>
 </head>
@@ -61,6 +64,12 @@
       </div>
       <div class="msg" id="msg" role="status"></div>
     </form>
+
+    <section class="card" id="stationsCard" hidden>
+      <h2>Saved stations</h2>
+      <p style="color:var(--ink-2);font-size:14px;margin:0 0 8px">You can pick any of these on the studio’s sign-in page. Removing one only takes it off this list.</p>
+      <ul id="stationList" class="stl"></ul>
+    </section>
 
     <section class="card">
       <h2>BUTT and Mixxx</h2>
@@ -125,6 +134,23 @@
       $("bridgeState").textContent = s.listening ? `Waiting for BUTT or Mixxx on 127.0.0.1:${s.port}` : "Not listening";
       $("bridgeMore").textContent = s.refused || "";
     }
+  }
+
+  async function listStations() {
+    const l = await invoke("stations"), ul = $("stationList");
+    ul.textContent = "";
+    for (const x of l.stations) {
+      const li = document.createElement("li"), n = document.createElement("div"), b = document.createElement("b"), a = document.createElement("span"), rm = document.createElement("button");
+      n.className = "n"; b.textContent = x.name || x.base; a.textContent = x.base; n.append(b, a); li.append(n);
+      if (x.base === l.current) { const c = document.createElement("span"); c.className = "cur"; c.textContent = "Opens first"; li.append(c); }
+      rm.className = "btn"; rm.type = "button"; rm.textContent = "Remove"; rm.setAttribute("aria-label", "Remove " + (x.name || x.base));
+      rm.onclick = async () => {
+        try { const r = await invoke("forget_station", { base: x.base }); $("station").value = r.current || ""; msg(`Removed ${x.name || x.base}.`); } catch (err) { msg(String(err), true); }
+        listStations();
+      };
+      li.append(rm); ul.append(li);
+    }
+    $("stationsCard").hidden = l.stations.length === 0;
   }
 
   async function load() {
@@ -209,6 +235,7 @@
   }
 
   function showPage() {
+    listStations().catch(() => {}); // every way to this page shows the saved stations
     $("boot").hidden = true;
     $("page").hidden = false;
     if (!info.settings.station) $("station").focus();

@@ -646,6 +646,61 @@ try {
   helper("studio-cleanup", String(phoneDj.id));
   await signIn(dj);
 
+  console.log("The station picker on the sign-in card (round 81)");
+  // a second station: a stand-in that answers like one in /myradio/ on the PC, which the phone reaches through adb reverse
+  const stand = createServer((req, res) => {
+    if (req.url.startsWith("/myradio/api/nowplaying.php")) { res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }); res.end('{"station":{"name":"Stand-in Radio"}}'); return; }
+    if (req.url === "/") { res.writeHead(200, { "Content-Type": "text/html" }); res.end('<a href="/myradio/signin">Sign in</a>'); return; }
+    res.writeHead(404); res.end("not found");
+  });
+  await new Promise((ok) => stand.listen(0, "127.0.0.1", ok));
+  const SP = stand.address().port, STAND = `http://localhost:${SP}/`, STAND_BASE = STAND + "myradio/";
+  adbRaw("reverse", `tcp:${SP}`, `tcp:${SP}`);
+  const picker = async () => waitFor(async () => { const p = await evaluate(`(() => { const s = document.getElementById("stationPick"); return s && s.options.length > 1 ? { opts: [...s.options].map((o) => o.textContent), val: s.value } : null; })()`); return p; }, 15);
+  const pickOption = (v) => evaluate(`(() => { const s = document.getElementById("stationPick"); s.value = ${JSON.stringify(v)}; s.dispatchEvent(new Event("change")); })()`);
+  await page.call("Network.clearBrowserCookies");
+  await go(`${base}/signin`);
+  // earlier parts of this test saved other stations (the offline test's, the website's address): count from what is there now
+  const N = ((await native("stations")).value || { stations: [] }).stations.length;
+  let pk = await picker();
+  check("the sign-in card lists the saved stations and 'Add a station…', the open one picked", !!pk && pk.opts.length === N + 1 && pk.opts[N] === "Add a station…" && pk.opts.includes(NAME) && pk.val === base + "/", JSON.stringify(pk));
+  check("  the email and password fields are still there, and the picker is not sent with the sign-in", await evaluate(`!!document.getElementById("email") && !!document.getElementById("password") && !document.getElementById("stationPick").name`));
+  await pickOption("\u0000add");
+  await evaluate(`(() => { document.querySelector(".stpick .stadd input").value = ${JSON.stringify(root + "nothing-here/")}; document.querySelector(".stpick .stadd button").click(); })()`);
+  const nothing = await waitFor(async () => { const t = await text(".stpick .hint"); return /no Stationwagon station/.test(t) && t; }, 30);
+  r = await native("stations");
+  check("an address with no station: the card says so and nothing is saved", !!nothing && r && r.ok && r.value.stations.length === N && r.value.current === base + "/", `${nothing} · ${JSON.stringify(r)}`);
+  r = await native("switchStation", { base: "http://evil.example/" });
+  check("the station's page can't open a station that isn't saved", r && r.error === "That station isn’t saved in the app.", JSON.stringify(r));
+  r = await native("forgetStation", { base });
+  check("  nor take one off the list (that is for the app's own page)", r && r.error === "Only the app’s own page can do that.", JSON.stringify(r));
+  await evaluate(`(() => { document.querySelector(".stpick .stadd input").value = ${JSON.stringify(STAND)}; document.querySelector(".stpick .stadd button").click(); })()`);
+  url = await attach(new RegExp("^" + STAND_BASE.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")), 30);
+  check("adding a station from the card finds it (through the website's link) and opens it in the app", !!url, url);
+  r = await waitFor(async () => { const x = await native("stations"); return x && x.ok && x; }, 15);
+  check("  it is saved by its name and is now the default", r && r.ok && r.value.current === STAND_BASE && r.value.stations.some((x) => x.base === STAND_BASE && x.name === "Stand-in Radio") && r.value.stations.length === N + 1, JSON.stringify(r && r.value));
+  await native("switchStation", { base: base + "/" });
+  url = await attach(new RegExp("^" + base.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")), 30);
+  r = await waitFor(async () => { const x = await native("stations"); return x && x.ok && x; }, 15);
+  check("picking a saved station opens it and makes it the default again", !!url && r && r.ok && r.value.current === base + "/", `${url} · ${JSON.stringify(r && r.value)}`);
+  await native("openSettings");
+  url = await attach(START, 30);
+  const names = () => evaluate(`({ shown: !document.getElementById("stationsCard").hidden, names: [...document.querySelectorAll("#stationList li b")].map((b) => b.textContent) })`);
+  let lst = await waitFor(async () => { const x = await names(); return x && x.shown && x; }, 15);
+  check("the app's own page lists the saved stations", !!lst && lst.names.length === N + 1 && lst.names.includes("Stand-in Radio"), JSON.stringify(lst));
+  await evaluate(`[...document.querySelectorAll("#stationList li")].find((li) => li.querySelector("b").textContent === "Stand-in Radio").querySelector("button").click()`);
+  lst = await waitFor(async () => { const x = await names(); return x && x.names.length === N && x; }, 15);
+  r = await native("stations");
+  check("  Remove takes one off the list, the default stays", !!lst && r && r.ok && r.value.stations.length === N && r.value.current === base + "/", JSON.stringify(r));
+  r = await native("forgetStation", { base: STAND_BASE });
+  check("  one that isn't saved is refused", r && r.error === "That station isn’t saved in the app.", JSON.stringify(r));
+  await native("openStation");
+  url = await attach(STUDIO_OR_SIGNIN, 30);
+  check("  and the app opens the remaining station", !!url && url.startsWith(base), url);
+  try { adbRaw("reverse", "--remove", `tcp:${SP}`); } catch { /* gone */ }
+  stand.close();
+  await signIn(dj);
+
   console.log("The screen off");
   s = await until((x) => x.slot, 15);
   await clickText("#stBannerActs button", "Switch on the studio");

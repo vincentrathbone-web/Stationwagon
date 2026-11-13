@@ -509,6 +509,74 @@ try {
   check("  Save and open: the station's studio opens, and the station's own address is saved", !!t && JSON.parse(readFileSync(cfgFile, "utf8")).station === base + "/", t ? t.url : "no studio");
   site.close();
 
+  console.log("The station picker on the sign-in card (round 81)");
+  // a second station: a stand-in that answers like one in /myradio/ (the studio page itself is a 404, which is enough to see the app go there)
+  const stand = httpServer((req, res) => {
+    if (req.url.startsWith("/myradio/api/nowplaying.php")) { res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"station":{"name":"Stand-in Radio"}}'); return; }
+    if (req.url === "/") { res.writeHead(200, { "Content-Type": "text/html" }); res.end('<a href="/myradio/signin">Sign in</a>'); return; }
+    res.writeHead(404); res.end("not found");
+  });
+  await new Promise((ok) => stand.listen(0, "127.0.0.1", ok));
+  const STAND = `http://127.0.0.1:${stand.address().port}/`, STAND_BASE = STAND + "myradio/";
+  const settingsNow = () => JSON.parse(readFileSync(cfgFile, "utf8"));
+  const restart = async (cfg) => {
+    closeWindow("Stationwagon Studio");
+    for (let i = 0; i < 30 && alive(); i++) await sleep(200);
+    writeFileSync(cfgFile, JSON.stringify({ ...settingsNow(), ...cfg }));
+    app = launch();
+    await attach(isScreen);
+    await call("Network.clearBrowserCookies");
+    await go(`${base}/signin`);
+  };
+  const picker = async () => { let p = null; for (let i = 0; i < 40; i++) { p = await evaluate(`(() => { const s = document.getElementById("stationPick"); return s ? { opts: [...s.options].map((o) => o.textContent), val: s.value, note: document.querySelector(".stpick .hint").textContent } : null; })()`).catch(() => null); if (p && p.opts.length > 1) return p; await sleep(250); } return p; };
+  const pick = (v) => evaluate(`(() => { const s = document.getElementById("stationPick"); s.value = ${JSON.stringify(v)}; s.dispatchEvent(new Event("change")); })()`);
+
+  // two saved stations: the card lists both (the open one picked) and "Add a station…"
+  await restart({ station: base + "/", stations: [{ base: base + "/", name: NAME }, { base: STAND_BASE, name: "Stand-in Radio" }] });
+  let p = await picker();
+  check("the sign-in card lists the saved stations and 'Add a station…', the open one picked", p && JSON.stringify(p.opts) === JSON.stringify([NAME, "Stand-in Radio", "Add a station…"]) && p.val === base + "/", p && JSON.stringify(p));
+  check("  the station's email and password fields are still there, and the picker is not sent with the sign-in", await evaluate(`!!document.getElementById("email") && !!document.getElementById("password") && !document.getElementById("stationPick").name`));
+  // adding an address with no station: said on the card, nothing saved
+  await pick("\u0000add");
+  await evaluate(`(() => { document.querySelector(".stpick .stadd input").value = ${JSON.stringify(root + "nothing-here/")}; document.querySelector(".stpick .stadd button").click(); })()`);
+  let note = ""; for (let i = 0; i < 60 && !/no Stationwagon station/.test(note); i++) { await sleep(250); note = await evaluate(`document.querySelector(".stpick .hint").textContent`); }
+  check("an address with no station: the card says so and nothing is saved", /no Stationwagon station/.test(note) && settingsNow().stations.length === 2 && settingsNow().station === base + "/", note);
+  // picking the other saved station: the app opens it and makes it the default
+  await pick(STAND_BASE);
+  t = await attach((x) => x.url.startsWith(STAND_BASE));
+  check("picking a saved station opens it in the app and makes it the default", !!t && settingsNow().station === STAND_BASE, t ? t.url : "no page");
+  // the station's page can open only a saved station, and can't forget one
+  await restart({ station: base + "/" });
+  const refused = await evaluate(`Promise.all([window.__TAURI__.core.invoke("switch_station", { base: "http://evil.example/" }).then(() => false, () => true),
+    window.__TAURI__.core.invoke("forget_station", { base: ${JSON.stringify(STAND_BASE)} }).then(() => false, () => true)]).then((r) => r.every(Boolean))`);
+  check("a station's page can't open one that isn't saved, or take one off the list", refused);
+
+  // older settings (one station, no list): it becomes the list, and a new station is added from the card
+  await restart({ station: base + "/", stations: undefined });
+  p = await picker().catch(() => null);
+  check("older settings with one station: it shows as the only saved station", p && p.opts.length === 2 && p.val === base + "/" && p.opts[1] === "Add a station…", p && JSON.stringify(p));
+  await pick("\u0000add");
+  await evaluate(`(() => { document.querySelector(".stpick .stadd input").value = ${JSON.stringify(STAND)}; document.querySelector(".stpick .stadd button").click(); })()`);
+  t = await attach((x) => x.url.startsWith(STAND_BASE));
+  const after = settingsNow();
+  check("adding a station from the card finds it (through the website's link), saves it by its name, opens it and makes it the default",
+    !!t && after.station === STAND_BASE && after.stations.length === 2 && after.stations.some((x) => x.base === STAND_BASE && x.name === "Stand-in Radio"), JSON.stringify(after.stations));
+  // the app's own page lists the saved stations, and Remove takes one off the list
+  closeWindow("Stationwagon Studio");
+  for (let i = 0; i < 30 && alive(); i++) await sleep(200);
+  writeFileSync(cfgFile, JSON.stringify({ ...settingsNow(), station: root, stations: [{ base: root, name: "The website" }, { base: STAND_BASE, name: "Stand-in Radio" }] }));
+  app = launch();
+  await attach((x) => x.url.startsWith("http://tauri.localhost"));
+  const rows = () => evaluate(`({ shown: !document.getElementById("stationsCard").hidden, names: [...document.querySelectorAll("#stationList li b")].map((b) => b.textContent) })`);
+  let lst = null; for (let i = 0; i < 40; i++) { lst = await rows().catch(() => null); if (lst && lst.shown) break; await sleep(250); }
+  check("the app's own page lists the saved stations", lst && lst.shown && JSON.stringify(lst.names) === JSON.stringify(["The website", "Stand-in Radio"]), lst && JSON.stringify(lst));
+  await evaluate(`[...document.querySelectorAll("#stationList li")].find((li) => li.querySelector("b").textContent === "Stand-in Radio").querySelector("button").click()`);
+  for (let i = 0; i < 40 && (await rows()).names.length !== 1; i++) await sleep(250);
+  lst = await rows();
+  check("  Remove takes one off the list (in the page and in the app's settings), the default stays", lst.names.length === 1 && settingsNow().stations.length === 1 && settingsNow().station === root, JSON.stringify(lst) + " " + JSON.stringify(settingsNow().stations));
+  stand.close();
+  await restart({ station: base + "/", stations: undefined });
+
   console.log("Closing");
   closeWindow("Stationwagon Studio");
   for (let i = 0; i < 30 && alive(); i++) await sleep(200);
