@@ -1,15 +1,18 @@
 // The look (skin) picker (src/Skins.php). The choice is kept on this device (localStorage "sw.skin"),
 // so every screen of the station follows it, and tabs already open switch at once. Canvases read
-// their colours with SwSkin.tok() and redraw on the "sw:skin" event.
+// their colours with SwSkin.tok() and redraw on the "sw:skin" event. Until the device picks one it shows the
+// station's own look (round 83, Skins::stationDefault, handed over in data-skin-default).
 (() => {
   const KEY = "sw.skin", root = document.documentElement;
   const picks = () => [...document.querySelectorAll("[data-skin-pick]")];
   const first = picks()[0];
   const SKINS = first ? JSON.parse(first.dataset.skins) : { green: "Green" };
-  const IDS = Object.keys(SKINS), DEFAULT = IDS[0];
+  // BASE is plain :root (no data-skin); DEFAULT is the station's own look (round 83), for a device that hasn't picked one
+  const IDS = Object.keys(SKINS), BASE = IDS[0];
+  const DEFAULT = IDS.includes(root.getAttribute("data-skin-default")) ? root.getAttribute("data-skin-default") : BASE;
   let cache = new Map();
 
-  const current = () => root.getAttribute("data-skin") || DEFAULT;
+  const current = () => root.getAttribute("data-skin") || BASE;
   /** A token's value in the current skin (cached until the skin changes). */
   function tok(name) {
     if (!cache.has(name)) cache.set(name, getComputedStyle(root).getPropertyValue(name).trim());
@@ -26,7 +29,7 @@
 
   function apply(id, save) {
     if (!IDS.includes(id)) id = DEFAULT;
-    if (id === DEFAULT) root.removeAttribute("data-skin"); else root.setAttribute("data-skin", id);
+    if (id === BASE) root.removeAttribute("data-skin"); else root.setAttribute("data-skin", id);
     if (save) { try { localStorage.setItem(KEY, id); } catch (_) { /* a private window: this page only */ } }
     cache = new Map();
     show();

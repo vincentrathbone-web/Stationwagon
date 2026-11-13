@@ -59,6 +59,28 @@
   --f-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-lcd: "Share Tech Mono", ui-monospace, Consolas, monospace; --f-mono: "Share Tech Mono", ui-monospace, Consolas, monospace;
 }
+/* ocean (round 83): Gansbaai Community Radio's midnight sea, neon surf and Sora, as in its website's mini-player
+   (the embed's :root.ocean below); green's rounded shapes (stations/gansbaai/brand/README.md has the colours) */
+:root[data-skin="ocean"] {
+  --ground: #03182b; --panel: #06213a; --raised: #0a2f52; --edge: #163b57;
+  --ink: #e6fffb; --muted: #9fc3d3; --faint: #7fa3b5;
+  --amber: #3ef0d8; --amber-soft: #0fb5ba; --amber-dim: #0b4e5c;
+  --onair: #ff5a4e; --ok: #4be3a4; --warn: #ffb547; --cue: #4db8ff;
+  --lcd: #041e33; --well: #020f1c; --track: #163b57; --raised-hover: #0e3a63; --raised-soft: #072640; --edge-soft: #10304a;
+  --on-accent: #03182b; --accent-hover: #7ff5e5; --accent-bg: #08323f; --now-bg: #0a3a47; --on-onair: #ffffff;
+  --live-bg: #2a1420; --live-ink: #ffd3cf; --bad-bg: #3a1a22; --bad-bg-hover: #4a1f2a; --bad-ink: #ffb3ac;
+  --cue-bg: #0c2c4a; --cue-dim: #2f6a94; --cue-zone: rgba(77, 184, 255, .14); --ok-dim: #2f7a62;
+  --pressed-bg: #e6fffb; --pressed-ink: #03182b; --toast-bg: #e6fffb; --toast-ink: #03182b;
+  --shadow: rgba(0, 6, 14, .6); --hover-tint: rgba(230, 255, 251, .05);
+  --src-a: #4db8ff; --src-b: #ff7ab6; --src-live: #f7d23e; --src-out: #e6fffb;
+  --wave-grid: rgba(230, 255, 251, .1); --wave-label-bg: rgba(3, 24, 43, .55);
+  --ed-row: #041c30; --ed-row2: #062036; --mic-wave: #ff9aa6; --mic-dim: #5a2a3a; --clip-line: rgba(230, 255, 251, .18);
+  --chart: #0fb5ba; --chart-grid: #10304a;
+  --spec-hi: #b5fff4; --spec-mid: #3ef0d8; --spec-lo: #0a8fd8; --spec-peak: #0a6fa8;
+  --lcd-glow: 0 0 8px rgba(62, 240, 216, .35);
+  --play-bg: linear-gradient(135deg, #3ef0d8, #0a8fd8); --play-glow: 0 0 18px rgba(62, 240, 216, .35);
+  --f-ui: "Sora", system-ui, -apple-system, "Segoe UI", sans-serif; --f-body: var(--f-ui); --f-lcd: var(--f-ui);
+}
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; background: var(--ground); }
@@ -69,11 +91,19 @@ code, pre { font-family: var(--f-mono); font-size: 13px; }
 code { background: var(--raised); padding: 1px 6px; border-radius: var(--r-small); }
 
 .top { max-width: 760px; margin: 0 auto; padding-block: 18px 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-/* on a phone the logo, the version and the links don't fit on one line: the links wrap under them (round 55) */
-@media (max-width: 480px) { .brand .logo { height: 34px; } }
 .brand { display: inline-flex; text-decoration: none; }
 /* the logo (App::logo): the wagon takes the look's accent, the name its text colour */
 .brand .logo { display: block; height: 42px; width: auto; }
+/* the station's own logo (App::stationLogo, round 83): after a thin line, so you can see which station this is */
+.stlogo { display: inline-flex; align-items: center; padding-left: 12px; margin-left: 2px; border-left: 1px solid var(--edge); height: 42px; }
+.stlogo img { display: block; height: 42px; width: auto; max-width: 230px; object-fit: contain; }
+/* on a phone the logos, the version and the links don't fit on one line: the links wrap under them (round 55). After
+   the rules above, so it wins (before round 83 it came first and the phone size never applied) */
+@media (max-width: 480px) {
+  .brand .logo { height: 30px; }
+  .stlogo { height: 32px; padding-left: 9px; } .stlogo img { height: 32px; max-width: 120px; }
+}
+@media (max-width: 380px) { .stlogo img { max-width: 100px; } }
 .logo .lg-mark { color: var(--amber); }
 .logo .lg-word { color: var(--ink); }
 .who { margin-left: auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; font-weight: 600; font-size: 14px; }
@@ -452,6 +482,10 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
 .drop input.filepick { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
 .drop input.filepick:focus-visible + label.btn { outline: 2px solid var(--amber); outline-offset: 2px; }
 .drop label.btn { cursor: pointer; }
+/* "Do bulk upload now and enter details later" (round 83): the whole width, under the buttons */
+.drop .bulkup { flex-basis: 100%; display: flex; gap: 10px; align-items: flex-start; cursor: pointer; font-size: 14px; }
+.drop .bulkup[hidden] { display: none; }
+.drop .bulkup input { accent-color: var(--amber); width: 18px; height: 18px; margin: 2px 0 0; flex: none; }
 .drop .prepnote { margin: 12px 0 0; }
 .drop .prepnote b { font-family: var(--f-mono); font-weight: 500; color: var(--ink); }
 /* the loudness target on Sound & safety */

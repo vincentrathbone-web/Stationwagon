@@ -71,7 +71,7 @@ const LOOK = `(() => {
     radius: win ? getComputedStyle(win).borderTopLeftRadius : "", bg: getComputedStyle(document.body).backgroundColor,
     pick: pick ? (pick.tagName === "SELECT" ? pick.value : pick.textContent) : null, api: !!window.SwSkin };
 })()`;
-const HIFI = "#ffb24a", GREEN = "#1ed760";
+const HIFI = "#ffb24a", GREEN = "#1ed760", OCEAN = "#3ef0d8";
 const rgb = (hex) => `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`;
 const pickSkin = (t, id) => t.evaluate(`(() => { const s = document.querySelector("select[data-skin-pick]"); s.value = ${JSON.stringify(id)}; s.dispatchEvent(new Event("change")); return 1; })()`);
 
@@ -169,10 +169,13 @@ try {
   await A.evaluate(`document.querySelector("[data-skin-pick]").click()`);
   await sleep(300);
   l = await A.evaluate(LOOK);
-  check("the embed's Look button steps to the next look (Green), and the station's screens follow on this site", l.skin === "" && l.pick === "Look: Green" && (await A.evaluate("localStorage.getItem('sw.skin')")) === "green", JSON.stringify(l));
+  check("the embed's Look button steps to the next look (Ocean, round 83), and the station's screens follow on this site", l.skin === "ocean" && l.pick === "Look: Ocean" && (await A.evaluate("localStorage.getItem('sw.skin')")) === "ocean", JSON.stringify(l));
   await A.evaluate(`document.querySelector("[data-skin-pick]").click()`);
   await sleep(200);
-  check("  pressed again: Hi-fi", (await A.evaluate(LOOK)).pick === "Look: Hi-fi");
+  check("  pressed again: Green", (await A.evaluate(LOOK)).pick === "Look: Green");
+  await A.evaluate(`document.querySelector("[data-skin-pick]").click()`);
+  await sleep(200);
+  check("  and again: Hi-fi", (await A.evaluate(LOOK)).pick === "Look: Hi-fi");
 
   // On another website the frame's storage is that website's: its own choice, kept for that website
   const framed = async () => {
@@ -201,6 +204,67 @@ try {
   await A.go(`${outer}/`);
   l = await A.evaluate(LOOK);
   check("  and that website's own pages aren't changed by it", l.skin === "" || !base.includes("//localhost"), JSON.stringify(l));
+
+  console.log("The Ocean look (round 83)");
+  await A.go(`${base}/`);
+  await pickSkin(A, "ocean");
+  await sleep(400);
+  l = await A.evaluate(LOOK);
+  check("picking Ocean: the midnight sea and neon surf, Sora, and green's rounded cards", l.skin === "ocean" && l.amber === OCEAN && l.bg === rgb("#03182b") && l.font === "Sora" && l.radius === "16px", JSON.stringify(l));
+  let sora = false;
+  for (let i = 0; i < 30 && !sora; i++) { await sleep(200); sora = await A.evaluate(`[...document.fonts].some((f) => f.family.replace(/"/g, "") === "Sora" && f.status === "loaded")`); }
+  check("  the Sora font is loaded", sora);
+  await A.evaluate(`(() => { const v = document.getElementById("lpVol"); v.value = 0; v.dispatchEvent(new Event("input")); SwPlayer.start(); return 1; })()`);
+  spec = null;
+  for (let i = 0; i < 80 && !(spec && spec.n > 50); i++) {
+    await sleep(250);
+    spec = await A.evaluate(`(() => { const c = document.getElementById("lpSpec"); if (!c.width) return null; const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let n = 0, r = 0, g = 0, b = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) { n++; r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+      return n ? { n, r: Math.round(r / n), g: Math.round(g / n), b: Math.round(b / n) } : { n }; })()`);
+  }
+  check("  the spectrum draws in the sea's colours (green and blue over red)", !!spec && spec.n > 50 && spec.g > spec.r && spec.b > spec.r, JSON.stringify(spec));
+  for (const p of ["manage", "manage/library", "studio"]) {
+    await A.go(`${base}/${p}`);
+    l = await A.evaluate(LOOK);
+    check(`  /${p} (signed in) is ocean, the picker says so`, l.skin === "ocean" && l.amber === OCEAN && l.pick === "ocean" && l.font === "Sora", JSON.stringify(l));
+  }
+  px = await deckBg();
+  check("  the studio's deck wave uses the ocean display colour", !!px && px.join() === "4,30,51", JSON.stringify(px));
+
+  console.log("The station's own look (round 83)");
+  const lookBefore = helper("look").look;
+  try {
+    helper("look", "ocean");
+    await A.evaluate("localStorage.removeItem('sw.skin')");
+    await A.go(`${base}/`);
+    l = await A.evaluate(LOOK);
+    check("a device that hasn't picked a look gets the station's own (Ocean), set in <head>", l.skin === "ocean" && l.amber === OCEAN && l.pick === "ocean"
+      && (await A.evaluate("document.documentElement.getAttribute('data-skin-default')")) === "ocean", JSON.stringify(l));
+    await A.go(`${base}/studio`);
+    check("  every screen, the studio too", (await A.evaluate(LOOK)).skin === "ocean");
+    await pickSkin(A, "green");
+    await sleep(300);
+    await A.go(`${base}/studio`);
+    l = await A.evaluate(LOOK);
+    check("  picking Green on the device wins over the station's look, after a reload too", l.skin === "" && l.amber === GREEN && l.pick === "green" && (await A.evaluate("localStorage.getItem('sw.skin')")) === "green", JSON.stringify(l));
+    await A.evaluate("localStorage.removeItem('sw.skin')");
+    await A.go(`${base}/studio`);
+    check("  with the device's choice gone, the station's look is back", (await A.evaluate(LOOK)).skin === "ocean");
+    // the manager sets it on Sound & safety
+    await A.go(`${base}/manage/sound`);
+    const opts = await A.evaluate(`(() => { const s = document.getElementById("f-look"); return s ? { v: s.value, o: [...s.options].map((o) => o.value) } : null; })()`);
+    check("Sound & safety shows the station's look, Ocean chosen, with Green, Hi-fi and Ocean", !!opts && opts.v === "ocean" && opts.o.join() === "green,hifi,ocean", JSON.stringify(opts));
+    await A.evaluate(`(() => { document.getElementById("f-look").value = "hifi"; document.querySelector("form.soundform").submit(); return 1; })()`);
+    for (let i = 0; i < 50 && helper("look").look !== "hifi"; i++) await sleep(200);
+    check("  choosing Hi-fi there and saving stores it", helper("look").look === "hifi");
+    await A.go(`${base}/`);
+    l = await A.evaluate(LOOK);
+    check("  and a device without its own choice now opens in Hi-fi", l.skin === "hifi" && l.amber === HIFI, JSON.stringify(l));
+  } finally {
+    helper("look", lookBefore);
+  }
+  await A.go(`${base}/`);
+  check("with the station's look back to " + lookBefore + ", so is the page", (await A.evaluate(LOOK)).skin === (lookBefore === "green" ? "" : lookBefore));
 
   console.log("A private window (no storage)");
   await A.call("Page.addScriptToEvaluateOnNewDocument", { source: "Object.defineProperty(window, 'localStorage', { get() { throw new Error('blocked'); } });" });

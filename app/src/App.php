@@ -90,6 +90,7 @@ final class App
                 'bar' => self::embed(true),
                 'api/me' => self::meJson(),
                 'privacy' => self::privacy(),
+                'brand/logo' => self::stationLogoFileOut(),
                 default => self::notFound(),
             };
         } catch (Throwable $ex) {
@@ -136,6 +137,61 @@ final class App
     {
         static $svg = null;
         return $svg ??= (string) @file_get_contents(SW_ROOT . '/views/logo.svg');
+    }
+
+    /** The station's own logo types, by file ending (round 83). */
+    private const STATION_LOGO = ['svg' => 'image/svg+xml', 'png' => 'image/png', 'webp' => 'image/webp'];
+
+    /**
+     * The station's own logo (round 83), from its branding: the version drawn for dark backgrounds, kept at
+     * storage/brand/logo.svg (or .png, .webp), so a deploy never touches it (tools/deploy-station-logo.sh puts it there).
+     * Null when the station has none.
+     */
+    public static function stationLogoFile(): ?string
+    {
+        foreach (array_keys(self::STATION_LOGO) as $ext) {
+            $f = SW_ROOT . '/storage/brand/logo.' . $ext;
+            if (is_file($f)) {
+                return $f;
+            }
+        }
+        return null;
+    }
+
+    /** The header's station logo, next to the Stationwagon one, so you can see which station this is; '' without one. */
+    public static function stationLogo(): string
+    {
+        $f = self::stationLogoFile();
+        if ($f === null) {
+            return '';
+        }
+        $name = '';
+        try {
+            if (Config::isInstalled()) {
+                $name = (string) (Streams::main(Db::fromConfig())['name'] ?? '');
+            }
+        } catch (Throwable) {
+            // no database yet: the logo without its name
+        }
+        $v = substr(sha1(filemtime($f) . '|' . filesize($f)), 0, 10);
+        return '<span class="stlogo"' . ($name !== '' ? ' title="' . h($name) . '"' : '') . '><img src="' . h(self::url('brand/logo') . '?v=' . $v)
+            . '" alt="' . h($name !== '' ? $name : 'This station') . '"></span>';
+    }
+
+    /** brand/logo: the station's logo file, as a picture only (an SVG can't run anything, even opened on its own). */
+    private static function stationLogoFileOut(): void
+    {
+        $f = self::stationLogoFile();
+        if ($f === null) {
+            self::notFound();
+            return;
+        }
+        header('Content-Type: ' . self::STATION_LOGO[pathinfo($f, PATHINFO_EXTENSION)]);
+        header('X-Content-Type-Options: nosniff');
+        header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox");
+        header('Cache-Control: public, max-age=604800');
+        header('Content-Length: ' . filesize($f));
+        readfile($f);
     }
 
     /** Just the wagon, for tight places (the embed's footer). Same colours as the logo. */

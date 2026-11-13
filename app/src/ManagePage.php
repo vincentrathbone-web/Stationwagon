@@ -550,15 +550,24 @@ final class ManagePage
                 } else {
                     $edit = $id; // back to the form, with what was wrong
                 }
+                if ($wantsJson) {
+                    $this->json(['ok' => $problem === null, 'error' => $problem]); // the list changes only that row (round 82)
+                }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Saved.');
             } elseif ($action === 'delete') {
                 $problem = $ads->get($id) === null ? 'That ad isn’t here.' : $library->delete($id, $this->planner, microtime(true));
+                if ($wantsJson) {
+                    $this->json(['ok' => $problem === null, 'error' => $problem]);
+                }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Ad removed.');
             } elseif ($action === 'bulk') {
                 $on = ($_POST['value'] ?? '') === 'on';
                 $n = $ads->setActive((array) ($_POST['ids'] ?? []), $on);
                 if ($n > 0) {
                     $this->replanAll(microtime(true));
+                }
+                if ($wantsJson) {
+                    $this->json(['ok' => $n > 0, 'count' => $n, 'error' => $n > 0 ? null : 'Choose at least one ad first.']);
                 }
                 Session::flash($n > 0 ? 'ok' : 'bad', $n > 0 ? $n . ($n === 1 ? ' ad ' : ' ads ') . ($on ? 'resumed.' : 'paused.') : 'Choose at least one ad first.');
                 $back = trim((string) ($_POST['q'] ?? ''));
@@ -632,15 +641,24 @@ final class ManagePage
                 } else {
                     $edit = $id; // back to the form, with what was wrong
                 }
+                if ($wantsJson) {
+                    $this->json(['ok' => $problem === null, 'error' => $problem]); // the list changes only that row (round 82)
+                }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Saved.');
             } elseif ($action === 'delete') {
                 $problem = $jingles->get($id) === null ? 'That jingle isn’t here.' : $library->delete($id, $this->planner, microtime(true));
+                if ($wantsJson) {
+                    $this->json(['ok' => $problem === null, 'error' => $problem]);
+                }
                 Session::flash($problem ? 'bad' : 'ok', $problem ?? 'Jingle removed.');
             } elseif ($action === 'bulk') {
                 $on = ($_POST['value'] ?? '') === 'on';
                 $n = $jingles->setActive((array) ($_POST['ids'] ?? []), $on);
                 if ($n > 0) {
                     $this->replanAll(microtime(true));
+                }
+                if ($wantsJson) {
+                    $this->json(['ok' => $n > 0, 'count' => $n, 'error' => $n > 0 ? null : 'Choose at least one jingle first.']);
                 }
                 Session::flash($n > 0 ? 'ok' : 'bad', $n > 0 ? $n . ($n === 1 ? ' jingle ' : ' jingles ') . 'turned ' . ($on ? 'on.' : 'off.') : 'Choose at least one jingle first.');
                 $back = trim((string) ($_POST['q'] ?? ''));

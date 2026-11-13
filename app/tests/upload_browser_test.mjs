@@ -5,7 +5,7 @@
 // Round 54: songs in WAV (16-bit, 24-bit 96 kHz), FLAC, M4A (AAC, ALAC), Ogg Vorbis, Opus and WMA
 // are converted in the browser, each with its tags, cover and songwriter, and a 320 kbps MP3 original
 // kept (samples from make_format_samples.mjs; skipped with a note when the lossless music isn't here).
-//   node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app
+//   node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app [--only=bulk]
 // Needs SW_PHP (php.exe) unless php is on PATH. Signs in a throwaway account: not for a public server.
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from "node:fs";
@@ -235,7 +235,49 @@ async function windowTest() {
     JSON.stringify(shown));
 }
 
+// ---- Bulk upload, details later (round 83) ----------------------------------------------------------
+// The Music library's tick box "Do bulk upload now and enter details later": two tagged songs picked with it
+// ticked go up one after another with no details window, prepared as usual, with their files' own details.
+// The Ads screen (same drop zone, no window) doesn't show it. `--only=bulk` runs just this part.
+const only = (process.argv.find((a) => a.startsWith("--only=")) || "").slice(7);
+const bulkTitles = [`Bulk Later A ${tag}`, `Bulk Later B ${tag}`];
+async function bulkTest() {
+  const files = bulkTitles.map((t, i) => {
+    const f = join(dir, `bulk ${i + 1}.mp3`);
+    writeFileSync(f, taggedMp3({ title: t, artist: "Bulk Artist", album: "Bulk Album" }, null));
+    return f;
+  });
+  await go(`${base}/manage/library`);
+  check("the Music library shows the tick box, not ticked", await evaluate(`!document.getElementById('bulkUpWrap').hidden && !document.getElementById('bulkUp').checked
+    && /Do bulk upload now and enter details later/.test(document.getElementById('bulkUpWrap').textContent)`));
+  await evaluate(`document.getElementById('bulkUp').click()`);
+  // a flag that the details window ever opened (it sets the dialog's open attribute)
+  await evaluate(`(() => { window.__winOpened = false; const d = document.getElementById('rightsDlg');
+    new MutationObserver(() => { if (d.open) window.__winOpened = true; }).observe(d, { attributes: true }); return 1; })()`);
+  const doc = await call("DOM.getDocument", {});
+  const input = await call("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: "#files" });
+  await call("DOM.setFileInputFiles", { nodeId: input.result.nodeId, files });
+  let rows = null, opened = null;
+  for (let i = 0; i < 600; i++) {
+    const s = await evaluate(`({ opened: window.__winOpened, rows: [...document.querySelectorAll('#uplist li')].map((li) => ({ cls: li.className, text: li.querySelector('.s').textContent })) })`).catch(() => null);
+    if (s && s.rows.length === files.length && s.rows.every((r) => (r.cls === "ok" || r.cls === "bad") && !r.text.includes("keeping the original"))) { rows = s.rows; opened = s.opened; break; }
+    if (s && s.opened) { opened = true; break; }
+    await sleep(100);
+  }
+  check("with it ticked, two songs go up without the details window", opened === false && !!rows, JSON.stringify({ opened, rows }));
+  check("  each one prepared as usual (mastered, levelled) and added", rows && rows.every((r) => r.cls === "ok" && r.text.startsWith("Added, mastered, levelled")), rows && rows.map((r) => r.text).join(" | "));
+  await sleep(1500); await loaded(); // the library reloads itself after an upload
+  const t = bulkTitles.map((x) => helper("track", x));
+  check("  stored with the title, artist and album from each file", t.every((x, i) => x && x.title === bulkTitles[i] && x.artist === "Bulk Artist" && x.album === "Bulk Album"),
+    t.map((x) => x && `${x.title} / ${x.artist} / ${x.album}`).join(" | "));
+  check("  and marked as mastered",t.every((x) => x && Number(x.mastered) === 1));
+  check("after the page reloads the box is unticked again (the window is back for the next upload)", await evaluate(`!!document.getElementById('bulkUp') && !document.getElementById('bulkUp').checked`));
+  await go(`${base}/manage/ads`);
+  check("the Ads screen (no details window there) has no such box", await evaluate(`!!document.getElementById('drop') && !document.getElementById('bulkUp')`));
+}
+
 let user = null, prepBefore = null;
+const SKIP = Symbol("only");
 try {
   prepBefore = helper("prep");
   helper("prep", "1", "1"); // both on (a new station has mastering off; this tries it on)
@@ -254,6 +296,10 @@ try {
   await evaluate(`(() => { const f = document.querySelector('form'); f.email.value = ${JSON.stringify(user.email)}; f.password.value = ${JSON.stringify(user.password)}; f.submit(); })()`);
   await sleep(600); await loaded();
   check("a throwaway manager signs in", (await evaluate("location.pathname")).endsWith("/manage"));
+
+  console.log("Bulk upload, details later (round 83)");
+  await bulkTest();
+  if (only === "bulk") throw SKIP;
 
   console.log("Upload with song prep");
   await go(`${base}/manage/library`);
@@ -369,10 +415,12 @@ try {
 
   console.log("The upload window (round 56)");
   await windowTest();
+} catch (ex) {
+  if (ex !== SKIP) throw ex;
 } finally {
   if (prepBefore) helper("prep", prepBefore.master ? "1" : "0", prepBefore.level ? "1" : "0", String(prepBefore.target ?? -16));
   if (user) {
-    const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle, oddTitle, TAGS.title, winTitle, winEdited);
+    const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle, oddTitle, TAGS.title, winTitle, winEdited, ...bulkTitles);
     console.log(`Cleanup: throwaway manager and test songs removed${r.hidden ? ` (${r.hidden} on air, hidden)` : ""}`);
   }
   try { ws && ws.close(); } catch { /* closed */ }

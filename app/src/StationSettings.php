@@ -53,6 +53,10 @@ final class StationSettings
         'prep_dither' => ['group' => 'Sound quality', 'label' => 'Dither', 'help' => 'Whenever samples are rounded (always at the end, to 16-bit), a tiny noise (TPDF) turns the rounding error into a steady hiss far below hearing instead of distortion on quiet passages.',
             'choices' => [1 => 'On: TPDF dither when rounding', 0 => 'Off: plain rounding']],
         'prep_quality' => ['group' => 'Sound quality', 'label' => 'Encoding quality', 'help' => 'How hard LAME 3.100 works on each song: 0 is the fastest, 9 the best and slowest (LAME’s -q 9 to 0). The size of the song stays the same.', 'min' => 0, 'max' => 9, 'step' => 1, 'unit' => ''],
+        // round 83: the look a device starts in (Skins::stationDefault); `keep`: a form without it leaves it as it is
+        'look' => ['group' => 'Look', 'label' => 'The station’s look', 'keep' => true,
+            'help' => 'How the studio, the manager, the player and the embed look on a device where nobody has picked a look yet. Anyone can still pick their own with Look at the top of the page; that choice stays on their device.',
+            'choices' => ['green' => 'Green: near-black, with one bright green', 'hifi' => 'Hi-fi: amber on graphite, square windows', 'ocean' => 'Ocean: midnight sea and neon surf, like the Gansbaai mini-player']],
     ];
 
     public function __construct(private readonly Db $db, private readonly array $station)
@@ -71,7 +75,8 @@ final class StationSettings
         $all = Planner::settings($station);
         $out = [];
         foreach (self::FIELDS as $key => $f) {
-            $out[$key] = isset($f['choices']) ? self::choice($all[$key], $f['choices']) : self::number($all[$key], $f['step']);
+            // a choice the station has never saved (the look, round 83) is its first one
+            $out[$key] = isset($f['choices']) ? self::choice($all[$key] ?? null, $f['choices']) : self::number($all[$key], $f['step']);
         }
         return $out;
     }
@@ -97,6 +102,9 @@ final class StationSettings
         $errors = [];
         $clean = [];
         foreach (self::FIELDS as $key => $f) {
+            if (!empty($f['keep']) && !array_key_exists($key, $in)) {
+                continue; // not on the form that was sent (an older page): it stays as it is
+            }
             $raw = trim((string) ($in[$key] ?? ''));
             if (isset($f['choices'])) {
                 $match = array_values(array_filter(array_keys($f['choices']), fn($k) => (string) $k === $raw));

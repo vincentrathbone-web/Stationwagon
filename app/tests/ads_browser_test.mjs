@@ -127,6 +127,35 @@ try {
   await A.evaluate(`(() => { document.getElementById("adsEvery").value = ${JSON.stringify(before.every)}; document.getElementById("adsPer").value = ${JSON.stringify(before.per)}; document.getElementById("adsGap").value = ${JSON.stringify(before.gap)}; document.getElementById("adsOn").checked = ${before.on}; document.getElementById("adsEvery").form.requestSubmit(); })()`);
   check("  (put back as they were)", await A.until(`document.getElementById("adsEvery").value === ${JSON.stringify(before.every)} && document.getElementById("adsOn").checked === ${before.on}`));
 
+  console.log("In place, without a page reload (round 82)");
+  await A.go(`${base}/manage/ads`);
+  await A.evaluate(`(() => { window.__same = 1; document.body.style.minHeight = "4000px"; window.scrollTo(0, 300); })()`);
+  const still = () => A.evaluate(`window.__same === 1 && Math.abs(window.scrollY - 300) <= 1`);
+  const row = `document.getElementById("a${info.id}")`;
+  await A.evaluate(`${row}.querySelector("td.acts a").click()`);
+  check("Edit opens the plan in place: no reload, the page stays where it was", await A.until(`!!document.getElementById("adEdit")`) && await still());
+  await A.evaluate(`(() => { const f = document.getElementById("adEdit"); f.daily_target.value = "7"; f.start_date.value = ""; f.end_date.value = ""; f.requestSubmit(); })()`);
+  check("  Save changes only that row (7 a day), closes the editor, and the page stays where it was", await A.until(`!document.getElementById("adEdit") && ${row}.querySelector(".c-plays").textContent.trim() === "7"`, 20000) && await still(), JSON.stringify(await A.evaluate(`({ plays: (${row}.querySelector(".c-plays") || {}).textContent, editor: !!document.getElementById("adEdit"), msg: (document.querySelector("#adEdit .msg") || {}).textContent, invalid: [...(document.getElementById("adEdit") ? document.getElementById("adEdit").elements : [])].filter((x) => x.checkValidity && !x.checkValidity()).map((x) => x.name), same: window.__same, y: window.scrollY, note: document.getElementById("clipNote").textContent })`)));
+  check("  and it is saved on the server", Number(helper("ads-info", adTitle).daily_target) === 7);
+  await A.evaluate(`${row}.querySelector("td.acts a").click()`);
+  await A.until(`!!document.getElementById("adEdit")`);
+  await A.evaluate(`(() => { const f = document.getElementById("adEdit"); f.noValidate = true; f.daily_target.value = "999"; f.requestSubmit(); })()`);
+  check("  a wrong number is said inside the editor, which stays open, with no reload", await A.until(`/Plays per day: choose a whole number from 0 to 500/.test(document.getElementById("adEdit").textContent)`) && await still() && Number(helper("ads-info", adTitle).daily_target) === 7);
+  await A.evaluate(`document.querySelector("#adEdit .editbtns a.btn").click()`);
+  check("  Cancel closes it without leaving the page", await A.until(`!document.getElementById("adEdit")`) && await still());
+  // the bulk change
+  await A.evaluate(`${row}.querySelector(".sel").click()`);
+  await A.evaluate(`[...document.querySelectorAll("#bulkBar button[type=submit]")].find((b) => /Pause/.test(b.textContent)).click()`);
+  check("Pause (chosen in the list) changes only that row: it shows Paused, nothing reloads", await A.until(`${row}.dataset.state === "off" && /Paused/.test(${row}.textContent)`) && await still() && Number(helper("ads-info", adTitle).active) === 0);
+  await A.evaluate(`${row}.querySelector(".sel").click()`);
+  await A.evaluate(`[...document.querySelectorAll("#bulkBar button[type=submit]")].find((b) => /Resume/.test(b.textContent)).click()`);
+  check("  and Resume puts it back", await A.until(`${row}.dataset.state === "on" && /Running/.test(${row}.textContent)`) && await still() && Number(helper("ads-info", adTitle).active) === 1);
+  // Remove: asked in the row; Keep leaves it; Yes takes it away without a reload
+  await A.evaluate(`[...${row}.querySelectorAll("td.acts a")].find((a) => /Remove/.test(a.textContent)).click()`);
+  check("Remove asks in the row (no reload)", await A.until(`/Remove this ad\\?/.test(${row}.textContent)`) && await still());
+  await A.evaluate(`[...${row}.querySelectorAll("td.acts button")].find((b) => /Keep/.test(b.textContent)).click()`);
+  check("  Keep puts the buttons back and the ad stays", await A.until(`!!${row}.querySelector("td.acts a")`) && helper("ads-info", adTitle) !== null && await still());
+
   console.log("Apart from the songs");
   await A.go(`${base}/manage/library?q=${encodeURIComponent(adTitle)}`);
   check("the Music library doesn't list the ad", await A.evaluate(`!document.getElementById("t${info.id}") && /No songs match/.test(document.body.textContent)`));
@@ -138,13 +167,20 @@ try {
   await A.call("Emulation.clearDeviceMetricsOverride");
 
   console.log("Removing it");
+  // without JavaScript's help the same link still asks (the page's own Remove this ad? row)
   await A.go(`${base}/manage/ads?confirm=${info.id}`);
-  check("Remove asks first", await A.evaluate(`/Remove this ad\\?/.test(document.getElementById("a${info.id}").textContent)`));
+  check("the Remove link on its own (no JavaScript's help) still asks first", await A.evaluate(`/Remove this ad\\?/.test(document.getElementById("a${info.id}").textContent)`));
+  // in place: from the list, Remove then Yes, with no reload and the page where it was
+  await A.go(`${base}/manage/ads`);
+  await A.evaluate(`(() => { window.__same = 1; document.body.style.minHeight = "4000px"; window.scrollTo(0, 300); })()`);
+  await A.evaluate(`[...document.getElementById("a${info.id}").querySelectorAll("td.acts a")].find((a) => /Remove/.test(a.textContent)).click()`);
+  await A.until(`/Remove this ad\\?/.test(document.getElementById("a${info.id}").textContent)`);
   await A.evaluate(`[...document.querySelectorAll('#a${info.id} button')].find((b) => /Yes/.test(b.textContent)).click(); 1`);
   // an ad that is on air, or aired in the last two minutes, waits (like a song: listeners are a little behind); the test station plays ads often
-  const gone = await A.until(`!document.getElementById("a${info.id}") || /is on air/.test(document.body.textContent)`);
+  const gone = await A.until(`!document.getElementById("a${info.id}") || /is on air/.test(document.getElementById("clipNote").textContent)`);
   const removed = helper("ads-info", adTitle) === null;
-  check("  and Yes takes it away (or says it is on air and to try again, as for a song)", gone && (removed || await A.evaluate(`/is on air/.test(document.body.textContent)`)), removed ? "removed" : "on air: kept for now");
+  check("  and Yes takes it away in place (or says it is on air and to try again, as for a song), with no reload and the page where it was",
+    gone && (removed || await A.evaluate(`/is on air/.test(document.getElementById("clipNote").textContent)`)) && await still(), removed ? "removed" : "on air: kept for now");
 } catch (e) {
   failed++;
   console.log("  [FAIL] " + (e.stack || e.message));

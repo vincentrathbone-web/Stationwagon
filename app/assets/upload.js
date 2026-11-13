@@ -12,6 +12,8 @@
 // file's own tags. It is prepared in the background meanwhile, and goes up only after Add song; several
 // picked at once get a window each, in turn. (window.swUploadNoWindow, for tests about other things,
 // uploads straight away as before.)
+// Round 83: the tick box "Do bulk upload now and enter details later" skips the window for the songs picked
+// then: they go up one after another with their files' own details, prepared as usual.
 (() => {
   const form = document.getElementById("drop");
   if (!form || !window.FormData || !window.XMLHttpRequest) return;
@@ -20,6 +22,8 @@
   const csrf = form.querySelector('input[name="csrf"]').value;
   const maxBytes = Number(form.dataset.max || 0);
   form.querySelector('button[type="submit"]').hidden = true; // choosing files starts the upload
+  const bulk = document.getElementById("bulkUp"); // the Music library's "enter details later" (round 83)
+  if (bulk) document.getElementById("bulkUpWrap").hidden = false;
   // mastering, levelling and the loudness target are the station's (Sound & safety), sent with the page as data attributes
   const master = form.dataset.master === "1", level = form.dataset.level === "1";
   const fmt = (v) => Number(v).toFixed(1).replace("-", "−");
@@ -102,7 +106,9 @@
     list.innerHTML = "";
     const rows = files.map((f) => row(f.name));
     let ok = 0;
-    const ask = window.SwSongDetails && !window.swUploadNoWindow ? window.SwSongDetails.ask : null;
+    // "Do bulk upload now and enter details later" (round 83) skips the window: the songs keep their files' own details
+    const later = bulk && bulk.checked;
+    const ask = window.SwSongDetails && !window.swUploadNoWindow && !later ? window.SwSongDetails.ask : null;
     for (let i = 0; i < files.length; i++) {
       const li = rows[i], status = li.querySelector(".s");
       // the window first, filled from an MP3's tag at once (another format's tags come once it's decoded)

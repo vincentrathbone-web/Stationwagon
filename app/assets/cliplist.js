@@ -2,6 +2,9 @@
 // show and compact rows (both kept in this browser only), showing by state, and choosing several to turn on or off at once (the
 // form posts the ids). The Music library's own code is library.js; this is the same for the two other lists. Without JavaScript
 // the table still shows everything, in title order, and a bulk change still works (the ticked rows are posted with the form).
+// Round 82: Edit, Remove and the bulk change work in place, like the Music library's (library.js): they talk to the server in the
+// background and change only that row, so the page never reloads or jumps and your place stays. Without JavaScript the same links
+// and forms still work (the page reloads then).
 (() => {
   const table = document.querySelector("table.lib.ads, table.lib.jingles");
   const bar = document.getElementById("bulkBar");
@@ -100,6 +103,12 @@
     checks.forEach((c) => { c.checked = !list.includes(c.dataset.col); });
     table.querySelectorAll("[data-col]").forEach((c) => { c.hidden = list.includes(c.dataset.col); });
   };
+  /** A row fresh from the server: the columns this browser hides stay hidden, and so does what the state filter hides. */
+  const dress = (tr) => {
+    const list = (table.dataset.hidden || "").split(" ").filter(Boolean);
+    tr.querySelectorAll("[data-col]").forEach((c) => { c.hidden = list.includes(c.dataset.col); });
+    tr.hidden = !!filter.value && tr.dataset.state !== filter.value;
+  };
   let start = (table.dataset.hidden || "").split(" ").filter(Boolean);
   try {
     const list = JSON.parse(store.get(key("cols")));
@@ -117,4 +126,127 @@
   document.addEventListener("click", (e) => { if (menu.open && !menu.contains(e.target)) menu.open = false; });
   menu.addEventListener("keydown", (e) => { if (e.key === "Escape") { menu.open = false; menu.querySelector("summary").focus(); } });
   syncBulk();
+
+  // -- Edit, Remove and the bulk change, in place (round 82)
+  if (!window.fetch || !window.FormData || !window.DOMParser) return;
+  const route = bar.getAttribute("action"), csrf = bar.querySelector('[name="csrf"]').value;
+  const prefix = noun === "ad" ? "a" : "j";
+  let open = null; // the editor row now open
+
+  const send = async (data) => {
+    data.set("csrf", csrf);
+    let r, j;
+    try {
+      r = await fetch(route, { method: "POST", body: data, headers: { Accept: "application/json" }, credentials: "same-origin" });
+      j = await r.json();
+    } catch (_) { throw new Error("The connection dropped. Try again."); }
+    if (!r.ok || j.ok === false) throw new Error(j.error || "Not saved (" + r.status + ").");
+    return j;
+  };
+  const form = (fields) => { const d = new FormData(); for (const [k, v] of Object.entries(fields)) d.append(k, v); return d; };
+  /** A page of the screen from the server, as a document (the rows as they are now, or one row with its editor). */
+  const page = async (url) => {
+    const r = await fetch(url, { credentials: "same-origin", headers: { Accept: "text/html" } });
+    if (!r.ok) throw new Error("Couldn't read the list (" + r.status + ").");
+    return new DOMParser().parseFromString(await r.text(), "text/html");
+  };
+  const listUrl = () => { const u = new URL(route, location.href); const q = new URLSearchParams(location.search).get("q"); if (q) u.searchParams.set("q", q); return u.toString(); };
+  /** Puts the server's current version of these rows in place of the ones shown; the rest of the page is not touched. */
+  async function refresh(ids) {
+    const doc = await page(listUrl());
+    for (const id of ids) {
+      const old = $(prefix + id), fresh = doc.getElementById(prefix + id);
+      if (!old || !fresh) continue;
+      const row = document.importNode(fresh, true);
+      old.replaceWith(row);
+      dress(row);
+      row.classList.remove("saved"); void row.offsetWidth; row.classList.add("saved");
+    }
+    syncBulk();
+  }
+  const closeEditor = () => { if (open) { open.remove(); open = null; } };
+  const rowOf = (el) => el.closest("tr.clip");
+  const idOf = (tr) => tr.id.slice(1);
+
+  async function openEditor(tr, href) {
+    closeEditor();
+    say("");
+    let doc;
+    try { doc = await page(href); } catch (ex) { say(ex.message); return; }
+    const src = doc.querySelector("tr.editing");
+    if (!src) { say("That " + noun + " isn\u2019t here any more."); return; }
+    const ed = document.importNode(src, true);
+    tr.after(ed);
+    open = ed;
+    const f = ed.querySelector("form"), msg = document.createElement("p");
+    msg.className = "msg"; msg.setAttribute("role", "status");
+    f.prepend(msg);
+    const say2 = (t, bad) => { msg.textContent = t || ""; msg.classList.toggle("bad", !!bad); };
+    f.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      say2("Saving\u2026");
+      try {
+        await send(new FormData(f));
+        closeEditor();
+        await refresh([idOf(tr)]);
+        say("Saved.");
+      } catch (ex) { say2(ex.message, true); }
+    });
+    const cancel = f.querySelector(".editbtns a.btn");
+    if (cancel) cancel.addEventListener("click", (e) => { e.preventDefault(); closeEditor(); const a = tr.querySelector("td.acts a"); if (a) a.focus({ preventScroll: true }); });
+    f.addEventListener("keydown", (e) => { if (e.key === "Escape") closeEditor(); });
+    const first = f.querySelector("input[name=title]");
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  function askRemove(tr) {
+    const cell = tr.querySelector("td.acts");
+    const keep = [...cell.childNodes];
+    cell.textContent = "";
+    const q = document.createElement("span"); q.className = "warn2"; q.textContent = "Remove this " + noun + "?";
+    const yes = document.createElement("button"); yes.type = "button"; yes.className = "btn sm danger"; yes.textContent = "Yes, remove";
+    const no = document.createElement("button"); no.type = "button"; no.className = "btn sm"; no.textContent = "Keep";
+    cell.append(q, yes, no);
+    no.addEventListener("click", () => { cell.textContent = ""; cell.append(...keep); });
+    yes.addEventListener("click", async () => {
+      yes.disabled = true;
+      try {
+        await send(form({ action: "delete", id: idOf(tr) }));
+        if (open && open.previousElementSibling === tr) closeEditor();
+        tr.remove();
+        if (!rows().length) { // the empty list's own message, as the server writes it
+          const e = document.createElement("tr"), c = document.createElement("td");
+          e.className = "empty"; c.colSpan = table.tHead.rows[0].cells.length; c.className = "muted2";
+          c.textContent = noun === "ad" ? "No ads yet. Add some above, then say how often each one plays." : "No jingles yet. Add some above.";
+          e.append(c); body.append(e);
+        }
+        syncBulk();
+        say("Removed.");
+      } catch (ex) { yes.disabled = false; say(ex.message); }
+    });
+    yes.focus({ preventScroll: true });
+  }
+
+  body.addEventListener("click", (e) => {
+    const a = e.target.closest("td.acts a[href]");
+    const tr = a && rowOf(a);
+    if (!tr || e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+    if (/[?&]edit=\d+/.test(a.href)) { e.preventDefault(); if (open && open.previousElementSibling === tr) closeEditor(); else openEditor(tr, a.href); }
+    else if (/[?&]confirm=\d+/.test(a.href)) { e.preventDefault(); askRemove(tr); }
+  });
+
+  // the bulk change (pause or resume, turn on or off): only the chosen rows change
+  bar.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const ids = selected().map((tr) => idOf(tr));
+    if (!ids.length) { say("Choose at least one " + noun + " first."); return; }
+    const data = new FormData(bar, e.submitter);
+    try {
+      await send(data);
+      await refresh(ids);
+      rows().forEach((tr) => { tr.querySelector(".sel").checked = false; });
+      syncBulk();
+      say(ids.length + (ids.length === 1 ? " " + noun + " changed." : " " + noun + "s changed."));
+    } catch (ex) { say(ex.message); }
+  });
 })();

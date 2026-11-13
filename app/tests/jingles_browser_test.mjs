@@ -124,6 +124,34 @@ try {
   await A.evaluate(`(() => { document.getElementById("jinglesEvery").value = ${JSON.stringify(before.every)}; document.getElementById("jinglesOn").checked = ${before.on}; document.getElementById("jinglesEvery").form.requestSubmit(); })()`);
   check("  (put back as they were)", await A.until(`document.getElementById("jinglesEvery").value === ${JSON.stringify(before.every)} && document.getElementById("jinglesOn").checked === ${before.on}`));
 
+  console.log("In place, without a page reload (round 82)");
+  await A.go(`${base}/manage/jingles`);
+  await A.evaluate(`(() => { window.__same = 1; document.body.style.minHeight = "4000px"; window.scrollTo(0, 300); })()`);
+  const still = () => A.evaluate(`window.__same === 1 && Math.abs(window.scrollY - 300) <= 1`);
+  const row = `document.getElementById("j${info.id}")`;
+  await A.evaluate(`${row}.querySelector("td.acts a").click()`);
+  check("Edit opens the title, on and notes in place: no reload, the page stays where it was", await A.until(`!!document.getElementById("jingleEdit")`) && await still());
+  await A.evaluate(`(() => { const f = document.getElementById("jingleEdit"); f.notes.value = "Changed in place"; f.active.checked = true; f.requestSubmit(); })()`);
+  check("  Save changes only that row (the note, now on), closes the editor, and the page stays where it was", await A.until(`!document.getElementById("jingleEdit") && /Changed in place/.test(${row}.textContent) && ${row}.dataset.state === "on"`) && await still());
+  const inPlace = helper("jingles-info", jTitle + " (edited)");
+  check("  and it is saved on the server", !!inPlace && inPlace.notes === "Changed in place" && Number(inPlace.active) === 1);
+  await A.evaluate(`${row}.querySelector("td.acts a").click()`);
+  await A.until(`!!document.getElementById("jingleEdit")`);
+  await A.evaluate(`(() => { const f = document.getElementById("jingleEdit"); f.noValidate = true; f.title.value = ""; f.requestSubmit(); })()`);
+  check("  a missing title is said inside the editor, which stays open, with no reload", await A.until(`/A jingle needs a title/.test(document.getElementById("jingleEdit").textContent)`) && await still());
+  await A.evaluate(`document.querySelector("#jingleEdit .editbtns a.btn").click()`);
+  check("  Cancel closes it without leaving the page", await A.until(`!document.getElementById("jingleEdit")`) && await still());
+  await A.evaluate(`${row}.querySelector(".sel").click()`);
+  await A.evaluate(`[...document.querySelectorAll("#bulkBar button[type=submit]")].find((b) => /Turn off/.test(b.textContent)).click()`);
+  check("Turn off (chosen in the list) changes only that row: it shows Off, nothing reloads", await A.until(`${row}.dataset.state === "off" && /Off/.test(${row}.querySelector(".c-status").textContent)`) && await still() && Number(helper("jingles-info", jTitle + " (edited)").active) === 0);
+  await A.evaluate(`${row}.querySelector(".sel").click()`);
+  await A.evaluate(`[...document.querySelectorAll("#bulkBar button[type=submit]")].find((b) => /Turn on/.test(b.textContent)).click()`);
+  check("  and Turn on puts it back", await A.until(`${row}.dataset.state === "on"`) && await still() && Number(helper("jingles-info", jTitle + " (edited)").active) === 1);
+  await A.evaluate(`[...${row}.querySelectorAll("td.acts a")].find((a) => /Remove/.test(a.textContent)).click()`);
+  check("Remove asks in the row (no reload)", await A.until(`/Remove this jingle\\?/.test(${row}.textContent)`) && await still());
+  await A.evaluate(`[...${row}.querySelectorAll("td.acts button")].find((b) => /Keep/.test(b.textContent)).click()`);
+  check("  Keep puts the buttons back and the jingle stays", await A.until(`!!${row}.querySelector("td.acts a")`) && helper("jingles-info", jTitle + " (edited)") !== null && await still());
+
   console.log("Apart from the songs and the ads");
   await A.go(`${base}/manage/library?q=${encodeURIComponent(jTitle)}`);
   check("the Music library doesn't list the jingle", await A.evaluate(`!document.getElementById("t${info.id}") && /No songs match/.test(document.body.textContent)`));
@@ -137,13 +165,20 @@ try {
   await A.call("Emulation.clearDeviceMetricsOverride");
 
   console.log("Removing it");
+  // the link on its own (no JavaScript's help) still asks
   await A.go(`${base}/manage/jingles?confirm=${info.id}`);
-  check("Remove asks first", await A.evaluate(`/Remove this jingle\\?/.test(document.getElementById("j${info.id}").textContent)`));
+  check("the Remove link on its own (no JavaScript's help) still asks first", await A.evaluate(`/Remove this jingle\\?/.test(document.getElementById("j${info.id}").textContent)`));
+  // in place: from the list, Remove then Yes, with no reload and the page where it was
+  await A.go(`${base}/manage/jingles`);
+  await A.evaluate(`(() => { window.__same = 1; document.body.style.minHeight = "4000px"; window.scrollTo(0, 300); })()`);
+  await A.evaluate(`[...document.getElementById("j${info.id}").querySelectorAll("td.acts a")].find((a) => /Remove/.test(a.textContent)).click()`);
+  await A.until(`/Remove this jingle\\?/.test(document.getElementById("j${info.id}").textContent)`);
   await A.evaluate(`[...document.querySelectorAll('#j${info.id} button')].find((b) => /Yes/.test(b.textContent)).click(); 1`);
   // a jingle that is on air, or aired in the last two minutes, waits (like a song: listeners are a little behind)
-  const gone = await A.until(`!document.getElementById("j${info.id}") || /is on air/.test(document.body.textContent)`);
+  const gone = await A.until(`!document.getElementById("j${info.id}") || /is on air/.test(document.getElementById("clipNote").textContent)`);
   const removed = helper("jingles-info", jTitle + " (edited)") === null;
-  check("  and Yes takes it away (or says it is on air and to try again, as for a song)", gone && (removed || await A.evaluate(`/is on air/.test(document.body.textContent)`)), removed ? "removed" : "on air: kept for now");
+  check("  and Yes takes it away in place (or says it is on air and to try again, as for a song), with no reload and the page where it was",
+    gone && (removed || await A.evaluate(`/is on air/.test(document.getElementById("clipNote").textContent)`)) && await A.evaluate(`window.__same === 1 && Math.abs(window.scrollY - 300) <= 1`), removed ? "removed" : "on air: kept for now");
 } catch (e) {
   failed++;
   console.log("  [FAIL] " + (e.stack || e.message));

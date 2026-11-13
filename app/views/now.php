@@ -17,7 +17,7 @@ $name = $station['name'] ?? 'Stationwagon';
 <?= Skins::headScript() ?>
 <?= App::icons() ?>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=Share+Tech+Mono<?= $look === 'ocean' ? '&family=Sora:wght@300;400;600;700' : '' ?>&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600;700&family=Share+Tech+Mono&family=Sora:wght@300;400;600;700&display=swap">
 <link rel="stylesheet" href="<?= h(App::asset('assets/app.css')) ?>">
 </head>
 <body class="embed nowcard">

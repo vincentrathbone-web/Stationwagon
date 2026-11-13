@@ -57,6 +57,8 @@ gbcr_check( '  with the sea video (both sizes and the poster) and the stacked lo
 	&& str_contains( $home, 'hero/gbcr-hero-poster.jpg' ) && str_contains( $home, 'gbcr-logo-stacked.svg' ) );
 gbcr_check( '  the song on air, today\'s line-up and the three get-involved cards', str_contains( $home, 'data-nowplaying' ) && str_contains( $home, 'id="today-slots"' ) && 3 === substr_count( $home, '?topic=' ) - 2 );
 gbcr_check( '  the menu marks Home, and links Line-up and Contact', 1 === preg_match( '~<a href="[^"]+"\s+aria-current="page">Home</a>~', $home ) && str_contains( $home, '>Line-up</a>' ) && str_contains( $home, '>Contact</a>' ) );
+$gbcr_studio = esc_url( trailingslashit( gbcr_setting( 'station_url' ) ) . 'studio' );
+gbcr_check( '  "Studio login" in the menu and in the footer, both to the station\'s studio (round 83)', 2 === substr_count( $home, 'class="staff" href="' . $gbcr_studio . '"' ) && 2 === substr_count( $home, '>Studio login</a>' ), $gbcr_studio );
 gbcr_check( '  the player bar is there, closed (its frame has no address until Listen live)', str_contains( $home, 'class="player-bar"' ) && 1 === preg_match( '~<iframe title="[^"]*" allow="autoplay"></iframe>~', $home ) );
 gbcr_check( '  the theme\'s style and script, with the settings for the script', 1 === preg_match( '~assets/site\.css\?v=\d+~', $home ) && 1 === preg_match( '~assets/site\.js\?v=\d+~', $home )
 	&& str_contains( $home, 'window.GBCR = {"station":' ) && str_contains( $home, 'gbcr\/v1\/contact' ) );

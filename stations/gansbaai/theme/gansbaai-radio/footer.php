@@ -14,6 +14,7 @@ $gbcr_contact = gbcr_page_url( 'contact' );
 				<li><a href="<?php echo esc_url( $gbcr_contact ); ?>">Contact us</a></li>
 				<li><a href="<?php echo esc_url( add_query_arg( 'topic', 'Shout-out', $gbcr_contact ) ); ?>">Send a shout-out</a></li>
 				<li><a href="<?php echo esc_url( add_query_arg( 'topic', 'Advertise', $gbcr_contact ) ); ?>">Advertise</a></li>
+				<li><a class="staff" href="<?php echo esc_url( gbcr_studio_url() ); ?>">Studio login</a></li>
 			</ul></div>
 		</div>
 		<div class="legal"><span>&copy; <span data-year><?php echo esc_html( gmdate( 'Y' ) ); ?></span> Gansbaai Community Radio</span><a href="<?php echo esc_url( gbcr_privacy_url() ); ?>">Privacy policy</a></div>

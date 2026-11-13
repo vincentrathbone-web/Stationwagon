@@ -48,6 +48,9 @@ img { max-width: 100%; }
 .site-nav a:not(.btn) { color: var(--foam); text-decoration: none; font-weight: 400; padding: 8px 14px; border-radius: 999px; }
 .site-nav a:not(.btn):hover { background: rgba(230, 255, 251, .08); }
 .site-nav a[aria-current="page"] { color: var(--neon); font-weight: 600; }
+/* the staff's way into the station (round 83): quieter than the visitors' links */
+.site-nav a.staff { color: var(--muted); font-size: 15px; }
+.site-nav a.staff:hover { color: var(--foam); }
 .menu-btn { display: none; margin-left: auto; background: none; border: 0; color: var(--foam); padding: 8px; cursor: pointer; }
 .menu-btn .icon { width: 28px; height: 28px; }
 @media (max-width: 760px) {

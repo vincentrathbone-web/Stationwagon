@@ -297,7 +297,7 @@ try {
     $set = new StationSettings($db, $fresh());
     $defaults = ['crossfade_seconds' => 6, 'ads_crossfade_seconds' => 2.0, 'jingles_crossfade_seconds' => 1.0, 'fade_shape' => 'equal_power', 'skip_fade_seconds' => 2.0, 'live_fade_seconds' => 6.0, 'duck_db' => -12,
         'live_timeout_seconds' => 8, 'rejoin_minutes' => 10, 'silence_db' => -40, 'recent_tracks' => 5, 'ratings_influence' => 0, 'prep_master' => 0, 'prep_level' => 1, 'prep_target' => -16.0, 'live_kbps' => 192, 'prep_kbps' => 160,
-        'prep_rate' => 44100, 'prep_precision' => 32, 'prep_dither' => 1, 'prep_quality' => 9];
+        'prep_rate' => 44100, 'prep_precision' => 32, 'prep_dither' => 1, 'prep_quality' => 9, 'look' => 'green'];
     check('the defaults are the values the POC proved', $set->values() === $defaults, json_encode($set->values()));
     check('with 6 s pieces a DJ gets at least 8 s', $set->minLiveTimeout() === 8);
     $good = ['crossfade_seconds' => '4', 'ads_crossfade_seconds' => '1.5', 'jingles_crossfade_seconds' => '0.5', 'fade_shape' => 'linear', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '3', 'duck_db' => '-18',
@@ -313,7 +313,13 @@ try {
     [$updated, $errs] = $set->save($good);
     check('good values are saved, choices as their own type', !$errs && (new StationSettings($db, $fresh()))->values() === ['crossfade_seconds' => 4, 'ads_crossfade_seconds' => 1.5, 'jingles_crossfade_seconds' => 0.5, 'fade_shape' => 'linear', 'skip_fade_seconds' => 1.5,
         'live_fade_seconds' => 3.0, 'duck_db' => -18, 'live_timeout_seconds' => 12, 'rejoin_minutes' => 0, 'silence_db' => 0, 'recent_tracks' => 1, 'ratings_influence' => 1, 'prep_master' => 1, 'prep_level' => 0, 'prep_target' => -14.5, 'live_kbps' => 128, 'prep_kbps' => 256,
-        'prep_rate' => 48000, 'prep_precision' => 24, 'prep_dither' => 0, 'prep_quality' => 7], json_encode($errs));
+        'prep_rate' => 48000, 'prep_precision' => 24, 'prep_dither' => 0, 'prep_quality' => 7, 'look' => 'green'], json_encode($errs));
+    check('  a form without the station’s look (an older page) leaves it as it is (round 83)', (new StationSettings($db, $fresh()))->values()['look'] === 'green');
+    [, $errs] = $set->save(['look' => 'purple'] + $good);
+    check('the station’s look must be one of the looks', ($errs['look'] ?? '') === 'The station’s look: choose one of the options.', json_encode($errs));
+    [$updated, $errs] = (new StationSettings($db, $fresh()))->save(['look' => 'ocean'] + $good);
+    check('  Ocean is saved', !$errs && (new StationSettings($db, $fresh()))->values()['look'] === 'ocean' && \Stationwagon\Planner::settings($fresh())['look'] === 'ocean');
+    (new StationSettings($db, $fresh()))->save(['look' => 'green'] + $good);
     check('the quality choices show megabytes an hour', StationSettings::mbPerHour(192) === 86 && StationSettings::mbPerHour(128) === 58);
     $kept = Planner::settings($fresh());
     check('other settings are kept', (int) $kept['plan_ahead_seconds'] === 10800 && (float) $kept['segment_seconds'] === 6.0);

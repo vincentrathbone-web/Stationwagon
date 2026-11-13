@@ -26,6 +26,7 @@ $gbcr_nav = array(
 			<?php foreach ( $gbcr_nav as $gbcr_item ) : ?>
 				<a href="<?php echo esc_url( $gbcr_item[0] ); ?>"<?php echo $gbcr_item[2] ? ' aria-current="page"' : ''; ?>><?php echo esc_html( $gbcr_item[1] ); ?></a>
 			<?php endforeach; ?>
+			<a class="staff" href="<?php echo esc_url( gbcr_studio_url() ); ?>" title="For the station's presenters and staff">Studio login</a>
 			<a class="btn small" href="#listen" data-listen><span class="live-dot"></span>Listen live</a>
 		</nav>
 	</div>

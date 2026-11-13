@@ -33,5 +33,8 @@ $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 
     <label class="btn" for="files">Choose files</label>
     <button class="btn primary" type="submit">Upload</button>
   </div>
+  <?php if ($dropNoun === 'song'): /* round 83: skip the song details window (upload.js shows this; without JavaScript there's no window) */ ?>
+  <label class="check bulkup" id="bulkUpWrap" hidden><input type="checkbox" id="bulkUp"> <span><b>Do bulk upload now and enter details later</b><br><span class="muted2">No details window for each song: each one goes in with the title, artist, album and picture in its file, and is prepared as usual. Edit the details later in the list.</span></span></label>
+  <?php endif ?>
   <ol class="uplist" id="uplist" hidden></ol>
 </form>

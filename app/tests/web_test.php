@@ -303,7 +303,8 @@ try {
     check('  ?look=light gives the light look', str_contains($e->go('embed?look=light')['body'], '<html lang="en" class="light">') && !str_contains($r['body'], 'class="light"'));
     // round 79: Gansbaai's site asks for its own colours and font
     $b = $e->go('embed?look=ocean')['body'];
-    check('  ?look=ocean gives the ocean look, with the Sora font', str_contains($b, '<html lang="en" class="ocean">') && str_contains($b, 'family=Sora:') && !str_contains($r['body'], 'family=Sora:'));
+    // (round 83: Ocean is also a look anyone can pick, so every page loads Sora)
+    check('  ?look=ocean gives the ocean look, with the Sora font', str_contains($b, '<html lang="en" class="ocean">') && str_contains($b, 'family=Sora:') && str_contains($r['body'], 'family=Sora:'));
     check('  an unknown look is ignored (nothing from the address reaches the page)', str_contains($e->go('embed?look=%22%3E%3Cb%3Ex')['body'], '<html lang="en">'));
     // round 61: the bar under the staff's screens (the embed's long, flat form) and the small Now playing card
     $r = $e->go('bar');
@@ -362,12 +363,55 @@ try {
     check('  and so does the podcast screen', $pc->go('manage/podcast')['status'] === 303);
     check('the About screen needs a sign-in too', $pc->go('manage/about')['status'] === 303);
 
+    echo "The station's own logo in the header (round 83)\n";
+    $logoTag = '~</a><span class="stlogo" title="([^"]+)"><img src="' . preg_quote($basePath, '~') . '/brand/logo\?v=[0-9a-f]{10}" alt="\1"></span>~';
+    $logoCheck = function (string $type, string $what) use ($base, $logoTag): void {
+        $b = (new Browser($base))->go('signin')['body'];
+        check("the header shows the station's logo after the Stationwagon one, named for the station", preg_match($logoTag, $b, $m) === 1 && $m[1] !== 'This station', $m[1] ?? 'no logo');
+        $lb2 = new Browser($base);
+        $r = $lb2->go('brand/logo');
+        check("  brand/logo serves it as a picture ($what), kept a week by browsers", $r['status'] === 200 && ($r['headers']['content-type'][0] ?? '') === $type
+            && str_contains(implode(',', $r['headers']['cache-control'] ?? []), 'max-age=604800'), $r['status'] . ' ' . ($r['headers']['content-type'][0] ?? ''));
+        $csp = implode(',', $r['headers']['content-security-policy'] ?? []);
+        check('  opened on its own it can run nothing (no scripts, sandboxed), and sets no cookie', str_contains($csp, "default-src 'none'") && str_contains($csp, 'sandbox')
+            && ($r['headers']['x-content-type-options'][0] ?? '') === 'nosniff' && $lb2->setCookies === [], $csp);
+    };
+    if (!$public) {
+        // this same copy: no logo first, then a test one (a real one is put back afterwards)
+        $brandDir = __DIR__ . '/../storage/brand';
+        $kept = [];
+        foreach (glob($brandDir . '/logo.*') ?: [] as $f) {
+            $kept[$f] = file_get_contents($f);
+            unlink($f);
+        }
+        try {
+            $b = (new Browser($base))->go('signin')['body'];
+            check('without a logo file the header has none, and brand/logo is not found', !str_contains($b, 'class="stlogo"') && (new Browser($base))->go('brand/logo')['status'] === 404);
+            @mkdir($brandDir, 0775, true);
+            file_put_contents($brandDir . '/logo.svg', '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 4"><rect width="10" height="4" fill="#0af"/><script>alert(1)</script></svg>');
+            $logoCheck('image/svg+xml', 'an SVG');
+        } finally {
+            @unlink($brandDir . '/logo.svg');
+            foreach ($kept as $f => $bytes) {
+                file_put_contents($f, $bytes);
+            }
+        }
+    } else {
+        $r = (new Browser($base))->go('brand/logo');
+        if ($r['status'] === 200) {
+            $logoCheck($r['headers']['content-type'][0] ?? '?', 'this station has one');
+        } else {
+            check('this station has no logo file: none in the header, and brand/logo is not found', $r['status'] === 404 && !str_contains((new Browser($base))->go('signin')['body'], 'class="stlogo"'), (string) $r['status']);
+        }
+    }
+
     echo "Skins (the look, picked per device)\n";
     $sk = new Browser($base);
     $headFirst = fn(string $b): bool => ($s = strpos($b, 'localStorage.getItem("sw.skin")')) !== false && ($c = strpos($b, 'assets/app.css')) !== false && $s < $c && $s < strpos($b, '</head>');
     foreach (['' => 'the station page', 'podcast' => 'the podcast page', 'privacy' => 'the Privacy page', 'signin' => 'sign-in'] as $path => $what) {
         $b = ($path === 'signin' ? new Browser($base) : $sk)->go($path)['body']; // sign-in sets its own session cookie
-        check("$what sets the device's look in <head> and has the Look picker", $headFirst($b) && str_contains($b, 'class="skinpick"') && str_contains($b, '<option value="hifi">Hi-fi</option>')
+        check("$what sets the device's look in <head> and has the Look picker", $headFirst($b) && str_contains($b, 'class="skinpick"') && str_contains($b, '<option value="hifi">Hi-fi</option>') && str_contains($b, '<option value="ocean">Ocean</option>')
+            && str_contains($b, "r.setAttribute('data-skin-default',d)")
             && preg_match('~assets/skin\.js\?v=[0-9a-f]{10}"~', $b) === 1);
     }
     $b = $e->go('embed')['body'];
@@ -378,7 +422,7 @@ try {
     $blocks = preg_match_all('~^(:root|:root\[data-skin="[a-z0-9-]+"\]|:root\.light|:root\.ocean) \{.*?\n\}?~ms', $css, $m);
     $rest = preg_replace('~^(:root|:root\[data-skin="[a-z0-9-]+"\]|:root\.light|:root\.ocean) \{.*?\}\n~ms', '', $css);
     preg_match_all('~#[0-9a-fA-F]{3,8}\b(?![-\w])|rgba?\(~', preg_replace('~#[a-zA-Z][\w-]*\s*[{,]~', '', $rest), $raw);
-    check('the stylesheet keeps every colour in its token blocks (green, hi-fi, light, ocean): none in the components', $blocks === 4 && $raw[0] === [], $blocks . ' blocks; ' . implode(' ', array_slice($raw[0], 0, 6)));
+    check('the stylesheet keeps every colour in its token blocks (green, hi-fi, ocean, and the embed’s light and ocean): none in the components', $blocks === 5 && $raw[0] === [], $blocks . ' blocks; ' . implode(' ', array_slice($raw[0], 0, 6)));
     preg_match_all('~border-radius: (\d+px)~', $rest, $radii);
     check('  and every corner size except the tiny ones (1–2 px) and circles', array_diff(array_unique($radii[1]), ['1px', '2px']) === [], implode(' ', array_unique($radii[1])));
     foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/', 'storage/geo/dbip-city-lite.mmdb', 'storage/podcasts/ep-x/raw/1-music-0000.chunk', 'storage/podcasts/ep-x/episode.chunk', 'storage/originals/', 'storage/originals/0000000000000000000000000000000000000000.mp3'] as $private) {
@@ -1151,7 +1195,8 @@ try {
         // Sound & safety (the station's own values are put back in the cleanup)
         $origSettings = $db->run('SELECT settings FROM ' . $db->table('stations') . ' WHERE id = ?', [$stationId])->fetchColumn();
         $r = $m->go('manage/sound');
-        check('Sound & safety opens with eleven sliders and ten choices', $r['status'] === 200 && substr_count($r['body'], 'type="range"') === 11 && substr_count($r['body'], '<select id="f-') === 10, (string) $r['status']);
+        check('Sound & safety opens with eleven sliders and eleven choices', $r['status'] === 200 && substr_count($r['body'], 'type="range"') === 11 && substr_count($r['body'], '<select id="f-') === 11, (string) $r['status']);
+        check('  the last is the station’s look (round 83): Green, Hi-fi and Ocean', preg_match('~<select id="f-look" name="look">\s*<option value="green"[^>]*>Green: [^<]+</option>\s*<option value="hifi"[^>]*>Hi-fi: [^<]+</option>\s*<option value="ocean"[^>]*>Ocean: [^<]+</option>~', $r['body']) === 1);
         check('with the fade shape preview, the MB an hour and the listener delay', str_contains($r['body'], 'id="fadeCurve"') && str_contains($r['body'], 'fades.js') && str_contains($r['body'], '192 kbps · 86 MB an hour') && preg_match('/About \d+ s/', $r['body']) === 1);
         $values = ['csrf' => $csrf, 'crossfade_seconds' => '5', 'ads_crossfade_seconds' => '1.5', 'jingles_crossfade_seconds' => '1', 'fade_shape' => 's_curve', 'skip_fade_seconds' => '1.5', 'live_fade_seconds' => '4', 'duck_db' => '-10',
             'live_timeout_seconds' => '10', 'rejoin_minutes' => '5', 'silence_db' => '-50', 'recent_tracks' => '3', 'ratings_influence' => '0', 'prep_master' => (string) (int) $keepMaster, 'prep_level' => (string) (int) $keepLevel, 'prep_target' => (string) $keepTarget, 'live_kbps' => '160', 'prep_kbps' => '256',

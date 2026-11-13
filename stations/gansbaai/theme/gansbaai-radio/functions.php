@@ -55,6 +55,11 @@ function gbcr_privacy_url() {
 	return $url ? $url : trailingslashit( gbcr_setting( 'station_url' ) ) . 'privacy';
 }
 
+/** The station's studio, for the "Studio login" links: signed out, the station asks you to sign in first and then opens it. */
+function gbcr_studio_url() {
+	return trailingslashit( gbcr_setting( 'station_url' ) ) . 'studio';
+}
+
 /** The asset's address with its file time as the version, so a new file is never served from a cache. */
 function gbcr_asset( $path ) {
 	$file = get_theme_file_path( $path );

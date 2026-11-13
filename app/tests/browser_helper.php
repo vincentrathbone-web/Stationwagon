@@ -3,6 +3,7 @@
 // uploaded tracks, a test live show, and the cleanup. Prints JSON.
 //   php browser_helper.php manager            -> {"id", "email", "password"}
 //   php browser_helper.php track <title>      -> the newest ready track with that title, or null
+//   php browser_helper.php look [<green|hifi|ocean>]  -> {"look"}: the station's own look (round 83), set first if given
 //   php browser_helper.php presets [clear <name prefix> | default <id>]  -> {"presets", "default"}
 //   php browser_helper.php cleanup <user id> [<title> ...]
 //   php browser_helper.php make-old <title>  (its stored file made to look prepared before round 51: the LAME 3.100 tag renamed, a new file name) -> {file}
@@ -94,6 +95,15 @@ if ($cmd === 'manager') {
     }
     [$m, $l, $tg] = StationSettings::prep($station);
     echo json_encode(['master' => $m, 'level' => $l, 'target' => $tg]);
+} elseif ($cmd === 'look') {
+    // the station's own look (round 83): print it, or set it first (look <green|hifi|ocean>)
+    $own = json_decode((string) ($station['settings'] ?? ''), true);
+    $own = is_array($own) ? $own : [];
+    if (isset($argv[2])) {
+        $own['look'] = $argv[2];
+        $db->run('UPDATE ' . $db->table('stations') . ' SET settings = ? WHERE id = ?', [json_encode($own, JSON_UNESCAPED_SLASHES), $station['id']]);
+    }
+    echo json_encode(['look' => $own['look'] ?? 'green']);
 } elseif ($cmd === 'lib-songs') {
     $dir = sys_get_temp_dir() . '/sw-lib-test-' . bin2hex(random_bytes(3));
     mkdir($dir);
