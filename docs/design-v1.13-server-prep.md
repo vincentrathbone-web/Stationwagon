@@ -1,6 +1,6 @@
 # v1.13 Song prep on the server: design
 
-Status: agreed with the user 2026-11-13 and built in round 85 (`0.9.20-dev`, schema 22; tested on Laragon, not deployed yet). Their choices:
+Status: agreed with the user 2026-11-13 and built in round 85 (`0.9.20-dev`, schema 22; live on WordWave and Gansbaai 2026-11-13). Their choices:
 - **Node is the one dependency.** LAME and the decoder ship inside the app's WebAssembly files. A station uses a
   Node the server already has; if there is none, **Sound & safety offers Set up: on an admin's click** the station
   downloads Node's official Linux build (x64 or arm64, checked against its pinned SHA-256) into its own
