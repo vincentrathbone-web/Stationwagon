@@ -32,6 +32,17 @@ function gbcr_setting( $key ) {
 	return ( '' === $value || null === $value ) && isset( $defaults[ $key ] ) && 'sample' !== $key ? $defaults[ $key ] : $value;
 }
 
+/** Cloudflare Turnstile's secret key: the GBCR_TURNSTILE_SECRET constant in wp-config.php, never the database. */
+function gbcr_turnstile_secret() {
+	return trim( (string) apply_filters( 'gbcr_turnstile_secret', defined( 'GBCR_TURNSTILE_SECRET' ) ? GBCR_TURNSTILE_SECRET : '' ) );
+}
+
+/** The Turnstile site key (Customizer) when the spam check is set up, that is with a secret too; else ''. */
+function gbcr_turnstile_sitekey() {
+	$key = trim( (string) gbcr_setting( 'turnstile_sitekey' ) );
+	return '' !== $key && '' !== gbcr_turnstile_secret() ? $key : '';
+}
+
 /** The address of a page by its slug (the line-up, contact), or the home page with an anchor if it is missing. */
 function gbcr_page_url( $slug ) {
 	$page = get_page_by_path( $slug );
@@ -94,10 +105,15 @@ add_action(
 					'station'    => untrailingslashit( gbcr_setting( 'station_url' ) ),
 					'contactUrl' => rest_url( 'gbcr/v1/contact' ),
 					'sample'     => (bool) gbcr_setting( 'sample' ),
+					'turnstile'  => gbcr_turnstile_sitekey(),
 				)
 			) . ';',
 			'before'
 		);
+		if ( is_page( 'contact' ) && '' !== gbcr_turnstile_sitekey() ) {
+			// after site.js, which defines the callback the widget is drawn from
+			wp_enqueue_script( 'cf-turnstile', 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=gbcrTurnstileReady', array( 'gbcr-site' ), null, array( 'in_footer' => true ) );
+		}
 		// WordPress's own block styles are not used by these templates
 		wp_dequeue_style( 'wp-block-library' );
 		wp_dequeue_style( 'global-styles' );
@@ -147,6 +163,7 @@ add_action(
 			'public_email' => array( 'Email shown on the contact page', 'email', 'sanitize_email', '' ),
 			'whatsapp'     => array( 'WhatsApp number shown on the contact page', 'text', 'sanitize_text_field', 'For example +27 82 123 4567.' ),
 			'studio'       => array( 'Where the studio is', 'text', 'sanitize_text_field', '' ),
+			'turnstile_sitekey' => array( 'Cloudflare Turnstile site key', 'text', 'sanitize_text_field', 'The spam check on the contact form. It is on only when wp-config.php also holds GBCR_TURNSTILE_SECRET.' ),
 		);
 		foreach ( $fields as $key => $f ) {
 			$c->add_setting( 'gbcr_' . $key, array( 'default' => '', 'sanitize_callback' => $f[2] ) );

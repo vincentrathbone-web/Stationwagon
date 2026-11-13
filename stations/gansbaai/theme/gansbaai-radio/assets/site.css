@@ -154,6 +154,7 @@ a.card .more { display: inline-block; margin-top: 14px; color: var(--neon); font
 .field select option { background: var(--midnight); }
 .field textarea { min-height: 150px; resize: vertical; }
 .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--neon); box-shadow: 0 0 0 3px rgba(62, 240, 216, .2); }
+.turnstile { min-height: 65px; margin-bottom: 18px; }
 .field .err { color: #FF8A80; font-size: 13px; margin-top: 6px; display: none; }
 .field.bad input, .field.bad textarea { border-color: var(--coral); }
 .field.bad .err { display: block; }

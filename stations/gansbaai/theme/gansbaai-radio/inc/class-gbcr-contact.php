@@ -5,8 +5,9 @@
  * when empty), with Reply-To set to the sender. Ported from WordWave's plugin (Wordwave_Rest::contact).
  *
  * No nonce (pages may be cached). Protection: a hidden honeypot field (a robot that fills it is told it
- * worked), at most 5 messages an hour from one visitor (a one-way hash of the address, kept an hour),
- * strict lengths and a fixed list of topics. Nothing is stored.
+ * worked), Cloudflare Turnstile when it is set up (round 80; see turnstile()), at most 5 messages an hour
+ * from one visitor (a one-way hash of the address, kept an hour), strict lengths and a fixed list of
+ * topics. Nothing is stored.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -72,6 +73,58 @@ class GBCR_Contact {
 		return null;
 	}
 
+	/**
+	 * Cloudflare Turnstile (when set up: gbcr_turnstile_sitekey()). Returns a response if the message
+	 * stops here, or null to carry on. The token must pass Cloudflare's siteverify for this form ("contact")
+	 * on this site's own host name. When Cloudflare can't be reached, or rejects our own secret, the message
+	 * goes through anyway (the user's choice, 2026-11-13: never lose a real message; the hidden field and
+	 * the hourly limit still apply) and the error log says so. A key from Cloudflare's test set passes only
+	 * outside production (Laragon), since its answers carry neither our host name nor the action.
+	 */
+	private static function turnstile( WP_REST_Request $req ) {
+		if ( '' === gbcr_turnstile_sitekey() ) {
+			return null;
+		}
+		$again = 'The spam check above the button didn\'t pass. Please try it again, then press Send.';
+		$token = $req->get_param( 'cf-turnstile-response' );
+		if ( ! is_string( $token ) || '' === $token || strlen( $token ) > 2048 ) {
+			return self::reply( false, $again, 403 );
+		}
+		$res = wp_remote_post(
+			'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+			array(
+				'timeout' => 10,
+				'body'    => array(
+					'secret'   => gbcr_turnstile_secret(),
+					'response' => $token,
+				),
+			)
+		);
+		$code = is_wp_error( $res ) ? 0 : (int) wp_remote_retrieve_response_code( $res );
+		$r    = 200 === $code ? json_decode( (string) wp_remote_retrieve_body( $res ), true ) : null;
+		if ( ! is_array( $r ) || ! isset( $r['success'] ) ) {
+			error_log( 'GBCR contact: Turnstile could not be checked (' . ( is_wp_error( $res ) ? $res->get_error_message() : 'HTTP ' . $code ) . '); the message was let through' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions
+			return null;
+		}
+		$errors = isset( $r['error-codes'] ) && is_array( $r['error-codes'] ) ? $r['error-codes'] : array();
+		if ( array_intersect( $errors, array( 'missing-input-secret', 'invalid-input-secret' ) ) ) {
+			error_log( 'GBCR contact: Cloudflare rejected the Turnstile secret (' . implode( ', ', $errors ) . '); the message was let through' ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions
+			return null;
+		}
+		if ( true !== $r['success'] ) {
+			return self::reply( false, $again, 403 );
+		}
+		$testing = ! empty( $r['metadata']['result_with_testing_key'] );
+		if ( $testing && 'production' !== wp_get_environment_type() ) {
+			return null;
+		}
+		$host = strtolower( (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+		if ( $testing || 'contact' !== ( $r['action'] ?? '' ) || strtolower( (string) ( $r['hostname'] ?? '' ) ) !== $host ) {
+			return self::reply( false, $again, 403 );
+		}
+		return null;
+	}
+
 	public static function contact( WP_REST_Request $req ) {
 		$name    = self::clean( $req->get_param( 'name' ), 100 );
 		$email   = sanitize_email( (string) $req->get_param( 'email' ) );
@@ -93,7 +146,8 @@ class GBCR_Contact {
 		if ( mb_strlen( $message ) < 5 ) {
 			return self::reply( false, 'Please type a message.', 422 );
 		}
-		$stop = self::guard( $req );
+		$stop = self::turnstile( $req );
+		$stop = $stop ? $stop : self::guard( $req );
 		if ( $stop ) {
 			return $stop;
 		}

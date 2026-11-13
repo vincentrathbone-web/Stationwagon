@@ -30,7 +30,7 @@ function gbcr_get( $url ) {
 }
 
 $keep = array();
-foreach ( array( 'station_url', 'contact_to', 'public_email', 'whatsapp', 'studio', 'sample' ) as $k ) {
+foreach ( array( 'station_url', 'contact_to', 'public_email', 'whatsapp', 'studio', 'sample', 'turnstile_sitekey' ) as $k ) {
 	$keep[ $k ] = get_theme_mod( 'gbcr_' . $k, null );
 }
 $restore = static function () use ( $keep ) {
@@ -83,6 +83,21 @@ set_theme_mod( 'gbcr_public_email', '' );
 list( , $contact ) = gbcr_get( add_query_arg( 'nocache', time() + 1, $contact_url ) );
 gbcr_check( '  without them it says they are still to come', str_contains( $contact, 'Number to come' ) && str_contains( $contact, 'Address to come' ) );
 
+// the spam check's box: there only with a site key AND the secret in wp-config.php (the page is drawn by another PHP)
+$real_secret = defined( 'GBCR_TURNSTILE_SECRET' ) && '' !== trim( (string) GBCR_TURNSTILE_SECRET );
+$real_key    = get_theme_mod( 'gbcr_turnstile_sitekey', '' );
+set_theme_mod( 'gbcr_turnstile_sitekey', '' );
+list( , $contact ) = gbcr_get( add_query_arg( 'nocache', time() + 2, $contact_url ) );
+gbcr_check( '  with no Turnstile site key, no spam-check box and no Cloudflare script', ! str_contains( $contact, 'id="c-turnstile"' ) && ! str_contains( $contact, 'challenges.cloudflare.com' ) && str_contains( $contact, '"turnstile":""' ) );
+set_theme_mod( 'gbcr_turnstile_sitekey', '' !== (string) $real_key ? $real_key : '1x00000000000000000000AA' );
+list( , $contact ) = gbcr_get( add_query_arg( 'nocache', time() + 3, $contact_url ) );
+$box = str_contains( $contact, 'id="c-turnstile"' ) && 1 === preg_match( '~challenges\.cloudflare\.com/turnstile/v0/api\.js\?render=explicit&(amp;|#038;)?onload=gbcrTurnstileReady~', $contact )
+	&& 1 === preg_match( '~"turnstile":"[^"]+"~', $contact );
+gbcr_check( $real_secret ? '  with a site key and the secret, the box, Cloudflare\'s script (after ours) and the key for the script' : '  with a site key but no secret in wp-config.php, still no box (it would refuse every message)', $real_secret ? $box && strpos( $contact, 'assets/site.js' ) < strpos( $contact, 'turnstile/v0/api.js' ) : ! str_contains( $contact, 'id="c-turnstile"' ) );
+list( , $home ) = gbcr_get( add_query_arg( 'nocache', time() + 4, home_url( '/' ) ) );
+gbcr_check( '  and Cloudflare\'s script only on the contact page', ! str_contains( $home, 'challenges.cloudflare.com' ) );
+set_theme_mod( 'gbcr_turnstile_sitekey', $real_key );
+
 list( $st, $missing ) = gbcr_get( home_url( '/no-such-page-' . time() . '/' ) );
 gbcr_check( 'a missing page says so, in the station\'s look', 404 === $st && str_contains( $missing, 'We can&#039;t find that page' ) || 404 === $st && str_contains( $missing, "We can't find that page" ), (string) $st );
 
@@ -97,7 +112,11 @@ add_filter(
 	10,
 	2
 );
-$ip                     = '203.0.113.' . wp_rand( 1, 250 ); // a test address, so a real visitor's limit is never touched
+$no_turnstile = static function () {
+	return ''; // the form's own checks first, without the spam check (its part is further down)
+};
+add_filter( 'gbcr_turnstile_secret', $no_turnstile );
+$ip                     = '203.0.113.' . wp_rand( 1, 200 ); // a test address, so a real visitor's limit is never touched
 $_SERVER['REMOTE_ADDR'] = $ip;
 $post                   = static function ( array $body ) {
 	$req = new WP_REST_Request( 'POST', '/gbcr/v1/contact' );
@@ -156,8 +175,92 @@ $mails                  = array();
 list( $s, $d )          = $post( $good );
 gbcr_check( 'with no good address set for messages, they go to the site\'s admin email', 200 === $s && ( $mails[0]['to'] ?? '' ) === get_option( 'admin_email' ), wp_json_encode( $mails[0]['to'] ?? '' ) );
 
+echo "The spam check (Cloudflare Turnstile)\n";
+set_theme_mod( 'gbcr_contact_to', 'station@example.org' );
+remove_filter( 'gbcr_turnstile_secret', $no_turnstile );
+$secret = 'the-test-secret';
+add_filter(
+	'gbcr_turnstile_secret',
+	static function () use ( &$secret ) {
+		return $secret;
+	}
+);
+set_theme_mod( 'gbcr_turnstile_sitekey', 'the-test-sitekey' );
+$host   = wp_parse_url( home_url(), PHP_URL_HOST );
+$answer = null; // what "Cloudflare" says next: an array (as JSON, HTTP 200), an int (that HTTP status) or a WP_Error; null: the real Cloudflare
+$asked  = array();
+add_filter(
+	'pre_http_request',
+	static function ( $pre, $args, $url ) use ( &$answer, &$asked ) {
+		if ( 'https://challenges.cloudflare.com/turnstile/v0/siteverify' !== $url || null === $answer ) {
+			return $pre;
+		}
+		$asked[] = $args['body'];
+		if ( $answer instanceof WP_Error ) {
+			return $answer;
+		}
+		return array(
+			'headers'  => array(),
+			'body'     => is_int( $answer ) ? 'Bad gateway' : wp_json_encode( $answer ),
+			'response' => array( 'code' => is_int( $answer ) ? $answer : 200, 'message' => '' ),
+			'cookies'  => array(),
+		);
+	},
+	10,
+	3
+);
+$ips  = array();
+$send = static function ( $token, $cf ) use ( $post, $good, &$answer, &$asked, &$mails, &$ips ) {
+	$_SERVER['REMOTE_ADDR'] = '203.0.113.' . ( 210 + count( $ips ) ); // each its own visitor, so the hourly limit stays out of it
+	$ips[]                  = $_SERVER['REMOTE_ADDR'];
+	$answer                 = $cf;
+	$asked                  = array();
+	$mails                  = array();
+	$body                   = null === $token ? $good : array_merge( $good, array( 'cf-turnstile-response' => $token ) );
+	return $post( $body );
+};
+$pass = array( 'success' => true, 'action' => 'contact', 'hostname' => $host, 'error-codes' => array() );
+
+list( $s, $d ) = $send( null, $pass );
+gbcr_check( 'with the check on, a message without its token is refused, with a reason, and Cloudflare isn\'t even asked', 403 === $s && str_contains( (string) ( $d['error'] ?? '' ), 'spam check' ) && array() === $mails && array() === $asked, $s . ' ' . wp_json_encode( $d ) );
+list( $s, ) = $send( str_repeat( 'x', 2049 ), $pass );
+gbcr_check( '  so is a token that is far too long', 403 === $s && array() === $mails && array() === $asked, (string) $s );
+list( $s, ) = $send( array( 'a' ), $pass );
+gbcr_check( '  and a token that isn\'t text', 403 === $s && array() === $mails, (string) $s );
+list( $s, $d ) = $send( 'a-good-token', $pass );
+gbcr_check( 'a token Cloudflare passes, for this form on this site: the message is sent', 200 === $s && true === $d['ok'] && 1 === count( $mails ), $s . ' ' . wp_json_encode( $d ) );
+gbcr_check( '  Cloudflare was asked once, with our secret and the visitor\'s token', 1 === count( $asked ) && 'the-test-secret' === ( $asked[0]['secret'] ?? '' ) && 'a-good-token' === ( $asked[0]['response'] ?? '' ), wp_json_encode( $asked ) );
+list( $s, ) = $send( 'a-used-token', array( 'success' => false, 'error-codes' => array( 'timeout-or-duplicate' ) ) );
+gbcr_check( 'a token used before (Cloudflare: timeout-or-duplicate) is refused', 403 === $s && array() === $mails, (string) $s );
+list( $s, ) = $send( 'a-bad-token', array( 'success' => false, 'error-codes' => array( 'invalid-input-response' ) ) );
+gbcr_check( 'a token Cloudflare fails is refused', 403 === $s && array() === $mails, (string) $s );
+list( $s, ) = $send( 'another-forms-token', array_merge( $pass, array( 'action' => 'signup' ) ) );
+gbcr_check( 'a token from another form (another action) is refused', 403 === $s && array() === $mails, (string) $s );
+list( $s, ) = $send( 'another-sites-token', array_merge( $pass, array( 'hostname' => 'elsewhere.example' ) ) );
+gbcr_check( 'a token from another website (another host name) is refused', 403 === $s && array() === $mails, (string) $s );
+$prod          = 'production' === wp_get_environment_type();
+list( $s, )    = $send( 'a-test-key-token', array( 'success' => true, 'hostname' => 'example.com', 'error-codes' => array(), 'metadata' => array( 'result_with_testing_key' => true ) ) );
+gbcr_check( $prod ? 'an answer for Cloudflare\'s test keys is refused on a production site' : 'an answer for Cloudflare\'s test keys passes on this ' . wp_get_environment_type() . ' site', $prod ? 403 === $s : 200 === $s, (string) $s );
+list( $s, ) = $send( 'a-token', new WP_Error( 'http_request_failed', 'cURL error 28: timed out' ) );
+gbcr_check( 'when Cloudflare can\'t be reached, the message still goes (the user\'s choice)', 200 === $s && 1 === count( $mails ), (string) $s );
+list( $s, ) = $send( 'a-token', 502 );
+gbcr_check( '  or answers with an error page', 200 === $s && 1 === count( $mails ), (string) $s );
+list( $s, ) = $send( 'a-token', array( 'success' => false, 'error-codes' => array( 'invalid-input-secret' ) ) );
+gbcr_check( '  or says our own secret is wrong (our fault, not the visitor\'s)', 200 === $s && 1 === count( $mails ), (string) $s );
+list( $s, ) = $send( 'a-token', array( 'success' => false, 'error-codes' => array( 'invalid-input-response' ) ) );
+gbcr_check( 'a refused token doesn\'t use up one of the visitor\'s five', 403 === $s && false === get_transient( 'gbcr_rl_' . substr( wp_hash( (string) end( $ips ) ), 0, 24 ) ), (string) $s );
+
+// the real Cloudflare, with its public test secrets (one always fails, one always passes)
+$secret     = '2x0000000000000000000000000000000AA';
+list( $s, ) = $send( 'XXXX.DUMMY.TOKEN.XXXX', null );
+gbcr_check( 'the real Cloudflare, with its always-fail test secret: refused', 403 === $s && array() === $mails, (string) $s );
+$secret     = '1x0000000000000000000000000000000AA';
+list( $s, ) = $send( 'XXXX.DUMMY.TOKEN.XXXX', null );
+gbcr_check( $prod ? '  with its always-pass test secret: still refused here (a test key on a production site)' : '  with its always-pass test secret: sent on this test site', $prod ? 403 === $s : 200 === $s && 1 === count( $mails ), (string) $s );
+$ip_list = array_merge( array( $ip, '203.0.113.251', '203.0.113.252' ), $ips );
+
 // the rate-limit entries of the test's addresses go, and the settings come back
-foreach ( array( $ip, '203.0.113.251', '203.0.113.252' ) as $a ) {
+foreach ( $ip_list as $a ) {
 	delete_transient( 'gbcr_rl_' . substr( wp_hash( $a ), 0, 24 ) );
 }
 $restore();

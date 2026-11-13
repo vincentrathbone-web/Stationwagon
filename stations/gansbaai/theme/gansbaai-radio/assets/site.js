@@ -201,6 +201,34 @@
     $$(".chips button").forEach(function (c) {
       c.addEventListener("click", function () { pick(c.getAttribute("data-topic")); $("#c-message", form).focus(); });
     });
+    /* Cloudflare Turnstile, when the site has it (CFG.turnstile is its site key): the check above the
+       Send button. Its script calls gbcrTurnstileReady once loaded; a token works once, so the check
+       starts again after every answer that isn't a thank-you. */
+    var ts = { el: $("#c-turnstile", form), id: null };
+    var tsRender = function () {
+      if (!ts.el || !CFG.turnstile || !window.turnstile || ts.id !== null) return;
+      ts.id = window.turnstile.render(ts.el, {
+        sitekey: CFG.turnstile, action: "contact", theme: "dark", size: "flexible",
+        "error-callback": function (code) { // handled here, so it isn't thrown into the page; Turnstile tries again by itself
+          var s = $(".status", form);
+          if (s) { s.className = "status bad"; s.textContent = "The spam check couldn't finish (" + code + "). It will try again; if it keeps failing, reload the page or try another browser."; }
+          return true;
+        },
+        callback: function () { var s = $(".status", form); if (s && /spam check/.test(s.textContent)) { s.className = "status"; s.textContent = ""; } }
+      });
+    };
+    var tsReset = function () { if (ts.id !== null && window.turnstile) window.turnstile.reset(ts.id); };
+    var tsToken = function (done) { // waits up to 15 s for the check to finish
+      if (!ts.el || !CFG.turnstile) { done(""); return; }
+      var tries = 0, look = function () {
+        var t = ts.id !== null && window.turnstile ? window.turnstile.getResponse(ts.id) : "";
+        if (t || ++tries > 30) { done(t || null); return; }
+        setTimeout(look, 500);
+      };
+      look();
+    };
+    window.gbcrTurnstileReady = tsRender;
+    tsRender();
     form.addEventListener("input", function (e) { // the red note goes as soon as the field is typed in
       var f = e.target.closest(".field"); if (f && f.classList.contains("bad")) { f.classList.remove("bad"); e.target.setAttribute("aria-invalid", "false"); }
     });
@@ -227,14 +255,19 @@
       if (!CFG.contactUrl) { thanks(true); return; } // the design pages stop here
       var data = {};
       ["website", "name", "phone", "email", "topic", "message"].forEach(function (k) { var el = form.elements[k]; data[k] = el ? el.value : ""; });
+      var fail = function (text) { btn.disabled = false; status.className = "status bad"; status.textContent = text; tsReset(); };
       btn.disabled = true; status.className = "status"; status.textContent = "Sending…";
-      fetch(CFG.contactUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) })
-        .then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
-        .then(function (j) {
-          if (j && j.ok) { thanks(false); return; }
-          btn.disabled = false; status.className = "status bad"; status.textContent = (j && j.error) || "Sorry, we could not send that right now. Please try again later.";
-        })
-        .catch(function () { btn.disabled = false; status.className = "status bad"; status.textContent = "We could not reach the website. Check your connection and try again."; });
+      tsToken(function (token) {
+        if (token === null) { fail("The spam check above the button didn't finish. Please tick it if it asks you to, then press Send again."); return; }
+        if (token) data["cf-turnstile-response"] = token;
+        fetch(CFG.contactUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) })
+          .then(function (r) { return r.json().catch(function () { return { ok: false }; }); })
+          .then(function (j) {
+            if (j && j.ok) { thanks(false); return; }
+            fail((j && j.error) || "Sorry, we could not send that right now. Please try again later.");
+          })
+          .catch(function () { fail("We could not reach the website. Check your connection and try again."); });
+      });
     });
   }
 

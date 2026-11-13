@@ -79,6 +79,9 @@ $gbcr_want   = isset( $_GET['topic'] ) ? sanitize_text_field( wp_unslash( $_GET[
 						<?php endforeach; ?>
 					</select></div>
 					<div class="field"><label for="c-message">Your message</label><textarea id="c-message" name="message" maxlength="4000" required></textarea><p class="err">Please type a message.</p></div>
+					<?php if ( gbcr_turnstile_sitekey() ) : ?>
+						<div class="turnstile" id="c-turnstile"></div>
+					<?php endif; ?>
 					<button class="btn" type="submit"><?php echo gbcr_icon( 'send' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>Send message</button>
 					<p class="status" role="status" aria-live="polite"></p>
 					<p class="fineprint">We use your details only to reply to you. <a href="<?php echo esc_url( gbcr_privacy_url() ); ?>">Privacy policy</a></p>
