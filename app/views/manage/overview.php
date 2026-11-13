@@ -1,5 +1,5 @@
 <?php use function Stationwagon\{h, clock, duration, megabytes}; use Stationwagon\{App, Auth};
-/** @var array $me @var array $station @var array $onAir @var float $now @var ?float $plannedUntil @var int $songs @var int $songsOn @var int $bytes @var int $playlists @var int $blocks @var ?array $block @var int $listening @var int $todayPeak @var array $jobs */
+/** @var array $me @var array $station @var array $onAir @var float $now @var ?float $plannedUntil @var int $songs @var int $songsOn @var int $bytes @var int $playlists @var int $blocks @var ?array $block @var int $listening @var int $todayPeak @var array $jobs @var array $prepWhere @var int $prepPending */
 $tz = $station['timezone'];
 $hour = (int) clock($now, $tz, 'G');
 $hello = $hour < 12 ? 'Good morning' : ($hour < 18 ? 'Good afternoon' : 'Good evening');
@@ -48,6 +48,7 @@ $next = $onAir['next'];
       <li class="<?= $songsOn ? 'ok' : 'warn' ?>"><span class="dot"></span><span class="what"><b>Music library</b><small><?= h(megabytes($bytes)) ?> stored</small></span><span class="found"><?= $songs ?> songs<?= $songsOn < $songs ? ' · ' . $songsOn . ' on' : '' ?></span></li>
       <li class="ok"><span class="dot"></span><span class="what"><b>Playlists and schedule</b><small><?= $blocks ? 'The schedule picks the playlist' : 'No schedule yet: AutoDJ plays the whole library' ?></small></span><span class="found"><?= $playlists ?> / <?= $blocks ?></span></li>
       <li class="<?= $jobs['ok'] ? 'ok' : 'warn' ?>"><span class="dot"></span><span class="what"><b>Background jobs</b><small><?= h($jobs['what']) ?></small></span><span class="found"><?= h($jobs['found']) ?></span></li>
+      <li class="ok" id="prepWhere"><span class="dot"></span><span class="what"><b>Song prep</b><small><?= h($prepWhere['detail']) ?></small></span><span class="found"><?= h($prepWhere['text']) ?><?= $prepPending ? ' · ' . $prepPending . ' being prepared' : '' ?></span></li>
     </ul>
   </section>
 </div>

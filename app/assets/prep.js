@@ -109,5 +109,26 @@
     return { file: blob, prepared: true, info: r.info, sourceSha1 };
   }
 
-  window.SwPrep = { prepare, quality: () => Object.assign({ kbps: KBPS }, QUALITY) };
+  /**
+   * Round 85: a file's own tags and cover, without preparing it (the server does that): an MP3's from its ID3 tag here,
+   * another format's with the station's decoder in the worker. { tags, picture } (empty when there are none).
+   */
+  async function tags(file) {
+    const head = new Uint8Array(await file.slice(0, 65536).arrayBuffer());
+    const kind = window.SwPrepCore.sniff(head, file.name || "");
+    if (kind === "mp3") {
+      try { return window.SwPrepCore.readTags(new Uint8Array(await file.slice(0, 4 * 1024 * 1024).arrayBuffer())) || { tags: {}, picture: null }; } catch (_) { return { tags: {}, picture: null }; }
+    }
+    if (!kind || !window.Worker || file.size > MAX_OTHER) return { tags: {}, picture: null };
+    const buf = await file.arrayBuffer();
+    return new Promise((resolve) => {
+      const w = new Worker(workerUrl);
+      const end = (v) => { w.terminate(); resolve(v); };
+      w.onmessage = (e) => end(e.data && e.data.tagsDone ? { tags: e.data.tags || {}, picture: e.data.picture || null } : { tags: {}, picture: null });
+      w.onerror = (e) => { e.preventDefault(); end({ tags: {}, picture: null }); };
+      w.postMessage({ tagsOnly: true, file: buf }, [buf]);
+    });
+  }
+
+  window.SwPrep = { prepare, tags, quality: () => Object.assign({ kbps: KBPS }, QUALITY) };
 })();

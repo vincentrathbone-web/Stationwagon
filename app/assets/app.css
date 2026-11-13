@@ -508,6 +508,12 @@ input[type=search], .formrow select, .formrow input:not([type=checkbox]), .editr
 .uplist .w::before { content: "⚠ "; }
 .uplist .bar { grid-column: 1 / -1; height: 4px; background: var(--well); border-radius: 2px; overflow: hidden; display: block; }
 .uplist .bar i { display: block; height: 100%; width: 0; background: var(--amber-soft); }
+/* round 85: uploads prepared on the server */
+.prepq { margin: 12px 0 18px; }
+.prepq h3 { margin: 0 0 8px; font-size: 14px; }
+.prepq .who { grid-column: 1; font-size: 12px; }
+.prepq .qb { grid-column: 2; grid-row: 1 / span 3; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.prepq li .s { grid-column: 1; }
 .picklist { display: grid; gap: 4px; max-height: 340px; overflow-y: auto; margin-bottom: 14px; }
 .picklist label { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; background: var(--raised); border-radius: var(--r-field); padding: 8px 12px; font-size: 14px; cursor: pointer; }
 .swrow { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; padding-bottom: 10px; }

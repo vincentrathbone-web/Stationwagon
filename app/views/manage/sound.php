@@ -1,5 +1,6 @@
-<?php use function Stationwagon\h; use Stationwagon\{App, StationSettings};
-/** @var array $values @var array $errors @var int $minLiveTimeout @var float $segment @var int $delay @var string $csrf @var string $presetName */
+<?php use function Stationwagon\h; use Stationwagon\{App, NodeRuntime, StationSettings};
+/** @var array $values @var array $errors @var int $minLiveTimeout @var float $segment @var int $delay @var string $csrf @var string $presetName
+ *  @var array $prepWhere @var bool $isAdmin */
 $groups = [];
 foreach (StationSettings::FIELDS as $key => $f) {
     $groups[$f['group']][$key] = $f;
@@ -83,6 +84,54 @@ $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 
   </div>
   <div class="row-actions"><button class="btn primary" type="submit">Save changes</button></div>
 </form>
+
+<?php /* round 85, v1.13: songs prepared on the server, with Node (src/NodeRuntime.php) */ ?>
+<section class="card set serverprep" id="g-where-songs-are-prepared" data-url="<?= h(App::url('manage/sound')) ?>" data-csrf="<?= h($csrf) ?>">
+  <h2>Where songs are prepared</h2>
+  <div class="setrow">
+    <div>
+      <b id="spWhere"><?= h($prepWhere['text']) ?></b>
+      <p id="spDetail"><?= h($prepWhere['detail']) ?></p>
+      <p class="muted2">On the server, uploads go on when the page is closed or the computer sleeps, and every device sees what is still being prepared. It needs Node (<?= NodeRuntime::MIN_MAJOR ?> or newer): the station uses the server’s own, or with Set up it fetches Node <?= h(NodeRuntime::VERSION) ?> from nodejs.org (about 56 MB; Linux servers) into its own storage, with no special rights, and tests it on a short tone. LAME and the decoder come with Stationwagon. Where the hosting doesn’t allow it, songs are prepared in the browser as before.</p>
+    </div>
+    <div class="ctl spbtns">
+      <?php if ($isAdmin): ?>
+        <button class="btn primary" type="button" id="spSetup"<?= $prepWhere['busy'] !== null ? ' disabled' : '' ?>><?= $prepWhere['server'] ? 'Test again' : 'Set up' ?></button>
+        <button class="btn" type="button" id="spRemove"<?= $prepWhere['server'] ? '' : ' hidden' ?>>Prepare in the browser</button>
+      <?php else: ?>
+        <span class="muted2">An admin can change this.</span>
+      <?php endif ?>
+    </div>
+  </div>
+</section>
+<script>
+(() => {
+  const box = document.querySelector('.serverprep'), go = document.getElementById('spSetup'), off = document.getElementById('spRemove');
+  if (!box || !go) return;
+  const post = (action) => {
+    const d = new FormData();
+    d.append('csrf', box.dataset.csrf); d.append('action', action);
+    return fetch(box.dataset.url, { method: 'POST', body: d, headers: { Accept: 'application/json' }, credentials: 'same-origin' }).then((r) => r.json());
+  };
+  const show = (j) => {
+    if (!j || !j.where) return;
+    document.getElementById('spWhere').textContent = j.where.text;
+    document.getElementById('spDetail').textContent = j.error && !j.where.busy && !j.where.server ? j.where.detail : j.where.detail + (j.where.server && j.test_s ? ' The test took ' + j.test_s + ' s.' : '');
+    go.disabled = !!j.where.busy;
+    go.textContent = j.where.server ? 'Test again' : 'Set up';
+    off.hidden = !j.where.server;
+    if (j.where.busy) setTimeout(() => post('node_status').then(show).catch(() => setTimeout(() => post('node_status').then(show), 3000)), 1500);
+  };
+  go.addEventListener('click', () => {
+    go.disabled = true;
+    document.getElementById('spWhere').textContent = 'Setting up';
+    document.getElementById('spDetail').textContent = 'Looking for Node on this server…';
+    post('node_setup').then(show).catch(() => post('node_status').then(show));
+  });
+  off.addEventListener('click', () => post('node_remove').then(show));
+  <?php if ($prepWhere['busy'] !== null): ?>post('node_status').then(show);<?php endif ?>
+})();
+</script>
 
 <script src="<?= h(App::asset('assets/fades.js')) ?>"></script>
 <script src="<?= h(App::asset('assets/loudness.js')) ?>"></script>

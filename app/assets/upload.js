@@ -19,6 +19,9 @@
 // before leaving, a line says how many are done and to keep the page open, and the names not finished yet are kept in
 // this browser; after a refresh the page lists them so they can be picked again. On the Music library each song's
 // file is first checked against the library (by its hash), so songs already added are skipped at once.
+// Round 85 (v1.13): where the station's Node is set up (Sound & safety), files go up as they are, in pieces that resume,
+// and the server prepares them (PrepQueue, cli/prep.php): only sending needs the page. "Being prepared" lists them on
+// every device. Elsewhere (no Node, or a page that can't fingerprint files) songs are prepared here as before.
 (() => {
   const form = document.getElementById("drop");
   if (!form || !window.FormData || !window.XMLHttpRequest) return;
@@ -110,6 +113,192 @@
       (p.info.quality ? ", " + p.info.quality.kbps + " kbps at " + khz(p.info.quality.rate) : "")
     : "as it is: " + p.note);
 
+  // ---- Round 85 (v1.13): prepared on the server ----
+  // When the station's Node is set up (Sound & safety), each file goes up as it is, in pieces that can resume, and the
+  // server prepares it (cli/prep.php): the page may then be closed. Only the transfer needs the page. The list below the
+  // drop box ("Being prepared") shows every upload not added yet, from any device, and refreshes while one is going.
+  let server = form.dataset.server === "1";
+  const qPanel = document.getElementById("prepQueue");
+  const mine = new Set(); // this page's uploads, by job id
+  const ask1 = (fields, files) => {
+    const d = new FormData();
+    d.append("csrf", csrf);
+    Object.keys(fields).forEach((k) => d.append(k, fields[k]));
+    Object.keys(files || {}).forEach((k) => d.append(k, files[k][0], files[k][1]));
+    return fetch(form.getAttribute("action"), { method: "POST", body: d, headers: { Accept: "application/json" }, credentials: "same-origin" }).then((x) => x.json());
+  };
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  const b64 = async (blob) => {
+    const b = new Uint8Array(await blob.arrayBuffer());
+    let s = "";
+    for (let i = 0; i < b.length; i += 8192) s += String.fromCharCode.apply(null, b.subarray(i, i + 8192));
+    return btoa(s);
+  };
+  // one piece, with progress; null when the connection failed
+  const piece = (id, offset, blob, onProgress) => new Promise(async (done) => {
+    const d = new FormData();
+    d.append("csrf", csrf); d.append("action", "q_chunk"); d.append("id", String(id)); d.append("offset", String(offset));
+    // a piece under 16 KB goes as text: some hosts' firewalls refuse a small binary upload (as the studio's last piece)
+    if (blob.size < 16384) d.append("b64", await b64(blob)); else d.append("data", blob, "piece");
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", form.getAttribute("action"));
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total * blob.size); };
+    xhr.onload = () => { try { done(JSON.parse(xhr.responseText)); } catch (_) { done({ ok: false, received: -1, error: "The server answered " + xhr.status + "." }); } };
+    xhr.onerror = () => done(null);
+    xhr.send(d);
+  });
+  /** Send a file from where the server has it to its end, then say it's whole. { ok } or { ok: false, error }. */
+  async function transfer(job, file, onBar, stop) {
+    let offset = job.received || 0, tries = 0, finishedAt = -1;
+    const size = Math.max(65536, Math.min(job.chunk || 8388608, maxBytes ? maxBytes - 65536 : Infinity));
+    while (!stop.now) {
+      if (offset >= file.size) {
+        const f = await ask1({ action: "q_finish", id: job.id }).catch(() => null);
+        if (f && f.ok) return { ok: true };
+        if (f && typeof f.received === "number" && f.received !== finishedAt) { finishedAt = offset = f.received; continue; }
+        if (!f && tries++ < 5) { await pause(2000 * tries); continue; }
+        return { ok: false, error: (f && f.error) || "Connection lost" };
+      }
+      const at = offset;
+      const r = await piece(job.id, at, file.slice(at, at + size), (n) => onBar((at + n) / file.size));
+      if (r && r.ok) { offset = r.received; tries = 0; onBar(offset / file.size); continue; }
+      if (r && r.error === "out of step" && r.received >= 0) { offset = r.received; continue; }
+      if (r && r.error) return { ok: false, error: r.error };
+      if (tries++ < 5) { await pause(2000 * tries); continue; } // the connection dropped: try again a few times
+      return { ok: false, error: "Connection lost" };
+    }
+    return { ok: false, error: "stopped" };
+  }
+  // a non-MP3's tags in the shape the details window takes (an MP3's come from its ID3 tag as they are)
+  const windowTags = (t) => ({ title: t.title, artist: t.artist, album: t.album, year: t.date, track: t.track, writers: t.composer, lyricists: t.lyricist,
+    publisher: t.publisher, copyright: t.copyright, isrc: t.isrc || t.ISRC, label: t.label, iswc: t.iswc });
+
+  /**
+   * One picked file through the server. "browser" when it must be prepared here instead (the server can't, or this page
+   * can't fingerprint files), "stop" when the window's Cancel all was chosen, else "done".
+   */
+  async function viaServer(f, li, n, total, ask) {
+    const status = li.querySelector(".s"), bar = li.querySelector(".bar i");
+    status.textContent = "Checking";
+    const sum = await hashOf(f);
+    if (!sum) return "browser";
+    const b = await ask1({ action: "q_begin", name: f.name, bytes: String(f.size), sha1: sum, hold: ask ? "1" : "0" }).catch(() => null);
+    if (b && b.browser) { server = false; return "browser"; }
+    if (!b || !b.ok) { li.className = "bad"; status.textContent = b ? "Not added: " + b.error : "Connection lost"; return "done"; }
+    if (b.state === "have") { li.className = "ok"; status.textContent = "Already there"; bar.style.width = "100%"; return "done"; }
+    if (b.state !== "uploading") { li.className = "ok"; status.textContent = "Already being prepared on the server (see the list below)"; bar.style.width = "100%"; mine.add(b.id); return "done"; }
+    mine.add(b.id);
+    poll();
+    let win = null;
+    const stop = { now: false };
+    if (ask) {
+      const kind = window.SwPrepCore ? window.SwPrepCore.sniff(new Uint8Array(await f.slice(0, 65536).arrayBuffer()), f.name) : "mp3";
+      let first = null;
+      if (kind === "mp3") { try { first = window.SwPrepCore.readTags(new Uint8Array(await f.slice(0, 4 * 1024 * 1024).arrayBuffer())); } catch (_) { /* no tag */ } }
+      const pic = first && first.picture ? new Blob([first.picture.data], { type: first.picture.mime }) : null;
+      win = ask(f.name, n, total, first && first.tags, pic);
+      if (kind !== "mp3" && window.SwPrep && window.SwPrep.tags) {
+        window.SwPrep.tags(f).then((t) => { if (!stop.now) win.tags(windowTags(t.tags || {}), t.picture ? new Blob([t.picture.data], { type: t.picture.mime }) : null); });
+      }
+      status.textContent = "Waiting for its details";
+      win.status("Uploading (prepared on the server afterwards)");
+    }
+    const say = (text) => { if (!stop.now) { status.textContent = text; if (win) win.status(text + " (prepared on the server afterwards)"); } };
+    const going = transfer(b, f, (p) => { bar.style.width = (p * 100).toFixed(1) + "%"; say("Uploading " + Math.floor(p * 100) + " %"); }, stop);
+    if (win) {
+      const choice = await win.done;
+      if (choice.action !== "add") {
+        stop.now = true;
+        await ask1({ action: "q_cancel", id: b.id }).catch(() => null);
+        li.className = "bad"; status.textContent = "Not added: skipped";
+        return choice.action === "stop" ? "stop" : "done";
+      }
+      li.querySelector(".n").textContent = choice.title + (choice.artist ? " · " + choice.artist : "");
+      const d = await ask1({ action: "q_details", id: b.id, details: JSON.stringify({ title: choice.title, artist: choice.artist, album: choice.album, rights: choice.rights, art: choice.art === "new" ? "keep" : choice.art }) },
+        choice.art === "new" && choice.artFile ? { art: [choice.artFile, choice.artFile.name] } : null).catch(() => null);
+      if (!d || !d.ok) { stop.now = true; await ask1({ action: "q_cancel", id: b.id }).catch(() => null); li.className = "bad"; status.textContent = "Not added: " + ((d && d.error) || "connection lost"); return "done"; }
+    }
+    const t = await going;
+    if (!t.ok) { li.className = "bad"; status.textContent = "Not sent: " + t.error + ". Pick it again to carry on where it stopped."; return "done"; }
+    li.className = "ok"; bar.style.width = "100%";
+    status.textContent = "Uploaded: being prepared on the server (see the list below)";
+    poll();
+    return "done";
+  }
+
+  // ---- The list of uploads being prepared (any device) ----
+  const STATES = { uploading: "Uploading", queued: "Waiting to be prepared", working: "Preparing", prepared: "Prepared", done: "Added", failed: "Not added", cancelled: "Cancelled" };
+  let pollTimer = null, reloadWhenDone = false;
+  const jobLine = (j) => {
+    const pct = j.progress !== null && j.progress !== undefined ? " " + Math.floor(j.progress * 100) + " %" : "";
+    if (j.state === "uploading") return j.stale ? "Upload stopped at" + pct + ": pick the file again (on the device it came from) to finish it" : "Uploading" + pct;
+    if (j.state === "queued") return j.waiting_for_node ? "Waiting: song prep on the server isn’t set up (Sound & safety)" : "Waiting to be prepared";
+    if (j.state === "working") return (j.stage || "Preparing") + pct;
+    if (j.state === "prepared") return j.hold ? "Prepared: waiting for its details (the details window was closed)" : "Prepared: being added";
+    if (j.state === "done") return (j.result && j.result.duplicate ? "Already there" : "Added, " + describe(j.result || { prepared: false, note: "" })) + (j.result && j.result.added_note ? " · " + j.result.added_note : "");
+    if (j.state === "failed") return j.error || "Not added";
+    return STATES[j.state] || j.state;
+  };
+  const jobButtons = (j) => {
+    const b = [];
+    if (["uploading", "queued", "working", "prepared"].includes(j.state)) b.push(["q_cancel", "Cancel"]);
+    if (j.state === "prepared" && j.hold) b.unshift(["q_release", "Add with the file’s details"]);
+    if (j.state === "failed") b.push(["q_retry", "Try again"]);
+    if (["failed", "cancelled", "done"].includes(j.state)) b.push(["q_remove", j.state === "done" ? "Hide" : "Remove"]);
+    return b;
+  };
+  function render(jobs) {
+    if (!qPanel) return;
+    const recent = Date.now() - 15 * 60 * 1000;
+    const shown = jobs.filter((j) => j.state !== "done" || mine.has(j.id) || Date.parse(j.updated.replace(" ", "T") + "Z") > recent);
+    qPanel.hidden = !shown.length;
+    const ol = qPanel.querySelector("ol");
+    ol.innerHTML = "";
+    shown.forEach((j) => {
+      const li = document.createElement("li");
+      li.className = j.state === "done" ? "ok" : j.state === "failed" || j.state === "cancelled" ? "bad" : "";
+      li.dataset.job = String(j.id); li.dataset.state = j.state;
+      li.innerHTML = '<span class="n"></span><span class="s"></span><span class="who muted2"></span><span class="qb"></span><i class="bar"><i></i></i>';
+      li.querySelector(".n").textContent = (j.result && j.result.title) || j.name;
+      li.querySelector(".s").textContent = jobLine(j);
+      li.querySelector(".who").textContent = (j.who ? "From " + j.who : "") + (j.result && j.result.notice ? (j.who ? " · " : "") + j.result.notice : "");
+      const p = j.state === "done" ? 1 : j.progress !== null && j.progress !== undefined ? j.progress : 0;
+      li.querySelector(".bar i").style.width = (p * 100).toFixed(1) + "%";
+      jobButtons(j).forEach(([action, label]) => {
+        const btn = document.createElement("button");
+        btn.type = "button"; btn.className = "btn sm"; btn.textContent = label; btn.dataset.action = action;
+        btn.addEventListener("click", async () => {
+          btn.disabled = true;
+          const r = await ask1({ action, id: j.id }).catch(() => null);
+          if (r && !r.ok && r.error) alert(r.error);
+          poll();
+        });
+        li.querySelector(".qb").appendChild(btn);
+      });
+      ol.appendChild(li);
+    });
+    const going = jobs.filter((j) => ["uploading", "queued", "working", "prepared"].includes(j.state) && !(j.state === "uploading" && j.stale));
+    const h = qPanel.querySelector("h3");
+    h.textContent = going.length ? "Being prepared on the server: " + going.length + (going.length === 1 ? " upload" : " uploads") : "Uploads prepared on the server";
+    // this page's own uploads all finished: show the new songs (as after an upload in the browser)
+    const myJobs = jobs.filter((j) => mine.has(j.id));
+    if (reloadWhenDone && !busy && myJobs.length && myJobs.every((j) => ["done", "failed", "cancelled"].includes(j.state) || (j.state === "prepared" && j.hold))
+        && myJobs.some((j) => j.state === "done")) {
+      reloadWhenDone = false;
+      setTimeout(() => location.reload(), 1200);
+    }
+    return going.length > 0;
+  }
+  async function poll() {
+    if (!qPanel) return;
+    clearTimeout(pollTimer);
+    const j = await ask1({ action: "q_list" }).catch(() => null);
+    const active = j && j.ok ? render(j.jobs) : true;
+    pollTimer = setTimeout(poll, active || busy ? 2500 : 30000);
+  }
+  if (qPanel) poll();
+
   const send = (p, name, li, choice) => new Promise((done) => {
     const data = new FormData();
     data.append("csrf", csrf);
@@ -167,12 +356,15 @@
     const old = document.getElementById("upLeft");
     if (old) old.remove();
     busy = true;
+    let sent = 0; // round 85: how many went to the server to be prepared there
     const tell = () => {
       progress.hidden = false;
       progress.className = "upprogress" + (done < files.length ? "" : " done");
       progress.textContent = done < files.length
-        ? done + " of " + files.length + " done. Keep this page open until all are finished: closing or refreshing it stops the rest."
-        : "All " + files.length + " done.";
+        ? done + " of " + files.length + (server
+          ? " sent. Keep this page open until all are sent: the server prepares them, so after that you can close it."
+          : " done. Keep this page open until all are finished: closing or refreshing it stops the rest.")
+        : sent ? "All " + files.length + " sent. They’re being prepared on the server: you can close this page." : "All " + files.length + " done.";
     };
     tell();
     const next = (i) => { finished(files[i]); done++; tell(); };
@@ -181,6 +373,17 @@
     const ask = window.SwSongDetails && !window.swUploadNoWindow && !later ? window.SwSongDetails.ask : null;
     for (let i = 0; i < files.length; i++) {
       const li = rows[i], status = li.querySelector(".s");
+      // round 85: sent to the server to be prepared there, when the station's Node is set up
+      if (server) {
+        const how = await viaServer(files[i], li, i + 1, files.length, ask);
+        if (how === "stop") {
+          next(i);
+          for (let k = i + 1; k < files.length; k++) { rows[k].className = "bad"; rows[k].querySelector(".s").textContent = "Not added: cancelled"; next(k); }
+          break;
+        }
+        if (how === "done") { sent++; next(i); continue; }
+        status.textContent = "Waiting"; // "browser": prepared in this page after all
+      }
       // already in the library (picked again after the page was closed): skipped at once
       if (bulk) {
         status.textContent = "Checking";
@@ -272,7 +475,9 @@
       next(i);
     }
     busy = false;
-    if (ok) setTimeout(() => location.reload(), 900);
+    tell();
+    if (sent) { reloadWhenDone = true; poll(); } // the songs prepared on the server show when they're added
+    else if (ok) setTimeout(() => location.reload(), 900);
   };
 
   form.addEventListener("submit", (e) => { e.preventDefault(); upload(input.files); });

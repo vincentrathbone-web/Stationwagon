@@ -65,6 +65,8 @@ final class ManagePage
             'listening' => ($listeners = new Listeners($this->db, $this->stream))->now($now),
             'todayPeak' => $listeners->daily($now, 1)[0]['peak'],
             'jobs' => Jobs::health($now),
+            'prepWhere' => NodeRuntime::summary(),
+            'prepPending' => (new PrepQueue($this->db, $this->station, SW_ROOT))->pending(),
         ]);
     }
 
@@ -98,6 +100,9 @@ final class ManagePage
             }
             $me = $this->postAs('library', 'manage/library', $wantsJson);
             $action = (string) ($_POST['action'] ?? '');
+            if (str_starts_with($action, 'q_')) {
+                $this->queueAction($action, 'song', $me); // round 85: song prep on the server
+            }
             if ($action === 'upload') {
                 $results = $this->upload($library);
                 if ($wantsJson) {
@@ -373,6 +378,72 @@ final class ManagePage
         exit;
     }
 
+    /**
+     * Song prep on the server (round 85, v1.13; src/PrepQueue.php): upload.js's queue actions on the Music library, Ads
+     * and Jingles screens. Always answers JSON.
+     *   q_begin (name, bytes, sha1, hold) · q_chunk (id, offset, data as a file, or b64 for a piece under 16 KB) · q_finish (id)
+     *   q_details (id, details JSON, art file) · q_list · q_cancel / q_retry / q_remove / q_release (id)
+     */
+    private function queueAction(string $action, string $kind, array $me): never
+    {
+        $q = new PrepQueue($this->db, $this->station, SW_ROOT);
+        $id = (int) ($_POST['id'] ?? 0);
+        if ($action === 'q_list') {
+            $this->json(['ok' => true, 'jobs' => $q->list($kind), 'server' => NodeRuntime::summary()]);
+        }
+        if ($action === 'q_begin') {
+            if (NodeRuntime::ready() === null) {
+                $this->json(['ok' => false, 'browser' => true, 'error' => 'This station prepares songs in the browser.']);
+            }
+            $r = $q->begin((int) $me['id'], $kind, (string) ($_POST['name'] ?? ''), (int) ($_POST['bytes'] ?? 0), (string) ($_POST['sha1'] ?? ''),
+                ($_POST['hold'] ?? '') === '1');
+            $this->json(['ok' => $r['state'] !== 'refused'] + $r);
+        }
+        if ($action === 'q_chunk') {
+            $file = $_FILES['data'] ?? null;
+            if (isset($_POST['b64']) && is_string($_POST['b64'])) {
+                $data = base64_decode($_POST['b64'], true);
+            } elseif (is_array($file) && (int) $file['error'] === UPLOAD_ERR_OK && (is_uploaded_file((string) $file['tmp_name']) || PHP_SAPI === 'cli')) {
+                $data = file_get_contents((string) $file['tmp_name']);
+            } else {
+                $data = false;
+            }
+            $this->json(is_string($data) ? $q->chunk($id, (int) ($_POST['offset'] ?? -1), $data)
+                : ['ok' => false, 'received' => -1, 'error' => 'That piece didn’t arrive.']);
+        }
+        if ($action === 'q_finish') {
+            $r = $q->finish($id);
+            if ($r['ok']) {
+                $r['started'] = PrepQueue::kick($this->db, SW_ROOT);
+            }
+            $this->json($r);
+        }
+        if ($action === 'q_details') {
+            $d = json_decode((string) ($_POST['details'] ?? ''), true);
+            if (!is_array($d) || ($problem = PrepQueue::checkDetails($d)) !== null) {
+                $this->json(['ok' => false, 'error' => is_array($d) ? $problem : 'The song’s details didn’t arrive whole. Try again.']);
+            }
+            $d = ['title' => trim((string) $d['title']), 'artist' => (string) ($d['artist'] ?? ''), 'album' => (string) ($d['album'] ?? ''),
+                'rights' => is_array($d['rights'] ?? null) ? $d['rights'] : [],
+                'art' => in_array($d['art'] ?? 'keep', ['keep', 'remove'], true) ? (string) ($d['art'] ?? 'keep') : 'keep'];
+            $art = $_FILES['art'] ?? null;
+            $bytes = is_array($art) && (int) $art['error'] === UPLOAD_ERR_OK && (is_uploaded_file((string) $art['tmp_name']) || PHP_SAPI === 'cli')
+                ? (string) file_get_contents((string) $art['tmp_name']) : null;
+            $this->json($q->details($id, $d, $bytes, $this->planner));
+        }
+        $ok = match ($action) {
+            'q_cancel' => $q->cancel($id),
+            'q_retry' => $q->retry($id),
+            'q_remove' => $q->remove($id),
+            'q_release' => $q->release($id, $this->planner)['ok'],
+            default => null,
+        };
+        if ($ok && $action === 'q_retry') {
+            PrepQueue::kick($this->db, SW_ROOT);
+        }
+        $this->json($ok === null ? ['ok' => false, 'error' => 'Unknown action.'] : ['ok' => $ok] + ($ok ? [] : ['error' => 'That upload can’t be changed that way now.']));
+    }
+
     /** @return list<array{name:string,ok:bool,duplicate?:bool,title?:string,error?:string}> */
     private function upload(Library $library, string $kind = 'song'): array
     {
@@ -533,8 +604,11 @@ final class ManagePage
             if (empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
                 $this->uploadTooBig($wantsJson, 'manage/ads');
             }
-            $this->postAs('library', 'manage/ads', $wantsJson);
+            $me = $this->postAs('library', 'manage/ads', $wantsJson);
             $action = (string) ($_POST['action'] ?? '');
+            if (str_starts_with($action, 'q_')) {
+                $this->queueAction($action, 'ad', $me); // round 85: prepared on the server
+            }
             $id = (int) ($_POST['id'] ?? 0);
             $edit = 0;
             if ($action === 'upload') {
@@ -624,8 +698,11 @@ final class ManagePage
             if (empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
                 $this->uploadTooBig($wantsJson, 'manage/jingles');
             }
-            $this->postAs('library', 'manage/jingles', $wantsJson);
+            $me = $this->postAs('library', 'manage/jingles', $wantsJson);
             $action = (string) ($_POST['action'] ?? '');
+            if (str_starts_with($action, 'q_')) {
+                $this->queueAction($action, 'jingle', $me); // round 85: prepared on the server
+            }
             $id = (int) ($_POST['id'] ?? 0);
             $edit = 0;
             if ($action === 'upload') {
@@ -1019,6 +1096,10 @@ final class ManagePage
     public function sound(): void
     {
         $settings = new StationSettings($this->db, $this->station);
+        $action = (string) ($_POST['action'] ?? '');
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && in_array($action, ['node_setup', 'node_remove', 'node_status'], true)) {
+            $this->serverPrepAction($action);
+        }
         if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $this->postAs('sound', 'manage/sound');
             [$station, $errors] = $settings->save($_POST);
@@ -1049,7 +1130,49 @@ final class ManagePage
             'segment' => (float) $this->planner->setting('segment_seconds'),
             'delay' => (int) $this->planner->setting('listener_delay_seconds'),
             'presetName' => (new PrepPresets($this->db, $this->station))->forImport()[0],
+            'prepWhere' => NodeRuntime::summary(),
+            'isAdmin' => ($me['role'] ?? '') === 'admin',
         ]);
+    }
+
+    /**
+     * Sound & safety's "Where songs are prepared" (round 85): Set up (find or fetch Node, then test it), Prepare in the
+     * browser (undo), and its status while Set up works. Only an admin may change it; JSON answers.
+     */
+    private function serverPrepAction(string $action): never
+    {
+        $me = $this->postAs('sound', 'manage/sound', true);
+        $status = fn() => ['ok' => true, 'where' => NodeRuntime::summary()] + array_intersect_key(NodeRuntime::state(), ['version' => 1, 'source' => 1, 'test_s' => 1, 'error' => 1]);
+        if ($action === 'node_status') {
+            $this->json($status());
+        }
+        if (($me['role'] ?? '') !== 'admin') {
+            $this->json(['ok' => false, 'error' => 'Only an admin can change where songs are prepared.']);
+        }
+        if ($action === 'node_remove') {
+            NodeRuntime::remove();
+            $this->json($status());
+        }
+        if (NodeRuntime::busy() !== null) {
+            $this->json($status());
+        }
+        // the answer goes out first: fetching and testing Node can take a minute; the page asks node_status meanwhile
+        NodeRuntime::save(['busy' => 'Starting']);
+        session_write_close();
+        ignore_user_abort(true);
+        @set_time_limit(600);
+        $body = (string) json_encode(['ok' => true, 'started' => true, 'where' => NodeRuntime::summary()], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (Jobs::canFinishEarly()) {
+            header('Content-Type: application/json');
+            header('Cache-Control: no-store');
+            header('Content-Length: ' . strlen($body));
+            echo $body;
+            function_exists('fastcgi_finish_request') ? fastcgi_finish_request() : litespeed_finish_request();
+            NodeRuntime::setUp();
+            exit;
+        }
+        NodeRuntime::setUp(); // a server that can't answer first: the answer waits for it
+        $this->json($status());
     }
 
     // ---- Shared --------------------------------------------------------------------------

@@ -1,11 +1,11 @@
 <?php
 // Command-line test of the station manager's rules: library edit/search/delete, song prep's
-// presets, kept originals and Apply (round 40), playlists, the weekly schedule, Sound & safety settings and who may do what to whom (Staff). Throwaway
+// presets, kept originals and Apply (round 40), song prep on the server (round 85: the queue, the worker with Node, Set up), playlists, the weekly schedule, Sound & safety settings and who may do what to whom (Staff). Throwaway
 // database and install.
 //   php app/tests/manage_test.php      (same SW_TEST_DB_* settings as install_test.php)
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
-use Stationwagon\{Auth, Db, DiagReports, Library, Permissions, Planner, Playlists, PrepPresets, Roles, Schedule, Schema, Staff, StationSettings, Studio};
+use Stationwagon\{Auth, Db, DiagReports, Library, NodeRuntime, Permissions, Planner, Playlists, PrepPresets, PrepQueue, Roles, Schedule, Schema, Staff, StationSettings, Studio};
 
 $t = test_database('manage');
 $root = temp_root('manage');
@@ -633,8 +633,199 @@ try {
     $lib->setActive([$rest[0]], false, $p, $t3);
     $db->pdo->exec("ALTER TABLE $tt DROP COLUMN active");
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '20' WHERE name = 'schema_version'");
-    check('the upgrade to 21 adds the on/off column, with every song on', Schema::upgrade($db, $root) === [21] && $lib->onCount() === count($rest));
+    check('the upgrade to 21 adds the on/off column, with every song on', Schema::upgrade($db, $root) === range(21, Schema::VERSION) && $lib->onCount() === count($rest));
     check('  and a second upgrade has nothing to do', Schema::upgrade($db, $root) === []);
+
+    echo "Song prep on the server (round 85)\n";
+    NodeRuntime::$root = $root;
+    $node = NodeRuntime::find();
+    check('this computer has a Node to test with (version ' . NodeRuntime::MIN_MAJOR . ' or newer)', $node !== null, $node ? $node[0] . ' ' . $node[1] : 'none found');
+    $node = $node[0] ?? 'node';
+    $pq = new PrepQueue($db, $station, $root);
+    [$uid, $uname] = array_values($db->run('SELECT id, name FROM ' . $db->table('users') . " WHERE role = 'admin' ORDER BY id LIMIT 1")->fetch());
+    $uid = (int) $uid;
+    $jt = $db->table('prep_jobs');
+    check('the upgrade to 22 makes the queue', (function () use ($db, $jt) {
+        $db->pdo->exec("DROP TABLE $jt");
+        $db->run('UPDATE ' . $db->table('settings') . " SET value = '21' WHERE name = 'schema_version'");
+        return Schema::upgrade($db) === [22] && $db->run("SHOW TABLES LIKE 'sw\\_prep\\_jobs'")->fetch() !== false && Schema::upgrade($db) === [];
+    })());
+    $set = $pq->settingsNow();
+    [$m0, $l0, $tgt] = StationSettings::prep($station);
+    check('a job keeps the station’s prep settings as they are now', $set['level'] === $l0 && $set['target'] === $tgt && ($set['master'] !== false) === $m0
+        && $set['kbps'] === StationSettings::prepQuality($station)['kbps'] && $set['preset'] === (new PrepPresets($db, $station))->forImport()[0], json_encode($set));
+    $wav = NodeRuntime::toneWav(6.0, 330);
+    file_put_contents("$root/in/tone.wav", $wav);
+    $sum = sha1($wav);
+    check('refused: not audio by its name, empty, too big, no fingerprint',
+        $pq->begin($uid, 'song', 'notes.txt', 10, $sum)['state'] === 'refused' && $pq->begin($uid, 'song', 'a.wav', 0, $sum)['state'] === 'refused'
+        && $pq->begin($uid, 'song', 'a.wav', PrepQueue::MAX_BYTES + 1, $sum)['state'] === 'refused' && $pq->begin($uid, 'song', 'a.wav', 10, 'abc')['state'] === 'refused');
+    $b = $pq->begin($uid, 'song', 'Tone 330.wav', strlen($wav), strtoupper($sum));
+    $jid = $b['id'] ?? 0;
+    check('a new upload starts at byte 0, in 8 MB pieces', $b['state'] === 'uploading' && $b['received'] === 0 && $b['chunk'] === PrepQueue::CHUNK && is_file("$root/storage/incoming/$jid.part"));
+    check('  storage/incoming is never served', str_contains((string) @file_get_contents("$root/storage/incoming/.htaccess"), 'Require all denied'));
+    $third = intdiv(strlen($wav), 3);
+    $c = $pq->chunk($jid, 5, substr($wav, 5, 100));
+    check('a piece at the wrong place isn’t kept; the answer says where to go on', !$c['ok'] && $c['received'] === 0 && $c['error'] === 'out of step');
+    $c = $pq->chunk($jid, 0, substr($wav, 0, $third));
+    check('a piece at the right place is kept', $c['ok'] && $c['received'] === $third);
+    check('  one that would run past the end is refused', !$pq->chunk($jid, $third, str_repeat('x', strlen($wav)))['ok']);
+    $again = $pq->begin($uid, 'song', 'Tone 330.wav', strlen($wav), $sum);
+    check('picking the same file again carries on where it stopped', $again['state'] === 'uploading' && $again['id'] === $jid && $again['received'] === $third);
+    check('  finishing early says so', !$pq->finish($jid)['ok'] && $pq->finish($jid)['received'] === $third);
+    $pq->chunk($jid, $third, substr($wav, $third, $third));
+    $pq->chunk($jid, 2 * $third, str_repeat("\0", strlen($wav) - 2 * $third)); // the wrong bytes at the end
+    $f = $pq->finish($jid);
+    check('a file that didn’t arrive whole (its fingerprint differs) is sent again from the start', !$f['ok'] && $f['received'] === 0 && filesize("$root/storage/incoming/$jid.part") === 0);
+    for ($at = 0; $at < strlen($wav); $at += 100000) {
+        $pq->chunk($jid, $at, substr($wav, $at, 100000));
+    }
+    check('whole: it waits in the queue', $pq->finish($jid)['ok'] && $pq->get($jid)['state'] === 'queued' && is_file("$root/storage/incoming/$jid.src") && !is_file("$root/storage/incoming/$jid.part"));
+    check('  the same file again: already being prepared', $pq->begin($uid, 'song', 'copy.wav', strlen($wav), $sum)['state'] === 'queued');
+    $listed = $pq->list('song');
+    check('the list shows it with who sent it', count($listed) === 1 && $listed[0]['state'] === 'queued' && $listed[0]['who'] === $uname && $listed[0]['name'] === 'Tone 330.wav', json_encode($listed));
+    check('  and says it waits for Node while the station has none set up', $listed[0]['waiting_for_node'] === true);
+
+    // a real MP3 (with sound) for the details window's path: the tone as LAME makes it
+    @mkdir("$root/in/mp3");
+    file_put_contents("$root/in/t2.wav", NodeRuntime::toneWav(5.0, 550));
+    file_put_contents("$root/in/mp3/job.json", json_encode(['in' => "$root/in/t2.wav", 'name' => 't2.wav', 'out' => "$root/in/mp3",
+        'opts' => ['kbps' => 128, 'master' => false, 'level' => false, 'quality' => ['rate' => 44100, 'precision' => 32, 'dither' => true, 'q' => 5]]]));
+    NodeRuntime::run([$node, SW_ROOT . '/cli/prep-node.mjs', "$root/in/mp3/job.json"], 120);
+    $mp3 = (string) @file_get_contents("$root/in/mp3/original.out");
+    check('(a test MP3 made with Node)', strlen($mp3) > 10000);
+    $b2 = $pq->begin($uid, 'song', 'Tone 550.mp3', strlen($mp3), sha1($mp3), true);
+    $pq->chunk($b2['id'], 0, $mp3);
+    $pq->finish($b2['id']);
+    $bad = "This is a text file, not music.\n" . str_repeat('x', 5000);
+    $b3 = $pq->begin($uid, 'song', 'not music.mp3', strlen($bad), sha1($bad));
+    $pq->chunk($b3['id'], 0, $bad);
+    $pq->finish($b3['id']);
+    $ad = NodeRuntime::toneWav(4.0, 660);
+    $b4 = $pq->begin($uid, 'ad', 'Advert.wav', strlen($ad), sha1($ad));
+    $pq->chunk($b4['id'], 0, $ad);
+    $pq->finish($b4['id']);
+    $b5 = $pq->begin($uid, 'song', 'Cancel me.wav', strlen($ad) + 1, sha1($ad . 'x'));
+    $pq->chunk($b5['id'], 0, $ad . 'x');
+    $pq->finish($b5['id']);
+    check('Cancel takes a waiting upload out, files and all', $pq->cancel($b5['id']) && $pq->get($b5['id'])['state'] === 'cancelled' && !is_file("$root/storage/incoming/{$b5['id']}.src"));
+
+    echo "  the worker\n";
+    $lock = fopen(PrepQueue::lockPath($root), 'c');
+    flock($lock, LOCK_EX);
+    check('one worker at a time: a second does nothing', PrepQueue::working($root) && PrepQueue::work($db, $root, $node) === []);
+    flock($lock, LOCK_UN);
+    fclose($lock);
+    $tw = microtime(true);
+    $lines = PrepQueue::work($db, $root, $node);
+    printf("  (%d uploads in %.1f s)\n", count($lines), microtime(true) - $tw);
+    $j1 = $pq->get($jid);
+    $r1 = json_decode((string) $j1['result'], true);
+    $tr = $j1['track_id'] ? $lib->get((int) $j1['track_id']) : null;
+    check('the WAV is prepared and added', $j1['state'] === 'done' && $tr !== null && $tr['kind'] === 'song' && $tr['title'] === 'Tone 330', implode(' | ', $lines));
+    check('  converted to MP3, levelled to the station’s target, with the details the list shows', ($r1['info']['converted']['kind'] ?? '') === 'WAV'
+        && abs((float) $tr['loudness_lufs'] - $tgt) < 0.6 && isset($r1['title'], $r1['info']['quality']['encoder']), json_encode([$tr['loudness_lufs'] ?? null, $r1['info']['converted'] ?? null]));
+    check('  mastered as the station says, the preset named', (int) $tr['mastered'] === ($m0 ? 1 : 0) && (!$m0 || $tr['preset'] === $set['preset']));
+    check('  its 320 kbps original is kept for Song prep', $lib->original($tr) !== null && is_file((string) $lib->original($tr)));
+    check('  the raw upload and Node’s files are gone', !is_file("$root/storage/incoming/$jid.src") && !is_dir("$root/storage/incoming/$jid"));
+    check('  it is in the plan', in_array((int) $tr['id'], array_map('intval', array_column($p->timeline(microtime(true)), 'track_id')), true) || count($lib->tracks()) > 4);
+    check('the same WAV picked again: already there', $pq->begin($uid, 'song', 'Tone 330.wav', strlen($wav), $sum)['state'] === 'have');
+    $j2 = $pq->get($b2['id']);
+    check('a song whose details window is open is prepared, then waits for its details', $j2['state'] === 'prepared' && (int) $j2['hold'] === 1 && $j2['track_id'] === null);
+    $r = $pq->details($b2['id'], ['title' => 'Five Fifty', 'artist' => 'The Tones', 'album' => 'Test', 'rights' => [], 'art' => 'keep'], null, $p);
+    $tr2 = $r['ok'] ? $lib->get((int) $r['track']) : null;
+    check('  its details arrive: added with them', $r['ok'] && $tr2 !== null && $tr2['title'] === 'Five Fifty' && $tr2['artist'] === 'The Tones' && $pq->get($b2['id'])['state'] === 'done', json_encode($r));
+    check('  an MP3 keeps its own file as the original', $lib->original($tr2) !== null);
+    $j3 = $pq->get($b3['id']);
+    check('a file that isn’t audio is not added, with the reason', $j3['state'] === 'failed' && str_contains((string) $j3['error'], 'not an MP3 file this station can play') && $j3['track_id'] === null, (string) $j3['error']);
+    check('  Try again queues it once more', $pq->retry($b3['id']) && $pq->get($b3['id'])['state'] === 'queued');
+    $j4 = $pq->get($b4['id']);
+    check('an ad goes to the Ads screen', $j4['state'] === 'done' && $lib->get((int) $j4['track_id'])['kind'] === 'ad'
+        && (int) $db->run('SELECT COUNT(*) FROM ' . $db->table('ads') . ' WHERE track_id = ?', [$j4['track_id']])->fetchColumn() === 1);
+    PrepQueue::work($db, $root, $node);
+    check('  failed again, it can be removed', $pq->get($b3['id'])['state'] === 'failed' && $pq->remove($b3['id']) && $pq->get($b3['id']) === null && !is_file("$root/storage/incoming/{$b3['id']}.src"));
+    check('details after it was added are put on the song', $pq->details($b2['id'], ['title' => 'Five Fifty (edit)', 'artist' => '', 'album' => '', 'rights' => [], 'art' => 'keep'], null, $p)['ok']
+        && $lib->get((int) $pq->get($b2['id'])['track_id'])['title'] === 'Five Fifty (edit)');
+    check('details without a title are refused', PrepQueue::checkDetails(['title' => ' ']) !== null);
+
+    echo "  a worker that died\n";
+    $stuck = NodeRuntime::toneWav(4.0, 770); // its own sound: a copy of another upload's sound would be that song again
+    $b6 = $pq->begin($uid, 'song', 'Stuck.wav', strlen($stuck), sha1($stuck));
+    $pq->chunk($b6['id'], 0, $stuck);
+    $pq->finish($b6['id']);
+    $db->run("UPDATE $jt SET state = 'working', attempts = 1, updated_at = ? WHERE id = ?", [gmdate('Y-m-d H:i:s', time() - PrepQueue::STALE - 60), $b6['id']]);
+    check('a job left "working" is due', PrepQueue::due($db));
+    PrepQueue::work($db, $root, $node);
+    check('  it is prepared again', $pq->get($b6['id'])['state'] === 'done', json_encode($pq->get($b6['id'])));
+    $b7 = $pq->begin($uid, 'song', 'Stuck twice.wav', strlen($ad) + 3, sha1($ad . 'zzz'));
+    $pq->chunk($b7['id'], 0, $ad . 'zzz');
+    $pq->finish($b7['id']);
+    $db->run("UPDATE $jt SET state = 'working', attempts = ? WHERE id = ?", [PrepQueue::ATTEMPTS, $b7['id']]);
+    PrepQueue::work($db, $root, $node);
+    check('  after its tries it fails, with the reason', $pq->get($b7['id'])['state'] === 'failed' && str_contains((string) $pq->get($b7['id'])['error'], 'stopped twice'));
+
+    echo "  tidying up\n";
+    $b8 = $pq->begin($uid, 'song', 'Half.wav', 999999, sha1('half'));
+    $pq->chunk($b8['id'], 0, 'part of it');
+    $db->run("UPDATE $jt SET updated_at = ? WHERE id = ?", [gmdate('Y-m-d H:i:s', time() - PrepQueue::KEEP_PARTIAL - 60), $b8['id']]);
+    file_put_contents("$root/storage/incoming/99999.src", 'left over');
+    touch("$root/storage/incoming/99999.src", time() - 7200);
+    $pq->cleanup(time());
+    check('a transfer stopped 2 days ago is dropped, with its piece', $pq->get($b8['id']) === null && !is_file("$root/storage/incoming/{$b8['id']}.part"));
+    check('  a file no job knows is deleted', !is_file("$root/storage/incoming/99999.src"));
+    check('  finished jobs stay a day, so other devices see them finish', $pq->get($jid) !== null);
+    $db->run("UPDATE $jt SET updated_at = ? WHERE id = ?", [gmdate('Y-m-d H:i:s', time() - PrepQueue::KEEP_DONE - 60), $jid]);
+    $pq->cleanup(time());
+    check('  then go', $pq->get($jid) === null && $lib->get((int) $tr['id']) !== null);
+    check('nothing is left pending', $pq->pending() === 0, (string) $pq->pending());
+
+    echo "  Node (NodeRuntime)\n";
+    check('the station finds this computer’s Node', NodeRuntime::find() !== null);
+    check('nothing is set up yet: songs are prepared in the browser', NodeRuntime::ready() === null && NodeRuntime::summary()['server'] === false
+        && NodeRuntime::summary()['text'] === 'In the browser');
+    $s = NodeRuntime::setUp();
+    check('Set up uses the server’s own Node and tests it on a tone', !empty($s['ok']) && $s['source'] === 'server' && $s['test_s'] > 0 && NodeRuntime::ready() === $s['path'], json_encode($s));
+    check('  the station now prepares on the server', NodeRuntime::summary()['server'] && str_contains(NodeRuntime::summary()['detail'], 'Node ' . $s['version']));
+    check('  the queue says nothing waits for Node now', $pq->list() === [] || !array_filter($pq->list(), fn($j) => $j['waiting_for_node']));
+    NodeRuntime::save(['busy' => 'Downloading']);
+    check('while Set up works it says what it is doing', NodeRuntime::busy() === 'Downloading' && NodeRuntime::summary()['text'] === 'Setting up');
+    NodeRuntime::save(['busy' => 'Downloading', 'busy_at' => 1.0]);
+    check('  a Set up that stopped part-way doesn’t stay busy', NodeRuntime::busy() === 'Downloading'); // save() stamps it now
+    $raw = json_decode((string) file_get_contents(NodeRuntime::statePath()), true);
+    $raw['busy_at'] = microtime(true) - 1000;
+    file_put_contents(NodeRuntime::statePath(), json_encode($raw));
+    check('  (after 15 minutes it is over)', NodeRuntime::busy() === null);
+    NodeRuntime::save($s);
+    NodeRuntime::remove();
+    check('Prepare in the browser undoes it', NodeRuntime::ready() === null && !is_file(NodeRuntime::statePath()));
+    // fetching: a tarball laid out as nodejs.org's, from a local file; the checksum decides
+    $name = 'node-v' . NodeRuntime::VERSION . '-linux-x64';
+    @mkdir("$root/in/tar/$name/bin", 0775, true);
+    file_put_contents("$root/in/tar/$name/bin/node", "#!/bin/sh\necho not really node\n");
+    file_put_contents("$root/in/tar/$name/README.md", 'only bin/node is kept');
+    $tarFile = "$root/in/$name.tar";
+    @unlink($tarFile);
+    $ph = new PharData($tarFile);
+    $ph->buildFromDirectory("$root/in/tar");
+    $ph->compress(Phar::GZ);
+    unset($ph);
+    $gz = "$tarFile.gz";
+    $err = '';
+    try { NodeRuntime::fetch($gz, ['x64' => str_repeat('0', 64)]); } catch (RuntimeException $ex) { $err = $ex->getMessage(); }
+    check('a download that doesn’t match its checksum isn’t used', str_contains($err, 'checksum') && !is_file(NodeRuntime::runtimeDir() . "/$name.tar.gz") && !is_file(NodeRuntime::runtimeDir() . '/node/bin/node'), $err);
+    $err = '';
+    try { NodeRuntime::fetch($gz, ['x64' => hash_file('sha256', $gz)]); } catch (RuntimeException $ex) { $err = $ex->getMessage(); }
+    check('one that matches is unpacked into storage/runtime, only bin/node kept', is_file(NodeRuntime::runtimeDir() . '/node/bin/node') && !is_file(NodeRuntime::runtimeDir() . '/node/README.md')
+        && !is_file(NodeRuntime::runtimeDir() . "/$name.tar.gz") && str_contains((string) @file_get_contents(NodeRuntime::runtimeDir() . '/.htaccess'), 'denied'));
+    check('  a program the server won’t run is said plainly', str_contains($err, 'won’t run it'), $err);
+    if (PHP_OS_FAMILY !== 'Linux') {
+        $err = '';
+        try { NodeRuntime::fetch(); } catch (RuntimeException $ex) { $err = $ex->getMessage(); }
+        check('Set up fetches Node only for Linux servers, and says so elsewhere', NodeRuntime::arch() === null && str_contains($err, 'only for Linux'), $err);
+    } else {
+        check('this Linux server has a Node build to fetch', NodeRuntime::arch() !== null, php_uname('m'));
+    }
+    NodeRuntime::$root = null;
 
     echo "Diagnostics reports\n";
     $reports = new DiagReports("$root/storage/diag");

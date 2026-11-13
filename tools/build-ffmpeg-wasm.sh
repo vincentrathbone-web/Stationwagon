@@ -3,8 +3,9 @@
 # (the .wasm is inside it), exposing SwDecode() -> Promise of the module with sw_dec_open / sw_dec_run /
 # sw_dec_info / sw_dec_tag / sw_dec_codec / sw_dec_close (tools/ffmpeg-wasm/swdecode.c). It decodes every
 # upload that isn't an MP3, with its tags and cover, the same in every browser: WAV, FLAC, AAC and ALAC
-# (M4A, raw AAC), Ogg Vorbis, Opus and FLAC, WMA (all four kinds). No encoders, filters or network; MP3s
-# keep the browser's own decoder, and this one is loaded only for the other formats.
+# (M4A, raw AAC), Ogg Vorbis, Opus and FLAC, WMA (all four kinds). No encoders, filters or network. In the
+# browser MP3s keep the browser's own decoder (Chrome and Firefox use this same mp3float decoder inside), and
+# this one is loaded only for the other formats; on the server (round 85, cli/prep-node.mjs) it decodes MP3s too.
 #   bash tools/build-ffmpeg-wasm.sh [ffmpeg source folder] [emsdk folder] [make folder]
 # FFmpeg's source: https://ffmpeg.org/releases/ffmpeg-7.1.3.tar.xz
 # (SHA-256 f0bf043299db9e3caacb435a712fc541fbb07df613c4b893e8b77e67baf3adbe), unpacked. Emscripten as for
@@ -40,9 +41,9 @@ if [ ! -f ffbuild/config.mak ] || [ "${SW_RECONFIGURE:-0}" = 1 ]; then
     --disable-network --disable-pthreads --disable-w32threads --disable-os2threads \
     --disable-everything --disable-avdevice --disable-swscale --disable-postproc --disable-avfilter \
     --enable-protocol=file \
-    --enable-demuxer=asf,ogg,mov,flac,wav,aac \
-    --enable-decoder=wmav1,wmav2,wmapro,wmalossless,vorbis,opus,flac,alac,aac,pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le \
-    --enable-parser=vorbis,opus,flac,aac
+    --enable-demuxer=asf,ogg,mov,flac,wav,aac,mp3 \
+    --enable-decoder=mp3float,wmav1,wmav2,wmapro,wmalossless,vorbis,opus,flac,alac,aac,pcm_u8,pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_f64le \
+    --enable-parser=vorbis,opus,flac,aac,mpegaudio
   # a Windows make reads D:/ paths, not Git Bash's /d/ ones
   w() { cygpath -m "$1" 2>/dev/null || echo "$1"; }
   for f in Makefile ffbuild/config.mak; do

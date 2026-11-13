@@ -1,6 +1,7 @@
 <?php
 // The background jobs (src/Jobs.php) on an installed copy: run by cron and by visits, one at a
-// time, their state, the Overview's health line, and a real visit starting them.
+// time, their state, the Overview's health line, and a real visit starting them; and (round 85) song prep's
+// worker (cli/prep.php) started by them in the background, with a job that can't become a song (the library stays as it is).
 //   php app/tests/jobs_test.php [base url, e.g. http://localhost:8080/stationwagon-app]
 // Uses the copy's own config.local.php and storage/cache/jobs.json (the jobs are the station's
 // normal work, so running them early does no harm). Puts the state file back afterwards.
@@ -8,7 +9,7 @@ declare(strict_types=1);
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 
 require __DIR__ . '/../src/bootstrap.php';
-use Stationwagon\{Config, Jobs};
+use Stationwagon\{Config, Jobs, NodeRuntime, PrepQueue};
 
 $failures = 0;
 function check(string $what, bool $ok, string $detail = ''): void
@@ -103,6 +104,61 @@ try {
     $out = shell_exec(escapeshellarg($php) . ' ' . escapeshellarg(SW_ROOT . '/cli/plan.php') . ' 2>&1');
     check('prints what it planned', str_contains((string) $out, 'planned until'), trim((string) $out));
     check('and counts as cron', (Jobs::state()['last_by'] ?? '') === 'cron');
+
+    echo "Song prep on the server (round 85)\n";
+    $db = Stationwagon\Db::fromConfig();
+    check('the database has the queue (schema 22 or newer)', Stationwagon\Schema::installed($db) >= 22);
+    $nodeState = @file_get_contents(NodeRuntime::statePath());
+    if (NodeRuntime::ready() === null) {
+        $s = NodeRuntime::setUp(); // the server's own Node, or a fetched one (Linux)
+        check('Set up finds or fetches Node and tests it', !empty($s['ok']), json_encode($s));
+    }
+    $node = NodeRuntime::ready();
+    check('this station prepares on the server', $node !== null);
+    $main = Stationwagon\Streams::main($db);
+    $jt = $db->table('prep_jobs');
+    $pq = new PrepQueue($db, $main, SW_ROOT);
+    // a job that can't become a song (text named .mp3), so the station's library is never touched
+    $text = "jobs_test: not music\n" . str_repeat('-', 4000);
+    $jid = $db->insert('prep_jobs', ['station_id' => $main['id'], 'user_id' => null, 'kind' => 'song', 'name' => '[test] jobs_test.mp3',
+        'bytes' => strlen($text), 'received' => strlen($text), 'sha1' => sha1($text), 'state' => 'queued', 'hold' => 0,
+        'opts' => json_encode($pq->settingsNow()), 'created_at' => gmdate('Y-m-d H:i:s'), 'updated_at' => gmdate('Y-m-d H:i:s')]);
+    @mkdir($pq->dir(), 0775, true);
+    file_put_contents($pq->dir() . "/$jid.src", $text);
+    try {
+        check('something waiting makes the queue due', PrepQueue::due($db));
+        $lock = fopen(PrepQueue::lockPath(SW_ROOT), 'c');
+        flock($lock, LOCK_EX);
+        check('while a worker runs, none is started', PrepQueue::working(SW_ROOT) && !PrepQueue::kick($db, SW_ROOT));
+        flock($lock, LOCK_UN);
+        fclose($lock);
+        @unlink($statePath);
+        $lines = Jobs::run('visit', microtime(true));
+        check('the background jobs start the worker', (bool) array_filter($lines, fn($l) => str_contains($l, 'song prep started')), implode(' | ', $lines));
+        $state = null;
+        for ($i = 0; $i < 120 && !in_array($state, ['failed', 'done'], true); $i++) {
+            usleep(250000);
+            $state = $db->run("SELECT state FROM $jt WHERE id = ?", [$jid])->fetchColumn();
+        }
+        $job = $pq->get($jid);
+        check('  it ran by itself in the background and finished the job', $state === 'failed' && str_contains((string) $job['error'], 'not an MP3 file'), json_encode([$state, $job['error'] ?? null]));
+        check('  and nothing was added to the library', $job['track_id'] === null);
+        for ($i = 0; $i < 40 && PrepQueue::working(SW_ROOT); $i++) {
+            usleep(250000);
+        }
+        check('  then it stopped (nothing left to do)', !PrepQueue::working(SW_ROOT) && !PrepQueue::due($db));
+        $out = shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(SW_ROOT . '/cli/prep.php') . ' 2>&1');
+        check('cli/prep.php with nothing waiting does nothing', trim((string) $out) === '', trim((string) $out));
+        check('the worker’s PHP is found for pages too', PrepQueue::phpCli() !== null, (string) PrepQueue::phpCli());
+    } finally {
+        $pq->remove($jid);
+        @unlink($pq->dir() . "/$jid.src");
+        if ($nodeState !== false) {
+            file_put_contents(NodeRuntime::statePath(), $nodeState);
+        } else {
+            @unlink(NodeRuntime::statePath()); // as it was: not set up
+        }
+    }
 
     if ($base !== '') {
         echo "A real visit\n";

@@ -2,6 +2,7 @@
 // cases, silence trim, levelling and its caps, fades, and a real MP3 from lamejs that the PHP
 // scanner reads back (length, bit rate, copied tags). Then mastering (assets/master-core.js)
 // against the response Audition measured with the station's chain, and levelling switched off.
+// Round 85: cli/prep-node.mjs (the server's prep) against prep-run.js as the worker runs it.
 //   node app/tests/prep_test.mjs        (SW_PHP = path to php.exe if php isn't on PATH)
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
@@ -314,6 +315,61 @@ check("  the uploader's note says what changes, and nothing when nothing does",
   check("the MP3's tag says how it was made", text.includes("STATIONWAGON_PREP") && text.includes("LAME 3.100 q0, 160 kbps CBR, 48000 Hz from 44100 Hz, 32-bit float, TPDF dither"),
     (text.match(/LAME 3\.100[^\0]*/) || [""])[0]);
   check("mp3Rate skips an ID3v2 tag and gives null for what isn't MP3", core.mp3Rate(new Uint8Array([...head, 0xff, 0xfb, 0x94, 0x00, 0, 0, 0, 0])) === 48000 && core.mp3Rate(new Uint8Array(100)) === null);
+}
+
+{
+  // Round 85 (v1.13): cli/prep-node.mjs, the server's song prep, runs assets/prep-run.js, the chain the browser's worker runs,
+  // so the same upload comes out the same from both. Here the Node runner and prep-run.js called directly (as the worker does)
+  // get the same WAV, and an upload that isn't audio is refused with prep.js's reason.
+  console.log("Song prep on the server (round 85)");
+  const node = process.execPath, runner = join(here, "..", "cli", "prep-node.mjs");
+  const said = JSON.parse(execFileSync(node, [runner, "--check"], { encoding: "utf8" }));
+  check("prep-node.mjs --check says it can run, with LAME 3.100 and the station's FFmpeg 7.1 decoder", said.ok === true && said.lame === "3.100" && /^7\.1/.test(said.decoder),
+    JSON.stringify(said));
+  const rate = 44100, secs = 4, n = rate * secs, pcm = Buffer.alloc(n * 4);
+  for (let i = 0; i < n; i++) {
+    const v = Math.round(32767 * (0.2 * Math.sin(2 * Math.PI * 440 * i / rate) + 0.03 * Math.sin(2 * Math.PI * 3000 * i / rate)));
+    pcm.writeInt16LE(v, i * 4); pcm.writeInt16LE(v, i * 4 + 2);
+  }
+  const head = Buffer.alloc(44);
+  head.write("RIFF", 0); head.writeUInt32LE(36 + pcm.length, 4); head.write("WAVEfmt ", 8); head.writeUInt32LE(16, 16);
+  head.writeUInt16LE(1, 20); head.writeUInt16LE(2, 22); head.writeUInt32LE(rate, 24); head.writeUInt32LE(rate * 4, 28);
+  head.writeUInt16LE(4, 32); head.writeUInt16LE(16, 34); head.write("data", 36); head.writeUInt32LE(pcm.length, 40);
+  const wav = Buffer.concat([head, pcm]);
+  const dir = mkdtempSync(join(tmpdir(), "sw-prep-node-"));
+  try {
+    const opts = { kbps: 160, master: {}, level: true, target: -16, quality: { rate: 44100, precision: 32, dither: false, q: 2 } };
+    writeFileSync(join(dir, "tone.wav"), wav);
+    writeFileSync(join(dir, "job.json"), JSON.stringify({ in: join(dir, "tone.wav"), name: "Tone.wav", out: dir, progress: join(dir, "p.json"), opts }));
+    execFileSync(node, [runner, join(dir, "job.json")]);
+    const r = JSON.parse(readFileSync(join(dir, "result.json"), "utf8"));
+    const song = readFileSync(join(dir, "song.out")), original = readFileSync(join(dir, "original.out"));
+    check("a WAV is prepared: mastered, levelled to -16 LUFS, named .mp3, with a 320 kbps original kept", r.prepared === true && r.song && r.original
+      && near(r.info.lufs, -16, 0.1) && r.info.mastered === true && r.name === "Tone.mp3" && r.info.converted.kind === "WAV"
+      && core.mp3Rate(song) === 44100 && original.length > song.length, `${r.info.lufs} LUFS, ${song.length} / ${original.length} bytes, ${r.name}`);
+    const prog = JSON.parse(readFileSync(join(dir, "p.json"), "utf8"));
+    check("its progress file ends at Done", prog.stage === "Done" && prog.progress === 1, JSON.stringify(prog));
+
+    // the same file through prep-run.js as the browser's worker calls it
+    const SwPrepRun = createRequire(import.meta.url)("../assets/prep-run.js");
+    const SwMaster = createRequire(import.meta.url)("../assets/master-core.js");
+    const lameP = createRequire(import.meta.url)("../assets/vendor/lame-3.100.js")();
+    const decP = createRequire(import.meta.url)("../assets/vendor/ffmpeg-decode-7.1.js")();
+    const w = await SwPrepRun.run(Object.assign({}, opts, { file: new Uint8Array(wav), convert: true }),
+      { core, master: SwMaster, lame: () => lameP, decoder: () => decP, post: () => {} });
+    const wSong = Buffer.concat(w.chunks.map((c) => Buffer.from(c)));
+    const nSong = song.subarray(song.length - wSong.length);
+    check("the worker's chain gives the very same MP3 frames and loudness", wSong.equals(nSong) && w.info.lufs === r.info.lufs && w.info.gain_db === r.info.gain_db,
+      `${w.info.lufs} / ${r.info.lufs} LUFS, ${wSong.length} bytes`);
+
+    writeFileSync(join(dir, "notes.txt"), "not music at all\n".repeat(100));
+    writeFileSync(join(dir, "job2.json"), JSON.stringify({ in: join(dir, "notes.txt"), name: "notes.txt", out: dir, opts }));
+    execFileSync(node, [runner, join(dir, "job2.json")]);
+    const r2 = JSON.parse(readFileSync(join(dir, "result.json"), "utf8"));
+    check("a file that isn't audio is refused with prep.js's reason", r2.prepared === false && r2.refused === true && /not an audio file/.test(r2.note), r2.note);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 console.log(failed ? `\n${failed} of ${passed + failed} checks failed` : "\nAll checks passed");

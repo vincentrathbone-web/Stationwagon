@@ -211,7 +211,8 @@ const MAP = {
     { v: "v1.10", name: "Gansbaai Android app", when: "planned" },
     { v: "v1.11", name: "Many stations in the studio apps", when: "live 13 Nov" },
     { v: "v1.12", name: "Stream quality for listeners", when: "planned" },
-    { v: "v1.13", name: "Song prep on the server", when: "next phase" }
+    { v: "v1.13", name: "Song prep on the server", when: "built 13 Nov, deploying" },
+    { v: "v1.14", name: "Prepare again on the server", when: "planned" }
   ],
   areas: [
     { name: "Listener player", blurb: "The station page, the embed and the data for other sites and apps.", features: [
@@ -262,9 +263,12 @@ const MAP = {
       { text: "Ocean look, and a station's own look for new devices", note: "Gansbaai is Ocean, WordWave stays Green", v: "v1.11", state: "done" },
       { text: "Songs turned on and off (Status), so one on air can be removed later", note: "off means off for the AutoDJ and the studio; all off shows Nothing to play", v: "v1.11", state: "done" },
       { text: "Bulk upload guard: progress, a Leave site? question, the unfinished list after a refresh", v: "v1.11", state: "done" },
-      { text: "Song prep on the server: an upload keeps going when the page is closed", note: "next phase: needs the server's own audio tools and a queue", v: "v1.13", state: "later" },
-      { text: "Uploads still being prepared, seen from any device", v: "v1.13", state: "later" },
-      { text: "Tests and deploy", v: "v1.13", state: "later" }
+      { text: "Song prep on the server: an upload keeps going when the page is closed", note: "the same chain as the browser (LAME and FFmpeg as WebAssembly) run by Node; Music, Ads and Jingles", v: "v1.13", state: "done" },
+      { text: "Files sent in pieces that pick up where they stopped, then a queue run at once and by cron", v: "v1.13", state: "done" },
+      { text: "Uploads still being prepared, seen from any device", note: "with Cancel, Try again and Add with the file's details", v: "v1.13", state: "done" },
+      { text: "Set up on Sound & safety: the server's Node, or Node fetched on an admin's click", note: "no root needed; in the browser as before when a host blocks it", v: "v1.13", state: "done" },
+      { text: "Deploy to WordWave and Gansbaai and set up Node there", note: "tests pass on this PC; your OK 13 Nov", v: "v1.13", state: "progress" },
+      { text: "Song prep screen: prepare again and level again on the server too", note: "your choice: its own phase after v1.13", v: "v1.14", state: "later" }
     ]},
     { name: "Multi-stream", blurb: "Several radio streams on one installation, each with its own AutoDJ.", features: [
       { text: "Streams: a stream table, the current station becomes stream 1", v: "v1.3", state: "done" },
@@ -348,6 +352,7 @@ const MAP = {
   call: null,
   feedTitle: "Recent changes",
   feed: [
+    { what: "Song prep on the server (built, not live yet)", to: "When a station is set up for it on Sound & safety, uploads to the Music library, Ads and Jingles go to the server as they are and are prepared there with the same sound as in the browser, so the page can be closed once the files are sent. A list under the drop box shows what is still being prepared, from any device. Where a host can't run it, songs are prepared in the browser as before", at: "13 Nov" },
     { what: "Songs on and off, and a safer bulk upload", to: "The Music library has a Status column with Turn off and Turn on, so a song on air can be turned off and removed once it has finished; when every song is off, the library and the Overview say Nothing to play. A bulk upload now shows how far it has got, asks before the page is closed, and after a refresh lists the songs that didn't finish (picking them again skips the ones already added). Preparing on the server is the next phase (v1.13). Live on both stations", at: "13 Nov" },
     { what: "Studio login, bulk upload, logos and the Ocean look", to: "Gansbaai's website has Studio login in its menu and footer; the Music library has a tick box to upload many songs without the details window; each station's logo sits next to Stationwagon's at the top of every screen (WordWave's and Gansbaai's); Ocean, the Gansbaai mini-player's look, is in everyone's Look menu and Gansbaai opens in it; live on both stations", at: "13 Nov" },
     { what: "Ads and Jingles: no more jumping to the top", to: "Edit, Remove and Pause or Turn off now happen in place, like the Music library; live since 13 Nov", at: "13 Nov" },

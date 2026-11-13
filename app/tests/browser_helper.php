@@ -2,6 +2,10 @@
 // Database and planner side of the browser tests (Laragon only): a throwaway manager, a look at
 // uploaded tracks, a test live show, and the cleanup. Prints JSON.
 //   php browser_helper.php manager            -> {"id", "email", "password"}
+//   php browser_helper.php admin              -> a throwaway admin {"id", "email", "password"} (round 85: Set up on Sound & safety)
+//   php browser_helper.php server-prep <state | off | on | restore <json>>  -> song prep on the server (round 85): {state, summary};
+//        off: songs prepared in the browser; on: Set up (this PC's Node); restore: the state saved from "state"
+//   php browser_helper.php prep-jobs <user id> -> that person's uploads in the queue;  prep-clean <user id> ... (their jobs and files)
 //   php browser_helper.php track <title>      -> the newest ready track with that title, or null
 //   php browser_helper.php look [<green|hifi|ocean>]  -> {"look"}: the station's own look (round 83), set first if given
 //   php browser_helper.php presets [clear <name prefix> | default <id>]  -> {"presets", "default"}
@@ -39,7 +43,7 @@
 //   php browser_helper.php podcast-min <seconds | default>          -> the shortest show made into an episode, before
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
-use Stationwagon\{Db, Library, Notes, Planner, Playlists, Podcast, Schedule, Slides, StationSettings, Verse};
+use Stationwagon\{Db, Library, NodeRuntime, Notes, Planner, Playlists, Podcast, PrepQueue, Schedule, Slides, StationSettings, Verse};
 
 const PHONE_DJ = 'stationwagon-phone-test@example.test';
 
@@ -55,6 +59,38 @@ if ($cmd === 'manager') {
     $id = $db->insert('users', ['email' => $email, 'name' => 'Web Test Prep', 'password_hash' => password_hash($password, PASSWORD_DEFAULT), 'role' => 'manager', 'created_at' => gmdate('Y-m-d H:i:s')]);
     $db->insert('station_users', ['station_id' => $station['id'], 'user_id' => $id]);
     echo json_encode(['id' => $id, 'email' => $email, 'password' => $password]);
+} elseif ($cmd === 'admin') {
+    $tag = bin2hex(random_bytes(3));
+    $email = "web-test-$tag-admin@example.test";
+    $password = bin2hex(random_bytes(12));
+    $id = $db->insert('users', ['email' => $email, 'name' => 'Web Test Admin', 'password_hash' => password_hash($password, PASSWORD_DEFAULT), 'role' => 'admin', 'created_at' => gmdate('Y-m-d H:i:s')]);
+    $db->insert('station_users', ['station_id' => $station['id'], 'user_id' => $id]);
+    echo json_encode(['id' => $id, 'email' => $email, 'password' => $password]);
+} elseif ($cmd === 'server-prep') {
+    $what = $argv[2] ?? 'state';
+    if ($what === 'off') {
+        NodeRuntime::remove();
+    } elseif ($what === 'on') {
+        NodeRuntime::setUp();
+    } elseif ($what === 'restore') {
+        $raw = json_decode($argv[3] ?? 'null', true);
+        is_array($raw) && $raw !== [] ? NodeRuntime::save($raw) : @unlink(NodeRuntime::statePath());
+    }
+    echo json_encode(['state' => NodeRuntime::state(), 'summary' => NodeRuntime::summary(), 'ready' => NodeRuntime::ready()]);
+} elseif ($cmd === 'prep-jobs') {
+    $rows = $db->run('SELECT id, kind, name, state, stage, hold, error, track_id, received, bytes FROM ' . $db->table('prep_jobs') . ' WHERE user_id = ? ORDER BY id', [(int) ($argv[2] ?? 0)])->fetchAll();
+    echo json_encode($rows);
+} elseif ($cmd === 'prep-clean') {
+    $q = new PrepQueue($db, $station, SW_ROOT);
+    $n = 0;
+    foreach (array_slice($argv, 2) as $uid) {
+        foreach ($db->run('SELECT id FROM ' . $db->table('prep_jobs') . ' WHERE user_id = ?', [(int) $uid])->fetchAll(PDO::FETCH_COLUMN) as $jid) {
+            $q->cancel((int) $jid);
+            $q->remove((int) $jid);
+            $n++;
+        }
+    }
+    echo json_encode(['removed' => $n]);
 } elseif ($cmd === 'track') {
     $row = $db->run('SELECT id, file, sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs, source_lufs, level_gain_db, level_target, mastered, preset, preset_settings, outro, album, art, rights, active FROM ' . $db->table('tracks') .
         " WHERE station_id = ? AND title = ? AND status = 'ready' ORDER BY id DESC LIMIT 1", [$station['id'], $argv[2] ?? ''])->fetch();

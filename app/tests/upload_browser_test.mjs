@@ -8,8 +8,11 @@
 // Round 84: songs turned off and on (the Status column, the bulk bar, the On/Off filter, Remove refused on air
 // offering Turn off, the "Nothing to play" banner) and the upload guard (the progress line, the browser asking
 // before leaving, the unfinished songs listed after a refresh, songs already added skipped when picked again).
-//   node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app [--only=bulk]
-// (--only=bulk runs the Music library's own bulk parts: round 83's tick box and round 84's)
+// Round 85 (v1.13): song prep on the server: an admin's Set up in a second browser, a bulk upload whose page is closed while
+// the songs are prepared (watched from the second browser until added), a transfer resumed after a refresh, the details
+// window, a window closed with its page, an ad, and the same song from the server and from the browser compared.
+//   node app/tests/upload_browser_test.mjs http://localhost:8080/stationwagon-app [--only=bulk | --only=server]
+// (--only=bulk runs the Music library's own bulk parts: round 83's tick box and round 84's; --only=server round 85's)
 // Needs SW_PHP (php.exe) unless php is on PATH. Signs in a throwaway account: not for a public server.
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from "node:fs";
@@ -134,8 +137,8 @@ async function upload(files) {
 // ISRC (the server refuses it and says why); a WAV skipped with Esc; then Cancel the rest, which leaves the
 // last one out too. Then the song's details in the library window (edit mode) and for listeners.
 const winTitle = `Window Test ${tag}`, winEdited = `Window Edited ${tag}`;
-function taggedMp3(tags, picture) {
-  const a = mp3([[0, 0.5], [0.3, 12], [0, 0.5]], "x");
+function taggedMp3(tags, picture, secs = 12) {
+  const a = mp3([[0, 0.5], [0.3, secs], [0, 0.5]], "x");
   const size = 10 + (((a[6] & 0x7f) << 21) | ((a[7] & 0x7f) << 14) | ((a[8] & 0x7f) << 7) | (a[9] & 0x7f));
   return Buffer.concat([Buffer.from(core.id3(tags, picture)), a.subarray(size)]);
 }
@@ -417,11 +420,256 @@ async function guardTest() {
   check("with nothing going, a refresh isn't asked about", dialogs.length === 0, JSON.stringify(dialogs));
 }
 
+// ---- Song prep on the server (round 85, v1.13) ------------------------------------------------------------
+// A throwaway admin, in a second browser of its own (another device), sets it up on Sound & safety; the manager's
+// bulk upload then goes up as files and the page is closed while they are prepared; the admin's Music library lists
+// them with their stages until they are added. Then: a transfer cut off by a refresh carries on where it stopped;
+// the details window (an MP3 added with new details, a FLAC's tags read in the browser, one skipped); a window closed
+// with the page ("Add with the file's details"); an ad; and the same song prepared by the server and by the browser
+// comes out the same.
+const srvTitles = [`Server A ${tag}`, `Server B ${tag}`, `Server Long ${tag}`];
+const srvResume = `Server Resume ${tag}`, srvWin = `Server Window ${tag}`, srvWinNew = `Server Window Added ${tag}`, srvHold = `Server Hold ${tag}`;
+const srvAd = `Web Test Ad Server ${tag}`, srvSame = `Server Same ${tag}`, brSame = `Browser Same ${tag}`, srvSkip = `Server Skip ${tag}`;
+let admin = null;
+
+/** A second, separate browser (its own cookies): Target.createBrowserContext, then its own page connection. */
+async function secondBrowser() {
+  const bws = new WebSocket((await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()).webSocketDebuggerUrl);
+  await new Promise((ok, bad) => { bws.onopen = ok; bws.onerror = bad; });
+  let bid = 0;
+  const bpend = new Map();
+  bws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && bpend.has(d.id)) { bpend.get(d.id)(d); bpend.delete(d.id); } };
+  const bcall = (method, params = {}) => new Promise((ok) => { const i = ++bid; bpend.set(i, ok); bws.send(JSON.stringify({ id: i, method, params })); });
+  const ctx = (await bcall("Target.createBrowserContext", {})).result.browserContextId;
+  const tid = (await bcall("Target.createTarget", { url: "about:blank", browserContextId: ctx })).result.targetId;
+  await sleep(500);
+  const t = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((x) => x.id === tid);
+  const pws = new WebSocket(t.webSocketDebuggerUrl);
+  await new Promise((ok, bad) => { pws.onopen = ok; pws.onerror = bad; });
+  let pid = 0;
+  const ppend = new Map();
+  pws.onmessage = (m) => {
+    const d = JSON.parse(m.data);
+    if (d.id && ppend.has(d.id)) { ppend.get(d.id)(d); ppend.delete(d.id); }
+    if (d.method === "Page.javascriptDialogOpening") pws.send(JSON.stringify({ id: ++pid, method: "Page.handleJavaScriptDialog", params: { accept: true } }));
+  };
+  const pcall = (method, params = {}) => new Promise((ok) => { const i = ++pid; ppend.set(i, ok); pws.send(JSON.stringify({ id: i, method, params })); });
+  const ev = async (expression) => {
+    const r = await pcall("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+    if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || "page error");
+    return r.result?.result?.value;
+  };
+  await pcall("Page.enable");
+  await pcall("Network.setCookie", { name: "sw_bare", value: "1", url: base + "/" });
+  const goto = async (url) => {
+    await pcall("Page.navigate", { url }); await sleep(300);
+    for (let i = 0; i < 100; i++) { if ((await ev("document.readyState").catch(() => "")) === "complete") return; await sleep(100); }
+  };
+  const close = async () => { try { pws.close(); await bcall("Target.closeTarget", { targetId: tid }); await bcall("Target.disposeBrowserContext", { browserContextId: ctx }); bws.close(); } catch { /* gone */ } };
+  return { ev, goto, close };
+}
+
+/** Pick files in the drop zone of the page at `path` (bulk ticked when asked), with uploads slowed to `kbps` KB/s if given. */
+async function pickOn(path, files, { bulk = false, kbps = 0, noWindow = false } = {}) {
+  await go(`${base}/${path}`);
+  if (noWindow) await evaluate("window.swUploadNoWindow = true");
+  if (bulk) await realClick("#bulkUp");
+  await call("Network.enable");
+  await call("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: kbps ? kbps * 1024 : -1 });
+  const doc = await call("DOM.getDocument", {});
+  const input = await call("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: "#files" });
+  await call("DOM.setFileInputFiles", { nodeId: input.result.nodeId, files });
+}
+const rowsNow = () => evaluate(`[...document.querySelectorAll('#uplist li')].map((li) => ({ cls: li.className, n: li.querySelector('.n').textContent, text: li.querySelector('.s').textContent }))`).catch(() => null);
+const jobsOf = () => helper("prep-jobs", String(user.id));
+const waitJobs = async (fn, sec = 120) => { let j = null; for (let i = 0; i < sec * 2; i++) { j = jobsOf(); if (fn(j)) return j; await sleep(500); } return j; };
+
+async function serverTest() {
+  // 1. Set up, by an admin, in a second browser; the manager sees where songs are prepared but can't change it
+  await go(`${base}/manage/sound`);
+  const mgr = await evaluate(`({ where: document.getElementById('spWhere').textContent, btn: !!document.getElementById('spSetup'), note: document.querySelector('.serverprep .spbtns').textContent.trim() })`);
+  check("Sound & safety says songs are prepared in the browser; a manager can't change it", mgr.where === "In the browser" && !mgr.btn && /An admin can change this/.test(mgr.note), JSON.stringify(mgr));
+  admin = helper("admin");
+  const b2 = await secondBrowser();
+  try {
+    await b2.goto(`${base}/signin`);
+    await b2.ev(`(() => { const f = document.querySelector('form'); f.email.value = ${JSON.stringify(admin.email)}; f.password.value = ${JSON.stringify(admin.password)}; f.submit(); })()`);
+    await sleep(800);
+    await b2.goto(`${base}/manage/sound`);
+    await b2.ev(`document.getElementById('spSetup').click(); 1`);
+    let sp = null;
+    for (let i = 0; i < 240; i++) {
+      sp = await b2.ev(`({ where: document.getElementById('spWhere').textContent, detail: document.getElementById('spDetail').textContent, btn: document.getElementById('spSetup').textContent, off: !document.getElementById('spRemove').hidden })`).catch(() => null);
+      if (sp && sp.where === "On the server") break;
+      await sleep(250);
+    }
+    check("an admin's Set up (in another browser) finds Node, tests it and says so", sp && sp.where === "On the server" && /Node \d+\.\d+\.\d+/.test(sp.detail) && /The test took/.test(sp.detail) && sp.btn === "Test again" && sp.off, JSON.stringify(sp));
+    check("  the station now prepares on the server", !!helper("server-prep", "state").ready);
+    await b2.goto(`${base}/manage`);
+    const ov = await b2.ev(`document.getElementById('prepWhere') ? document.getElementById('prepWhere').textContent : ''`);
+    check("  the Overview says so", /Song prep/.test(ov) && /On the server/.test(ov), ov);
+
+    // 2. A bulk upload sent as files; the page closed while they are prepared; the other browser watches them finish
+    const files = srvTitles.map((t, i) => {
+      const f = join(dir, `server ${i + 1}.mp3`);
+      const secs = i === 2 ? 150 : 12; // the last is long, so it is still being prepared when the page closes
+      writeFileSync(f, taggedMp3({ title: t, artist: "Server Artist" }, null, secs));
+      return f;
+    });
+    await go(`${base}/manage/library`);
+    const note = await evaluate(`document.getElementById('prepNote').textContent`);
+    check("the drop box says songs are prepared on the server after upload", /^Prepared on the server after upload/.test(note), note);
+    await pickOn("manage/library", files, { bulk: true });
+    let st = null;
+    for (let i = 0; i < 600; i++) {
+      st = await evaluate(`({ p: document.getElementById('upProgress').textContent, rows: [...document.querySelectorAll('#uplist li')].map((li) => li.className + ': ' + li.querySelector('.s').textContent) })`).catch(() => null);
+      if (st && /^All 3 sent/.test(st.p)) break;
+      await sleep(100);
+    }
+    check("the files go up as they are; when all are sent the page says it may be closed", st && st.p === "All 3 sent. They’re being prepared on the server: you can close this page."
+      && st.rows.every((r) => r.startsWith("ok: Uploaded: being prepared on the server")), st && JSON.stringify(st));
+    const atClose = jobsOf();
+    await go("about:blank"); // the page is closed
+    check("  the page is closed while some are still being prepared", atClose.length === 3 && atClose.some((j) => j.state !== "done"), JSON.stringify(atClose.map((j) => j.state)));
+    await b2.goto(`${base}/manage/library`);
+    let seen = null, stages = new Set();
+    for (let i = 0; i < 480; i++) {
+      seen = await b2.ev(`(() => { const q = document.getElementById('prepQueue'); return q && !q.hidden ? { h: q.querySelector('h3').textContent, rows: [...q.querySelectorAll('li')].map((li) => ({ n: li.querySelector('.n').textContent, s: li.querySelector('.s').textContent, who: li.querySelector('.who').textContent, st: li.dataset.state })) } : null; })()`).catch(() => null);
+      (seen?.rows || []).forEach((r) => { if (srvTitles.some((t) => r.n.includes(t.slice(0, 6)) || r.n.startsWith("server"))) stages.add(r.st); });
+      if (seen && seen.rows.filter((r) => r.st === "done").length >= 3) break;
+      await sleep(250);
+    }
+    const mineSeen = (seen?.rows || []).filter((r) => r.who.includes("Web Test Prep"));
+    check("another device's Music library lists the uploads being prepared, who sent them and their stage", mineSeen.length >= 3 && (stages.has("working") || stages.has("queued")), JSON.stringify([...stages]) + " " + JSON.stringify(mineSeen.slice(0, 3)));
+    check("  until each is added, with what was done to it", mineSeen.filter((r) => r.st === "done").length >= 3 && mineSeen.every((r) => /^Added, mastered, levelled/.test(r.s)), JSON.stringify(mineSeen.map((r) => r.s)));
+    const t = srvTitles.map((x) => helper("track", x));
+    check("  all three are in the library, mastered and levelled to the target", t.every((x) => x && Number(x.mastered) === 1 && near(x.loudness_lufs, Number(x.level_target), 0.6)), JSON.stringify(t.map((x) => x && [x.loudness_lufs, x.level_target, x.mastered])));
+    check("  the long one too, though its page was closed", t[2] && Number(t[2].duration_s) > 140, t[2] && t[2].duration_s);
+
+    // 3. A transfer cut off by a refresh carries on from where the server has it
+    const big = join(dir, "server resume.wav");
+    {
+      const RATE = 44100, secs = 70, n = RATE * secs, hz = 500 + Math.floor(Math.random() * 100); // about 12 MB: two pieces; a new note each run (a song left on air by the last run is only hidden)
+      const pcm = Buffer.alloc(n * 4);
+      for (let i = 0; i < n; i++) { const v = Math.round(0.25 * 32767 * Math.sin(2 * Math.PI * hz * i / RATE)); pcm.writeInt16LE(v, i * 4); pcm.writeInt16LE(v, i * 4 + 2); }
+      const h = Buffer.alloc(44);
+      h.write("RIFF", 0); h.writeUInt32LE(36 + pcm.length, 4); h.write("WAVEfmt ", 8); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(2, 22);
+      h.writeUInt32LE(RATE, 24); h.writeUInt32LE(RATE * 4, 28); h.writeUInt16LE(4, 32); h.writeUInt16LE(16, 34); h.write("data", 36); h.writeUInt32LE(pcm.length, 40);
+      writeFileSync(big, Buffer.concat([h, pcm]));
+    }
+    await pickOn("manage/library", [big], { bulk: true, kbps: 1500 });
+    let j = await waitJobs((x) => x.some((y) => y.name === "server resume.wav" && Number(y.received) >= 8388608), 60);
+    const half = j.find((y) => y.name === "server resume.wav");
+    dialogs.length = 0;
+    await evaluate(`setTimeout(() => location.reload(), 0); 1`);
+    await sleep(1500); await loaded();
+    await call("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    check("refreshing mid-transfer: the browser asks first, and the server keeps the pieces it has", dialogs.includes("beforeunload") && half && Number(half.received) >= 8388608 && half.state === "uploading", half && `${half.received} of ${half.bytes}`);
+    const left = await evaluate(`(() => { const b = document.getElementById('upLeft'); return b ? b.textContent : ''; })()`);
+    check("  the page lists it as not finished", /server resume\.wav/.test(left), left);
+    await b2.goto(`${base}/manage/library`);
+    await sleep(1500);
+    const stale = await b2.ev(`[...document.querySelectorAll('#prepQueue li')].map((li) => li.querySelector('.s').textContent).find((s) => /^Upload/.test(s)) || ''`);
+    check("  other devices see it as an upload that stopped part-way", /^Upload(ing| stopped at) \d+ %/.test(stale), stale);
+    await evaluate(`(() => { window.__offsets = []; const a = FormData.prototype.append; FormData.prototype.append = function (k, v) { if (k === "offset") window.__offsets.push(Number(v)); return a.apply(this, arguments); }; return 1; })()`);
+    const doc = await call("DOM.getDocument", {});
+    const input = await call("DOM.querySelector", { nodeId: doc.result.root.nodeId, selector: "#files" });
+    await realClick("#bulkUp");
+    await call("DOM.setFileInputFiles", { nodeId: input.result.nodeId, files: [big] });
+    let r = null;
+    for (let i = 0; i < 600; i++) { r = await rowsNow(); if (r && r[0] && (r[0].cls === "ok" || r[0].cls === "bad")) break; await sleep(100); }
+    const offsets = await evaluate("window.__offsets");
+    check("  picked again, only the rest is sent", r && r[0].cls === "ok" && offsets.length >= 1 && offsets[0] === Number(half.received), JSON.stringify(offsets) + " " + (r && r[0].text));
+    j = await waitJobs((x) => x.some((y) => y.name === "server resume.wav" && y.state === "done"), 120);
+    const rj = j.find((y) => y.name === "server resume.wav");
+    const rt = rj && rj.track_id ? helper("track", "server resume") : null;
+    check("  and the WAV is converted and added", rj && rj.state === "done" && rt && Number(rt.duration_s) > 69, JSON.stringify(rj));
+
+    // 4. The details window: an MP3 added with new details, a FLAC whose tags the browser reads, one skipped
+    const wsong = join(dir, "server window.mp3"), wskip = join(dir, "server skip.mp3");
+    writeFileSync(wsong, taggedMp3({ title: srvWin, artist: "Window Artist" }, null));
+    writeFileSync(wskip, taggedMp3({ title: srvSkip }, null));
+    const flac = formats ? join(formats, "flac24.flac") : null;
+    helper("cleanup-like", TAGS.title);
+    const pick3 = flac ? [wsong, flac, wskip] : [wsong, wskip];
+    await pickOn("manage/library", pick3);
+    const FORM = `document.getElementById('rightsForm').elements`;
+    const win = () => evaluate(`(() => { const f = ${FORM}, d = document.getElementById('rightsDlg'); return { open: d.open, song: document.getElementById('rightsSong').textContent, title: f.title.value, artist: f.artist.value, writers: f.writers.value, prep: document.getElementById('sdPrep').textContent }; })()`).catch(() => null);
+    const waitWin = async (fn, sec = 60) => { let s = null; for (let i = 0; i < sec * 10; i++) { s = await win(); if (s && fn(s)) return s; await sleep(100); } return s; };
+    let w = await waitWin((x) => x.open && x.song.includes("server window.mp3") && /prepared on the server afterwards/.test(x.prep), 20);
+    check("the details window opens while the file goes up to be prepared on the server", w && w.title === srvWin && /prepared on the server afterwards/.test(w.prep), w && JSON.stringify(w));
+    await evaluate(`(() => { const el = ${FORM}.title; el.value = ${JSON.stringify(srvWinNew)}; el.dispatchEvent(new Event('input', { bubbles: true })); document.getElementById('sdAdd').click(); return 1; })()`);
+    if (flac) {
+      w = await waitWin((x) => x.open && x.song.includes("flac24.flac") && x.title === TAGS.title, 60);
+      check("  a FLAC's own tags fill the window (read in the browser, not decoded there)", w && w.title === TAGS.title && w.artist === TAGS.artist && w.writers === TAGS.composer, w && JSON.stringify(w));
+      await evaluate(`document.getElementById('sdAdd').click(); 1`);
+    }
+    w = await waitWin((x) => x.open && x.song.includes("server skip.mp3"));
+    await evaluate(`document.getElementById('sdSkip').click(); 1`);
+    let rows = null;
+    for (let i = 0; i < 600; i++) { rows = await rowsNow(); if (rows && rows.length === pick3.length && rows.every((x) => x.cls === "ok" || x.cls === "bad")) break; await sleep(100); }
+    j = await waitJobs((x) => x.filter((y) => ["server window.mp3", "flac24.flac"].includes(y.name)).every((y) => y.state === "done") && x.some((y) => y.name === "server skip.mp3" && y.state === "cancelled"), 120);
+    const wt = helper("track", srvWinNew);
+    check("  the song is added with the window's details", !!wt && wt.artist === "Window Artist", JSON.stringify(j.map((y) => y.name + ":" + y.state)));
+    if (flac) check("  the FLAC with its own", !!helper("track", TAGS.title));
+    check("  the skipped one is cancelled and never added", !helper("track", srvSkip) && j.some((y) => y.name === "server skip.mp3" && y.state === "cancelled"));
+    await sleep(2500); await loaded();
+
+    // 5. A window closed with its page: the song waits, and any device can add it with the file's details
+    const hold = join(dir, "server hold.mp3");
+    writeFileSync(hold, taggedMp3({ title: srvHold, artist: "Hold Artist" }, null));
+    await pickOn("manage/library", [hold]);
+    await waitWin((x) => x.open && x.song.includes("server hold.mp3"));
+    j = await waitJobs((x) => x.some((y) => y.name === "server hold.mp3" && y.state === "prepared"), 60);
+    await go("about:blank");
+    check("a song whose window was closed with the page is prepared and waits for its details", j.some((y) => y.name === "server hold.mp3" && y.state === "prepared" && Number(y.hold) === 1) && !helper("track", srvHold));
+    await b2.goto(`${base}/manage/library`);
+    await sleep(1500);
+    const holdRow = await b2.ev(`(() => { const li = [...document.querySelectorAll('#prepQueue li')].find((l) => l.querySelector('.s').textContent.includes('waiting for its details')); if (!li) return null; const b = li.querySelector('button[data-action="q_release"]'); const out = { s: li.querySelector('.s').textContent, btn: b && b.textContent }; if (b) b.click(); return out; })()`);
+    check("  another device sees it waiting and adds it with the file's details", holdRow && holdRow.btn === "Add with the file’s details", JSON.stringify(holdRow));
+    j = await waitJobs((x) => x.some((y) => y.name === "server hold.mp3" && y.state === "done"), 30);
+    check("  then it is in the library", !!helper("track", srvHold));
+
+    // 6. An ad, on the Ads screen
+    const adFile = join(dir, "server ad.mp3");
+    writeFileSync(adFile, taggedMp3({ title: srvAd }, null));
+    await pickOn("manage/ads", [adFile], { noWindow: true });
+    j = await waitJobs((x) => x.some((y) => y.name === "server ad.mp3" && ["done", "failed"].includes(y.state)), 90);
+    const ad = helper("ads-info", srvAd);
+    check("an ad goes through the server too and lands on the Ads screen", ad && ad.kind === "ad" && ad.track_id && ad.original, JSON.stringify(j.filter((y) => y.kind === "ad")));
+    await sleep(2000);
+
+    // 7. The same sound, prepared by the server and by the browser: the same song
+    const same = mp3([[0, 1], [0.35, 25], [0, 1]], "x");
+    const audio = same.subarray(10 + (((same[6] & 0x7f) << 21) | ((same[7] & 0x7f) << 14) | ((same[8] & 0x7f) << 7) | (same[9] & 0x7f)));
+    const fs1 = join(dir, "same server.mp3"), fs2 = join(dir, "same browser.mp3");
+    writeFileSync(fs1, Buffer.concat([Buffer.from(core.id3({ title: srvSame }, null)), audio]));
+    writeFileSync(fs2, Buffer.concat([Buffer.from(core.id3({ title: brSame }, null)), audio]));
+    await pickOn("manage/library", [fs1], { bulk: true });
+    await waitJobs((x) => x.some((y) => y.name === "same server.mp3" && y.state === "done"), 90);
+    await sleep(1500);
+    helper("server-prep", "off");
+    await upload([fs2]);
+    const a = helper("track", srvSame), bb = helper("track", brSame);
+    check("the same song prepared on the server and in the browser comes out the same: loudness, length, rate, quality, mastering",
+      a && bb && near(a.loudness_lufs, Number(bb.loudness_lufs), 0.05) && near(a.source_lufs, Number(bb.source_lufs), 0.1) && near(a.duration_s, Number(bb.duration_s), 0.03)
+      && a.sample_rate === bb.sample_rate && a.bitrate_kbps === bb.bitrate_kbps && a.mastered === bb.mastered,
+      JSON.stringify([a && [a.loudness_lufs, a.source_lufs, a.duration_s, a.sample_rate, a.bitrate_kbps], bb && [bb.loudness_lufs, bb.source_lufs, bb.duration_s, bb.sample_rate, bb.bitrate_kbps]]));
+    await go(`${base}/manage/library`);
+    check("with Node gone, songs are prepared in the browser again", /^Prepared in your browser/.test(await evaluate(`document.getElementById('prepNote').textContent`)));
+  } finally {
+    await b2.close();
+  }
+}
+
 let user = null, prepBefore = null;
+let srvBefore = null;
 const SKIP = Symbol("only");
 try {
   prepBefore = helper("prep");
-  helper("prep", "1", "1"); // both on (a new station has mastering off; this tries it on)
+  srvBefore = helper("server-prep", "state").state;
+  helper("server-prep", "off"); // songs are prepared in this browser, except in the server part (round 85)
+  helper("prep", "1", "1", "-16"); // both on (a new station has mastering off; this tries it on), at -16 LUFS as the checks below say
   for (let i = 0; i < 50; i++) { await sleep(200); try { await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; } catch { /* starting */ } }
   const target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === "page");
   ws = new WebSocket(target.webSocketDebuggerUrl);
@@ -442,13 +690,18 @@ try {
   await sleep(600); await loaded();
   check("a throwaway manager signs in", (await evaluate("location.pathname")).endsWith("/manage"));
 
-  console.log("Bulk upload, details later (round 83)");
-  await bulkTest();
-  console.log("Songs on and off (round 84)");
-  await stateTest();
-  console.log("The upload guard (round 84)");
-  await guardTest();
+  if (only !== "server") {
+    console.log("Bulk upload, details later (round 83)");
+    await bulkTest();
+    console.log("Songs on and off (round 84)");
+    await stateTest();
+    console.log("The upload guard (round 84)");
+    await guardTest();
+  }
   if (only === "bulk") throw SKIP;
+  console.log("Song prep on the server (round 85)");
+  await serverTest();
+  if (only === "server") throw SKIP;
 
   console.log("Upload with song prep");
   await go(`${base}/manage/library`);
@@ -508,7 +761,7 @@ try {
     })()`);
     check("  the stored file keeps its loudness (about −21.1 LUFS, as measured before upload)", near(m, -21.1, 0.4), m && m.toFixed(2));
   }
-  helper("prep", "1", "1");
+  helper("prep", "1", "1", "-16");
 
   console.log("Fallbacks");
   rows = await upload([silent, fake]);
@@ -568,8 +821,13 @@ try {
   if (ex !== SKIP) throw ex;
 } finally {
   if (prepBefore) helper("prep", prepBefore.master ? "1" : "0", prepBefore.level ? "1" : "0", String(prepBefore.target ?? -16));
+  if (srvBefore !== null) helper("server-prep", "restore", JSON.stringify(srvBefore));
+  if (user) helper("prep-clean", String(user.id), ...(admin ? [String(admin.id)] : []));
+  if (admin) helper("cleanup", String(admin.id));
+  helper("ads-clean");
   if (user) {
-    const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle, oddTitle, TAGS.title, winTitle, winEdited, ...bulkTitles, ...guardTitles);
+    const r = helper("cleanup", String(user.id), songTitle, silentTitle, plainTitle, oddTitle, TAGS.title, winTitle, winEdited, ...bulkTitles, ...guardTitles,
+      ...srvTitles, srvWin, srvWinNew, srvHold, srvSame, brSame, srvSkip, "server resume");
     console.log(`Cleanup: throwaway manager and test songs removed${r.hidden ? ` (${r.hidden} on air, hidden)` : ""}`);
   }
   try { ws && ws.close(); } catch { /* closed */ }

@@ -246,7 +246,7 @@ try {
         $has = $db->run('SHOW COLUMNS FROM ' . $db->table('stations') . " LIKE 'parent_id'")->fetch() !== false;
         $rows = $db->run('SELECT user_id FROM ' . $db->table('user_streams') . ' WHERE station_id = ? ORDER BY user_id', [$main['id']])->fetchAll(PDO::FETCH_COLUMN);
         $all = $db->run('SELECT user_id FROM ' . $db->table('station_users') . ' WHERE station_id = ? ORDER BY user_id', [$main['id']])->fetchAll(PDO::FETCH_COLUMN);
-        return $ran === [20] && $has && $rows === $all && in_array((string) $dj['id'], array_map('strval', $rows), true) && Schema::upgrade($db, $root) === [];
+        return $ran === range(20, Schema::VERSION) && $has && $rows === $all && in_array((string) $dj['id'], array_map('strval', $rows), true) && Schema::upgrade($db, $root) === [];
     })());
 } finally {
     drop_test_database($t);

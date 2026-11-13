@@ -39,10 +39,11 @@ namespace Stationwagon;
  *   v20 streams: stations.parent_id (a stream is a station row whose parent is the main station, which shares its library, settings and people;
  *       its timeline, schedule, live shows and listeners are its own) and user_streams (which streams a person may go live on)
  *   v21 tracks.active: a song can be turned off (round 84): the AutoDJ and the studio leave it out, and it can be removed once it is off air
+ *   v22 prep_jobs: uploads prepared on the server (round 85, v1.13): the raw file arrives in pieces, then cli/prep.php prepares it with Node
  */
 final class Schema
 {
-    public const VERSION = 21;
+    public const VERSION = 22;
 
     /** Where the station's storage is, for upgrade steps that read files (the app's folder unless a test says otherwise). */
     private static ?string $root = null;
@@ -53,7 +54,7 @@ final class Schema
         'schedule', 'live_shows', 'live_pieces', 'timeline', 'presenter_notes', 'running_orders',
         'listeners', 'listener_hours', 'listener_tally', 'listener_visitors',
         'episodes', 'episode_takes', 'episode_chunks', 'remember_tokens', 'prep_presets', 'roles',
-        'ads', 'ad_plays', 'jingles', 'user_streams',
+        'ads', 'ad_plays', 'jingles', 'user_streams', 'prep_jobs',
     ];
 
     /** @return array<string,string> table name => CREATE TABLE statement */
@@ -277,7 +278,45 @@ final class Schema
             'ad_plays' => self::adPlays($p, $opts),
             'jingles' => self::jingles($p, $opts),
             'user_streams' => self::userStreams($p, $opts),
+            'prep_jobs' => self::prepJobs($p, $opts),
         ];
+    }
+
+    /**
+     * Uploads prepared on the server (round 85, src/PrepQueue.php): one row per file, from its first piece until its
+     * song is added (kept a day after, so every device sees it finish). The raw file is storage/incoming/<id>.part
+     * while it arrives, then <id>.src; Node's results are in storage/incoming/<id>/.
+     */
+    private static function prepJobs(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}prep_jobs` (
+                `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `station_id` INT UNSIGNED NOT NULL,
+                `user_id` INT UNSIGNED NULL,
+                `kind` ENUM('song','ad','jingle') NOT NULL DEFAULT 'song',
+                `name` VARCHAR(255) NOT NULL COMMENT 'the file name as picked',
+                `bytes` BIGINT UNSIGNED NOT NULL,
+                `received` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+                `sha1` CHAR(40) NOT NULL COMMENT 'of the raw file',
+                `state` ENUM('uploading','queued','working','prepared','done','failed','cancelled') NOT NULL DEFAULT 'uploading',
+                `stage` VARCHAR(80) NULL,
+                `hold` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1: the details window is open; the song is added once its details arrive',
+                `attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
+                `opts` TEXT NOT NULL COMMENT 'JSON: the station''s prep settings when it was picked',
+                `details` MEDIUMTEXT NULL COMMENT 'JSON: the details window''s choices',
+                `result` TEXT NULL COMMENT 'JSON: what prep did, for the list',
+                `error` VARCHAR(500) NULL,
+                `track_id` INT UNSIGNED NULL,
+                `created_at` DATETIME NOT NULL,
+                `updated_at` DATETIME NOT NULL,
+                `finished_at` DATETIME NULL,
+                PRIMARY KEY (`id`),
+                KEY `{$p}prep_jobs_station_state` (`station_id`, `state`),
+                KEY `{$p}prep_jobs_sha1` (`station_id`, `sha1`),
+                CONSTRAINT `{$p}fk_prepjobs_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `{$p}fk_prepjobs_user` FOREIGN KEY (`user_id`) REFERENCES `{$p}users` (`id`) ON DELETE SET NULL,
+                CONSTRAINT `{$p}fk_prepjobs_track` FOREIGN KEY (`track_id`) REFERENCES `{$p}tracks` (`id`) ON DELETE SET NULL
+            ) $opts";
     }
 
     /** The studio's show plans: one per live block (scope "block:<id>") or per person ("user:<id>"). items = JSON list */
@@ -670,6 +709,8 @@ final class Schema
                 fn(Db $db) => $db->run("SHOW COLUMNS FROM `{$p}tracks` LIKE 'active'")->fetch() ? null
                     : $db->pdo->exec("ALTER TABLE `{$p}tracks` ADD COLUMN `active` TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'a song that is off: the AutoDJ and the studio leave it out' AFTER `status`"),
             ],
+            // uploads prepared on the server (round 85)
+            22 => [self::prepJobs($p, $opts)],
         ];
     }
 

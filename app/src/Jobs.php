@@ -8,8 +8,9 @@ use Throwable;
 
 /**
  * The background jobs: plan each station ahead, give ended live shows their podcast episodes,
- * delete published episodes' raw tracks after 30 days, and fetch the new location database once a
- * month. A cron job (cli/plan.php) runs them every 5 minutes where the station has one; with or
+ * delete published episodes' raw tracks after 30 days, start song prep on the server when uploads wait
+ * (round 85: cli/prep.php runs apart, under its own lock, as a batch can take an hour), and fetch the new
+ * location database once a month. A cron job (cli/plan.php) runs them every 5 minutes where the station has one; with or
  * without it they also run after ordinary visits (listeners, pages), at most once every 5 minutes,
  * after the answer has gone out where the server allows that. So a station needs no cron job.
  * The state (when they last ran, and by what) is kept in storage/cache/jobs.json.
@@ -90,6 +91,15 @@ final class Jobs
             }
             if (($slides = (new Slides($db, SW_ROOT))->cleanup($now)) > 0) {
                 $out[] = sprintf('%s: %d unused slide picture(s) deleted', $main['name'], $slides);
+            }
+            // song prep on the server (round 85): start the worker when uploads wait and none runs; tidy old pieces either way
+            try {
+                (new PrepQueue($db, $main, SW_ROOT))->cleanup((int) $now);
+                if (PrepQueue::kick($db, SW_ROOT)) {
+                    $out[] = $main['name'] . ': song prep started for the uploads waiting';
+                }
+            } catch (Throwable $ex) {
+                // before the upgrade to 22 there is no queue
             }
             if (Geo::due($now) && self::mayFetchGeo($by)) {
                 Geo::tried();

@@ -1,4 +1,4 @@
-<?php use function Stationwagon\{h, megabytes}; use Stationwagon\App;
+<?php use function Stationwagon\{h, megabytes}; use Stationwagon\{App, NodeRuntime};
 /**
  * The drop zone with Song prep's two switches and the loudness target (assets/upload.js, prep.js): the Music
  * library's and the Ads screen's. The page sets $dropRoute (where uploads and the switches are posted), $dropNoun
@@ -12,11 +12,11 @@ $lufs ??= fn(float $v) => str_replace('-', '−', number_format($v, 1));
 // the usual loudness targets, marked on the slider (round 41)
 $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 'Loud, like FM radio', -9 => 'Very loud'];
 ?>
-<form class="drop" id="drop" method="post" enctype="multipart/form-data" action="<?= h(App::url($dropRoute)) ?>" data-max="<?= (int) $maxUpload ?>" data-preset="<?= h(json_encode($presetSettings, JSON_UNESCAPED_SLASHES)) ?>" data-preset-name="<?= h($presetName) ?>" data-target="<?= h((string) $prepTarget) ?>" data-master="<?= $prepMaster ? 1 : 0 ?>" data-level="<?= $prepLevel ? 1 : 0 ?>">
+<form class="drop" id="drop" method="post" enctype="multipart/form-data" action="<?= h(App::url($dropRoute)) ?>" data-max="<?= (int) $maxUpload ?>" data-preset="<?= h(json_encode($presetSettings, JSON_UNESCAPED_SLASHES)) ?>" data-preset-name="<?= h($presetName) ?>" data-target="<?= h((string) $prepTarget) ?>" data-master="<?= $prepMaster ? 1 : 0 ?>" data-level="<?= $prepLevel ? 1 : 0 ?>" data-server="<?= ($prepServer = NodeRuntime::ready() !== null) ? 1 : 0 ?>">
   <input type="hidden" name="csrf" value="<?= h($csrf) ?>">
   <input type="hidden" name="action" value="upload">
   <div><b>Add <?= h($dropNoun) ?>s</b><br><span class="muted2"><?= $dropIntro ?> Up to <?= h(megabytes($maxUpload)) ?> per upload; the same recording twice is only stored once.</span>
-    <p class="muted2 prepnote" id="prepNote">Prepared in your browser before upload: <?= $prepMaster ? 'mastered with “' . h($presetName) . '”' : 'not mastered' ?>, <?= $prepLevel ? 'levelled to <b>' . h($lufs($prepTarget)) . ' LUFS</b>' : 'kept at its own loudness' ?>.
+    <p class="muted2 prepnote" id="prepNote"><?= $prepServer ? 'Prepared on the server after upload (you can close the page once they’re sent)' : 'Prepared in your browser before upload' ?>: <?= $prepMaster ? 'mastered with “' . h($presetName) . '”' : 'not mastered' ?>, <?= $prepLevel ? 'levelled to <b>' . h($lufs($prepTarget)) . ' LUFS</b>' : 'kept at its own loudness' ?>.
       <?php if (Stationwagon\Auth::allows($me, 'sound')): ?><a href="<?= h(App::url('manage/sound')) ?>#g-loudness">Change this in Sound &amp; safety</a>.<?php endif ?></p>
     <?php if ($relevel !== null): ?>
     <div class="relevel" id="relevel" data-songs="<?= h(json_encode($relevel, JSON_UNESCAPED_SLASHES)) ?>" data-apply="<?= h(App::url('manage/songprep')) ?>" data-original="<?= h(App::url('manage/songprep/original')) ?>" hidden>
@@ -38,3 +38,5 @@ $standards = [-16 => 'Apple Music, podcasts', -14 => 'Spotify, YouTube', -11 => 
   <?php endif ?>
   <ol class="uplist" id="uplist" hidden></ol>
 </form>
+<?php /* round 85: uploads prepared on the server, from any device (upload.js fills it) */ ?>
+<section class="prepq" id="prepQueue" hidden aria-live="polite"><h3>Uploads prepared on the server</h3><ol class="uplist"></ol></section>
