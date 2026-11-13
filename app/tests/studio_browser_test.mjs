@@ -106,8 +106,11 @@ try {
   check("  lists the microphone", (await evaluate("document.getElementById('dev').options.length")) >= 1);
   check("  and starts the MP3 encoder in a worker, off the page's main thread", s && s.encoder === "worker", s && String(s.encoder));
   check("  on a computer, no Do Not Disturb reminder (that's for phones and tablets)", s && !s.handheld && !(await text("#stBannerText")).includes("Do Not Disturb"), await text("#stBannerText"));
-  s = await until((x) => x.mic !== null && x.mic > -80, 5);
-  check("  and the mic meter moves", !!s, s && s.mic.toFixed(1) + " dB");
+  // the meter reads the mic's last 23 ms and Chromium's fake mic beeps about once a second, so it is read in the page
+  // every 10 ms (from here, every 150 ms or so, it missed every beep for 5 s about one run in four)
+  const micDb = await evaluate(`new Promise((ok) => { const end = performance.now() + 5000; const t = setInterval(() => {
+    const m = SwStudio.state().mic; if (m !== null && m > -80) { clearInterval(t); ok(m); } else if (performance.now() > end) { clearInterval(t); ok(null); } }, 10); })`);
+  check("  and the mic meter moves", micDb !== null, micDb !== null ? micDb.toFixed(1) + " dB" : "no sound from the mic in 5 s");
 
   console.log("Headphones");
   s = await state();
@@ -200,12 +203,17 @@ try {
   check("  Deck A shows in its own colour, and the output with it", w && w[0] > 0.01 && w[1] === 0 && w[3] > 0.01, dBs(w) + " (A / B / mic / out, dB)");
   check("  the coming seconds are mixed ahead", s && s.wave.ahead > 10, s && s.wave.ahead + " s");
   // what the strip mixes ahead must be what goes out when that moment comes
+  // The test tones tick every second, so a 1 s window's two edges sit at the same point between ticks; when a tick
+  // falls on an edge, a few ms decide whether it is in (the meter works in 2.9 ms blocks, the plan in 10 ms columns),
+  // and during a fade the two ticks differ by about 2.6 dB. So each side is held against the other's window widened
+  // by 20 ms: louder than that, or quieter, still fails.
+  const EDGE = 0.02;
   const ahead = async (wait) => {
-    const p = await evaluate("(() => { const n = SwStudio.wave.now(); return { t0: n + 2, t1: n + 3, p: SwStudio.wave.planned(n + 2, n + 3) }; })()");
+    const p = await evaluate(`(() => { const n = SwStudio.wave.now(); return { t0: n + 2, t1: n + 3, p: SwStudio.wave.planned(n + 2, n + 3), wide: SwStudio.wave.planned(n + 2 - ${EDGE}, n + 3 + ${EDGE}) }; })()`);
     await sleep(wait);
-    return { plan: p.p, got: await evaluate(`SwStudio.wave.measured(${p.t0}, ${p.t1})`) };
+    return { plan: p.p, planWide: p.wide, got: await evaluate(`SwStudio.wave.measured(${p.t0}, ${p.t1})`), gotWide: await evaluate(`SwStudio.wave.measured(${p.t0 - EDGE}, ${p.t1 + EDGE})`) };
   };
-  const same = (c) => c.plan && c.got && [0, 1, 3].every((j) => Math.abs(dB(c.plan[j]) - dB(c.got[j])) < 1);
+  const same = (c, cols = [0, 1, 3]) => c.plan && c.got && c.planWide && c.gotWide && cols.every((j) => dB(c.got[j]) < dB(c.planWide[j]) + 1 && dB(c.plan[j]) < dB(c.gotWide[j]) + 1);
   let cmp = await ahead(3800);
   check("  what it mixed ahead is what went out, each deck and the output (within 1 dB)", same(cmp), `planned ${dBs(cmp.plan)}, measured ${dBs(cmp.got)}`);
   await click("#stOutTg");
@@ -223,7 +231,10 @@ try {
   await click("#fadeBtn");
   cmp = await ahead(3800);
   check("during Fade to B the strip mixes both decks ahead", cmp.plan && cmp.plan[0] > 0.001 && cmp.plan[1] > 0.001, dBs(cmp.plan));
-  check("  and that is what went out (within 1 dB)", same(cmp), `planned ${dBs(cmp.plan)}, measured ${dBs(cmp.got)}`);
+  // the AutoDJ song Deck A picked up may be the same test tone as Deck B: two copies of one tone add up or cancel by
+  // their phase (a fraction of a millisecond apart), which a plan in 10 ms columns can't hold, so then only each deck counts
+  const twin = (await evaluate("(() => { const d = SwStudio.state().decks; return d.A.title === d.B.title; })()"));
+  check("  and that is what went out (within 1 dB)", same(cmp, twin ? [0, 1] : [0, 1, 3]), `planned ${dBs(cmp.plan)}, measured ${dBs(cmp.got)}` + (twin ? " (the same song on both decks: each deck compared, not their sum)" : ""));
   s = await until((x) => x.xf === 100 && x.decks.B.playing && !x.decks.A.playing, 10);
   check("Fade to B crossfades to Deck B and stops Deck A", !!s, s ? "" : JSON.stringify((await state()).decks));
   check("  the running order marks that song as on now", s && s.nowItem === 0 && (await evaluate("document.querySelector('#ro li').classList.contains('now')")));

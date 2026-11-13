@@ -527,7 +527,14 @@ try {
   const again = await waitFor("swEmbed.events.slice(-4).some((e) => / join /.test(' ' + e)) && swEmbed.playing && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);
   check("paused from outside (as a phone's power manager does), it starts again by itself, back at 20 s", !!again, again ? again.toFixed(2) + " s" : JSON.stringify(await evaluate("swEmbed.events.slice(-6)")));
   check("  still counted as the same listener", (await evaluate("swEmbed.ping")) === pingBefore && !!pingBefore);
-  // the sound stops moving without a pause (a sound output stopped under it): after 8 s the deck gets a new element
+  // the sound stops moving without a pause (a sound output stopped under it): after 8 s the deck gets a new element.
+  // That takes about 20 s of one song (5.5 s here, then 8 s and the join): with less left, wait for the next song,
+  // so a song change (a join, a wait for data, a timing correction) doesn't land in it (a 20 s song did, round 85)
+  const songLeft = () => evaluate(`(() => { const s = SwPlayer.state(), tl = SwPlayer.timeline(); const e = s.current && tl && tl.entries.find((x) => x.type === 'song' && Math.abs(x.start - s.current.start) < 0.01); return e ? e.end - s.heard : 0; })()`);
+  if ((await songLeft()) < 22) {
+    const was = (await state()).current.key;
+    await waitFor(`swEmbed.playing && swEmbed.heard && SwPlayer.state().current && SwPlayer.state().current.key !== ${JSON.stringify(was)}`, 60);
+  }
   await sleep(5500); // past the 4 s between joins
   await evaluate("(() => { const el = swEmbed.media, t = el.currentTime; Object.defineProperty(el, 'currentTime', { configurable: true, get: () => t, set: () => {} }); return 1; })()");
   const moving = await waitFor("swEmbed.events.some((e) => /stopped moving: starting it again/.test(e)) && swEmbed.playing && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);
