@@ -3,7 +3,7 @@
 // Song urls are relative to the app root.
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
-use Stationwagon\{Listeners, Config, Jobs, Notes, Planner};
+use Stationwagon\{Listeners, Config, Jobs, Notes, Peaks, Planner};
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -34,6 +34,10 @@ try {
         foreach ($entries as &$e) {
             if ($e['type'] === 'song' && isset($near[(int) $e['track_id']]) && $e['end'] > $now - 60 && $e['start'] < $now + 30) {
                 $e['pieces'] = $near[(int) $e['track_id']];
+                // its peaks, when made (round 87): the strip then draws from them and reads no audio (src/Peaks.php)
+                if (Peaks::has(SW_ROOT, (string) $e['file'])) {
+                    $e['peaks'] = Peaks::url((string) $e['file']);
+                }
             }
         }
         unset($e);

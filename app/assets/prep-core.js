@@ -492,8 +492,33 @@
 
   function round(v, d) { const f = Math.pow(10, d); return Math.round(v * f) / f; }
 
+  // ---- A song's peaks for the listeners' output strip (round 87) ---------------------------------
+  // The strip draws the coming seconds from these instead of reading the song's audio a second time
+  // (the decks download it once). One file per song file, the station's own little format:
+  //   bytes 0-3 "SWPK", 4 version (1), 5 column length in ms (10), 6-7 zero,
+  //   8-11 the number of columns n (uint32, little-endian), 12-15 the sample rate it was measured at,
+  //   then n bytes: the highest sample of either channel in each 10 ms column, as a level code:
+  //   0 is silence (below -100 dB), 1..255 is (code - 255) * 0.4 dB (255 is 0 dB; within 0.2 dB).
+  // About 6 KB a minute. The player reads them in outwave.js (SwOutWave.peaksFrom).
+  const PEAKS = { MAGIC: "SWPK", VERSION: 1, STEP_MS: 10, HEAD: 16, DB_STEP: 0.4 };
+  function peaks(channels, rate) {
+    const a = channels[0], b = channels[1] || a, len = a.length;
+    const n = Math.ceil(len / (rate * PEAKS.STEP_MS / 1000) - 1e-9), out = new Uint8Array(PEAKS.HEAD + n);
+    for (let k = 0; k < 4; k++) out[k] = PEAKS.MAGIC.charCodeAt(k);
+    out[4] = PEAKS.VERSION; out[5] = PEAKS.STEP_MS;
+    const dv = new DataView(out.buffer);
+    dv.setUint32(8, n, true); dv.setUint32(12, rate, true);
+    for (let c = 0; c < n; c++) {
+      const from = Math.round(c * rate * PEAKS.STEP_MS / 1000), to = Math.min(len, Math.round((c + 1) * rate * PEAKS.STEP_MS / 1000));
+      let m = 0;
+      for (let i = from; i < to; i++) { const x = a[i] < 0 ? -a[i] : a[i], y = b[i] < 0 ? -b[i] : b[i]; if (x > m) m = x; if (y > m) m = y; }
+      out[PEAKS.HEAD + c] = m <= 1e-5 ? 0 : Math.max(1, Math.min(255, Math.round(255 + 20 * Math.log10(m) / PEAKS.DB_STEP)));
+    }
+    return out;
+  }
+
   const api = { P, kFilters, loudness, outro, peakDb, soundSpan, prepare, encode, tags, levelTags, id3, sniff, readTags, ORIGINAL,
-    targetRate, rateNote, resampler, resample, rng, quantize, toInt16, encodeLame, mp3Rate };
+    targetRate, rateNote, resampler, resample, rng, quantize, toInt16, encodeLame, mp3Rate, PEAKS, peaks };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.SwPrepCore = api;
 })(typeof self !== "undefined" ? self : this);

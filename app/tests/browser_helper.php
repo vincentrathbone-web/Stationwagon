@@ -43,7 +43,7 @@
 //   php browser_helper.php podcast-min <seconds | default>          -> the shortest show made into an episode, before
 declare(strict_types=1);
 require __DIR__ . '/../src/bootstrap.php';
-use Stationwagon\{Db, Library, NodeRuntime, Notes, Planner, Playlists, Podcast, PrepQueue, Schedule, Slides, StationSettings, Verse};
+use Stationwagon\{Db, Library, NodeRuntime, Notes, Peaks, Planner, Playlists, Podcast, PrepQueue, Schedule, Slides, StationSettings, Verse};
 
 const PHONE_DJ = 'stationwagon-phone-test@example.test';
 
@@ -77,6 +77,24 @@ if ($cmd === 'manager') {
         is_array($raw) && $raw !== [] ? NodeRuntime::save($raw) : @unlink(NodeRuntime::statePath());
     }
     echo json_encode(['state' => NodeRuntime::state(), 'summary' => NodeRuntime::summary(), 'ready' => NodeRuntime::ready()]);
+} elseif ($cmd === 'peaks') {
+    // round 87: song files' peaks. peaks missing | peaks files <n> (the newest song files in use) | peaks drop <file>... | peaks has <file>... | peaks fill
+    $what = $argv[2] ?? 'missing';
+    if ($what === 'missing') {
+        echo json_encode(Peaks::missing($db, SW_ROOT, 1000, false));
+    } elseif ($what === 'files') {
+        echo json_encode($db->run('SELECT file FROM ' . $db->table('tracks') . " WHERE status = 'ready' GROUP BY file ORDER BY MAX(id) DESC LIMIT " . max(1, (int) ($argv[3] ?? 2)))->fetchAll(PDO::FETCH_COLUMN));
+    } elseif ($what === 'drop') {
+        foreach (array_slice($argv, 3) as $f) {
+            Peaks::drop(SW_ROOT, $f);
+        }
+        @unlink(SW_ROOT . '/storage/cache/peaks-failed.json');
+        echo json_encode(['ok' => true]);
+    } elseif ($what === 'has') {
+        echo json_encode(array_map(static fn ($f) => Peaks::has(SW_ROOT, $f), array_slice($argv, 3)));
+    } elseif ($what === 'fill') {
+        echo json_encode(Peaks::fill($db, SW_ROOT, NodeRuntime::ready() ?? 'node'));
+    }
 } elseif ($cmd === 'redo-jobs') {
     // round 87: the songs made again on the server, for a track
     echo json_encode($db->run('SELECT id, state, stage, error FROM ' . $db->table('prep_jobs') . ' WHERE redo = 1 AND track_id = ? ORDER BY id', [(int) ($argv[2] ?? 0)])->fetchAll());

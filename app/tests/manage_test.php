@@ -5,7 +5,7 @@
 //   php app/tests/manage_test.php      (same SW_TEST_DB_* settings as install_test.php)
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
-use Stationwagon\{Auth, Db, DiagReports, Library, NodeRuntime, Permissions, Planner, Playlists, PrepPresets, PrepQueue, Roles, Schedule, Schema, Staff, StationSettings, Studio};
+use Stationwagon\{Auth, Db, DiagReports, Library, NodeRuntime, Peaks, Permissions, Planner, Playlists, PrepPresets, PrepQueue, Roles, Schedule, Schema, Staff, StationSettings, Studio};
 
 $t = test_database('manage');
 $root = temp_root('manage');
@@ -832,6 +832,39 @@ try {
     check('  off air: put in place', $pq->get($air['id'])['state'] === 'done' && $lib->get($cid)['file'] !== $cFile && abs((float) $lib->get($cid)['level_target'] + 17.0) < 0.01,
         json_encode($pq->get($air['id'])));
     PrepQueue::$clock = null;
+
+    echo "  the song files' peaks for the listeners' output strip (round 87)\n";
+    $missing = Peaks::missing($db, $root, 1000);
+    check('song files in use without peaks are listed, newest first, and are due', count($missing) >= 2 && Peaks::due($db, $root)
+        && $missing[0]['file'] === $db->run("SELECT file FROM $tt WHERE status = 'ready' ORDER BY id DESC LIMIT 1")->fetchColumn(), count($missing) . ' missing');
+    $bad = $db->run("SELECT file FROM $tt WHERE status = 'ready' ORDER BY id LIMIT 1")->fetchColumn();
+    $badBytes = file_get_contents("$root/storage/media/$bad");
+    file_put_contents("$root/storage/media/$bad", str_repeat("\0", 2048)); // a file the decoder can't read
+    $lines = Peaks::fill($db, $root, $node);
+    check('Node makes them all (one it can\'t read is said and set aside)', Peaks::missing($db, $root, 1000) === [] && !Peaks::due($db, $root)
+        && (bool) array_filter($lines, fn($l) => str_contains($l, 'waveform(s) made')) && (bool) array_filter($lines, fn($l) => str_contains($l, "not made for $bad")), implode(' | ', $lines));
+    check('  that one is tried again only a day later (it is listed again without that wait)', array_column(Peaks::missing($db, $root, 1000, false), 'file') === [$bad]);
+    file_put_contents("$root/storage/media/$bad", $badBytes);
+    check('  a second run has nothing to do', Peaks::fill($db, $root, $node) === []);
+    $cFileNow = $lib->get($cid)['file'];
+    $pk = file_get_contents(Peaks::path($root, $cFileNow));
+    $n = unpack('V', substr($pk, 8, 4))[1];
+    $codes = array_values(unpack('C*', substr($pk, 16)));
+    check('a song\'s peaks: the station\'s format, a column every 10 ms for the whole song', substr($pk, 0, 4) === 'SWPK' && ord($pk[4]) === 1 && ord($pk[5]) === 10
+        && $n === strlen($pk) - 16 && abs($n / 100 - (float) $lib->get($cid)['duration_s']) < 0.05, $n . ' columns, ' . $lib->get($cid)['duration_s'] . ' s');
+    $peakDb = (max($codes) - 255) * 0.4;
+    check('  its loudest moment between the song\'s loudness and 0 dB, and sound throughout', $peakDb <= 0 && $peakDb >= (float) $lib->get($cid)['loudness_lufs'] - 3
+        && count(array_filter($codes, fn($c) => $c > 150)) > $n * 0.5, 'peak ' . $peakDb . ' dB, loudness ' . $lib->get($cid)['loudness_lufs'] . ' LUFS');
+    check('  checked before it is kept: the format, its length against the song\'s', Peaks::invalid($pk, (float) $lib->get($cid)['duration_s']) === null
+        && Peaks::invalid('nonsense') !== null && Peaks::invalid(substr($pk, 0, -5)) !== null && Peaks::invalid($pk, 999.0) !== null
+        && Peaks::save($root, 'no-such-file.mp3', $pk) !== null && Peaks::save($root, '../../config.local.php', $pk) !== null);
+    Peaks::drop($root, $cFileNow);
+    check('  a browser\'s copy (no Node) is kept the same way', Peaks::save($root, $cFileNow, $pk, Peaks::durationOf($db, $cFileNow)) === null && Peaks::has($root, $cFileNow)
+        && file_get_contents(Peaks::path($root, $cFileNow)) === $pk);
+    check('  the player reads them at peaks/<song file>.bin', Peaks::url($cFileNow) === 'peaks/' . substr($cFileNow, 0, -4) . '.bin' && Peaks::url('x/../y.mp3') === null);
+    $gone = $db->run("SELECT id, file FROM $tt WHERE status = 'ready' AND file <> ? AND id <> ? ORDER BY id DESC LIMIT 1", [$cFileNow, $cid])->fetch();
+    check('  a song removed from the library takes its peaks with it', Peaks::has($root, $gone['file']) && $lib->delete((int) $gone['id'], $p, $offAir((int) $gone['id'], microtime(true))) === null
+        && !Peaks::has($root, $gone['file']) && !is_file("$root/storage/media/" . $gone['file']));
 
     echo "  tidying up\n";
     $b8 =$pq->begin($uid, 'song', 'Half.wav', 999999, sha1('half'));

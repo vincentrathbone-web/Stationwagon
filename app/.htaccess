@@ -5,6 +5,8 @@ Options -Indexes
   RewriteEngine On
   # A piece of a song for the HLS playlist, at an address of its own (round 76: api/seg.php says why)
   RewriteRule ^seg/([0-9]+)-([0-9]+)/([A-Za-z0-9._-]+\.mp3)$ api/seg.php?o=$1&l=$2&f=$3 [L]
+  # A song's peaks for the listeners' output strip (round 87: src/Peaks.php)
+  RewriteRule ^peaks/([A-Za-z0-9._-]+)\.bin$ api/peaks.php?f=$1 [L]
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule ^ index.php [QSA,L]
@@ -28,9 +30,9 @@ Options -Indexes
     Header set Cache-Control "public, max-age=0, s-maxage=2"
   </Files>
   # A piece of a song (seg/<offset>-<length>/<file>.mp3) never changes at the same address
-  <Files "seg.php">
+  <FilesMatch "^(seg|peaks)\.php$">
     Header set Cache-Control "public, max-age=31536000, immutable"
-  </Files>
+  </FilesMatch>
   # Now playing (embeds and other sites poll it): ready for a 2 s Cloudflare cache like the playlist
   <Files "nowplaying.php">
     Header set Cache-Control "public, max-age=0, s-maxage=2"

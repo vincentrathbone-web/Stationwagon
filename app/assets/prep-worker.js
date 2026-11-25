@@ -26,6 +26,11 @@ self.onmessage = async (e) => {
       self.postMessage(Object.assign({ tagsDone: true }, self.SwPrepRun.readTags(await env.decoder(), e.data.file)));
       return;
     }
+    if (e.data.peaksOnly) { // round 87: a song file's peaks for the listeners' output strip (peaks-fill.js)
+      const d = self.SwPrepRun.decodeFile(await env.decoder(), e.data.file), peaks = self.SwPrepCore.peaks(d.channels.slice(0, 2), d.rate);
+      self.postMessage({ peaks }, [peaks.buffer]);
+      return;
+    }
     const r = await self.SwPrepRun.run(e.data, env);
     const send = r.done ? r.chunks.map((c) => c.buffer) : [];
     if (r.done && r.original) send.push(...r.original.chunks.map((c) => c.buffer));

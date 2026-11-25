@@ -9,6 +9,9 @@
 //   { prepared, kept?, refused?, note?, notice?, info?, sourceSha1, name, kind, song: bool, original: bool }
 // What it does mirrors prep.js (the browser's side): the same limits, the same notes, the same tags. With "--check" it
 // only says it can run: { ok, node, lame, decoder } (Sound & safety's setup test).
+// With "--peaks <list.json>" (round 87) it makes song files' peaks for the listeners' output strip (src/Peaks.php):
+//   list.json: { until: a time in ms to stop by, files: [{ in: a song file, out: where its peaks go }] }
+//   and says on stdout { made, failed: [{ in, error }], left } (left: files not reached before `until`).
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -37,6 +40,23 @@ const writeJson = (path, value) => { writeFileSync(path + ".tmp", JSON.stringify
 async function check() {
   const l = await lame(), d = await decoder();
   return { ok: true, node: process.versions.node, lame: l.UTF8ToString(l._sw_version()), decoder: d.UTF8ToString(d._sw_dec_version()) };
+}
+
+/** Each listed song file decoded with the station's decoder and its peaks written (SwPrepCore.peaks), until the time is up. */
+async function makePeaks(list) {
+  const r = { made: 0, failed: [], left: 0 };
+  for (const f of list.files || []) {
+    if (list.until && Date.now() > list.until) { r.left++; continue; }
+    try {
+      const d = SwPrepRun.decodeFile(await decoder(), readFileSync(f.in));
+      writeFileSync(f.out + ".tmp", core.peaks(d.channels.slice(0, 2), d.rate));
+      renameSync(f.out + ".tmp", f.out);
+      r.made++;
+    } catch (ex) {
+      r.failed.push({ in: f.in, error: String((ex && ex.message) || ex) });
+    }
+  }
+  return r;
 }
 
 async function prepare(job) {
@@ -108,6 +128,8 @@ const arg = process.argv[2];
 try {
   if (arg === "--check") {
     process.stdout.write(JSON.stringify(await check()) + "\n");
+  } else if (arg === "--peaks") {
+    process.stdout.write(JSON.stringify(await makePeaks(JSON.parse(readFileSync(process.argv[3], "utf8")))) + "\n");
   } else {
     const job = JSON.parse(readFileSync(arg, "utf8"));
     const result = await prepare(job);

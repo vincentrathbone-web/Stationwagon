@@ -92,10 +92,11 @@ final class Jobs
             if (($slides = (new Slides($db, SW_ROOT))->cleanup($now)) > 0) {
                 $out[] = sprintf('%s: %d unused slide picture(s) deleted', $main['name'], $slides);
             }
-            // song prep on the server (round 85): start the worker when uploads wait and none runs; tidy old pieces either way
+            // song prep on the server (round 85): start the worker when uploads wait and none runs; tidy old pieces either way.
+            // It also makes song files' missing peaks (round 87), so it starts for those too.
             try {
                 (new PrepQueue($db, $main, SW_ROOT))->cleanup((int) $now);
-                if (PrepQueue::kick($db, SW_ROOT)) {
+                if (PrepQueue::kick($db, SW_ROOT, Peaks::due($db, SW_ROOT))) {
                     $out[] = $main['name'] . ': song prep started for the uploads waiting';
                 }
             } catch (Throwable $ex) {

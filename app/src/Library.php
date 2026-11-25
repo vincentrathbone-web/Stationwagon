@@ -417,6 +417,7 @@ final class Library
         $left = (int) $this->db->run('SELECT COUNT(*) FROM ' . $this->db->table('tracks') . ' WHERE file = ?', [$file])->fetchColumn();
         if ($left === 0) {
             @unlink($this->root . '/storage/media/' . $file);
+            Peaks::drop($this->root, $file);
         }
     }
 

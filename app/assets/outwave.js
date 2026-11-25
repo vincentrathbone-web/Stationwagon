@@ -103,35 +103,72 @@
 
   /**
    * Mix ahead: per 10 ms column, the peak of each source's wet signal and of their sum (the output)
-   * between context times t0 and t1. sources: [{ slot, ch: [left, right], rate, start (the context
-   * time of sample 0), gain(t) (the gain the mix will apply at context time t) }], all at one rate.
+   * between context times t0 and t1. sources: [{ slot, start (the context time of the source's
+   * sample 0, or of its first peak), gain(t) (the gain the mix will apply at context time t), and
+   * either ch: [left, right] with rate (audio, all at one rate) or pk: a song's peaks (peaksFrom) }].
+   * Audio is mixed sample by sample, so its output column is exact. Peaks (round 87: the song's own
+   * 10 ms peaks, made once by the station, instead of its audio read a second time) are each exact
+   * for their own source; where several sound at once the output adds them as unrelated sounds add
+   * up (the power sum: the square root of the sum of their squares), as two songs in a crossfade do.
    */
   function render(sources, t0, t1, k) {
     const i0 = Math.floor(t0 / STEP), n = Math.max(0, Math.ceil(t1 / STEP) - i0), v = new Float32Array(n * k);
     const out = { i0, n, k, v, get(i, j) { const c = i - this.i0; return c >= 0 && c < this.n ? this.v[c * this.k + j] : null; } };
     if (!sources.length) return out;
-    const rate = sources[0].rate, len = Math.round(rate * STEP), L = new Float32Array(len), R = new Float32Array(len);
+    const audio = sources.filter((s) => s.ch), marks = sources.filter((s) => s.pk);
+    const rate = audio.length ? audio[0].rate : 48000, len = Math.round(rate * STEP), L = new Float32Array(len), R = new Float32Array(len);
     for (let c = 0; c < n; c++) {
       const tc = (i0 + c) * STEP;
-      let any = false;
-      L.fill(0); R.fill(0);
-      for (const s of sources) {
-        const from = Math.round((tc - s.start) * rate), a = s.ch[0], b = s.ch[1] || a;
-        if (from + len <= 0 || from >= a.length) continue;
+      let any = false, m = 0, power = 0;
+      if (audio.length) {
+        L.fill(0); R.fill(0);
+        for (const s of audio) {
+          const from = Math.round((tc - s.start) * rate), a = s.ch[0], b = s.ch[1] || a;
+          if (from + len <= 0 || from >= a.length) continue;
+          const g = s.gain(tc + STEP / 2);
+          if (!(g > 1e-5)) continue;
+          let p = v[c * k + s.slot];
+          for (let j = Math.max(0, -from), e = Math.min(len, a.length - from); j < e; j++) {
+            const x = a[from + j] * g, y = b[from + j] * g;
+            L[j] += x; R[j] += y;
+            const q = Math.max(x < 0 ? -x : x, y < 0 ? -y : y);
+            if (q > p) p = q;
+          }
+          v[c * k + s.slot] = p; any = true;
+        }
+        if (any) for (let j = 0; j < len; j++) { const x = L[j] < 0 ? -L[j] : L[j], y = R[j] < 0 ? -R[j] : R[j]; if (x > m) m = x; if (y > m) m = y; }
+      }
+      for (const s of marks) {
+        // the song's columns this strip column touches (they rarely line up): the highest of them
+        const lv = s.pk.lv, ps = s.pk.step, a = (tc - s.start) / ps, j0 = Math.max(0, Math.floor(a + 1e-6)), j1 = Math.min(lv.length - 1, Math.ceil(a + STEP / ps - 1e-6) - 1);
+        if (j1 < j0) continue;
         const g = s.gain(tc + STEP / 2);
         if (!(g > 1e-5)) continue;
-        let p = v[c * k + s.slot];
-        for (let j = Math.max(0, -from), e = Math.min(len, a.length - from); j < e; j++) {
-          const x = a[from + j] * g, y = b[from + j] * g;
-          L[j] += x; R[j] += y;
-          const q = Math.max(x < 0 ? -x : x, y < 0 ? -y : y);
-          if (q > p) p = q;
-        }
-        v[c * k + s.slot] = p; any = true;
+        let p = 0;
+        for (let j = j0; j <= j1; j++) if (lv[j] > p) p = lv[j];
+        p *= g;
+        if (p > v[c * k + s.slot]) v[c * k + s.slot] = p;
+        power += p * p; any = true;
       }
-      if (any) { let m = 0; for (let j = 0; j < len; j++) { const x = L[j] < 0 ? -L[j] : L[j], y = R[j] < 0 ? -R[j] : R[j]; if (x > m) m = x; if (y > m) m = y; } v[c * k + k - 1] = m; }
+      if (any) v[c * k + k - 1] = power ? Math.sqrt(m * m + power) : m;
     }
     return out;
+  }
+
+  /**
+   * A song's peaks file (the station's own format, made by SwPrepCore.peaks; round 87) as
+   * { step (seconds a column), lv: Float32Array of each column's peak (0..1) }, or null when it isn't one.
+   */
+  function peaksFrom(buffer) {
+    const b = new Uint8Array(buffer);
+    if (b.length < 17 || String.fromCharCode(b[0], b[1], b[2], b[3]) !== "SWPK" || b[4] !== 1 || !b[5]) return null;
+    const n = new DataView(b.buffer, b.byteOffset, b.length).getUint32(8, true);
+    if (n !== b.length - 16) return null;
+    const table = new Float32Array(256);
+    for (let c = 1; c < 256; c++) table[c] = Math.pow(10, ((c - 255) * 0.4) / 20);
+    const lv = new Float32Array(n);
+    for (let i = 0; i < n; i++) lv[i] = table[b[16 + i]];
+    return { step: b[5] / 1000, lv };
   }
 
   /**
@@ -249,5 +286,5 @@
     };
   }
 
-  window.SwOutWave = { STEP, Columns, range, meter, render, strip, now, outputTime };
+  window.SwOutWave = { STEP, Columns, range, meter, render, peaksFrom, strip, now, outputTime };
 })();

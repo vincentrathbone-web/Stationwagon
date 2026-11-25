@@ -269,6 +269,21 @@ try {
         [$off, $len] = $withPieces[0]['pieces'][1] ?? $withPieces[0]['pieces'][0];
         $rr = $s->go($withPieces[0]['url'], null, ['Range: bytes=' . $off . '-' . ($off + $len - 1)]);
         check('  a piece comes back as a byte range of the song file', $rr['status'] === 206 && strlen($rr['body']) === $len && ord($rr['body'][0]) === 0xFF, $rr['status'] . ', ' . strlen($rr['body']) . ' of ' . $len . ' bytes');
+        // round 87: and their peaks, once the station has made them (the strip draws from these, not from the audio)
+        $withPeaks = array_values(array_filter($near, fn($e) => !empty($e['peaks'])));
+        check('songs near now come with their peaks (a live station has made them all)', $public ? count($withPeaks) === count($near) : count($withPeaks) > 0,
+            count($withPeaks) . ' of ' . count($near));
+        if ($withPeaks) {
+            $pr = (new Browser($base))->go($withPeaks[0]['peaks']);
+            $pn = strlen($pr['body']) > 16 ? unpack('V', substr($pr['body'], 8, 4))[1] : -1;
+            check('  their peaks: a small file in the station\'s format, a column per 10 ms of the song', $pr['status'] === 200 && substr($pr['body'], 0, 4) === 'SWPK'
+                && $pn === strlen($pr['body']) - 16 && abs($pn / 100 - (float) ($withPeaks[0]['full'] ?? $withPeaks[0]['play'])) < max(1.0, 0.02 * (float) ($withPeaks[0]['full'] ?? $withPeaks[0]['play'])),
+                $pr['status'] . ', ' . strlen($pr['body']) . ' bytes, ' . $pn . ' columns');
+            $pcc = implode(',', $pr['headers']['cache-control'] ?? []);
+            check('  kept for a year, by Cloudflare too', str_contains($pcc, 'public') && str_contains($pcc, 'max-age=31536000') && str_contains($pcc, 'immutable') && !str_contains($pcc, 'no-cache'), $pcc);
+            $bad = [(new Browser($base))->go('peaks/0000000000000000000000000000000000000000.bin')['status'], (new Browser($base))->go('peaks/..%2Fconfig.local.bin')['status']];
+            check('  unknown peaks are 404', $bad === [404, 404], implode(',', $bad));
+        }
     }
     $r2 = $s->go('api/notes.php');
     $nj = json_decode($r2['body'], true);
@@ -336,7 +351,8 @@ try {
     }
     check('  on air is what the timeline plays at the listener delay', $heardEntry !== null && ($np['on_air']['title'] ?? null) === $heardEntry['title'] && abs($np['on_air']['started'] - $heardEntry['start']) < 0.2,
         ($np['on_air']['title'] ?? '-') . ' / ' . ($heardEntry['title'] ?? '-'));
-    $songsAfter = array_values(array_filter($tl['entries'] ?? [], fn($e) => $e['type'] === 'song' && $heardEntry && $e['start'] > $heardEntry['start']));
+    // a jingle isn't listed as a coming song (NowPlaying, since v1.1); the test missed it until one was next (round 87)
+    $songsAfter = array_values(array_filter($tl['entries'] ?? [], fn($e) => $e['type'] === 'song' && empty($e['jingle']) && $heardEntry && $e['start'] > $heardEntry['start']));
     check('  next is the coming songs, in order', $np['next'] && $songsAfter && $np['next'][0]['title'] === $songsAfter[0]['title'] && abs($np['next'][0]['starts'] - $songsAfter[0]['start']) < 0.2 && count($np['next']) <= 3);
     $starts = array_column($np['recent'], 'started');
     $sorted = $starts;
@@ -478,7 +494,7 @@ try {
     check('the stylesheet keeps every colour in its token blocks (green, hi-fi, ocean, and the embed’s light and ocean): none in the components', $blocks === 5 && $raw[0] === [], $blocks . ' blocks; ' . implode(' ', array_slice($raw[0], 0, 6)));
     preg_match_all('~border-radius: (\d+px)~', $rest, $radii);
     check('  and every corner size except the tiny ones (1–2 px) and circles', array_diff(array_unique($radii[1]), ['1px', '2px']) === [], implode(' ', array_unique($radii[1])));
-    foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/', 'storage/geo/dbip-city-lite.mmdb', 'storage/podcasts/ep-x/raw/1-music-0000.chunk', 'storage/podcasts/ep-x/episode.chunk', 'storage/originals/', 'storage/originals/0000000000000000000000000000000000000000.mp3'] as $private) {
+    foreach (['config.local.php', 'install.key', 'src/Auth.php', 'cli/set-password.php', 'cli/plan.php', 'tests/web_test.php', 'storage/sessions/', 'storage/cache/throttle/', 'storage/geo/dbip-city-lite.mmdb', 'storage/podcasts/ep-x/raw/1-music-0000.chunk', 'storage/podcasts/ep-x/episode.chunk', 'storage/originals/', 'storage/originals/0000000000000000000000000000000000000000.mp3', 'storage/peaks/', 'storage/peaks/0000000000000000000000000000000000000000.peaks'] as $private) {
         $code = (new Browser($base))->go($private)['status'];
         check("$private is not served", in_array($code, [403, 404], true), (string) $code);
     }

@@ -484,6 +484,42 @@ const rowsNow = () => evaluate(`[...document.querySelectorAll('#uplist li')].map
 const jobsOf = () => helper("prep-jobs", String(user.id));
 const waitJobs = async (fn, sec = 120) => { let j = null; for (let i = 0; i < sec * 2; i++) { j = jobsOf(); if (fn(j)) return j; await sleep(500); } return j; };
 
+// round 87: a station whose server can't run Node has the Music library page make the songs' missing peaks
+// (assets/peaks-fill.js); one that can makes them itself (src/Peaks.php, fill)
+async function peaksTest() {
+  const was = helper("server-prep", "state").state;
+  try {
+    helper("server-prep", "off");
+    const files = helper("peaks", "files", "2");
+    helper("peaks", "drop", ...files);
+    check("two song files without their peaks", files.length === 2 && helper("peaks", "has", ...files).every((x) => !x), JSON.stringify(files));
+    await go(`${base}/manage/library`);
+    check("  the library page, on a server without Node, has the waveform maker", await evaluate("!!document.getElementById('peaksFill') && !!window.swPeaksFill"));
+    let st = null, said = "";
+    for (let i = 0; i < 600 && !(st && st.done); i++) {
+      await sleep(100);
+      st = await evaluate("window.swPeaksFill");
+      const t = await evaluate("(document.getElementById('peaksFill') || {}).textContent || ''");
+      if (t.includes("to go")) said = t;
+    }
+    check("  it makes them in the browser, saying so while it works", !!st && st.done && st.made >= 2 && !st.skipped && helper("peaks", "has", ...files).every(Boolean),
+      JSON.stringify(st) + " | " + said);
+    check("  and says it is done", (await evaluate("document.getElementById('peaksFill').textContent")).startsWith("Song waveforms made"));
+    const back = await evaluate(`fetch(${JSON.stringify(base + "/peaks/")} + ${JSON.stringify(files[0].replace(/\.mp3$/, ""))} + ".bin").then(async (r) => [r.status, r.headers.get("cache-control"), (await r.arrayBuffer()).byteLength])`);
+    check("  the player can read them, kept for good", back[0] === 200 && /immutable/.test(back[1] || "") && back[2] > 16, JSON.stringify(back));
+    await go(`${base}/manage/library`);
+    check("  with nothing left to make, the page leaves it out", !(await evaluate("!!document.getElementById('peaksFill')")));
+    helper("server-prep", "on");
+    helper("peaks", "drop", files[0]);
+    await go(`${base}/manage/library`);
+    check("  with Node on the server, the page leaves it to the server", !(await evaluate("!!document.getElementById('peaksFill')")));
+    const made = helper("peaks", "fill");
+    check("  which makes them itself", helper("peaks", "has", files[0])[0] && made.some((l) => /waveform\(s\) made/.test(l)), JSON.stringify(made));
+  } finally {
+    helper("server-prep", "restore", JSON.stringify(was));
+  }
+}
+
 async function serverTest() {
   // 1. Set up, by an admin, in a second browser; the manager sees where songs are prepared but can't change it
   await go(`${base}/manage/sound`);
@@ -690,6 +726,11 @@ try {
   await sleep(600); await loaded();
   check("a throwaway manager signs in", (await evaluate("location.pathname")).endsWith("/manage"));
 
+  if (!only || only === "peaks") {
+    console.log("Song waveforms made in the browser where the server can't (round 87)");
+    await peaksTest();
+    if (only === "peaks") throw SKIP;
+  }
   if (only !== "server") {
     console.log("Bulk upload, details later (round 83)");
     await bulkTest();

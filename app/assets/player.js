@@ -283,8 +283,10 @@
       if (this.analyser) spectrum.run(); // stream only: no Web Audio, so nothing to measure
     },
 
-    stop() {
+    /** Stops the sound; `why` goes in the event log (Diagnostics), so a stop nobody asked for can be traced. */
+    stop(why = "") {
       if (!this.on) return;
+      this.log("stopped" + (why ? ": " + why : ""));
       this.on = false;
       if (this.ping) { this.ping.stop(); this.ping = null; }
       this.timers.forEach(clearInterval); this.timers = [];
@@ -333,7 +335,7 @@
         c.suspend().then(() => c.resume()).catch(() => {}).finally(() => { this.nudging = false; });
       } else {
         this.log("sound engine still stuck: starting again"); this.dropout("sound engine stalled", "started again");
-        this.stop(); this.start(); // keeps the event log and the dropout count
+        this.stop("starting again"); this.start(); // keeps the event log and the dropout count
       }
     },
 
@@ -346,8 +348,8 @@
     /** A deck couldn't start: the browser blocked sound (say so), or the file failed (a dropout). */
     playFailed(e) {
       this.log("play failed: " + (e && (e.name + " " + e.message)));
-      if (e && e.name === "NotAllowedError" && BAR) { this.stop(); this.setStatus("Blocked"); } // the bar says it in its own words
-      else if (e && e.name === "NotAllowedError") { this.setStatus("Blocked"); this.say("The browser blocked the sound. Tap Listen again."); this.stop(); this.setStatus("Blocked"); }
+      if (e && e.name === "NotAllowedError" && BAR) { this.stop("sound blocked"); this.setStatus("Blocked"); } // the bar says it in its own words
+      else if (e && e.name === "NotAllowedError") { this.setStatus("Blocked"); this.say("The browser blocked the sound. Tap Listen again."); this.stop("sound blocked"); this.setStatus("Blocked"); }
       else this.dropout("a song couldn’t start", e ? e.name : "");
     },
     online() { if (this.on && this.status !== "Playing") this.setStatus("Playing"); },
@@ -508,20 +510,24 @@
           meter: this.wave ? this.wave.kind : null,
           ahead: ahead.plan ? +((ahead.plan.i0 + ahead.plan.n) * SwOutWave.STEP - this.ctx.currentTime).toFixed(1) : null,
           pieces: [...ahead.pieces.values()].filter(Boolean).length, live: [...ahead.pieces.keys()].filter((k) => k.startsWith("live#")).length,
+          peaks: [...ahead.marks.values()].filter(Boolean).length,
           bytes: ahead.bytes,
         } : null,
       };
     },
   };
 
-  // ---- Look-ahead: the coming output, mixed from audio read about 20 s ahead -------------------
-  // For the output strip's right half the player reads what it will play next itself: the song
-  // pieces the timeline lists (the byte ranges the stream serves) and the live pieces hls.js has
-  // already loaded. It decodes them and mixes them through the same fades tick() will play.
+  // ---- Look-ahead: the coming output, mixed about 20 s ahead ----------------------------------
+  // For the output strip's right half the player mixes what it will play next through the same fades
+  // tick() will play. A song comes as its peaks (round 87: e.peaks, the station's small file of its
+  // 10 ms peaks, src/Peaks.php), read once; a song without them yet as its audio, read and decoded in
+  // the pieces the timeline lists (the byte ranges the stream serves; while a deck's own download of
+  // that song is still open these come over the network again, which the peaks avoid). A live show
+  // comes as the pieces hls.js has already loaded.
   const AHEAD = 20;
   const fadeOf = (e) => (e.type === "song" ? Math.max(0.3, Math.min(e.fade_out, (e.full || e.play) - e.play + 0.001)) : 0.5);
   const ahead = {
-    pieces: new Map(), loading: 0, plan: null, dirty: true, renderedAt: 0, bytes: 0, checked: 0, gaps: 0, quietUntil: 0,
+    pieces: new Map(), marks: new Map(), loading: 0, plan: null, dirty: true, renderedAt: 0, bytes: 0, checked: 0, gaps: 0, quietUntil: 0,
     reset() { this.pieces.clear(); this.plan = null; this.dirty = true; this.checked = 0; this.quietUntil = 0; }, // a new sound engine counts from 0
     /**
      * A sound gap: the measured output went silent (below -60 dB) for 80 ms or more while the mix
@@ -573,7 +579,9 @@
       if (!player.on || !player.ctx || !clock.last || !window.SwOutWave) return;
       const h = player.heard();
       for (const e of clock.last.entries) {
-        if (e.type !== "song" || !e.pieces || e.end + fadeOf(e) < h - 1 || e.start > h + AHEAD) continue;
+        if (e.type !== "song" || e.end + fadeOf(e) < h - 1 || e.start > h + AHEAD) continue;
+        if (e.peaks && this.peaksOf(e) !== false) continue; // its peaks, held or on their way: no audio to read
+        if (!e.pieces) continue;
         // read a song's pieces once a deck has the whole file: the browser's cache then serves them.
         // Read while the deck's own download still runs, they would come over the network again.
         if (!this.downloaded(e)) continue;
@@ -590,6 +598,18 @@
         this.render();
         player.cost.mix += performance.now() - t0;
       }
+    },
+    /** A song's peaks: { step, lv } when held, null while they come, false when they couldn't be read (its audio is read then). */
+    peaksOf(e) {
+      const url = e.peaks;
+      if (!this.marks.has(url)) {
+        this.marks.set(url, null);
+        fetch(new URL(url, BASE).href)
+          .then((res) => { if (!res.ok) throw new Error("HTTP " + res.status); return res.arrayBuffer(); })
+          .then((b) => { this.bytes += b.byteLength; const pk = SwOutWave.peaksFrom(b); if (!pk) throw new Error("not peaks"); this.marks.set(url, pk); this.dirty = true; })
+          .catch(() => { this.marks.set(url, false); this.dirty = true; });
+      }
+      return this.marks.get(url);
     },
     /** A deck holds this song and isn't downloading it now (done, or paused by the browser on a long song). */
     downloaded(e) {
@@ -626,9 +646,16 @@
       const toCtx = (tl) => cNow + (tl - hNow), toTl = (ct) => hNow + (ct - cNow);
       const slots = this.slots(list), src = [], keep = new Set();
       list.forEach((e, i) => {
-        if (e.type !== "song" || !e.pieces) return;
+        if (e.type !== "song") return;
         // a song already playing is placed by its deck's own position (it may run up to 0.3 s off)
         const d = player.deckFor(e), shift = d && d.playing ? (cNow - d.el.currentTime) - toCtx(e.start) : 0;
+        const pk = e.peaks ? this.marks.get(e.peaks) : null;
+        if (pk) {
+          if (e.end + fadeOf(e) >= hNow - 1 && e.start <= hNow + AHEAD + 1)
+            src.push({ slot: slots.get(key(e)), pk, start: toCtx(e.start) + shift, gain: (ct) => this.gain(list, i, toTl(ct)) });
+          return;
+        }
+        if (!e.pieces) return;
         for (const [id, from, sec] of this.piecesOf(e)) {
           if (from + sec < hNow - 1 || from > hNow + AHEAD + 1) continue;
           keep.add(id);
@@ -644,6 +671,7 @@
         if (lives.length) src.push({ slot: 2, ch: p.ch, rate, start: toCtx(p.tl), gain: (ct) => { const t = toTl(ct); let g = 0; for (const i of lives) g = Math.max(g, this.gain(list, i, t)); return g; } });
       }
       for (const [id, p] of [...this.pieces]) if (p && !keep.has(id)) this.pieces.delete(id);
+      for (const url of [...this.marks.keys()]) if (!list.some((e) => e.peaks === url)) this.marks.delete(url);
       this.plan = SwOutWave.render(src, cNow, cNow + AHEAD, 4);
       this.dirty = false; this.renderedAt = performance.now();
     },
@@ -741,7 +769,7 @@
   // ---- Controls ---------------------------------------------------------------------------------
   document.addEventListener("visibilitychange", () => { if (player.on) player.log("page " + (document.hidden ? "hidden" : "shown")); });
   if ("mediaSession" in navigator) {
-    try { navigator.mediaSession.setActionHandler("play", () => player.start()); navigator.mediaSession.setActionHandler("pause", () => player.stop()); navigator.mediaSession.setActionHandler("stop", () => player.stop()); } catch (_) { /* unsupported */ }
+    try { navigator.mediaSession.setActionHandler("play", () => player.start()); navigator.mediaSession.setActionHandler("pause", () => player.stop("media key: pause")); navigator.mediaSession.setActionHandler("stop", () => player.stop("media key: stop")); } catch (_) { /* unsupported */ }
   }
   const VOL_KEY = BAR ? "sw-bar-volume" : "sw-volume"; // the bar keeps its own volume (round 61)
   if (EMBED && !BAR) player.volume = 1; // no volume control in the embed: the website's visitor has their own
@@ -753,7 +781,7 @@
     $("lpPlay").addEventListener("click", () => player.start());
     // "Listening now" on the health line, from every timeline fetch (and each ping's answer)
     document.addEventListener("sw:timeline", (e) => { if (typeof e.detail.listeners === "number") player.setListeners(e.detail.listeners); });
-    $("lpStop").addEventListener("click", () => player.stop());
+    $("lpStop").addEventListener("click", () => player.stop("Stop button"));
     // show what's on before anyone presses Listen (the embed shows it from now playing)
     clock.fetch().then(() => { const tl = clock.last, h = clock.now() - DELAY; const i = tl.entries.findIndex((e) => e.start <= h && (h < e.end || (e.type === "live" && e.open))); show(tl.entries[i] || null, tl.entries[i + 1] || null, h, tl.entries); }).catch(() => {});
     setInterval(() => { if (!player.on && clock.last) { const tl = clock.last, h = clock.now() - DELAY; const i = tl.entries.findIndex((e) => e.start <= h && (h < e.end || (e.type === "live" && e.open))); show(tl.entries[i] || null, tl.entries[i + 1] || null, h, tl.entries); } }, 1000);
@@ -768,13 +796,13 @@
     return d ? { el: d.el, gain: d.gain, lag: null } : null;
   };
   window.SwPlayer = {
-    start: () => player.start(), stop: () => player.stop(), state: () => player.state(), serverNow: () => (clock.last ? clock.now() : null),
+    start: () => player.start(), stop: (why) => player.stop(why || "asked by the page"), state: () => player.state(), serverNow: () => (clock.last ? clock.now() : null),
     /** Play another stream ('' the main one), in place (round 75, the bar's picker): a fresh timeline; muted and the volume stay as they are. */
     setStream: (slug) => {
       const s = slug ? encodeURIComponent(slug) : "";
       if (s === STREAM) return false;
       const was = player.on;
-      if (was) player.stop();
+      if (was) player.stop("another stream");
       STREAM = s;
       if (slug) root.dataset.stream = slug; else delete root.dataset.stream;
       clock.samples = []; clock.last = null;

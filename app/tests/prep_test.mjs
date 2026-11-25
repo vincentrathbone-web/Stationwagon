@@ -75,6 +75,33 @@ check("  a long song gives 60 values", core.outro(tone([[-23, 70]], 44100), 4410
 r = core.prepare(tone([[-26, 8]], R), R, L16);
 check("  and song prep keeps them, levelled like the song", r.info.outro.length === 8 && r.info.outro.every((v) => near(v, -16, 0.3)), JSON.stringify(r.info.outro));
 
+console.log("A song's peaks for the listeners' output strip (round 87)");
+{
+  const pk = core.peaks(tone([[-6, 1], [null, 0.5], [-20, 0.5]], 44100), 44100), dv = new DataView(pk.buffer);
+  const n = dv.getUint32(8, true), codes = [...pk.subarray(16)];
+  check("the station's format: SWPK, version 1, 10 ms columns, the count and the rate", String.fromCharCode(...pk.subarray(0, 4)) === "SWPK" && pk[4] === 1 && pk[5] === 10
+    && n === 200 && pk.length === 216 && dv.getUint32(12, true) === 44100, `${n} columns, ${pk.length} bytes`);
+  const dbOf = (c) => (c - 255) * 0.4;
+  check("  each column's peak within 0.2 dB (a -6 dB tone, silence, a -20 dB tone)", codes.slice(1, 99).every((c) => near(dbOf(c), -6, 0.25)) && codes.slice(101, 149).every((c) => c === 0)
+    && codes.slice(151, 199).every((c) => near(dbOf(c), -20, 0.25)), [codes[50], codes[120], codes[180]].map(dbOf).join(" / ") + " dB");
+  // the player's side (outwave.js): reads them back, and mixes ahead from them
+  const box = { window: {}, performance: { now: () => 0 } };
+  vm.createContext(box);
+  vm.runInContext(readFileSync(join(here, "../assets/outwave.js"), "utf8"), box);
+  const W = box.window.SwOutWave, back = W.peaksFrom(pk.buffer);
+  check("  the player reads them back: 10 ms columns, the same levels", !!back && back.step === 0.01 && back.lv.length === 200 && near(20 * Math.log10(back.lv[50]), -6, 0.25) && back.lv[120] === 0
+    && W.peaksFrom(new Uint8Array(20).buffer) === null && W.peaksFrom(pk.slice(0, 100).buffer) === null);
+  const one = { slot: 0, pk: back, start: 0, gain: () => 1 }, two = { slot: 1, pk: back, start: 0, gain: () => 1 }, half = { slot: 0, pk: back, start: 0, gain: () => 0.5 };
+  const at = (plan, t, j) => plan.get(Math.round(t / 0.01), j);
+  let plan = W.render([one], 0, 2, 4);
+  check("  one song: its own colour and the output are its peaks", near(20 * Math.log10(at(plan, 0.5, 0)), -6, 0.25) && near(at(plan, 0.5, 3), at(plan, 0.5, 0), 1e-6) && !at(plan, 1.2, 3));
+  plan = W.render([one, two], 0, 2, 4);
+  check("  two at once (a crossfade): each exact in its colour, the output their power sum (+3 dB for two alike)", near(at(plan, 0.5, 1), at(plan, 0.5, 0), 1e-6)
+    && near(20 * Math.log10(at(plan, 0.5, 3) / at(plan, 0.5, 0)), 3.01, 0.05), (20 * Math.log10(at(plan, 0.5, 3) / at(plan, 0.5, 0))).toFixed(2) + " dB");
+  plan = W.render([half], 0, 2, 4);
+  check("  through the fade's gain (half: 6 dB down)", near(20 * Math.log10(at(plan, 0.5, 0)), -12.02, 0.3));
+}
+
 console.log("Tags and MP3");
 const enc = new TextEncoder();
 const frame = (id, text) => { const t = enc.encode("\u0003" + text); const h = new Uint8Array(10 + t.length); h.set(enc.encode(id)); new DataView(h.buffer).setUint32(4, t.length); h.set(t, 10); return h; };

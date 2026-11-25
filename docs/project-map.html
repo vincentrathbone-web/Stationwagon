@@ -187,9 +187,9 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "25 Nov",
-  commits: 109,
-  version: "0.9.22-dev",
+  updated: "26 Nov",
+  commits: 111,
+  version: "0.9.23-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
     { v: "v0.4", name: "Player & studio", when: "done 22 Oct" },
@@ -219,7 +219,7 @@ const MAP = {
     { name: "Listener player", blurb: "The station page, the embed and the data for other sites and apps.", features: [
       { text: "Two-deck player with crossfades, live shows in step", v: "v0.4", state: "done" },
       { text: "Notes and slides from the presenter", v: "v0.8", state: "done" },
-      { text: "Output strip and spectrum", v: "v0.4", state: "done" },
+      { text: "Output strip and spectrum", note: "drawn from small waveform files since 26 Nov", v: "v0.4", state: "done" },
       { text: "Now playing, schedule, podcast and verse as JSON", v: "v0.8", state: "done" },
       { text: "Embeddable player and Now playing card", v: "v0.8", state: "done" },
       { text: "The bar under the staff's screens", v: "v0.8", state: "done" },
@@ -325,7 +325,7 @@ const MAP = {
       { text: "Windows: several stations and streams in one app", v: "v1.11", state: "done" },
       { text: "Windows: saved stations, picked or added on the sign-in card", v: "v1.11", state: "done" },
       { text: "Windows: opens the stream used last; the studio's switch picks it", note: "and each station's real name in the list", v: "v1.11", state: "done" },
-      { text: "Windows: tests and release", note: "0.6.10 built and tested; released after the commit", v: "v1.11", state: "next" }
+      { text: "Windows: tests and release", note: "0.6.10 released 25 Nov", v: "v1.11", state: "done" }
     ]},
     { name: "Android app", blurb: "The studio as an Android app; iPhones keep the browser studio.", features: [
       { text: "Studio app with Do Not Disturb on air", v: "v0.7", state: "done" },
@@ -353,13 +353,14 @@ const MAP = {
     ]}
   ],
   next: {
-    title: "Next: the phone test, then the Windows and Android releases (v1.11)",
-    text: "Everything in this round is live on WordWave and Gansbaai. The two apps are built (Windows 0.6.10, Android 0.7.7) with their release notes: the studio opens on the stream used last, and saved stations show their real names. Left: the Android test on the phone (it was not plugged in), a commit, and then the two releases.",
-    order: ["v1.11 Android phone test, commit and both app releases","v1.8 Gansbaai: your line-up, contact details, privacy email and music","v1.10 Gansbaai Android app","v1.12 Stream quality (needs a decision)"]
+    title: "Next: finish the output strip's waveform files, then the phone tests and the Android release",
+    text: "The output strip's waveform files are live on WordWave and Gansbaai, and no song is downloaded twice any more. Not finished: on a device whose sound runs at 48 kHz the strip's line can sit up to about 1 dB under the sound (a choice of fix comes to you next), then the live tests again with this PC's memory free, and the commit. Windows 0.6.10 is released; Android 0.7.7 waits for the phone.",
+    order: ["Finish the strip's waveform files (the 48 kHz fix, live tests, commit)","v1.11 Android phone tests and the Android release","v1.8 Gansbaai: your line-up, contact details, privacy email and music","v1.10 Gansbaai Android app","v1.12 Stream quality (needs a decision)"]
   },
   call: null,
   feedTitle: "Recent changes",
   feed: [
+    { what: "The output strip no longer downloads a song twice", to: "The moving waveform in the listeners' player now draws the coming songs from a small file per song (about 24 KB for 4 minutes) instead of reading the song again, which sometimes downloaded it a second time. In a crossfade the line adds the two songs the way sound does. The server makes these files for every song; a station that can't, has the Music library page make them while it is open. Live on both stations", at: "26 Nov" },
     { what: "The studio opens on the stream you used last", to: "On a station with more than one stream, pick one with the switch at the top of the studio, and next time the studio (in the apps too, or a bookmark) opens there; a stream that is gone or no longer yours falls back to the main one. The apps also show each saved station's real name (in the next app releases); live 25 Nov", at: "25 Nov" },
     { what: "Prepare again on the server (v1.14)", to: "Song prep's Apply and the Music library's Re-level now run on the server when it prepares songs, so the page can be closed; a song on air waits and is put in place when it has finished; live 25 Nov", at: "25 Nov" },
     { what: "What aired, star ratings and smaller fixes", to: "The Ads and Jingles screens show what aired in the last 7 days with CSV downloads; an Original button beside Download; a WAV or FLAC already in the library is found before it is prepared; and with Let ratings influence on, each star doubles how often a song plays; live 25 Nov", at: "25 Nov" },

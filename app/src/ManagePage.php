@@ -111,6 +111,21 @@ final class ManagePage
                 foreach ($results as $r) {
                     Session::flash($r['ok'] ? 'ok' : 'bad', $r['ok'] ? ($r['duplicate'] ? "Already in the library: {$r['title']}" : "Added: {$r['title']}") : "{$r['name']}: {$r['error']}");
                 }
+            } elseif ($action === 'peaks_todo') {
+                // round 87: on a station whose server can't run Node, this page's browser makes the song files' missing
+                // peaks for the listeners' output strip (assets/peaks-fill.js; src/Peaks.php). With Node the server does.
+                $skip = array_filter(array_map('basename', explode(',', (string) ($_POST['skip'] ?? ''))));
+                $todo = NodeRuntime::ready() === null ? Peaks::missing($this->db, SW_ROOT, 10, true, $skip) : [];
+                $this->json(['ok' => true, 'left' => $todo ? count(Peaks::missing($this->db, SW_ROOT, 100000, true, $skip)) : 0,
+                    'files' => array_map(static fn (array $t): array => $t + ['url' => App::url('storage/media/' . $t['file'])], $todo)]);
+            } elseif ($action === 'peaks_save') {
+                $file = basename((string) ($_POST['file'] ?? ''));
+                $up = $_FILES['peaks'] ?? null;
+                $bytes = is_array($up) && (int) $up['error'] === UPLOAD_ERR_OK && (is_uploaded_file((string) $up['tmp_name']) || PHP_SAPI === 'cli')
+                    ? (string) file_get_contents((string) $up['tmp_name']) : '';
+                $duration = Peaks::durationOf($this->db, $file);
+                $problem = $duration === null ? 'there is no such song file' : Peaks::save(SW_ROOT, $file, $bytes, $duration);
+                $this->json(['ok' => $problem === null, 'error' => $problem]);
             } elseif ($action === 'have') {
                 // round 84: before preparing a picked song, upload.js asks whether its file is already here (by its hash),
                 // so picking the same songs again after the page was closed skips the finished ones at once
@@ -221,6 +236,8 @@ final class ManagePage
             'prep' => StationSettings::prep($this->station),
             'preset' => (new PrepPresets($this->db, $this->station))->forImport(),
             'relevel' => $this->relevelList($library),
+            // round 87: without Node on the server, this page makes the song files' missing peaks (assets/peaks-fill.js)
+            'peaksInBrowser' => NodeRuntime::ready() === null && Peaks::due($this->db, SW_ROOT),
         ]);
     }
 

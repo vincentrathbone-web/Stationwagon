@@ -1,5 +1,5 @@
 <?php use function Stationwagon\{h, duration, megabytes}; use Stationwagon\App;
-/** @var array $tracks @var string $q @var int $total @var int $onCount @var int $bytes @var int $confirm @var int $edit @var int $maxUpload @var array $prepQuality @var array $prep @var array $preset @var array $relevel @var string $csrf */
+/** @var array $tracks @var string $q @var int $total @var int $onCount @var int $bytes @var int $confirm @var int $edit @var int $maxUpload @var array $prepQuality @var array $prep @var array $preset @var array $relevel @var string $csrf @var bool $peaksInBrowser */
 [$prepMaster, $prepLevel, $prepTarget] = $prep;
 $lufs = fn(float $v) => str_replace('-', '−', number_format($v, 1));
 // the usual loudness targets, marked on the slider (round 41)
@@ -144,6 +144,10 @@ $stars = function (?int $r, string $label, bool $action = false): string {
 <script src="<?= h(App::asset('assets/prep-core.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/prep.js')) ?>" data-kbps="<?= $prepQuality['kbps'] ?>" data-rate="<?= $prepQuality['rate'] ?>" data-precision="<?= $prepQuality['precision'] ?>" data-dither="<?= $prepQuality['dither'] ? 1 : 0 ?>" data-quality="<?= $prepQuality['q'] ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js', 'assets/master-core.js', 'assets/prep-run.js', 'assets/vendor/lame-3.100.js', 'assets/vendor/ffmpeg-decode-7.1.js'])) ?>" defer></script>
 <script src="<?= h(App::asset('assets/upload.js')) ?>" defer></script>
+<?php if ($peaksInBrowser): /* round 87: the server can't run Node, so this page makes the songs' missing peaks */ ?>
+<p class="muted" id="peaksFill" role="status" hidden data-post="<?= h(App::url('manage/library')) ?>" data-csrf="<?= h($csrf) ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js', 'assets/master-core.js', 'assets/prep-run.js', 'assets/vendor/lame-3.100.js', 'assets/vendor/ffmpeg-decode-7.1.js'])) ?>"></p>
+<script src="<?= h(App::asset('assets/peaks-fill.js')) ?>" defer></script>
+<?php endif ?>
 <template id="libEditTpl">
   <tr class="editing"><td colspan="<?= $ncols ?>">
     <form class="editrow libedit" novalidate>

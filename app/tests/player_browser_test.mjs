@@ -59,7 +59,7 @@ const proc = spawn(exe, ["--headless=new", `--remote-debugging-port=${port}`, `-
   "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0 StationwagonTest",
   // the embed part frames this server from a made-up church website, which Edge would otherwise
   // block from reaching a localhost address (a real website framing a public server is fine)
-  "--disable-features=LocalNetworkAccessChecks,CalculateNativeWinOcclusion", "about:blank"], { stdio: "ignore" });
+  "--disable-features=LocalNetworkAccessChecks,CalculateNativeWinOcclusion,HardwareMediaKeyHandling", "about:blank"], { stdio: "ignore" });
 let ws, id = 0;
 const pending = new Map();
 const call = (method, params = {}, sessionId = undefined) => new Promise((ok) => { const i = ++id; pending.set(i, ok); ws.send(JSON.stringify({ id: i, method, params, sessionId })); });
@@ -71,6 +71,16 @@ const evaluate = async (expression) => {
 // each page load brings the page to the front: headless Edge sometimes reports it hidden, and a hidden page draws nothing
 const go = async (url) => { await call("Page.navigate", { url }); await call("Page.bringToFront"); for (let i = 0; i < 100; i++) { await sleep(100); if ((await evaluate("document.readyState").catch(() => "")) === "complete") return; } };
 const state = () => evaluate("window.SwPlayer && SwPlayer.state()");
+// Waits (2 minutes at most) until the song being heard has more than `sec` seconds left, so a check that
+// pushes the player about doesn't land on a song's last seconds or a jingle and find the next handover.
+async function room(sec) {
+  for (let i = 0; i < 60; i++) {
+    const tl = await (await fetch(`${base}/api/timeline.php`)).json(), cur = ((await state()) || {}).current;
+    const e = cur && tl.entries.find((x) => Math.abs(x.start - cur.start) < 0.01);
+    if (e && e.end - (tl.server_now - tl.settings.listener_delay_seconds) > sec) return;
+    await sleep(2000);
+  }
+}
 /** Headless Edge sometimes marks the page hidden (once the PC is idle), and a hidden page draws nothing: bring it back. */
 const front = async () => { if (await evaluate("document.hidden").catch(() => false)) await call("Page.bringToFront"); };
 /** Poll state() every 100 ms until fn(state) is true (returns it) or the time runs out (null). */
@@ -89,11 +99,14 @@ function media({ method, params: p }) {
   if (method === "Network.responseReceived" && p.response.url.includes("storage/media")) {
     const url = p.response.url.split("?")[0], h = Object.fromEntries(Object.entries(p.response.headers).map(([k, v]) => [k.toLowerCase(), v]));
     const size = +((h["content-range"] || "").split("/")[1] || (p.response.status === 200 ? h["content-length"] : 0) || 0);
-    const f = files.get(url) || { size: 0, sent: 0 };
+    const f = files.get(url) || { size: 0, sent: 0, log: [] };
     if (size) f.size = size;
+    f.log.push({ id: p.requestId, st: p.response.status, type: p.type, range: (h["content-range"] || "").split("/")[0].replace("bytes ", ""), cf: h["cf-cache-status"] || "", n: 0 });
     files.set(url, f); reqs.set(p.requestId, url);
   } else if (method === "Network.loadingFinished" && reqs.has(p.requestId)) {
-    files.get(reqs.get(p.requestId)).sent += p.encodedDataLength;
+    const f = files.get(reqs.get(p.requestId)), r = f.log.findLast((x) => x.id === p.requestId);
+    f.sent += p.encodedDataLength;
+    if (r) r.n = p.encodedDataLength;
   } else if (method === "Network.requestServedFromCache") {
     reqs.delete(p.requestId);
   }
@@ -184,9 +197,17 @@ try {
   const dB = (v) => (v > 1e-5 ? 20 * Math.log10(v) : -99), dBs = (a) => (a ? a.map((v) => dB(v).toFixed(1)).join(" / ") : "none");
   s = await until((x) => x.wave && x.wave.meter && x.wave.ahead !== null, 5);
   check("the output strip measures what goes out, in the sound engine", s && s.wave.meter === "sample-exact", s && s.wave.meter);
-  check("  and reads the coming 20 s itself (song pieces)", s && s.wave.ahead > 15 && s.wave.pieces > 0, s && `${s.wave.ahead} s ahead, ${s.wave.pieces} pieces`);
+  // round 87: each song's peaks (the station's small file of its 10 ms peaks); a song without them yet, its audio in pieces
+  check("  and reads the coming 20 s itself (each song's peaks, or its audio before they are made)", s && s.wave.ahead > 15 && (s.wave.peaks > 0 || s.wave.pieces > 0),
+    s && `${s.wave.ahead} s ahead, ${s.wave.peaks} songs' peaks, ${s.wave.pieces} pieces`);
   // what the strip mixed ahead must be what goes out when that moment comes (A / B / live / output)
   const aheadCheck = async (from) => {
+    // over the internet the strip may not have read the coming pieces yet: wait (10 s at most) for a plan with sound in it
+    for (let i = 0; i < 20; i++) {
+      const q = await evaluate(`(() => { const n = SwPlayer.wave.now(), p = SwPlayer.wave.planned(n + ${from}, n + ${from + 1}); return p && p[3] > 1e-5; })()`);
+      if (q) break;
+      await sleep(500);
+    }
     const p = await evaluate(`(() => { const n = SwPlayer.wave.now(); return { t0: n + ${from}, t1: n + ${from + 1}, p: SwPlayer.wave.planned(n + ${from}, n + ${from + 1}) }; })()`);
     await sleep((from + 1.6) * 1000);
     return { plan: p.p, got: await evaluate(`SwPlayer.wave.measured(${p.t0}, ${p.t1})`) };
@@ -198,9 +219,16 @@ try {
   // The strip reads ranges of the same files the decks play, so between them each file should come
   // over the network once at most (the browser's cache serves the rest), never twice.
   const fl = [...files.values()].filter((f) => f.size), sent = fl.reduce((a, f) => a + f.sent, 0), size = fl.reduce((a, f) => a + f.size, 0);
-  check("  those reads don't download the songs a second time", reads.n > 0 && fl.length > 0 && sent <= size * 1.05 + 4096 * fl.length,
+  // songs with peaks are drawn from them: none of their audio is read for the strip (the decks download each song once)
+  const tlNow = await (await fetch(`${base}/api/timeline.php`)).json();
+  const withPeaks = tlNow.entries.filter((e) => e.type === "song" && e.peaks), without = tlNow.entries.filter((e) => e.type === "song" && e.pieces && !e.peaks);
+  const pkReads = await evaluate("(() => { const r = performance.getEntriesByType('resource').filter((e) => /\\/peaks\\/[^/]+\\.bin/.test(e.name)); return { n: r.length, bytes: r.reduce((a, e) => a + e.decodedBodySize, 0) }; })()");
+  check("  songs with peaks are drawn from them, not from their audio read again (a few KB each)",
+    withPeaks.length > 0 && pkReads.n > 0 && pkReads.bytes < 64 * 1024 * pkReads.n && (without.length > 0 || reads.n === 0),
+    `${withPeaks.length} songs with peaks, ${without.length} without; ${pkReads.n} peaks reads of ${pkReads.bytes} bytes; ${reads.n} audio reads`);
+  check("  those reads don't download the songs a second time", fl.length > 0 && sent <= size * 1.05 + 4096 * fl.length,
     `${reads.n} reads of ${reads.body} bytes; ${fl.length} song files of ${size} bytes, ${sent} over the network: ` +
-    fl.map((f) => `${f.sent}/${f.size}`).join(", "));
+    fl.map((f) => `${f.sent}/${f.size}` + (f.sent > f.size * 1.05 ? " [" + f.log.filter((r) => r.n).map((r) => `${r.type} ${r.st} ${r.range} ${r.cf} ${r.n}`).join("; ") + "]" : "")).join(", "));
   // looked at a few times over 2 s: a look just as a song ends finds the strip nearly empty (quiet)
   let px = null;
   for (let i = 0; i < 6 && !(px && px.a + px.b > 100); i++) {
@@ -471,6 +499,7 @@ try {
   check("  with the time in the song", !!meta, meta || await evaluate("document.getElementById('emState').textContent"));
   // never faster or slower: the browser's time-stretch was heard as a squeezed, "64 kbps" sound on wordwave.co.za
   await evaluate("window.__rates = new Set(); window.__rateTimer = setInterval(() => swEmbed.media && __rates.add(swEmbed.media.playbackRate), 100); 1");
+  await room(16);
   await evaluate("swEmbed.slip(-0.6)");
   await sleep(4000);
   check("  a small slip (0.6 s) is left alone: no jump", !(await evaluate("swEmbed.events.some((e) => /timing correction/.test(e))")), JSON.stringify(await evaluate("swEmbed.events.slice(-4)")));
@@ -517,11 +546,14 @@ try {
     }
     const nx = await until((x) => x.current && x.current.key !== efirst, ewait, elog);
     const blend = (await until((x) => x.decks.filter((d) => d.playing && d.gain > 0.05 && d.gain < 0.95).length === 2, 3, elog)) || elog.find((x) => x && x.decks.filter((d) => d.playing && d.gain > 0.05 && d.gain < 0.95).length === 2);
-    check("the embed crossfades into the next song: both decks blending, not a cut", !!nx && !!blend, blend ? blend.decks.map((d) => d.gain).join(" / ") : nx ? "no blend" : "no next song");
+    check("the embed crossfades into the next song: both decks blending, not a cut", !!nx && !!blend, blend ? blend.decks.map((d) => d.gain).join(" / ") : (nx ? "no blend " : "no next song ") + JSON.stringify(await evaluate("swEmbed.events.slice(-8)")));
     const after = await until((x) => audible(x).length === 1 && audible(x)[0].key === x.current.key && x.decks.filter((d) => d.playing).length === 1, 12);
     check("  then only the new song plays", !!after, after ? `${after.current.title} on ${audible(after)[0].name}` : "");
   }
   const pingBefore = await evaluate("swEmbed.ping");
+  // paused mid-song: with under a second of it left (or a jingle a few seconds long running out) the player rightly waits for
+  // the next handover instead of joining again, so the check below would see no "join" (round 87: Gansbaai's jingles)
+  await room(12);
   await evaluate("swEmbed.pauseFromOutside()");
   // the player joins the song again where it should be (its first try comes 4 s after the last one)
   const again = await waitFor("swEmbed.events.slice(-4).some((e) => / join /.test(' ' + e)) && swEmbed.playing && swEmbed.heard && Math.abs(swEmbed.lag - 20) < 0.6 && swEmbed.lag", 30);

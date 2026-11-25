@@ -127,7 +127,7 @@
     tick();
   });
 
-  if (!BAR) $("emPlay").addEventListener("click", () => (on ? P.stop() : P.start()));
+  if (!BAR) $("emPlay").addEventListener("click", () => (on ? P.stop("Stop button") : P.start()));
 
   // ---- The bar: mute, and what it remembers between screens and visits -------------------------------------
   let muted = false;

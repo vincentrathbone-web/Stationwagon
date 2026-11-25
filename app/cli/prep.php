@@ -4,6 +4,7 @@
 // the background jobs when something waits; a cron job every minute is the safety net where the station has one:
 //   * * * * * /usr/bin/php8.4 /path/to/app/cli/prep.php > /dev/null 2>&1
 // A second copy started while one works exits at once (the queue's own lock).
+// Then (round 87) it makes the song files' missing peaks for the listeners' output strip (src/Peaks.php), for up to 40 s.
 declare(strict_types=1);
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 if (PHP_VERSION_ID < 80100) {
@@ -12,7 +13,7 @@ if (PHP_VERSION_ID < 80100) {
 }
 
 require __DIR__ . '/../src/bootstrap.php';
-use Stationwagon\{Config, Db, PrepQueue, Schema};
+use Stationwagon\{Config, Db, Peaks, PrepQueue, Schema};
 
 if (!Config::isInstalled()) {
     exit(0);
@@ -25,3 +26,6 @@ if (Schema::installed($db) < 22) {
 PrepQueue::work($db, SW_ROOT, null, static function (string $line): void {
     echo gmdate('H:i:s'), ' ', $line, "\n";
 });
+foreach (Peaks::fill($db, SW_ROOT) as $line) {
+    echo gmdate('H:i:s'), ' ', $line, "\n";
+}
