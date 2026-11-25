@@ -5,7 +5,7 @@
 //   php app/tests/ads_test.php      (same SW_TEST_DB_* settings as install_test.php)
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
-use Stationwagon\{Ads, Db, Library, Planner, Schema};
+use Stationwagon\{Ads, Db, Library, PlayLog, Planner, Schema};
 
 $t = test_database('ads');
 $root = temp_root('ads');
@@ -32,6 +32,9 @@ try {
     };
     $a1 = $newAd('Ad Alpha', 50);
     $row = $lib->get($a1);
+    check('the Original button\'s check finds an upload\'s own file, and nothing for a clip without one (round 87)', Library::originalPath($root, $row) !== null
+        && Library::originalPath($root, ['sha1' => str_repeat('0', 40), 'file' => 'missing.mp3']) === null && Library::originalPath($root, ['file' => 'x.mp3']) === null
+        && Library::originalPath($root, $row) === $lib->original($row));
     check('an ad is a track of kind “ad”, with no album art, artist, album or copyright', $row['kind'] === 'ad' && $row['art'] === null && $row['artist'] === null && $row['album'] === null && $row['rights'] === null);
     check('the Music library lists only the songs', count($lib->tracks()) === 6 && !in_array($a1, array_column($lib->tracks(), 'id')));
     check('  and counts only their size', $lib->bytes() === (int) $db->run("SELECT SUM(bytes) FROM {$db->table('tracks')} WHERE kind = 'song'")->fetchColumn());
@@ -234,6 +237,23 @@ try {
     check('  with its title, advertiser, start and how long it played', $one['title'] === $lib->get((int) $one['track_id'])['title'] && $one['advertiser'] === 'Acme' && (float) $one['played_s'] > 10);
     $hist = $ads->history($t0 + 86400, 3);
     check('  and the log gives the plays of each of the last days', array_sum(array_map('array_sum', $hist)) === count($planned) && isset($hist['2027-01-15']));
+    // round 87: the Ads screen's table and CSV (src/PlayLog.php)
+    $pl = new PlayLog($db, $station, 'ad');
+    $sum = $pl->summary($t0 + 86400, 3);
+    check('the screen\'s log has the last 3 days, oldest first, with a row per ad and its advertiser', count($sum['days']) === 3 && $sum['days'][2] > $sum['days'][0]
+        && count($sum['rows']) === 2 && $sum['rows'][0]['advertiser'] === 'Acme' && array_sum(array_column($sum['rows'], 'total')) === count($planned)
+        && $sum['rows'][0]['total'] >= $sum['rows'][1]['total'], json_encode($sum['days']));
+    check('  each row\'s days add up to its total', array_reduce($sum['rows'], fn($ok, $r) => $ok && array_sum($r['counts']) === $r['total'], true));
+    $csv = $pl->csv($t0 + 86400, 30);
+    $lines = array_values(array_filter(explode("\n", trim(substr($csv, 3)))));
+    check('the CSV starts with a byte-order mark and a header, then one line per play', str_starts_with($csv, "\u{FEFF}") && $lines[0] === 'Date,Time,Ad,Advertiser,"Seconds played",Stream'
+        && count($lines) === count($planned) + 1, $lines[0] ?? '');
+    $cells = str_getcsv(trim($lines[1]), ',', '"', '');
+    check('  each with the date, time, title, advertiser, seconds and stream', count($cells) === 6 && preg_match('/^\d{4}-\d\d-\d\d$/', $cells[0]) && preg_match('/^\d\d:\d\d:\d\d$/', $cells[1])
+        && in_array($cells[2], ['Ad Alpha', 'Ad Beta'], true) && $cells[3] === 'Acme' && preg_match('/^\d+\.\d$/', $cells[4]) && $cells[5] === $station['name'], $lines[1] ?? '');
+    $db->run('UPDATE ' . $db->table('ad_plays') . " SET title = '=HYPERLINK(1)' WHERE id = (SELECT id FROM (SELECT MIN(id) id FROM " . $db->table('ad_plays') . ') x)');
+    check('  and a title a spreadsheet would run as a formula is written as text', str_contains($pl->csv($t0 + 86400, 30), "'=HYPERLINK(1)"));
+    check('  a day before the first play gives only the header', count(array_filter(explode("\n", trim(substr($pl->csv($t0 - 86400 * 3, 1), 3))))) === 1);
     $list = $ads->all($t0 + 5);
     $byId = array_column($list, null, 'track_id');
     check('the Ads list says how many played and are planned today', ($byId[$a1]['aired_today'] ?? -1) + ($byId[$a1]['planned_today'] ?? -1) + ($byId[$a2]['aired_today'] ?? -1) + ($byId[$a2]['planned_today'] ?? -1) === count($planned)

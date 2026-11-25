@@ -941,6 +941,8 @@ try {
         check('  a path in place of an id is refused (nothing outside the clips is ever sent)', $m->go('manage/download?id=../../config.local.php')['status'] === 404);
         $r = $m->go('manage/ads');
         check('the lists have a Download button: the Music library and the Ads', str_contains($m->go('manage/library?q=' . rawurlencode($tag))['body'], 'manage/download?id=') && str_contains($r['body'], 'manage/download?id=' . $dlId));
+        check('  and an Original button beside it when the station has the original (round 87)', str_contains($r['body'], 'manage/download?id=' . $dlId . '&amp;version=original" download')
+            && str_contains($r['body'], 'data-act="original"'));
         $r = (new Browser($base))->go('manage/download?id=' . $dlId);
         check('  someone signed out is sent to sign in, and gets no file', $r['status'] === 303 && $r['body'] !== $stored && !str_contains(implode(',', $r['headers']['content-type'] ?? []), 'audio'), (string) $r['status']);
         $m->go('manage/ads', ['csrf' => $csrf, 'action' => 'delete', 'id' => $dlId]);
@@ -1263,9 +1265,21 @@ try {
         $r = $ad->go('manage/people', ['csrf' => $acsrf, 'action' => 'streams', 'id' => $djPage, 'streams' => [(string) $stationId, (string) $row['id']]]);
         $r2 = $djS->go('studio?stream=' . $strSlug);
         check('  with both ticked the studio has the switch between them', $flashed($after($ad, $r), 'Saved.') && str_contains($r2['body'], 'class="streamswitch"') && str_contains($r2['body'], 'Go live on'), (string) $r2['status']);
+        // round 87 (v1.11): the studio opens on the stream this device used last (the apps open "studio" with no stream named)
+        $r = $djS->go('studio');
+        check('  opened with no stream named, the studio is on the stream used last', $r['status'] === 200 && str_contains($r['body'], 'data-stream="' . $strSlug . '"'), (string) $r['status']);
+        check('  its switch names the main stream too (so picking it is remembered)', str_contains($r['body'], 'studio?stream=' . rawurlencode($mainSlug) . '"'));
+        $r = $djS->go('studio?stream=' . $mainSlug);
+        check('  the main stream picked: the studio is on it, as the main stream', $r['status'] === 200 && !str_contains($r['body'], 'data-stream='), (string) $r['status']);
+        check('  and opened again with no stream named, it stays on it', !str_contains($djS->go('studio')['body'], 'data-stream='));
+        $djS->go('studio?stream=' . $strSlug);
+        check('  the api is never moved by it: no stream named is the main stream', ($sjMain = json_decode($djS->go('studio/api/state')['body'], true)) && ($sjMain['station']['name'] ?? '') !== $strName,
+            json_encode($sjMain['station'] ?? null));
         $r = $ad->go('manage/people?person=' . $mgrId);
         check('  an admin or manager has every stream, no ticks to choose', str_contains($r['body'], 'may go live on every stream') && !str_contains(substr($r['body'], (int) strpos($r['body'], 'streamform')), 'name="streams[]"') || str_contains($r['body'], 'Admins and managers may go live on every stream'));
         $db->run('DELETE FROM ' . $db->table('user_streams') . ' WHERE user_id = ?', [$djPage]); // back to nobody having given them streams
+        $r = $djS->go('studio');
+        check('a stream used last that they may no longer use: the studio opens on the main one', $r['status'] === 200 && !str_contains($r['body'], 'data-stream='), (string) $r['status']);
 
         $r = $ad->go('manage/streams?edit=' . $row['id']);
         check('Edit opens the name and the address name', str_contains($r['body'], 'id="streamEdit"') && str_contains($r['body'], 'name="slug"'));

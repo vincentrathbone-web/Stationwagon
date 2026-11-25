@@ -6,7 +6,7 @@
 //   php app/tests/jingles_test.php      (same SW_TEST_DB_* settings as install_test.php)
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
-use Stationwagon\{Ads, Db, Jingles, Library, NowPlaying, Planner, Schema};
+use Stationwagon\{Ads, Db, Jingles, Library, NowPlaying, Planner, PlayLog, Schema};
 
 $t = test_database('jingles');
 $root = temp_root('jingles');
@@ -166,6 +166,24 @@ try {
     check('a jingle placed after an ad break waits for a song first (no ad then jingle)', !str_contains($k, 'AJ') && !str_contains($k, 'JA') && !str_contains($k, 'JJ'));
     $db->run("UPDATE $aT SET active = 0");
 
+    echo "What aired (round 87)\n";
+    $jlog = new PlayLog($db, $fresh(), 'jingle');
+    $end = $t0 + 3600;
+    $ended = count(array_filter($es, fn($e) => !empty($e['jingle']) && $e['end'] <= $end));
+    $jlog->logAired($end);
+    $jlog->logAired($end);
+    $jp = $db->table('jingle_plays');
+    check('the jingles that have finished are logged, each once', $ended > 0 && (int) $db->run("SELECT COUNT(*) FROM $jp")->fetchColumn() === $ended, "$ended ended");
+    $jsum = $jlog->summary($end, 7);
+    check('  the Jingles screen\'s table counts them by jingle and day', count($jsum['days']) === 7 && array_sum(array_column($jsum['rows'], 'total')) === $ended
+        && $jsum['rows'][0]['advertiser'] === null, json_encode(array_column($jsum['rows'], 'title')));
+    $jcsv = array_values(array_filter(explode("\n", trim(substr($jlog->csv($end, 30), 3)))));
+    check('  and its CSV has no advertiser column', $jcsv[0] === 'Date,Time,Jingle,"Seconds played",Stream' && count($jcsv) === $ended + 1, $jcsv[0]);
+    check('  the ads are not in it', (int) $db->run("SELECT COUNT(*) FROM $jp p JOIN " . $db->table('tracks') . " t ON t.id = p.track_id WHERE t.kind <> 'jingle'")->fetchColumn() === 0);
+    $db->run("DELETE FROM $jp");
+    (new Planner($db, $fresh(), $root))->replan($end); // plans again, and logs what has aired
+    check('the planner logs them as it plans', (int) $db->run("SELECT COUNT(*) FROM $jp")->fetchColumn() === $ended);
+
     echo "Removing a jingle\n";
     $pDel = new Planner($db, $fresh(), $root);
     $pDel->replan($t0);
@@ -174,6 +192,10 @@ try {
     check('removing a jingle takes its row with it, and it leaves the list and the plan', $lib->delete($j2, $pDel, $later) === null && $jin->get($j2) === null
         && (int) $db->run("SELECT COUNT(*) FROM $jT WHERE track_id = $j2")->fetchColumn() === 0
         && !in_array($j2, array_column($jin->all($later), 'track_id'), true) && !array_filter($pDel->timeline($later), fn($e) => ($e['track_id'] ?? 0) === $j2));
+    $kept = (int) $db->run("SELECT COUNT(*) FROM $jp WHERE track_id = $j2")->fetchColumn();
+    $all = (int) $db->run("SELECT COUNT(*) FROM $jp")->fetchColumn();
+    check('a removed jingle\'s plays stay in the log, and the screen still counts them', $kept > 0
+        && array_sum(array_column((new PlayLog($db, $fresh(), 'jingle'))->summary($later, 7)['rows'], 'total')) === $all, "$kept kept of $all");
     $list = $jin->all($t0);
     check('the list has the jingle, with what it did today', count($list) === 1 && $list[0]['track_id'] === $j1 && isset($list[0]['aired_today'], $list[0]['planned_today']));
 
@@ -186,6 +208,11 @@ try {
         $ran = Schema::upgrade($db, $root);
         $type = (string) $db->run('SHOW COLUMNS FROM ' . $db->table('tracks') . " LIKE 'kind'")->fetch()['Type'];
         return $ran === range(18, Schema::VERSION) && str_contains($type, "'jingle'") && $db->run("SHOW TABLES LIKE 'sw\_jingles'")->fetch() !== false && Schema::upgrade($db, $root) === [];
+    })());
+    check('a version 22 database gets the jingle log, once', (function () use ($db, $root) {
+        $db->pdo->exec('DROP TABLE ' . $db->table('jingle_plays'));
+        $db->run('UPDATE ' . $db->table('settings') . " SET value = '22' WHERE name = 'schema_version'");
+        return Schema::upgrade($db, $root) === range(23, Schema::VERSION) && $db->run("SHOW TABLES LIKE 'sw\_jingle\_plays'")->fetch() !== false && Schema::upgrade($db, $root) === [];
     })());
 } finally {
     drop_test_database($t);

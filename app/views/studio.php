@@ -24,7 +24,7 @@ $deck = fn(string $k): string => '
 <nav class="streamswitch" aria-label="Stream">
   <span class="muted2">Go live on</span>
   <?php foreach ($streams as $s): $here = (int) $s['id'] === (int) $station['id']; ?>
-    <a class="<?= $here ? 'on' : '' ?>" href="<?= h(App::url('studio') . (empty($s['main']) ? '?stream=' . rawurlencode((string) $s['slug']) : '')) ?>"<?= $here ? ' aria-current="true"' : '' ?>><?= h($s['name']) ?></a>
+    <a class="<?= $here ? 'on' : '' ?>" href="<?= h(App::url('studio') . '?stream=' . rawurlencode((string) $s['slug'])) ?>"<?= $here ? ' aria-current="true"' : '' ?>><?= h($s['name']) ?></a>
   <?php endforeach ?>
 </nav>
 <?php endif ?>

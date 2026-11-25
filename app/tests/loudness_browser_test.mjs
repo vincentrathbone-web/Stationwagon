@@ -121,10 +121,12 @@ async function relevel() {
   return null;
 }
 
-let user = null, prepBefore = null;
+let user = null, prepBefore = null, srvBefore = null;
 try {
   helper("cleanup-like", "Loudness Test %", "Loudness Mastered %"); // songs a killed run left: re-levelling would wait for one on air
   prepBefore = helper("prep");
+  srvBefore = helper("server-prep", "state").state;
+  helper("server-prep", "off"); // in this browser, except the mastered song's re-level (round 87)
   helper("prep", "0", "1", "-16");
   for (let i = 0; i < 50; i++) { await sleep(200); try { await (await fetch(`http://127.0.0.1:${port}/json/version`)).json(); break; } catch { /* starting */ } }
   const target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find((t) => t.type === "page");
@@ -206,7 +208,9 @@ try {
   await go(`${base}/manage/sound`);
   await slide(-12, false);
   await saveSound();
+  helper("server-prep", "on"); // round 87 (v1.14): this one is made again on the server
   await go(`${base}/manage/library`);
+  check("(the station now prepares songs on the server)", (await evaluate("document.getElementById('drop').dataset.server")) === "1");
   await evaluate("document.getElementById('relevelOpen').click()");
   s = await rl();
   const item = s.songs.find((x) => x.title === titleB);
@@ -216,6 +220,8 @@ try {
   tB = helper("track", titleB);
   check("  at the new target, still mastered the same way", Number(tB.level_target) === -12 && Math.abs(Number(tB.loudness_lufs) + 12) < 0.15 && Number(tB.mastered) === 1 && tB.preset_settings === "{}"
     && Math.abs(Number(tB.source_lufs) - Number(beforeB.source_lufs)) < 0.05, `${tB.loudness_lufs} LUFS, source ${beforeB.source_lufs} → ${tB.source_lufs}`);
+  check("  (made again on the server, round 87)", helper("redo-jobs", String(tB.id)).some((j) => j.state === "done"), JSON.stringify(helper("redo-jobs", String(tB.id))));
+  helper("server-prep", "off");
 
   console.log("A song made before round 51 (the old encoder, about 0.3 dB under the target)");
   const made = helper("make-old", titleB);
@@ -253,6 +259,7 @@ try {
   check("the test ran to the end", false, (ex.stack || String(ex)) + "\n  on: " + where + (errors.length ? "\n  page errors: " + errors.slice(0, 5).join(" | ") : ""));
 } finally {
   if (prepBefore) try { helper("prep", prepBefore.master ? "1" : "0", prepBefore.level ? "1" : "0", String(prepBefore.target)); } catch { /* as it was */ }
+  if (srvBefore !== null) try { helper("server-prep", "restore", JSON.stringify(srvBefore)); } catch { /* as it was */ }
   if (user) try { helper("cleanup", String(user.id), titleA, titleB); } catch { /* left */ }
   try { ws && ws.close(); } catch { /* closed */ }
   proc.kill();

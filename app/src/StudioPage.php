@@ -22,16 +22,25 @@ use Throwable;
  */
 final class StudioPage
 {
+    /** The stream the studio page was last opened on, on this device (round 87, v1.11: the apps open it again). */
+    public const STREAM_COOKIE = 'sw_studio_stream';
+
     /**
-     * The planner for the stream the studio is on (round 73): `?stream=<name>`, else the main stream, else the first stream this person
-     * may use. Null with the reason when there is no such stream or they may not go live on it.
+     * The planner for the stream the studio is on (round 73): `?stream=<name>`, else (the page only, $remembered) the stream this
+     * device used last when it still exists and they may still use it (round 87), else the main stream, else the first stream this
+     * person may use. Null with the reason when there is no such stream or they may not go live on it. The api never uses the
+     * remembered one: the page passes its stream with every call (none for the main stream).
      * @return array{0:?Planner,1:?string}
      */
-    private function planner(array $me): array
+    private function planner(array $me, bool $remembered = false): array
     {
         $db = Db::fromConfig();
         $slug = isset($_GET['stream']) && is_string($_GET['stream']) && $_GET['stream'] !== '' ? $_GET['stream'] : null;
         $allowed = Streams::allowedIds($db, $me);
+        if ($slug === null && $remembered && is_string($last = $_COOKIE[self::STREAM_COOKIE] ?? null) && $last !== ''
+            && ($s = Streams::bySlug($db, $last)) !== null && !$s['main'] && in_array((int) $s['id'], $allowed, true)) {
+            $slug = (string) $s['slug'];
+        }
         if ($slug === null) {
             $main = Streams::main($db);
             $pick = in_array((int) $main['id'], $allowed, true) ? (int) $main['id'] : ($allowed[0] ?? null);
@@ -54,11 +63,16 @@ final class StudioPage
     public function page(): void
     {
         $me = App::requireRole('dj');
-        [$planner, $why] = $this->planner($me);
+        [$planner, $why] = $this->planner($me, true);
         if ($planner === null) {
             http_response_code(403);
             View::render('error', ['title' => 'Studio', 'message' => $why]);
             return;
+        }
+        if (!headers_sent()) {
+            // opened next time without a stream named (the apps, a bookmark, after signing in): this one again
+            setcookie(self::STREAM_COOKIE, (string) $planner->station()['slug'], ['expires' => time() + 400 * 86400, 'path' => App::base() . '/',
+                'secure' => Session::isHttps(), 'httponly' => true, 'samesite' => 'Lax']);
         }
         $db = Db::fromConfig();
         $streams = array_values(array_filter(Streams::all($db), fn(array $s) => in_array((int) $s['id'], Streams::allowedIds($db, $me), true)));

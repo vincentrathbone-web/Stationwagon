@@ -1,5 +1,5 @@
 <?php use function Stationwagon\{h, duration}; use Stationwagon\{App, Ads};
-/** @var array $ads @var array $adSettings @var string $q @var int $edit @var int $confirm @var float $now @var int $songs @var int $maxUpload @var array $prepQuality @var array $prep @var array $preset @var ?array $relevel @var array $station @var string $csrf */
+/** @var array $ads @var array $adSettings @var string $q @var int $edit @var int $confirm @var float $now @var int $songs @var int $maxUpload @var array $prepQuality @var array $prep @var array $preset @var ?array $relevel @var array $station @var string $csrf @var array $plays */
 $today = (new DateTimeImmutable('@' . (int) $now))->setTimezone(new DateTimeZone((string) ($station['timezone'] ?? 'UTC') ?: 'UTC'))->format('Y-m-d');
 $running = count(array_filter($ads, fn(array $a) => Ads::status($a, $today)[1]));
 $date = fn(?string $d) => $d !== null ? (new DateTimeImmutable($d))->format('j M Y') : '';
@@ -82,7 +82,7 @@ require __DIR__ . '/_clips.php';
             <a class="btn sm" href="<?= h(App::url('manage/ads')) ?>">Keep</a>
           <?php else: ?>
             <a class="btn sm" href="<?= h(App::url('manage/ads') . '?edit=' . $id) ?>#a<?= $id ?>">Edit</a>
-            <?= $dl($id, 'ad') ?>
+            <?= $dl($id, 'ad', $a) ?>
             <a class="btn sm" href="<?= h(App::url('manage/ads') . '?confirm=' . $id) ?>">Remove</a>
           <?php endif ?>
         </td>
@@ -118,6 +118,7 @@ require __DIR__ . '/_clips.php';
     </tbody>
   </table>
 </div>
+<?php $playRoute = 'manage/ads'; $playNoun = 'ad'; $playAdvertiser = true; require __DIR__ . '/_plays.php'; ?>
 <script src="<?= h(App::asset('assets/cliplist.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/prep-core.js')) ?>" defer></script>
 <script src="<?= h(App::asset('assets/prep.js')) ?>" data-kbps="<?= $prepQuality['kbps'] ?>" data-rate="<?= $prepQuality['rate'] ?>" data-precision="<?= $prepQuality['precision'] ?>" data-dither="<?= $prepQuality['dither'] ? 1 : 0 ?>" data-quality="<?= $prepQuality['q'] ?>" data-worker="<?= h(App::asset('assets/prep-worker.js', ['assets/prep-core.js', 'assets/master-core.js', 'assets/prep-run.js', 'assets/vendor/lame-3.100.js', 'assets/vendor/ffmpeg-decode-7.1.js'])) ?>" defer></script>

@@ -131,7 +131,7 @@ $stars = function (?int $r, string $label, bool $action = false): string {
             <?php else: ?>
               <a class="btn sm" data-act="edit" href="<?= h(App::url('manage/library') . '?' . http_build_query(array_filter(['q' => $q, 'edit' => $id]))) ?>">Edit</a>
               <a class="btn sm" href="<?= h(App::url('manage/songprep') . '?song=' . $id) ?>" title="Try mastering presets on this song">Song prep</a>
-              <?= $dl($id, 'song') ?>
+              <?= $dl($id, 'song', $t) ?>
               <a class="btn sm" data-act="remove" href="<?= h(App::url('manage/library') . '?' . http_build_query(array_filter(['q' => $q, 'confirm' => $id]))) ?>">Remove</a>
             <?php endif ?>
           </td>

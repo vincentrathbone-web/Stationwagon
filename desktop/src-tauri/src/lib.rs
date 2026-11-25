@@ -110,6 +110,15 @@ impl Settings {
         self.tidy();
     }
 
+    /// Gives a saved station the name it has now (round 87); true when that changed something.
+    fn rename(&mut self, base: &str, name: &str) -> bool {
+        let name: String = name.trim().chars().take(80).collect();
+        match self.stations.iter_mut().find(|x| x.base == base) {
+            Some(s) if !name.is_empty() && s.name != name => { s.name = name; true }
+            _ => false,
+        }
+    }
+
     /// Takes a station off the list; the default moves to the first one left (or none).
     fn forget(&mut self, base: &str) -> bool {
         let before = self.stations.len();
@@ -514,12 +523,27 @@ fn open_station(app: AppHandle, state: State<App>) -> Result<(), String> {
 /// The main window to a station's studio (its sign-in page first, when nobody is signed in there).
 fn open_base(app: &AppHandle, base: &url::Url) -> Result<(), String> {
     allow_station(app, base)?;
+    refresh_name(app, base);
     let studio = base.join("studio").map_err(|e| e.to_string())?;
     let main = app.get_webview("main").ok_or("The main window is gone.")?;
     main.navigate(studio).map_err(|e| e.to_string())?;
     if let Some(w) = app.get_window("main") { let _ = w.set_focus(); }
     if let Some(w) = app.get_webview_window("settings") { let _ = w.close(); }
     Ok(())
+}
+
+/// Asks the station for its name in the background and keeps it when it changed (round 87: a station saved by older
+/// settings, or renamed since, kept its host or its old name until it was added again). Nothing happens if it can't be reached.
+fn refresh_name(app: &AppHandle, base: &url::Url) {
+    let (app, base) = (app.clone(), base.clone());
+    tauri::async_runtime::spawn(async move {
+        let Ok(client) = http_client() else { return };
+        let Ok(Some((real, name))) = station_at(&client, &base).await else { return };
+        if real != base || name == "a Stationwagon station" { return; } // moved (the next add finds it) or nameless
+        let state = app.state::<App>();
+        let changed = state.settings.lock().unwrap().rename(base.as_str(), &name);
+        if changed { let _ = state.save(); }
+    });
 }
 
 /// The saved stations and the default one, for the sign-in page's picker and App settings (round 81).
@@ -793,6 +817,21 @@ mod tests {
         assert_eq!(s.station.as_deref(), Some("https://a.example/radio/"));
         s.remember(&b("https://a.example/radio/"), "Radio Alpha"); // renamed
         assert_eq!(names(&s), vec!["Radio Alpha", "Radio B"]);
+    }
+
+    #[test]
+    fn rename_gives_a_saved_station_its_name_now() {
+        // round 87: the name the station gives when it is opened replaces its host (or an old name)
+        let mut s: Settings = serde_json::from_str(r#"{"station":"https://wordwave.co.za/radio/","port":8000,"password":"x"}"#).unwrap();
+        s.tidy();
+        assert!(s.rename("https://wordwave.co.za/radio/", "  Radio WordWave  "));
+        assert_eq!(names(&s), vec!["Radio WordWave"]);
+        assert!(!s.rename("https://wordwave.co.za/radio/", "Radio WordWave")); // the same: nothing to save
+        assert!(!s.rename("https://wordwave.co.za/radio/", "   ")); // no name: kept
+        assert!(!s.rename("https://other.example/radio/", "Other")); // not saved: not added
+        assert_eq!(names(&s), vec!["Radio WordWave"]);
+        assert!(s.rename("https://wordwave.co.za/radio/", &"x".repeat(200)));
+        assert_eq!(s.stations[0].name.chars().count(), 80);
     }
 
     #[test]

@@ -98,7 +98,7 @@ const setRange = (sel, v) => evaluate(`(() => { const e = document.querySelector
 const setBox = (sel, on) => evaluate(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (e.checked !== ${on}) e.click(); return e.checked; })()`);
 const maxDiff = (a, b) => { let m = 0; for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); if (d > m) m = d; } return m; };
 
-let user = null, prepBefore = null, presetsBefore = null;
+let user = null, prepBefore = null, presetsBefore = null, srvBefore = null;
 try {
   prepBefore = helper("prep");
   presetsBefore = helper("presets");
@@ -247,6 +247,24 @@ try {
   check("the song is prepared again from its original and put in place", msg.includes("is now prepared") && after.file !== before.file && after.preset === presetPrefix + " warm" && after.sha1 === before.sha1, msg);
   check("  the old copy is gone, the original kept", !existsSync(join(here, "..", "storage", "media", before.file)) && existsSync(join(originals, `${shaA}.mp3`)));
 
+  console.log("Apply on the server (round 87, v1.14)");
+  srvBefore = helper("server-prep", "state").state;
+  check("(the station now prepares songs on the server)", !!helper("server-prep", "on").ready);
+  await go(`${base}/manage/songprep?song=${tA.id}`);
+  s = await until((x) => x.song && x.song.id === tA.id, 10);
+  check("the page knows the server prepares songs", (await evaluate("JSON.parse(document.getElementById('songprepData').textContent).server")) === true);
+  const before2 = helper("track", titleA);
+  await evaluate("window.confirm = () => true; document.getElementById('spMsg').textContent = ''; document.getElementById('spApply').click()");
+  const seen = new Set();
+  msg = "";
+  for (let i = 0; i < 900 && !/is now prepared|Not applied/.test(msg); i++) { await sleep(200); msg = await evaluate("document.getElementById('spMsg').textContent"); seen.add(msg.replace(/\d+%.*/, "")); }
+  const after2 = helper("track", titleA);
+  check("the server makes it again from its original and puts it in place", msg.includes("is now prepared") && after2.file !== before2.file && after2.preset === presetPrefix + " warm"
+    && after2.sha1 === before2.sha1 && helper("redo-jobs", String(tA.id)).some((j) => j.state === "done"), msg);
+  check("  the page followed it (on the server: …)", [...seen].some((m) => /server/.test(m)), [...seen].join(" | "));
+  helper("server-prep", "restore", JSON.stringify(srvBefore));
+  srvBefore = null;
+
   console.log("Removing a preset");
   await evaluate("window.confirm = () => true; document.getElementById('spDelete').click()");
   await sleep(1000);
@@ -259,6 +277,7 @@ try {
 } finally {
   try { helper("presets", "clear", presetPrefix); } catch { /* nothing to clear */ }
   if (presetsBefore) try { helper("presets", "default", String(presetsBefore.default)); } catch { /* gone */ }
+  if (srvBefore !== null) try { helper("server-prep", "restore", JSON.stringify(srvBefore)); } catch { /* as it was */ }
   if (prepBefore) try { helper("prep", prepBefore.master ? "1" : "0", prepBefore.level ? "1" : "0"); } catch { /* as it was */ }
   let hidden = 0;
   if (user) try { hidden = helper("cleanup", String(user.id), titleA, titleB).hidden; } catch { /* left */ }

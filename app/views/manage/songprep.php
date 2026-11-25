@@ -1,5 +1,5 @@
 <?php use function Stationwagon\h; use Stationwagon\App;
-/** @var array $tracks @var array $presets @var int $defaultId @var array $prepQuality @var array $prep @var int $song @var string $csrf */
+/** @var array $tracks @var array $presets @var int $defaultId @var array $prepQuality @var array $prep @var int $song @var bool $server @var string $csrf */
 [, $prepLevel, $prepTarget] = $prep;
 $data = [
     'tracks' => array_map(fn($t) => ['id' => (int) $t['id'], 'title' => $t['title'], 'artist' => $t['artist'], 'file' => $t['file'], 'original' => $t['original'],
@@ -9,6 +9,7 @@ $data = [
     'level' => $prepLevel,
     'target' => $prepTarget,
     'song' => $song,
+    'server' => $server, // round 87: Apply makes the song again on the server
     'csrf' => $csrf,
     'postUrl' => App::url('manage/songprep'),
     'origUrl' => App::url('manage/songprep/original'),

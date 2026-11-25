@@ -152,6 +152,16 @@ try {
   await A.evaluate(`[...${row}.querySelectorAll("td.acts button")].find((b) => /Keep/.test(b.textContent)).click()`);
   check("  Keep puts the buttons back and the jingle stays", await A.until(`!!${row}.querySelector("td.acts a")`) && helper("jingles-info", jTitle + " (edited)") !== null && await still());
 
+  console.log("What aired (round 87)");
+  await A.go(`${base}/manage/jingles`);
+  check("the screen has the play log of the last 7 days, with a table or a note that nothing played",
+    await A.evaluate(`!!document.getElementById("playLog") && /Played, last 7 days/.test(document.getElementById("playLogH").textContent)
+      && (!!document.getElementById("playLogTable") ? document.querySelectorAll("#playLogTable thead th").length === 9 : !!document.getElementById("playLogEmpty"))`));
+  const csv = await A.evaluate(`(async () => { const a = [...document.querySelectorAll("#playLog a")].find((x) => /30 days/.test(x.textContent));
+    const r = await fetch(a.href); return { type: r.headers.get("content-type"), disp: r.headers.get("content-disposition"), text: await r.text() }; })()`);
+  check("  its 30-day CSV downloads as a file, with the header line", /text\/csv/.test(csv.type) && /attachment; filename=".*-jingles-played-\d{4}-\d\d-\d\d\.csv"/.test(csv.disp)
+    && csv.text.replace(/^﻿/, "").split("\n")[0] === "Date,Time,Jingle,\"Seconds played\",Stream", `${csv.type} · ${csv.disp} · ${csv.text.slice(0, 60)}`);
+
   console.log("Apart from the songs and the ads");
   await A.go(`${base}/manage/library?q=${encodeURIComponent(jTitle)}`);
   check("the Music library doesn't list the jingle", await A.evaluate(`!document.getElementById("t${info.id}") && /No songs match/.test(document.body.textContent)`));

@@ -1259,3 +1259,16 @@ body.barpage { overflow: hidden; position: relative; }
 .relevel { margin-top: 14px; padding: 12px 14px; border-radius: var(--r-box); background: var(--raised); display: grid; gap: 10px; max-width: 760px; }
 .relevel p { margin: 0; }
 #relevelLater { margin: 12px 0 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* What aired in the last days (round 87): the Ads and Jingles screens' play log */
+.playlog { margin-top: 18px; }
+.playloghead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+.playloghead h2 { margin: 0; }
+.playlogdl { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--faint); }
+.playscroll { overflow-x: auto; margin-top: 12px; }
+.playlogt { width: 100%; border-collapse: collapse; font-size: 13px; }
+.playlogt th { font: 700 11px var(--f-ui); letter-spacing: .1em; text-transform: uppercase; color: var(--faint); text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--edge); white-space: nowrap; }
+.playlogt td { padding: 7px 10px; border-bottom: 1px solid var(--edge-soft); }
+.playlogt .num { text-align: right; font-variant-numeric: tabular-nums; }
+.playlogt tfoot th, .playlogt tfoot td { border-top: 1px solid var(--edge); border-bottom: 0; }
+.playlogt tr.off td:first-child { color: var(--faint); }

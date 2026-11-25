@@ -12,7 +12,7 @@
 // cover. Only MP3s reach the server, so one that can't be converted isn't uploaded (refused: true).
 //   SwPrep.prepare(file, onStage, { master, level, target, onNotice }) ->
 //     { file, prepared, kept?, info?, note?, sourceSha1?, original?, name?, kind, refused? }
-// original (converted uploads): the MP3 original to keep; name: the upload's name with .mp3; sourceSha1
+// original (converted uploads): the MP3 original to keep, uploadSha1 the picked file's hash; name: the upload's name with .mp3; sourceSha1
 // is then that original's SHA-1 (the station's fingerprint for the song).
 // onNotice(text) is told, before the work starts, when the song's sample rate will be converted.
 // The station's quality settings come from this script tag: data-kbps, data-rate (0 = the song's own,
@@ -70,7 +70,8 @@
     const song = new Blob([C.levelTags(head, r.info), ...r.chunks], { type: "audio/mpeg" });
     const name = file.name.replace(/\.[^.\/]*$/, "") + ".mp3";
     r.info.converted.kind = kind === "ogg" && r.source.codec === "opus" ? "Opus" : NAMES[kind] || kind;
-    return { file: song, prepared: true, info: r.info, sourceSha1: await sha1(original), original, name, kind, tags: r.tags || {}, picture: r.picture || null };
+    // uploadSha1: the picked file's own hash, so the same WAV or FLAC is found before it is prepared again (round 87)
+    return { file: song, prepared: true, info: r.info, sourceSha1: await sha1(original), uploadSha1: await sha1(file), original, name, kind, tags: r.tags || {}, picture: r.picture || null };
   }
 
   async function prepare(file, onStage = () => {}, opts = {}) {

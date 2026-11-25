@@ -3,7 +3,8 @@
 // re-level them ("Re-level" opens the panel: re-level them now, or only new uploads). Re-levelling makes each
 // song again from its kept original in this browser (prep.js), with the mastering it was made with, so only
 // its loudness changes, and puts it in place like Song prep's Apply (manage/songprep, action apply). A song
-// on air waits and is tried again.
+// on air waits and is tried again. Round 87 (v1.14): when the station prepares songs on the server, the server makes
+// them again (PrepQueue::redo) and this page only follows along; the browser way stays for stations without it.
 (() => {
   const box = document.getElementById("relevel"), form = document.getElementById("drop");
   if (!box || !form || !window.FormData) return;
@@ -84,15 +85,62 @@
     }
   }
 
+  const send = (fields) => {
+    const data = new FormData();
+    data.append("csrf", csrf);
+    for (const [k, v] of Object.entries(fields)) data.append(k, v);
+    return fetch(box.dataset.apply, { method: "POST", body: data, headers: { Accept: "application/json" }, credentials: "same-origin" })
+      .then((x) => x.json()).catch(() => ({ ok: false, error: "connection lost" }));
+  };
+  /** Round 87: every song made again on the server; resolves how many are done, or null when the station prepares in the browser. */
+  async function viaServer(todo, rows) {
+    const jobs = new Map();
+    for (const s of todo) {
+      const li = rows.get(s), status = li.querySelector(".s");
+      const j = await send({ action: "redo", id: String(s.id), master: JSON.stringify(s.master || false), level: "1", target: String(target), preset: s.preset || "" });
+      if (j.ok) { jobs.set(j.job, s); status.textContent = "Waiting its turn on the server"; continue; }
+      if (j.browser && !jobs.size) return null;
+      li.className = "bad"; status.textContent = "Not re-levelled: " + (j.error || "the server refused it");
+    }
+    if (jobs.size) window.removeEventListener("beforeunload", warn); // the server carries on without this page
+    let done = 0;
+    while (jobs.size) {
+      await sleep(2000);
+      const j = await send({ action: "redo_status", ids: [...jobs.keys()].join(",") });
+      if (!j.ok) continue;
+      for (const x of j.jobs) {
+        const s = jobs.get(x.id);
+        if (!s) continue;
+        const li = rows.get(s), status = li.querySelector(".s");
+        if (x.state === "done") {
+          const i = x.info;
+          li.className = "ok"; done++; jobs.delete(x.id);
+          status.textContent = i && i.lufs_before !== undefined && i.lufs !== undefined
+            ? "Levelled " + fmt(i.lufs_before) + " → " + fmt(i.lufs) + " LUFS (" + (i.gain_db >= 0 ? "+" : "") + fmt(i.gain_db) + " dB)" : "Re-levelled";
+        } else if (x.state === "failed" || x.state === "cancelled") {
+          li.className = "bad"; jobs.delete(x.id);
+          status.textContent = "Not re-levelled: " + (x.error || "the server couldn’t prepare it");
+        } else {
+          status.textContent = x.state === "queued" ? (x.waiting_for_node ? "Waiting for the server’s song prep" : "Waiting its turn on the server")
+            : x.state === "working" ? "On the server: " + (x.stage || "starting") + (typeof x.progress === "number" ? " " + Math.round(x.progress * 100) + "%" : "")
+            : x.stage || "Putting it in place";
+        }
+      }
+    }
+    return done;
+  }
+
   go.addEventListener("click", async () => {
-    if (running || !window.SwPrep) return;
+    if (running || (!window.SwPrep && form.dataset.server !== "1")) return;
     const todo = songs.filter((s) => s.original);
     running = true; go.disabled = true; skip.disabled = true;
     window.addEventListener("beforeunload", warn);
     list.hidden = false; list.innerHTML = "";
     const rows = new Map(todo.map((s) => [s, row(s.title)]));
     let wait = [], done = 0;
-    for (const s of todo) { const r = await one(s, rows.get(s)); if (r === "air") wait.push(s); else if (r === "done") done++; }
+    const served = form.dataset.server === "1" ? await viaServer(todo, rows) : null;
+    if (served !== null) done = served;
+    else for (const s of todo) { const r = await one(s, rows.get(s)); if (r === "air") wait.push(s); else if (r === "done") done++; }
     // songs on air: try again every 15 s, for up to 15 minutes
     for (let i = 0; wait.length && i < 60; i++) {
       await sleep(15000);

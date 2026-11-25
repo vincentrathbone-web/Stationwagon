@@ -95,7 +95,7 @@ final class Ads
         $a = $this->db->table('ads');
         $t = $this->db->table('tracks');
         $rows = $this->db->run(
-            "SELECT a.*, t.title, t.duration_s, t.file, t.loudness_lufs, t.mastered, t.created_at AS uploaded_at
+            "SELECT a.*, t.title, t.duration_s, t.file, t.sha1, t.loudness_lufs, t.mastered, t.created_at AS uploaded_at
              FROM $a a JOIN $t t ON t.id = a.track_id
              WHERE a.station_id = ? AND t.kind = 'ad' AND t.status = 'ready' ORDER BY t.title, a.track_id",
             [$this->lib]
@@ -365,14 +365,7 @@ final class Ads
     /** Log the ads that have finished playing (each once); called by the planner whenever it plans. */
     public function logAired(float $now): void
     {
-        $this->db->run(
-            'INSERT IGNORE INTO ' . $this->db->table('ad_plays') . ' (station_id, n, track_id, title, advertiser, started_at, played_s)
-             SELECT tl.station_id, tl.n, tl.track_id, t.title, a.advertiser, tl.start_at, tl.play_s
-             FROM ' . $this->db->table('timeline') . ' tl JOIN ' . $this->db->table('tracks') . " t ON t.id = tl.track_id AND t.kind = 'ad'
-             LEFT JOIN " . $this->db->table('ads') . " a ON a.track_id = t.id
-             WHERE tl.station_id = ? AND tl.type = 'song' AND tl.start_at + tl.play_s <= ?",
-            [$this->station['id'], $now]
-        );
+        (new PlayLog($this->db, $this->station, 'ad'))->logAired($now); // round 87: the same code logs jingles
     }
 
     /** How many times each ad aired on each of the last $days days (the station's days, newest first), from the log. @return array<string,array<int,int>> day => track id => plays */

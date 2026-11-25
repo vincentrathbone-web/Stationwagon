@@ -59,6 +59,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(StationAppPlugin.class);
         super.onCreate(savedInstanceState);
         loadedStation = station;
+        if (studio) refreshName(prefs, station);
         if (BuildConfig.SW_TEST) {
             long age = prefs.takeSignInAge();
             if (age >= 0) keepSignIn(station, KEEP_SIGN_IN_MS - age);
@@ -303,6 +304,18 @@ public class MainActivity extends BridgeActivity {
     }
 
     /** Start again on the studio (true) or the start page (false). */
+    /**
+     * Asks the station for its name in the background and keeps it when it changed (round 87: a station saved by older
+     * settings, or renamed since, kept its host or its old name until it was added again). Nothing happens offline.
+     */
+    private static void refreshName(Prefs prefs, String base) {
+        new Thread(() -> {
+            String[] hit = StationFinder.ask(base, new Boolean[] { false });
+            if (hit == null || !hit[0].equals(base) || "a Stationwagon station".equals(hit[1])) return; // moved, or nameless
+            prefs.rename(base, hit[1]);
+        }).start();
+    }
+
     void restart(boolean studio) {
         new Prefs(this).next(studio ? "studio" : "settings");
         runOnUiThread(this::recreate);

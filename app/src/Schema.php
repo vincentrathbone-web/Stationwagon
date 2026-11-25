@@ -40,10 +40,12 @@ namespace Stationwagon;
  *       its timeline, schedule, live shows and listeners are its own) and user_streams (which streams a person may go live on)
  *   v21 tracks.active: a song can be turned off (round 84): the AutoDJ and the studio leave it out, and it can be removed once it is off air
  *   v22 prep_jobs: uploads prepared on the server (round 85, v1.13): the raw file arrives in pieces, then cli/prep.php prepares it with Node
+ *   v23 jingle_plays: a log of jingles that aired, like ad_plays (round 87; src/PlayLog.php); tracks.upload_sha1: a converted upload's own hash
+ *   v24 prep_jobs.redo: a song made again on the server from its kept original (round 87, v1.14: Song prep's Apply and Re-level)
  */
 final class Schema
 {
-    public const VERSION = 22;
+    public const VERSION = 24;
 
     /** Where the station's storage is, for upgrade steps that read files (the app's folder unless a test says otherwise). */
     private static ?string $root = null;
@@ -54,7 +56,7 @@ final class Schema
         'schedule', 'live_shows', 'live_pieces', 'timeline', 'presenter_notes', 'running_orders',
         'listeners', 'listener_hours', 'listener_tally', 'listener_visitors',
         'episodes', 'episode_takes', 'episode_chunks', 'remember_tokens', 'prep_presets', 'roles',
-        'ads', 'ad_plays', 'jingles', 'user_streams', 'prep_jobs',
+        'ads', 'ad_plays', 'jingles', 'user_streams', 'prep_jobs', 'jingle_plays',
     ];
 
     /** @return array<string,string> table name => CREATE TABLE statement */
@@ -116,6 +118,7 @@ final class Schema
                 `station_id` INT UNSIGNED NOT NULL,
                 `file` VARCHAR(255) NOT NULL COMMENT 'path under storage/media',
                 `sha1` CHAR(40) NOT NULL,
+                `upload_sha1` CHAR(40) NULL COMMENT 'the hash of the file as it was picked, when it was converted (a WAV or FLAC): finds it again before preparing',
                 `title` VARCHAR(255) NOT NULL,
                 `artist` VARCHAR(255) NULL,
                 `album` VARCHAR(255) NULL,
@@ -141,6 +144,7 @@ final class Schema
                 `created_at` DATETIME NOT NULL,
                 PRIMARY KEY (`id`),
                 UNIQUE KEY `{$p}tracks_station_sha1` (`station_id`, `sha1`),
+                KEY `{$p}tracks_station_upload` (`station_id`, `upload_sha1`),
                 KEY `{$p}tracks_station_status` (`station_id`, `status`),
                 KEY `{$p}tracks_station_kind` (`station_id`, `kind`, `status`),
                 {$fk('tracks_station', 'station_id', 'stations')}
@@ -279,6 +283,7 @@ final class Schema
             'jingles' => self::jingles($p, $opts),
             'user_streams' => self::userStreams($p, $opts),
             'prep_jobs' => self::prepJobs($p, $opts),
+            'jingle_plays' => self::jinglePlays($p, $opts),
         ];
     }
 
@@ -301,6 +306,7 @@ final class Schema
                 `state` ENUM('uploading','queued','working','prepared','done','failed','cancelled') NOT NULL DEFAULT 'uploading',
                 `stage` VARCHAR(80) NULL,
                 `hold` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1: the details window is open; the song is added once its details arrive',
+                `redo` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1: song track_id made again from its kept original (Song prep, Re-level)',
                 `attempts` TINYINT UNSIGNED NOT NULL DEFAULT 0,
                 `opts` TEXT NOT NULL COMMENT 'JSON: the station''s prep settings when it was picked',
                 `details` MEDIUMTEXT NULL COMMENT 'JSON: the details window''s choices',
@@ -591,6 +597,24 @@ final class Schema
             ) $opts";
     }
 
+    /** The jingles that aired (v23, round 87): like ad_plays, one row per timeline entry once it has ended; kept after the jingle is removed. */
+    private static function jinglePlays(string $p, string $opts): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `{$p}jingle_plays` (
+                `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                `station_id` INT UNSIGNED NOT NULL,
+                `n` BIGINT UNSIGNED NOT NULL COMMENT 'the timeline entry',
+                `track_id` INT UNSIGNED NULL,
+                `title` VARCHAR(255) NOT NULL,
+                `started_at` DECIMAL(15,3) NOT NULL,
+                `played_s` DECIMAL(10,3) NOT NULL DEFAULT 0,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `{$p}jingle_plays_n` (`station_id`, `n`),
+                KEY `{$p}jingle_plays_track` (`track_id`, `started_at`),
+                CONSTRAINT `{$p}fk_jingleplays_station` FOREIGN KEY (`station_id`) REFERENCES `{$p}stations` (`id`) ON DELETE CASCADE
+            ) $opts";
+    }
+
     /** Song prep's mastering presets (the Song prep screen): the chain's settings as JSON. */
     private static function prepPresets(string $p, string $opts): string
     {
@@ -711,6 +735,18 @@ final class Schema
             ],
             // uploads prepared on the server (round 85)
             22 => [self::prepJobs($p, $opts)],
+            // a log of jingles that aired, and the hash of a converted upload as it was picked (round 87)
+            23 => [
+                self::jinglePlays($p, $opts),
+                fn(Db $db) => $db->run("SHOW COLUMNS FROM `{$p}tracks` LIKE 'upload_sha1'")->fetch()
+                    ? null
+                    : $db->pdo->exec("ALTER TABLE `{$p}tracks` ADD COLUMN `upload_sha1` CHAR(40) NULL COMMENT 'the hash of the file as it was picked, when it was converted (a WAV or FLAC): finds it again before preparing' AFTER `sha1`, ADD KEY `{$p}tracks_station_upload` (`station_id`, `upload_sha1`)"),
+            ],
+            24 => [
+                fn(Db $db) => $db->run("SHOW COLUMNS FROM `{$p}prep_jobs` LIKE 'redo'")->fetch()
+                    ? null
+                    : $db->pdo->exec("ALTER TABLE `{$p}prep_jobs` ADD COLUMN `redo` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1: song track_id made again from its kept original (Song prep, Re-level)' AFTER `hold`"),
+            ],
         ];
     }
 

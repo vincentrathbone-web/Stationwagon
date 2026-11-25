@@ -77,6 +77,9 @@ if ($cmd === 'manager') {
         is_array($raw) && $raw !== [] ? NodeRuntime::save($raw) : @unlink(NodeRuntime::statePath());
     }
     echo json_encode(['state' => NodeRuntime::state(), 'summary' => NodeRuntime::summary(), 'ready' => NodeRuntime::ready()]);
+} elseif ($cmd === 'redo-jobs') {
+    // round 87: the songs made again on the server, for a track
+    echo json_encode($db->run('SELECT id, state, stage, error FROM ' . $db->table('prep_jobs') . ' WHERE redo = 1 AND track_id = ? ORDER BY id', [(int) ($argv[2] ?? 0)])->fetchAll());
 } elseif ($cmd === 'prep-jobs') {
     $rows = $db->run('SELECT id, kind, name, state, stage, hold, error, track_id, received, bytes FROM ' . $db->table('prep_jobs') . ' WHERE user_id = ? ORDER BY id', [(int) ($argv[2] ?? 0)])->fetchAll();
     echo json_encode($rows);
@@ -92,7 +95,7 @@ if ($cmd === 'manager') {
     }
     echo json_encode(['removed' => $n]);
 } elseif ($cmd === 'track') {
-    $row = $db->run('SELECT id, file, sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs, source_lufs, level_gain_db, level_target, mastered, preset, preset_settings, outro, album, art, rights, active FROM ' . $db->table('tracks') .
+    $row = $db->run('SELECT id, file, sha1, upload_sha1, title, artist, duration_s, bitrate_kbps, sample_rate, loudness_lufs, source_lufs, level_gain_db, level_target, mastered, preset, preset_settings, outro, album, art, rights, active FROM ' . $db->table('tracks') .
         " WHERE station_id = ? AND title = ? AND status = 'ready' ORDER BY id DESC LIMIT 1", [$station['id'], $argv[2] ?? ''])->fetch();
     echo json_encode($row ?: null);
 } elseif ($cmd === 'make-old') {

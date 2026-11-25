@@ -15,7 +15,7 @@ use DateTimeZone;
  * The AutoDJ (Planner::plan) asks pick() for a jingle after every N songs (see settings()): the active jingle
  * that was played longest ago, so several jingles take turns. A jingle only ever goes between two songs: never
  * straight after an ad, another jingle or a live show, and an ad break does not count as a song. Listeners and
- * the apps see the station's name for it (no artist, art or copyright line), and nothing is logged: stats count
+ * the apps see the station's name for it (no artist, art or copyright line). Its plays are logged (PlayLog, round 87) but stats count
  * listeners, and jingles are not listed under Recent or Next.
  */
 final class Jingles
@@ -76,7 +76,7 @@ final class Jingles
         $j = $this->db->table('jingles');
         $t = $this->db->table('tracks');
         $rows = $this->db->run(
-            "SELECT j.*, t.title, t.duration_s, t.file, t.loudness_lufs, t.mastered, t.created_at AS uploaded_at
+            "SELECT j.*, t.title, t.duration_s, t.file, t.sha1, t.loudness_lufs, t.mastered, t.created_at AS uploaded_at
              FROM $j j JOIN $t t ON t.id = j.track_id
              WHERE j.station_id = ? AND t.kind = 'jingle' AND t.status = 'ready' ORDER BY t.title, j.track_id",
             [$this->lib]

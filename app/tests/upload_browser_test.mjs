@@ -813,6 +813,28 @@ try {
     }
     rows = await upload([join(formats, SAMPLES[SAMPLES.length - 1].file)]); // still in the library
     check(`the same ${SAMPLES[SAMPLES.length - 1].kind} again is caught as a duplicate (converted the same way twice)`, rows && rows[0].cls === "ok" && rows[0].text === "Already there", rows && rows[0].text);
+    // round 87: the picked file's own hash is kept, so with the bulk tick box the same file is skipped before it is converted
+    const lastFile = join(formats, SAMPLES[SAMPLES.length - 1].file);
+    const lastT = helper("track", TAGS.title);
+    check("  the song keeps the picked file's own hash beside its original's", lastT && lastT.upload_sha1 === createHash("sha1").update(readFileSync(lastFile)).digest("hex") && lastT.upload_sha1 !== lastT.sha1,
+      lastT && `${lastT.upload_sha1} / ${lastT.sha1}`);
+    await go(`${base}/manage/library`);
+    await evaluate("window.swUploadNoWindow = true");
+    if (!(await evaluate(`document.getElementById('bulkUp').checked`))) await realClick("#bulkUp");
+    const doc2 = await call("DOM.getDocument", {});
+    const input2 = await call("DOM.querySelector", { nodeId: doc2.result.root.nodeId, selector: "#files" });
+    await call("DOM.setFileInputFiles", { nodeId: input2.result.nodeId, files: [lastFile] });
+    const seen = new Set();
+    let fin = null;
+    for (let i = 0; i < 600 && !fin; i++) {
+      const r = await evaluate(`[...document.querySelectorAll('#uplist li')].map((li) => ({ cls: li.className, text: li.querySelector('.s').textContent }))`).catch(() => null);
+      if (r && r[0]) { seen.add(r[0].text); if (r[0].cls === "ok" || r[0].cls === "bad") fin = r[0]; }
+      await sleep(30);
+    }
+    check(`  picked again with the bulk tick box, the ${SAMPLES[SAMPLES.length - 1].kind} is skipped before it is converted`, fin && fin.text === "Already there" && ![...seen].some((x) => /Decoding|Converting|Mastering|Levelling|Encoding/.test(x)),
+      [...seen].join(" → "));
+    await sleep(1500); await loaded();
+    if (await evaluate(`document.getElementById('bulkUp') && document.getElementById('bulkUp').checked`)) await realClick("#bulkUp");
   }
 
   console.log("The upload window (round 56)");

@@ -187,9 +187,9 @@ details.built summary:hover{background:var(--ground)}
    Feature states: done, progress (building now), waiting (on the user), next (in the current
    version, not started), later (a later version). "v" is the version a feature belongs to. */
 const MAP = {
-  updated: "13 Nov",
-  commits: 98,
-  version: "0.9.21-dev",
+  updated: "25 Nov",
+  commits: 109,
+  version: "0.9.22-dev",
   foundation: "Plan, proof of concept and Core & manager (v0.1) done 19–20 Oct",
   road: [
     { v: "v0.4", name: "Player & studio", when: "done 22 Oct" },
@@ -209,11 +209,11 @@ const MAP = {
     { v: "v1.8", name: "Gansbaai Community Radio", when: "up 13 Nov, needs your details" },
     { v: "v1.9", name: "Gansbaai branding", when: "live 13 Nov" },
     { v: "v1.10", name: "Gansbaai Android app", when: "planned" },
-    { v: "v1.11", name: "Many stations in the studio apps", when: "live 13 Nov" },
+    { v: "v1.11", name: "Many stations in the studio apps", when: "live 25 Nov, apps built" },
     { v: "v1.12", name: "Stream quality for listeners", when: "planned" },
     { v: "v1.13", name: "Song prep on the server", when: "live 13 Nov" },
     { v: "v1.13.1", name: "WordWave's sound for new stations", when: "live 13 Nov" },
-    { v: "v1.14", name: "Prepare again on the server", when: "planned" }
+    { v: "v1.14", name: "Prepare again on the server", when: "live 25 Nov" }
   ],
   areas: [
     { name: "Listener player", blurb: "The station page, the embed and the data for other sites and apps.", features: [
@@ -244,7 +244,7 @@ const MAP = {
       { text: "Wide manager, library table and star ratings", v: "v0.9", state: "done" },
       { text: "Look up details with MusicBrainz", v: "v0.9", state: "done" },
       { text: "About screen with Check for updates", v: "v0.9", state: "done" },
-      { text: "AutoDJ uses the star ratings", note: "ratings are saved; the setting says coming soon", v: "v1.0.1", state: "later" }
+      { text: "AutoDJ uses the star ratings", note: "each star doubles a song's chance in a shuffle; live 25 Nov", v: "v1.0.1", state: "done" }
     ]},
     { name: "Libraries & downloads", blurb: "Jingles, downloads and a matching look for every library.", features: [
       { text: "Jingles: upload and prepare tiny station-name clips like songs", v: "v1.1", state: "done" },
@@ -252,7 +252,8 @@ const MAP = {
       { text: "Jingles: listeners see the station name, stats leave them out", v: "v1.1", state: "done" },
       { text: "Jingles: tests (deploy waits for your OK)", v: "v1.1", state: "done" },
       { text: "Download the processed version of a song, ad or jingle", v: "v1.2", state: "done" },
-      { text: "The original too, by address (no button)", v: "v1.2", state: "done" },
+      { text: "The original too, with its own Original button", note: "the button since 25 Nov", v: "v1.2", state: "done" },
+      { text: "What aired: the last 7 days of each ad and jingle, with CSV downloads", note: "every stream; live 25 Nov", v: "v1.2", state: "done" },
       { text: "A permission for who may download", v: "v1.2", state: "done" },
       { text: "Smaller font and tighter rows in every library", v: "v1.6", state: "done" },
       { text: "Badges column as symbols only, with a key", v: "v1.6", state: "done" },
@@ -274,7 +275,8 @@ const MAP = {
       { text: "Uploads always use the station's selected default preset", v: "v1.13.1", state: "done" },
       { text: "WordPress plugin 1.2.2 and setup.php rebuilt; a fresh install's installer fixed", v: "v1.13.1", state: "done" },
       { text: "Release, deploy, and both stations on the built-in chain", v: "v1.13.1", state: "done" },
-      { text: "Song prep screen: prepare again and level again on the server too", note: "your choice: its own phase after v1.13", v: "v1.14", state: "later" }
+      { text: "A WAV or FLAC already in the library is found before it is prepared", note: "live 25 Nov", v: "v1.14", state: "done" },
+      { text: "Song prep screen: prepare again and level again on the server too", note: "Apply and Re-level; a song on air waits; live 25 Nov", v: "v1.14", state: "done" }
     ]},
     { name: "Multi-stream", blurb: "Several radio streams on one installation, each with its own AutoDJ.", features: [
       { text: "Streams: a stream table, the current station becomes stream 1", v: "v1.3", state: "done" },
@@ -320,19 +322,19 @@ const MAP = {
       { text: "Signed installer with updates that ask first", v: "v0.6", state: "done" },
       { text: "Finds the station from the website's address", v: "v0.6", state: "done" },
       { text: "About screen with Check for updates (0.6.8)", v: "v0.9", state: "done" },
-      { text: "Windows: several stations and streams in one app", v: "v1.11", state: "later" },
+      { text: "Windows: several stations and streams in one app", v: "v1.11", state: "done" },
       { text: "Windows: saved stations, picked or added on the sign-in card", v: "v1.11", state: "done" },
-      { text: "Windows: a stream picker", v: "v1.11", state: "later" },
-      { text: "Windows: tests and release", v: "v1.11", state: "later" }
+      { text: "Windows: opens the stream used last; the studio's switch picks it", note: "and each station's real name in the list", v: "v1.11", state: "done" },
+      { text: "Windows: tests and release", note: "0.6.10 built and tested; released after the commit", v: "v1.11", state: "next" }
     ]},
     { name: "Android app", blurb: "The studio as an Android app; iPhones keep the browser studio.", features: [
       { text: "Studio app with Do Not Disturb on air", v: "v0.7", state: "done" },
       { text: "Shows go on with the screen off", v: "v0.7", state: "done" },
       { text: "Updates that ask first; finds the station", v: "v0.7", state: "done" },
-      { text: "Android: several stations and streams in one app", v: "v1.11", state: "later" },
+      { text: "Android: several stations and streams in one app", v: "v1.11", state: "done" },
       { text: "Android: saved stations, picked or added on the sign-in card", v: "v1.11", state: "done" },
-      { text: "Android: a stream picker", v: "v1.11", state: "later" },
-      { text: "Android: tests on the phone and release", v: "v1.11", state: "later" }
+      { text: "Android: opens the stream used last; the studio's switch picks it", note: "and each station's real name in the list", v: "v1.11", state: "done" },
+      { text: "Android: tests on the phone and release", note: "0.7.7 built; the phone test waits for the phone", v: "v1.11", state: "next" }
     ]},
     { name: "Listener app (Android)", blurb: "A listener-only app per station, made from one config file (in WordWave's repo).", features: [
       { text: "Live stream, schedule with reminders, podcasts with notes", v: "v0.8", state: "done" },
@@ -351,13 +353,16 @@ const MAP = {
     ]}
   ],
   next: {
-    title: "Next: Gansbaai's details, then its Android app (v1.8, v1.10)",
-    text: "Gansbaai Community Radio's new website is live at gbcr.controll.co.za (v1.9): the home page with the sea video, the line-up and a contact page whose form emails the station (for now to the site's admin email, yours), and the player along the bottom in the Gansbaai colours. What it needs from you now: the shows and DJs, the station's email, WhatsApp number and studio address for the contact page, a privacy contact, and real music; until then it shows a sample week and the four test songs. After that comes the Gansbaai Android app (v1.10).",
-    order: ["v1.8 Gansbaai: your line-up, contact details, privacy email and music","v1.10 Gansbaai Android app","v1.12 Stream quality (needs a decision)"]
+    title: "Next: the phone test, then the Windows and Android releases (v1.11)",
+    text: "Everything in this round is live on WordWave and Gansbaai. The two apps are built (Windows 0.6.10, Android 0.7.7) with their release notes: the studio opens on the stream used last, and saved stations show their real names. Left: the Android test on the phone (it was not plugged in), a commit, and then the two releases.",
+    order: ["v1.11 Android phone test, commit and both app releases","v1.8 Gansbaai: your line-up, contact details, privacy email and music","v1.10 Gansbaai Android app","v1.12 Stream quality (needs a decision)"]
   },
   call: null,
   feedTitle: "Recent changes",
   feed: [
+    { what: "The studio opens on the stream you used last", to: "On a station with more than one stream, pick one with the switch at the top of the studio, and next time the studio (in the apps too, or a bookmark) opens there; a stream that is gone or no longer yours falls back to the main one. The apps also show each saved station's real name (in the next app releases); live 25 Nov", at: "25 Nov" },
+    { what: "Prepare again on the server (v1.14)", to: "Song prep's Apply and the Music library's Re-level now run on the server when it prepares songs, so the page can be closed; a song on air waits and is put in place when it has finished; live 25 Nov", at: "25 Nov" },
+    { what: "What aired, star ratings and smaller fixes", to: "The Ads and Jingles screens show what aired in the last 7 days with CSV downloads; an Original button beside Download; a WAV or FLAC already in the library is found before it is prepared; and with Let ratings influence on, each star doubles how often a song plays; live 25 Nov", at: "25 Nov" },
     { what: "WordWave's sound for every new station", to: "The built-in mastering (still called Audition chain) now sounds exactly like WordWave's Audition2, and a new station starts with WordWave's settings: mastering on, levelled to -11 LUFS, 224 kbps, 8 s crossfades. Uploads always use the preset the station picked. Also fixed: installing a new station without WordPress stopped at an error page", at: "13 Nov" },
     { what: "Song prep on the server, live on both stations", to: "Uploads to the Music library, Ads and Jingles go to the server as they are and are prepared there with the same sound as in the browser, so the page can be closed once the files are sent. A list under the drop box shows what is still being prepared, from any device. Where a host can't run it, songs are prepared in the browser as before", at: "13 Nov" },
     { what: "Songs on and off, and a safer bulk upload", to: "The Music library has a Status column with Turn off and Turn on, so a song on air can be turned off and removed once it has finished; when every song is off, the library and the Overview say Nothing to play. A bulk upload now shows how far it has got, asks before the page is closed, and after a refresh lists the songs that didn't finish (picking them again skips the ones already added). Preparing on the server is the next phase (v1.13). Live on both stations", at: "13 Nov" },

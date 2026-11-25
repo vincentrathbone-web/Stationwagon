@@ -636,6 +636,22 @@ try {
     $db->run('UPDATE ' . $db->table('settings') . " SET value = '20' WHERE name = 'schema_version'");
     check('the upgrade to 21 adds the on/off column, with every song on', Schema::upgrade($db, $root) === range(21, Schema::VERSION) && $lib->onCount() === count($rest));
     check('  and a second upgrade has nothing to do', Schema::upgrade($db, $root) === []);
+    // round 87: a WAV or FLAC is converted to an MP3 original first, so its own hash is kept too (tracks.upload_sha1)
+    make_mp3("$root/in/conv-original", 150, ['title' => 'Converted Song'], 91);
+    make_mp3("$root/in/conv-levelled", 150, ['title' => 'Converted Song'], 92);
+    $wavSum = sha1('the picked WAV file ' . random_int(0, PHP_INT_MAX));
+    $conv = $lib->import("$root/in/conv-levelled", null, null, 'Converted Song.mp3', sha1_file("$root/in/conv-original"), -11.0, null, false, null, null, 'song', $wavSum);
+    $lib->keepOriginal($conv['id'], "$root/in/conv-original");
+    $convRow = $db->run("SELECT upload_sha1, sha1 FROM $tt WHERE id = ?", [$conv['id']])->fetch();
+    check('a converted upload keeps the picked file\'s own hash beside its original\'s', !$conv['duplicate'] && $convRow['upload_sha1'] === $wavSum && $convRow['sha1'] === sha1_file("$root/in/conv-original"));
+    check('  so the check before preparing finds the same WAV or FLAC picked again', $lib->haveSongs([strtoupper($wavSum)]) === [$wavSum]);
+    make_mp3("$root/in/conv-again", 150, ['title' => 'Converted Song'], 93);
+    $again = $lib->import("$root/in/conv-again", null, null, 'Converted Song.mp3', sha1('a different conversion'), -11.0, null, false, null, null, 'song', $wavSum);
+    check('  and the server refuses it as already there even if its conversion came out different', $again['duplicate'] && $again['id'] === $conv['id']);
+    make_mp3("$root/in/plain", 150, ['title' => 'Plain Song'], 94);
+    $plainMp3 = $lib->import("$root/in/plain", null, null, 'Plain Song.mp3', null, null, null, false, null, null, 'song', sha1_file("$root/in/plain"));
+    check('  an MP3 that went up as it was stores no second hash', $db->run("SELECT upload_sha1 FROM $tt WHERE id = ?", [$plainMp3['id']])->fetchColumn() === null);
+    check('  (both off again, so nothing below counts them)', $lib->setActive([$conv['id'], $plainMp3['id']], false, $p, $t3) === 2);
 
     echo "Song prep on the server (round 85)\n";
     NodeRuntime::$root = $root;
@@ -649,7 +665,7 @@ try {
     check('the upgrade to 22 makes the queue', (function () use ($db, $jt) {
         $db->pdo->exec("DROP TABLE $jt");
         $db->run('UPDATE ' . $db->table('settings') . " SET value = '21' WHERE name = 'schema_version'");
-        return Schema::upgrade($db) === [22] && $db->run("SHOW TABLES LIKE 'sw\\_prep\\_jobs'")->fetch() !== false && Schema::upgrade($db) === [];
+        return Schema::upgrade($db) === range(22, Schema::VERSION) && $db->run("SHOW TABLES LIKE 'sw\\_prep\\_jobs'")->fetch() !== false && Schema::upgrade($db) === [];
     })());
     $set = $pq->settingsNow();
     [$m0, $l0, $tgt] = StationSettings::prep($station);
@@ -765,8 +781,60 @@ try {
     PrepQueue::work($db, $root, $node);
     check('  after its tries it fails, with the reason', $pq->get($b7['id'])['state'] === 'failed' && str_contains((string) $pq->get($b7['id'])['error'], 'stopped twice'));
 
+    echo "  a song made again on the server (round 87, v1.14)\n";
+    $tOrig = $lib->original($lib->get((int) $tr['id']));
+    $tFile = $lib->get((int) $tr['id'])['file'];
+    check('only a song with its original can be made again', !$pq->redo($uid, (int) $j4['track_id'], [])['ok'] && !$pq->redo($uid, 999999, [])['ok']);
+    $first = $pq->redo($uid, (int) $tr['id'], ['master' => false, 'level' => true, 'target' => -18.0]);
+    $rd = $pq->redo($uid, (int) $tr['id'], ['master' => (object) [], 'level' => true, 'target' => -18.0, 'preset' => 'Built-in test', 'mastered' => true]);
+    check('a song is queued to be made again', $first['ok'] && $rd['ok'] && $pq->get($rd['id'])['state'] === 'queued' && (int) $pq->get($rd['id'])['redo'] === 1);
+    check('  asking again cancels the one that hadn’t started', $pq->get($first['id'])['state'] === 'cancelled');
+    check('  it isn’t an upload: not in the uploads list, not pending', !array_filter($pq->list(), fn($j) => in_array($j['id'], [$first['id'], $rd['id']], true)) && $pq->pending() === 0);
+    check('  something to do: the queue is due', PrepQueue::due($db));
+    PrepQueue::$clock = $offAir((int) $tr['id'], microtime(true)); // a time it isn't on air
+    $lines = PrepQueue::work($db, $root, $node);
+    $trd = $lib->get((int) $tr['id']);
+    $st = $pq->redoStatus([$rd['id'], $first['id']]);
+    check('the worker makes it again from its original and puts it in place', $pq->get($rd['id'])['state'] === 'done' && $trd['file'] !== $tFile, implode(' | ', $lines));
+    check('  levelled to the target asked for, mastered with the chain asked for', abs((float) $trd['loudness_lufs'] + 18.0) < 0.6 && abs((float) $trd['level_target'] + 18.0) < 0.01
+        && (int) $trd['mastered'] === 1 && $trd['preset'] === 'Built-in test', json_encode([$trd['loudness_lufs'], $trd['level_target'], $trd['preset']]));
+    check('  the same original is kept; the old copy is gone', $lib->original($trd) === $tOrig && is_file((string) $tOrig) && !is_file("$root/storage/media/$tFile"));
+    check('  its status says so, with the loudness before and after', count($st) === 2 && $st[0]['state'] === 'cancelled' && $st[1]['state'] === 'done'
+        && isset($st[1]['info']['lufs_before'], $st[1]['info']['lufs']), json_encode($st));
+    check('  Node’s files are gone', !is_dir("$root/storage/incoming/{$rd['id']}"));
+    // on air: waits, and is put in place once it isn't
+    $tNow = microtime(true);
+    $p->replan($tNow);
+    $cur = $p->nowPlaying($tNow)['current'];
+    $cid = (int) ($cur['track_id'] ?? 0);
+    $cr = $lib->get($cid);
+    check('(a song on air to try it with)', $cr !== null && $cr['kind'] === 'song', json_encode($cur));
+    @mkdir("$root/storage/originals");
+    copy((string) $tOrig, "$root/storage/originals/{$cr['sha1']}.mp3"); // the test songs are silent: an original with sound
+    check('  (it has an original now)', $lib->original($lib->get($cid)) === "$root/storage/originals/{$cr['sha1']}.mp3");
+    $cFile = $lib->get($cid)['file'];
+    PrepQueue::$clock = $tNow;
+    $air = $pq->redo($uid, $cid, ['master' => false, 'level' => true, 'target' => -17.0]);
+    PrepQueue::work($db, $root, $node);
+    $ja = $pq->get($air['id']);
+    check('a song on air is made again, then waits', $ja['state'] === 'prepared' && str_contains((string) $ja['stage'], 'On air') && $lib->get($cid)['file'] === $cFile, json_encode($ja));
+    $db->run("UPDATE $jt SET updated_at = ? WHERE id = ?", [gmdate('Y-m-d H:i:s', time() - PrepQueue::REDO_RETRY - 5), $air['id']]);
+    check('  and the queue stays due, to try again', PrepQueue::due($db));
+    check('  still on air: still waiting', $pq->retryWaiting(0) !== [] && $pq->get($air['id'])['state'] === 'prepared');
+    $db->run("UPDATE $jt SET created_at = ? WHERE id = ?", [gmdate('Y-m-d H:i:s', time() - PrepQueue::REDO_WAIT - 60), $air['id']]);
+    $pq->retryWaiting(0);
+    $ja = $pq->get($air['id']);
+    check('  on air for hours: it gives up, with the reason', $ja['state'] === 'failed' && str_contains((string) $ja['error'], 'on air'), json_encode($ja));
+    check('  Try again queues it once more (its original is still there)', $pq->retry($air['id']) && $pq->get($air['id'])['state'] === 'queued');
+    $db->run("UPDATE $jt SET created_at = ? WHERE id = ?", [gmdate('Y-m-d H:i:s'), $air['id']]);
+    PrepQueue::$clock = $offAir($cid, $tNow + 1);
+    PrepQueue::work($db, $root, $node);
+    check('  off air: put in place', $pq->get($air['id'])['state'] === 'done' && $lib->get($cid)['file'] !== $cFile && abs((float) $lib->get($cid)['level_target'] + 17.0) < 0.01,
+        json_encode($pq->get($air['id'])));
+    PrepQueue::$clock = null;
+
     echo "  tidying up\n";
-    $b8 = $pq->begin($uid, 'song', 'Half.wav', 999999, sha1('half'));
+    $b8 =$pq->begin($uid, 'song', 'Half.wav', 999999, sha1('half'));
     $pq->chunk($b8['id'], 0, 'part of it');
     $db->run("UPDATE $jt SET updated_at = ? WHERE id = ?", [gmdate('Y-m-d H:i:s', time() - PrepQueue::KEEP_PARTIAL - 60), $b8['id']]);
     file_put_contents("$root/storage/incoming/99999.src", 'left over');

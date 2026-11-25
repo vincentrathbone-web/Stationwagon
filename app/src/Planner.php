@@ -31,6 +31,8 @@ final class Planner
 
     private array $settings;
     private ?array $tracks = null;
+    /** Each song's stars (1 to 5; 3 when not rated), read with the songs (round 87: ratings can weight the shuffle) */
+    private array $stars = [];
     private array $pieceCache = [];
     private ?array $blocks = null;
 
@@ -483,6 +485,10 @@ final class Planner
     private function plan(float $now): void
     {
         $tl = $this->db->table('timeline');
+        // log the ads and jingles that aired before old entries are cleared below (round 87; before, a gap in planning
+        // longer than KEEP_HISTORY_SECONDS could clear an ad's play before it was logged)
+        (new PlayLog($this->db, $this->station, 'ad'))->logAired($now);
+        (new PlayLog($this->db, $this->station, 'jingle'))->logAired($now);
         $maxN = $this->db->run("SELECT MAX(n) FROM $tl WHERE station_id = ?", [$this->station['id']])->fetchColumn();
         if ($maxN !== null) {
             $this->db->run("DELETE FROM $tl WHERE station_id = ? AND start_at + play_s < ? AND n < ?", [$this->station['id'], $now - self::KEEP_HISTORY_SECONDS, $maxN]);
@@ -498,7 +504,6 @@ final class Planner
         }
 
         $ads = new Ads($this->db, $this->station);
-        $ads->logAired($now);
         $breaks = Ads::settings($this->station);
         $state = $breaks['enabled'] ? $ads->state() : null;
         // jingles: one between two songs after every N songs (round 70); an ad break is not a song
@@ -701,10 +706,12 @@ final class Planner
     {
         if ($this->tracks === null) {
             // only the songs that are on (round 84: a song turned off is never picked, even from a playlist)
-            $rows = $this->db->run('SELECT id, duration_s, outro FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND status = 'ready' AND kind = 'song' AND active = 1", [$this->lib])->fetchAll();
+            $rows = $this->db->run('SELECT id, duration_s, outro, rating FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND status = 'ready' AND kind = 'song' AND active = 1", [$this->lib])->fetchAll();
             $this->tracks = [];
+            $this->stars = [];
             foreach ($rows as $r) {
                 $this->tracks[(int) $r['id']] = ['id' => (int) $r['id'], 'duration' => (float) $r['duration_s'], 'outro' => $r['outro']];
+                $this->stars[(int) $r['id']] = $r['rating'] !== null ? max(1, min(5, (int) $r['rating'])) : 3;
             }
         }
         return $this->tracks;
@@ -746,7 +753,27 @@ final class Planner
         if (!$choices) {
             $choices = array_values(array_diff($pool, array_slice($recent, -1))) ?: $pool;
         }
-        return $all[$choices[random_int(0, count($choices) - 1)]];
+        if ((int) ($this->settings['ratings_influence'] ?? 0) !== 1) {
+            return $all[$choices[random_int(0, count($choices) - 1)]];
+        }
+        // round 87: with ratings on, each star doubles a song's chance (3 stars, or none, is the usual chance)
+        $weights = array_map(fn(int $id) => self::starWeight($this->stars[$id] ?? 3), $choices);
+        $roll = random_int(1, array_sum($weights));
+        foreach ($choices as $i => $id) {
+            if (($roll -= $weights[$i]) <= 0) {
+                return $all[$id];
+            }
+        }
+        return $all[$choices[count($choices) - 1]];
+    }
+
+    /**
+     * How likely a song with these stars is to be picked in a shuffle, with ratings on (round 87), in quarters: 1 star 1
+     * (a quarter of the usual), 2 stars 2, 3 stars (or none) 4, 4 stars 8, 5 stars 16 (four times the usual).
+     */
+    public static function starWeight(int $stars): int
+    {
+        return 1 << (max(1, min(5, $stars)) - 1);
     }
 
     /** @return array{mode:string,ids:list<int>} */

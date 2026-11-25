@@ -555,6 +555,12 @@ try {
   await restart({ station: base + "/", stations: undefined });
   p = await picker().catch(() => null);
   check("older settings with one station: it shows as the only saved station", p && p.opts.length === 2 && p.val === base + "/" && p.opts[1] === "Add a station…", p && JSON.stringify(p));
+  // round 87: opening it, the app asks the station for its name (it was saved as its host, "localhost")
+  let renamed = null; for (let i = 0; i < 60; i++) { renamed = settingsNow().stations.find((x) => x.base === base + "/"); if (renamed && renamed.name === NAME) break; await sleep(250); }
+  check("  opening it, the app asks the station for its name and keeps it (it was its host)", renamed && renamed.name === NAME, renamed && renamed.name);
+  await go(`${base}/signin`);
+  p = await picker().catch(() => null);
+  check("  so the card shows the station's own name", p && p.opts[0] === NAME, p && JSON.stringify(p.opts));
   await pick("\u0000add");
   await evaluate(`(() => { document.querySelector(".stpick .stadd input").value = ${JSON.stringify(STAND)}; document.querySelector(".stpick .stadd button").click(); })()`);
   t = await attach((x) => x.url.startsWith(STAND_BASE));
@@ -577,6 +583,43 @@ try {
   stand.close();
   await restart({ station: base + "/", stations: undefined });
 
+  // round 87 (v1.11): the app opens the studio on the stream used last (the station keeps it on this device)
+  console.log("The studio's stream, remembered (round 87)");
+  const remFx = helper("stream-fixture");
+  let mgr = null;
+  const onStream = async () => { for (let i = 0; i < 50; i++) { const d = await evaluate("document.getElementById('studio') ? (document.getElementById('studio').dataset.stream || '') : null").catch(() => null); if (d !== null) return d; await sleep(200); } return null; };
+  const relaunch = async () => {
+    closeWindow("Stationwagon Studio");
+    for (let i = 0; i < 30 && alive(); i++) await sleep(200);
+    app = launch();
+    await attach((x) => /\/(studio|signin)/.test(x.url));
+    for (let i = 0, last = ""; i < 50; i++) { await sleep(200); const p = await path(); if (p && p === last && (await evaluate("document.readyState").catch(() => "")) === "complete") break; last = p; }
+    if ((await path()).endsWith("/signin")) await signIn(mgr); // signIn opens "studio", no stream named, as the app does
+  };
+  try {
+    mgr = helper("manager");
+    await signIn(mgr);
+    check("a manager's studio opens on the main stream, with the switch to the other", (await onStream()) === "" && (await evaluate("!!document.querySelector('.streamswitch')")), await onStream());
+    await evaluate(`[...document.querySelectorAll('.streamswitch a')].find((a) => a.textContent === ${JSON.stringify(remFx.name)}).click()`);
+    await sleep(1500);
+    check("  the switch: the studio is on the other stream", (await onStream()) === remFx.stream, await onStream());
+    await relaunch();
+    check("closed and opened again, the app opens the studio on that stream (the address names none)", (await onStream()) === remFx.stream && !(await evaluate("location.search")).includes("stream="),
+      `${await onStream()} ${await evaluate("location.href")}`);
+    await evaluate(`[...document.querySelectorAll('.streamswitch a')].find((a) => a.textContent !== ${JSON.stringify(remFx.name)}).click()`);
+    await sleep(1500);
+    await relaunch();
+    check("  the main stream picked again: opened again, it is on the main one", (await onStream()) === "", await onStream());
+    await evaluate(`[...document.querySelectorAll('.streamswitch a')].find((a) => a.textContent === ${JSON.stringify(remFx.name)}).click()`);
+    await sleep(1500);
+    helper("stream-clean", String(remFx.id));
+    await relaunch();
+    check("  a stream used last that is gone: the studio opens on the main one", (await onStream()) === "", await onStream());
+  } finally {
+    helper("stream-clean", String(remFx.id));
+    await signOut().catch(() => {});
+    if (mgr) try { helper("cleanup", String(mgr.id)); } catch { /* left */ }
+  }
   console.log("Closing");
   closeWindow("Stationwagon Studio");
   for (let i = 0; i < 30 && alive(); i++) await sleep(200);

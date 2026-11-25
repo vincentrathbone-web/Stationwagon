@@ -5,7 +5,7 @@
 //   php app/tests/planner_test.php      (same SW_TEST_DB_* settings as install_test.php)
 declare(strict_types=1);
 require __DIR__ . '/lib.php';
-use Stationwagon\{Db, Library, Planner, Stream};
+use Stationwagon\{Db, Installer, Library, Planner, Stream};
 
 $t = test_database('planner');
 $root = temp_root('planner');
@@ -276,6 +276,41 @@ try {
     $w = $p->window($t0 + 50, $t0 + 20, $t0 + 900);
     check('window lists songs with their file address', $w && str_starts_with($w[0]['url'], 'storage/media/') && isset($w[0]['full'], $w[0]['fade_out'], $w[0]['end']));
     check('window covers the requested span', $w[0]['start'] <= $t0 + 20 && end($w)['end'] >= $t0 + 900);
+
+    echo "Star ratings in the shuffle (round 87)\n";
+    check('each star doubles the chance: 1, 2, 4, 8, 16 quarters (and out-of-range stars are held to 1 to 5)',
+        array_map([Planner::class, 'starWeight'], [1, 2, 3, 4, 5, 0, 9]) === [1, 2, 4, 8, 16, 1, 16]);
+    $tt = $db->table('tracks');
+    $ids = array_map('intval', $db->run("SELECT id FROM $tt WHERE station_id = ? AND status = 'ready' AND kind = 'song' AND active = 1 ORDER BY id", [$station['id']])->fetchAll(PDO::FETCH_COLUMN));
+    $db->run("UPDATE $tt SET rating = NULL WHERE station_id = ?", [$station['id']]);
+    $db->run("UPDATE $tt SET rating = 5 WHERE id = ?", [$ids[0]]);
+    $db->run("UPDATE $tt SET rating = 1 WHERE id = ?", [$ids[1]]);
+    $db->run('DELETE FROM ' . $db->table('schedule')); // the whole library, shuffled
+    $picks = function (int $influence) use ($db, $station, $root): array {
+        $s = json_decode((string) ($station['settings'] ?? ''), true) ?: [];
+        $st = $station;
+        $st['settings'] = json_encode(['ratings_influence' => $influence, 'recent_tracks' => 0] + $s);
+        $pick = new ReflectionMethod(Planner::class, 'pickTrack');
+        $pl = new Planner($db, $st, $root);
+        $n = [];
+        for ($i = 0; $i < 6000; $i++) {
+            $id = $pick->invoke($pl, 1_900_000_000.0, [])['id'];
+            $n[$id] = ($n[$id] ?? 0) + 1;
+        }
+        return $n;
+    };
+    $usual = fn(array $n) => array_sum(array_diff_key($n, [$ids[0] => 1, $ids[1] => 1])) / max(1, count($ids) - 2);
+    $on = $picks(1);
+    $avg = $usual($on);
+    check('with ratings on, a 5-star song plays about four times as often as an unrated one, and a 1-star song about a quarter as often',
+        count($ids) >= 3 && ($on[$ids[0]] ?? 0) > 2.8 * $avg && ($on[$ids[0]] ?? 0) < 5.5 * $avg && ($on[$ids[1]] ?? 0) < 0.45 * $avg && ($on[$ids[1]] ?? 0) > 0.1 * $avg,
+        sprintf('5★ %d, 1★ %d, unrated %.0f each, %d songs', $on[$ids[0]] ?? 0, $on[$ids[1]] ?? 0, $avg, count($ids)));
+    $off = $picks(0);
+    $avgOff = array_sum($off) / count($ids);
+    check('with ratings off (the default), stars change nothing: every song about equally often',
+        max($off) < 1.35 * $avgOff && min($off) > 0.65 * $avgOff && count($off) === count($ids), json_encode($off));
+    check('  and the setting starts off for a new station', (int) Installer::defaultStationSettings()['ratings_influence'] === 0);
+    $db->run("UPDATE $tt SET rating = NULL WHERE station_id = ?", [$station['id']]);
 } finally {
     drop_test_database($t);
     remove_tree($root);

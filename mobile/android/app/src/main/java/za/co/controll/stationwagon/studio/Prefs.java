@@ -73,6 +73,18 @@ final class Prefs {
         p.edit().putString("station", base).apply();
     }
 
+    /** Gives a saved station the name it has now (round 87); returns whether that changed something. Never adds one. */
+    synchronized boolean rename(String base, String name) {
+        String n = name == null ? "" : name.trim();
+        if (n.length() > 80) n = n.substring(0, 80);
+        if (n.isEmpty()) return false;
+        java.util.List<String[]> list = stations();
+        boolean changed = false;
+        for (String[] x : list) if (x[0].equals(base) && !x[1].equals(n)) { x[1] = n; changed = true; }
+        if (changed) saveStations(list);
+        return changed;
+    }
+
     /** Takes a station off the list; the default moves to the first one left (or none). Returns whether it was there. */
     boolean forget(String base) {
         java.util.List<String[]> list = stations();

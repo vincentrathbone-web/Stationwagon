@@ -30,6 +30,9 @@ final class PrepQueue
     public const KEEP_DONE = 86400;                 // a finished row, so other devices see it finish
     public const STALE = 1800;                      // a "working" job not touched for 30 min (the worker died)
     public const ATTEMPTS = 2;
+    public const REDO_WAIT = 3 * 3600;              // a song made again but on air: tried again for up to 3 hours
+    public const REDO_RETRY = 15;                   // ... every 15 seconds
+    public static ?float $clock = null;             // tests: the time a made-again song is put in place at
     public const KINDS = ['song', 'ad', 'jingle'];
     private const AUDIO = '/\.(mp3|wav|flac|m4a|mp4|aac|ogg|oga|opus|wma)$/i';
 
@@ -112,7 +115,7 @@ final class PrepQueue
         }
         // already in this station's clips: as it came (its hash is the song's), or made from it before (a converted one)
         $tr = $this->db->table('tracks');
-        $have = $this->db->run("SELECT id, title FROM $tr WHERE station_id = ? AND (sha1 = ? OR file = ?) LIMIT 1", [$this->station['id'], $sha1, "$sha1.mp3"])->fetch()
+        $have = $this->db->run("SELECT id, title FROM $tr WHERE station_id = ? AND (sha1 = ? OR file = ? OR upload_sha1 = ?) LIMIT 1", [$this->station['id'], $sha1, "$sha1.mp3", $sha1])->fetch()
             ?: $this->db->run("SELECT t.id, t.title FROM {$this->t()} j JOIN $tr t ON t.id = j.track_id WHERE j.station_id = ? AND j.sha1 = ? AND j.state = 'done' LIMIT 1",
                 [$this->station['id'], $sha1])->fetch();
         if ($have) {
@@ -259,7 +262,7 @@ final class PrepQueue
     public function retry(int $id): bool
     {
         $job = $this->get($id);
-        if ($job === null || $job['state'] !== 'failed' || !is_file($this->path($id, 'src'))) {
+        if ($job === null || $job['state'] !== 'failed' || ((int) $job['redo'] ? $this->redoSource($job) === null : !is_file($this->path($id, 'src')))) {
             return false;
         }
         $this->set($id, ['state' => 'queued', 'attempts' => 0, 'error' => null, 'stage' => null, 'finished_at' => null]);
@@ -301,7 +304,7 @@ final class PrepQueue
     /** Uploads not added yet, and those finished in the last day, for the list. @return list<array> */
     public function list(?string $kind = null): array
     {
-        $sql = "SELECT j.*, u.name AS who FROM {$this->t()} j LEFT JOIN {$this->db->table('users')} u ON u.id = j.user_id WHERE j.station_id = ?";
+        $sql = "SELECT j.*, u.name AS who FROM {$this->t()} j LEFT JOIN {$this->db->table('users')} u ON u.id = j.user_id WHERE j.station_id = ? AND j.redo = 0";
         $args = [$this->station['id']];
         if ($kind !== null) {
             $sql .= ' AND j.kind = ?';
@@ -337,7 +340,7 @@ final class PrepQueue
     /** How many uploads aren't added yet (for the Overview). */
     public function pending(): int
     {
-        return (int) $this->db->run("SELECT COUNT(*) FROM {$this->t()} WHERE station_id = ? AND state IN ('uploading','queued','working','prepared')",
+        return (int) $this->db->run("SELECT COUNT(*) FROM {$this->t()} WHERE station_id = ? AND redo = 0 AND state IN ('uploading','queued','working','prepared')",
             [$this->station['id']])->fetchColumn();
     }
 
@@ -368,8 +371,8 @@ final class PrepQueue
     {
         $t = $db->table('prep_jobs');
         try {
-            return (bool) $db->run("SELECT 1 FROM $t WHERE state = 'queued' OR (state = 'working' AND updated_at < ?) LIMIT 1",
-                [gmdate('Y-m-d H:i:s', time() - self::STALE)])->fetchColumn();
+            return (bool) $db->run("SELECT 1 FROM $t WHERE state = 'queued' OR (state = 'working' AND updated_at < ?) OR (redo = 1 AND state = 'prepared' AND updated_at < ?) LIMIT 1",
+                [gmdate('Y-m-d H:i:s', time() - self::STALE), gmdate('Y-m-d H:i:s', time() - self::REDO_RETRY)])->fetchColumn();
         } catch (Throwable) {
             return false; // the table isn't there yet (before the upgrade)
         }
@@ -458,6 +461,12 @@ final class PrepQueue
                     $log($line);
                 }
             }
+            foreach ($q->retryWaiting() as $line) {
+                $out[] = $line;
+                if ($log) {
+                    $log($line);
+                }
+            }
             $q->cleanup(time());
         } finally {
             flock($lock, LOCK_UN);
@@ -494,7 +503,12 @@ final class PrepQueue
     private function prepare(array $job, string $node): string
     {
         $id = (int) $job['id'];
-        $src = $this->path($id, 'src');
+        $redo = (int) $job['redo'] === 1;
+        $src = $redo ? $this->redoSource($job) : $this->path($id, 'src');
+        if ($src === null) {
+            $this->set($id, ['state' => 'failed', 'error' => 'The station doesn’t have this song’s original any more, so it can’t be made again.', 'finished_at' => self::now()]);
+            return "#$id {$job['name']}: no original";
+        }
         $work = $this->dir() . "/$id";
         NodeRuntime::rmTree($work);
         @mkdir($work, 0775, true);
@@ -529,7 +543,14 @@ final class PrepQueue
             $this->set($id, ['state' => 'failed', 'error' => 'This file can’t be added: ' . ($r['note'] ?? 'not audio') . '.', 'result' => json_encode($r), 'finished_at' => self::now()]);
             return "#$id {$job['name']}: refused ({$r['note']})";
         }
+        if ($redo && empty($r['prepared'])) {
+            $this->set($id, ['state' => 'failed', 'error' => 'Song prep didn’t run: ' . ($r['note'] ?? '?') . '.', 'stage' => null, 'result' => json_encode(self::slim($r)), 'finished_at' => self::now()]);
+            return "#$id {$job['name']}: not made again (" . ($r['note'] ?? '?') . ')';
+        }
         $this->set($id, ['state' => 'prepared', 'stage' => null, 'result' => json_encode(self::slim($r) + ['took_s' => round($took, 1)], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)]);
+        if ($redo) {
+            return "#$id {$job['name']}: made again in " . round($took, 1) . ' s, ' . $this->putInPlace($id);
+        }
         if ((int) $now['hold']) {
             return "#$id {$job['name']}: prepared, waiting for its details";
         }
@@ -616,7 +637,8 @@ final class PrepQueue
             $sourceSha1 = isset($r['sourceSha1']) && is_string($r['sourceSha1']) ? strtolower($r['sourceSha1']) : null;
             $imp = $library->import($song, null, null, (string) ($r['name'] ?? $job['name']), $sourceSha1,
                 $prepared && !empty($info['levelled']) && isset($info['lufs']) ? (float) $info['lufs'] : null,
-                is_array($info['outro'] ?? null) ? $info['outro'] : null, $mastered, $mastered ? (string) ($opts['preset'] ?? '') : null, $level, $kind);
+                is_array($info['outro'] ?? null) ? $info['outro'] : null, $mastered, $mastered ? (string) ($opts['preset'] ?? '') : null, $level, $kind,
+                (string) $job['sha1']); // the file as it was picked: a converted one is found by it later (round 87)
             $tid = (int) $imp['id'];
             if ($kind === 'ad' && !$imp['duplicate']) {
                 (new Ads($this->db, $this->station))->create($tid);
@@ -687,6 +709,129 @@ final class PrepQueue
             return $note;
         }
         return null;
+    }
+
+    // ---- Making a song again from its original (round 87, v1.14): Song prep's Apply and Re-level -----
+
+    /**
+     * Queue song $trackId to be made again from its kept original. $choice: master (false, or the mastering settings;
+     * {} is the built-in chain), level, target, preset (the name to show), mastered (Song prep: always counted as
+     * mastered). An earlier job for the same song that hasn't started is cancelled. @return array{ok:bool,id?:int,error?:string}
+     */
+    public function redo(?int $userId, int $trackId, array $choice): array
+    {
+        $library = new Library($this->db, $this->station, $this->root);
+        $track = $library->get($trackId);
+        if ($track === null || $track['kind'] !== 'song') {
+            return ['ok' => false, 'error' => 'That song isn’t in this library.'];
+        }
+        if (($orig = $library->original($track)) === null) {
+            return ['ok' => false, 'error' => 'The station doesn’t have this song’s original, so it can’t be prepared again. Upload it again instead.'];
+        }
+        $master = $choice['master'] ?? false;
+        $master = is_array($master) || is_object($master) ? (object) (array) $master : false;
+        $target = $choice['target'] ?? null;
+        $opts = ['master' => $master, 'level' => (bool) ($choice['level'] ?? true),
+            'target' => is_numeric($target) ? max(-30.0, min(-8.0, (float) $target)) : StationSettings::prep($this->station)[2],
+            'preset' => $master === false ? null : mb_substr(trim((string) ($choice['preset'] ?? '')), 0, 60),
+            'mastered' => !empty($choice['mastered'])] + $this->settingsNow();
+        $this->db->run("UPDATE {$this->t()} SET state = 'cancelled', error = 'cancelled', finished_at = ?, updated_at = ? WHERE station_id = ? AND redo = 1 AND track_id = ? AND state IN ('queued','prepared')",
+            [self::now(), self::now(), $this->station['id'], $trackId]);
+        $this->ensureDir();
+        $this->db->run("INSERT INTO {$this->t()} (station_id, user_id, kind, name, bytes, received, sha1, state, redo, opts, track_id, created_at, updated_at)
+            VALUES (?, ?, 'song', ?, ?, ?, ?, 'queued', 1, ?, ?, ?, ?)", [
+            $this->station['id'], $userId, mb_substr((string) $track['title'], 0, 255), (int) filesize($orig), (int) filesize($orig), (string) $track['sha1'],
+            json_encode($opts, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), $trackId, self::now(), self::now(),
+        ]);
+        return ['ok' => true, 'id' => (int) $this->db->pdo->lastInsertId()];
+    }
+
+    /** The original a redo job is made from (null when it's gone). */
+    private function redoSource(array $job): ?string
+    {
+        $library = new Library($this->db, $this->station, $this->root);
+        $track = $job['track_id'] !== null ? $library->get((int) $job['track_id']) : null;
+        return $track === null ? null : $library->original($track);
+    }
+
+    /** Where redo jobs $ids stand, for the page that asked for them. @return list<array> */
+    public function redoStatus(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn(int $i) => $i > 0)));
+        if (!$ids) {
+            return [];
+        }
+        $rows = $this->db->run("SELECT * FROM {$this->t()} WHERE station_id = ? AND redo = 1 AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ') ORDER BY id',
+            array_merge([$this->station['id']], $ids))->fetchAll();
+        $node = NodeRuntime::ready() !== null;
+        return array_map(function (array $j) use ($node): array {
+            $progress = null;
+            $stage = $j['stage'];
+            if ($j['state'] === 'working') {
+                $p = json_decode((string) @file_get_contents($this->dir() . "/{$j['id']}.progress"), true);
+                if (is_array($p)) {
+                    $stage = (string) ($p['stage'] ?? $stage);
+                    $progress = isset($p['progress']) && is_numeric($p['progress']) ? (float) $p['progress'] : null;
+                }
+            }
+            $r = json_decode((string) $j['result'], true);
+            $info = is_array($r['info'] ?? null) ? $r['info'] : [];
+            return ['id' => (int) $j['id'], 'track' => (int) $j['track_id'], 'state' => $j['state'], 'stage' => $stage, 'progress' => $progress,
+                'error' => $j['error'], 'kept' => !empty($r['kept']), 'waiting_for_node' => $j['state'] === 'queued' && !$node,
+                'info' => $info ? array_intersect_key($info, array_flip(['lufs', 'lufs_before', 'gain_db', 'target', 'levelled', 'mastered'])) : null];
+        }, $rows);
+    }
+
+    /**
+     * Put a made-again song in place of the station's copy (as Song prep's apply action does). A song on air stays
+     * "prepared" and is tried again (retryWaiting) for up to REDO_WAIT. Returns a few words for the log.
+     */
+    private function putInPlace(int $id): string
+    {
+        $job = $this->get($id);
+        if ($job === null || $job['state'] !== 'prepared' || !(int) $job['redo']) {
+            return 'not waiting';
+        }
+        $r = json_decode((string) $job['result'], true) ?: [];
+        $opts = json_decode((string) $job['opts'], true) ?: [];
+        $info = is_array($r['info'] ?? null) ? $r['info'] : [];
+        $work = $this->dir() . "/$id";
+        $song = !empty($r['song']) && is_file("$work/song.out") ? "$work/song.out" : $this->redoSource($job); // kept: the original is right as it is
+        if ($song === null) {
+            $this->set($id, ['state' => 'failed', 'error' => 'The song’s original is gone.', 'finished_at' => self::now()]);
+            return 'original gone';
+        }
+        $master = is_array($opts['master'] ?? null) ? $opts['master'] : null;
+        $mastered = !empty($opts['mastered']) || !empty($info['mastered']);
+        $level = ['source_lufs' => $info['lufs_before'] ?? null, 'gain_db' => $info['gain_db'] ?? null, 'target' => $info['target'] ?? null,
+            'settings' => $mastered ? $master : null];
+        $planner = Streams::planner($this->db, null);
+        $library = new Library($this->db, $this->station, $this->root);
+        $problem = $planner === null ? 'The station’s plan couldn’t be read.' : $library->replace((int) $job['track_id'], $song,
+            !empty($info['levelled']) && isset($info['lufs']) ? (float) $info['lufs'] : null, is_array($info['outro'] ?? null) ? $info['outro'] : null,
+            $mastered, $mastered ? (string) ($opts['preset'] ?? '') : null, $planner, self::$clock ?? microtime(true), $level);
+        if ($problem !== null && str_contains($problem, 'is on air') && strtotime($job['created_at'] . ' UTC') > time() - self::REDO_WAIT) {
+            $this->set($id, ['stage' => 'On air: waiting until it isn’t']);
+            return 'on air, waiting';
+        }
+        if ($problem !== null) {
+            $this->set($id, ['state' => 'failed', 'error' => mb_substr($problem, 0, 500), 'finished_at' => self::now(), 'stage' => null]);
+            return "not put in place ($problem)";
+        }
+        $this->set($id, ['state' => 'done', 'stage' => null, 'finished_at' => self::now()]);
+        NodeRuntime::rmTree($work);
+        return 'in place';
+    }
+
+    /** Try again the songs made again that were on air, last tried at least $after seconds ago. @return list<string> */
+    public function retryWaiting(int $after = self::REDO_RETRY): array
+    {
+        $out = [];
+        foreach ($this->db->run("SELECT id, name FROM {$this->t()} WHERE station_id = ? AND redo = 1 AND state = 'prepared' AND updated_at <= ? ORDER BY id",
+            [$this->station['id'], gmdate('Y-m-d H:i:s', time() - $after)])->fetchAll() as $j) {
+            $out[] = "#{$j['id']} {$j['name']}: " . $this->putInPlace((int) $j['id']);
+        }
+        return $out;
     }
 
     /** Old pieces, finished rows and files nothing refers to. */

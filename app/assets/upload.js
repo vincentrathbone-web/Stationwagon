@@ -310,6 +310,7 @@
       if (choice.artFile) data.append("art_0", choice.artFile, choice.artFile.name);
     }
     if (p.sourceSha1) data.append("source_sha1[]", p.sourceSha1);
+    if (p.uploadSha1) data.append("upload_sha1[]", p.uploadSha1); // a converted upload's own hash (round 87)
     if (p.prepared && p.info.levelled) data.append("prep_lufs[]", String(p.info.lufs));
     // the song's normalization, kept with it (round 41)
     if (p.prepared) {

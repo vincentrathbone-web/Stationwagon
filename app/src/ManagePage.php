@@ -284,9 +284,12 @@ final class ManagePage
             if (empty($_POST) && (int) ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
                 $this->uploadTooBig(true);
             }
-            $this->postAs('library', 'manage/songprep', true);
+            $me = $this->postAs('library', 'manage/songprep', true);
             $action = (string) ($_POST['action'] ?? '');
             $now = microtime(true);
+            if ($action === 'redo' || $action === 'redo_status') {
+                $this->redoAction($action, $me); // round 87, v1.14: made again on the server
+            }
             if ($action === 'save') {
                 [$id, $problem] = $presets->save((int) ($_POST['id'] ?? 0), (string) ($_POST['name'] ?? ''), json_decode((string) ($_POST['settings'] ?? ''), true), $now);
                 if ($problem === null && !empty($_POST['default'])) {
@@ -325,7 +328,35 @@ final class ManagePage
             'prepQuality' => StationSettings::prepQuality($this->station),
             'prep' => StationSettings::prep($this->station),
             'song' => (int) ($_GET['song'] ?? 0),
+            'server' => NodeRuntime::ready() !== null,
         ], 'songprep');
+    }
+
+    /**
+     * Song prep's Apply and the Music library's Re-level on the server (round 87, v1.14; PrepQueue::redo). Always JSON.
+     *   redo (id, master: JSON false or the settings, level 1/0, target, preset, mastered 1/0) -> { ok, job } or
+     *   { ok: false, browser: true } when the station prepares songs in the browser
+     *   redo_status (ids: comma-separated) -> { ok, jobs } (also tries again the songs that were on air)
+     */
+    private function redoAction(string $action, array $me): never
+    {
+        $q = new PrepQueue($this->db, $this->station, SW_ROOT);
+        if ($action === 'redo_status') {
+            $q->retryWaiting();
+            $this->json(['ok' => true, 'jobs' => $q->redoStatus(explode(',', (string) ($_POST['ids'] ?? '')))]);
+        }
+        if (NodeRuntime::ready() === null) {
+            $this->json(['ok' => false, 'browser' => true, 'error' => 'This station prepares songs in the browser.']);
+        }
+        $master = json_decode((string) ($_POST['master'] ?? 'false'));
+        $r = $q->redo((int) $me['id'], (int) ($_POST['id'] ?? 0), ['master' => is_object($master) ? $master : false,
+            'level' => ($_POST['level'] ?? '1') === '1', 'target' => $_POST['target'] ?? null, 'preset' => (string) ($_POST['preset'] ?? ''),
+            'mastered' => ($_POST['mastered'] ?? '') === '1']);
+        if ($r['ok']) {
+            $r['started'] = PrepQueue::kick($this->db, SW_ROOT, true);
+            $r['job'] = $r['id'];
+        }
+        $this->json($r);
     }
 
     /**
@@ -479,6 +510,7 @@ final class ManagePage
                 }
                 // From prep.js: the original's hash (duplicates) and the levelled loudness
                 $source = ((array) ($_POST['source_sha1'] ?? []))[$i] ?? null;
+                $picked = ((array) ($_POST['upload_sha1'] ?? []))[$i] ?? null; // a converted upload's own hash (round 87)
                 $lufs = ((array) ($_POST['prep_lufs'] ?? []))[$i] ?? null;
                 $outro = json_decode((string) (((array) ($_POST['prep_outro'] ?? []))[$i] ?? ''), true);
                 $mastered = (string) (((array) ($_POST['prep_mastered'] ?? []))[$i] ?? '') === '1';
@@ -489,7 +521,7 @@ final class ManagePage
                     throw new RuntimeException($details);
                 }
                 $r = $library->import($tmp, null, null, $name, is_string($source) ? strtolower($source) : null,
-                    is_numeric($lufs) ? (float) $lufs : null, is_array($outro) ? $outro : null, $mastered, is_string($preset) ? $preset : null, self::levelPosted($i), $kind);
+                    is_numeric($lufs) ? (float) $lufs : null, is_array($outro) ? $outro : null, $mastered, is_string($preset) ? $preset : null, self::levelPosted($i), $kind, is_string($picked) ? $picked : null);
                 $added = $added || !$r['duplicate'];
                 if ($kind === 'ad' && !$r['duplicate']) {
                     (new Ads($this->db, $this->station))->create((int) $r['id']); // its plan: 5 plays a day, every day, all day
@@ -670,7 +702,10 @@ final class ManagePage
         $me = App::requireRole('library');
         $now = microtime(true);
         $ads->logAired($now);
+        $log = new PlayLog($this->db, $this->station, 'ad');
+        $this->playLogCsv($log, 'ads', $now);
         $this->render('ads', 'Ads', $me, [
+            'plays' => $log->summary($now),
             'ads' => self::clipsMatching($ads->all($now), $q = trim((string) ($_GET['q'] ?? '')), 'advertiser'),
             'q' => $q,
             'adSettings' => Ads::settings($this->station),
@@ -684,6 +719,25 @@ final class ManagePage
             'preset' => (new PrepPresets($this->db, $this->station))->forImport(),
             'relevel' => null,
         ]);
+    }
+
+    /**
+     * `?log=csv&days=N` on the Ads or Jingles screen (round 87): the play log as a CSV download (proof of play for an
+     * advertiser), every stream, in station time. Does nothing without `log=csv`.
+     */
+    private function playLogCsv(PlayLog $log, string $what, float $now): void
+    {
+        if (($_GET['log'] ?? '') !== 'csv') {
+            return;
+        }
+        $days = max(1, min(PlayLog::MAX_DAYS, (int) ($_GET['days'] ?? 30) ?: 30));
+        $name = preg_replace('/[^a-z0-9]+/', '-', strtolower((string) $this->station['slug'])) . "-$what-played-" . gmdate('Y-m-d', (int) $now) . '.csv';
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $name . '"');
+        header('Cache-Control: private, no-store');
+        header('X-Content-Type-Options: nosniff');
+        echo $log->csv($now, $days);
+        exit;
     }
 
     // ---- Jingles (round 70) ----------------------------------------------------------------
@@ -763,7 +817,11 @@ final class ManagePage
         }
         $me = App::requireRole('library');
         $now = microtime(true);
+        $log = new PlayLog($this->db, $this->station, 'jingle');
+        $log->logAired($now);
+        $this->playLogCsv($log, 'jingles', $now);
         $this->render('jingles', 'Jingles', $me, [
+            'plays' => $log->summary($now),
             'jingles' => self::clipsMatching($jingles->all($now), $q = trim((string) ($_GET['q'] ?? '')), 'notes'),
             'q' => $q,
             'jingleSettings' => Jingles::settings($this->station),

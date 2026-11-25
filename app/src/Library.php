@@ -32,11 +32,12 @@ final class Library
      * @param bool $mastered song prep mastered the copy
      * @param ?array $level song prep's normalization: source_lufs, gain_db, target, settings (see levelColumns)
      * @param string $kind 'song' (the Music library), 'ad' (the Ads screen) or 'jingle' (the Jingles screen): the same file handling, but an ad or a jingle has no album art or copyright details
+     * @param ?string $uploadSha1 the hash of the file as it was picked, when that was not the original (a WAV or FLAC converted to MP3; round 87)
      * @return array{id:int,duplicate:bool,title:string}
      */
     public function import(string $path, ?string $title = null, ?string $artist = null, ?string $name = null,
                            ?string $sourceSha1 = null, ?float $lufs = null, ?array $outro = null, bool $mastered = false,
-                           ?string $preset = null, ?array $level = null, string $kind = 'song'): array
+                           ?string $preset = null, ?array $level = null, string $kind = 'song', ?string $uploadSha1 = null): array
     {
         $kind = in_array($kind, ['ad', 'jingle'], true) ? $kind : 'song';
         $name = basename($name ?? $path);
@@ -45,9 +46,10 @@ final class Library
         }
         $content = (string) sha1_file($path);
         $sha1 = $sourceSha1 !== null && preg_match('/^[0-9a-f]{40}$/', $sourceSha1) === 1 ? $sourceSha1 : $content;
+        $upload = $uploadSha1 !== null && preg_match('/^[0-9a-f]{40}$/', strtolower($uploadSha1)) === 1 && strtolower($uploadSha1) !== $sha1 ? strtolower($uploadSha1) : null;
         $t = $this->db->table('tracks');
-        $existing = $this->db->run("SELECT id, title, kind FROM $t WHERE station_id = ? AND (sha1 = ? OR sha1 = ? OR file = ?) ORDER BY id LIMIT 1",
-            [$this->station['id'], $sha1, $content, "$content.mp3"])->fetch();
+        $existing = $this->db->run("SELECT id, title, kind FROM $t WHERE station_id = ? AND (sha1 = ? OR sha1 = ? OR file = ? OR upload_sha1 = ?) ORDER BY id LIMIT 1",
+            [$this->station['id'], $sha1, $content, "$content.mp3", $upload ?? $sha1])->fetch();
         if ($existing && $existing['kind'] !== $kind) {
             throw new RuntimeException('“' . $existing['title'] . '” is already in the ' . (['ad' => 'Ads', 'jingle' => 'Jingles'][$existing['kind']] ?? 'Music library') . ' with this same recording.');
         }
@@ -75,6 +77,7 @@ final class Library
             'station_id' => $this->station['id'],
             'file' => $file,
             'sha1' => $sha1,
+            'upload_sha1' => $upload,
             'title' => mb_substr($title, 0, 255),
             'artist' => $kind === 'song' && ($a = trim((string) ($artist ?? $tags['artist'] ?? ''))) !== '' ? mb_substr($a, 0, 255) : null,
             'album' => $kind === 'song' && isset($tags['album']) ? mb_substr($tags['album'], 0, 255) : null,
@@ -381,14 +384,14 @@ final class Library
         }
         $in = implode(',', array_fill(0, count($sums), '?'));
         $files = array_map(fn(string $s) => "$s.mp3", $sums);
-        $rows = $this->db->run('SELECT sha1, file FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND kind = 'song' AND (sha1 IN ($in) OR file IN ($in))",
-            [$this->station['id'], ...$sums, ...$files])->fetchAll();
+        $rows = $this->db->run('SELECT sha1, file, upload_sha1 FROM ' . $this->db->table('tracks') . " WHERE station_id = ? AND kind = 'song' AND (sha1 IN ($in) OR file IN ($in) OR upload_sha1 IN ($in))",
+            [$this->station['id'], ...$sums, ...$files, ...$sums])->fetchAll();
         $found = [];
         foreach ($rows as $r) {
             if ($this->original($r) === null) {
                 continue; // its original never arrived (the page closed just then): it goes the usual way, which keeps it
             }
-            foreach ([$r['sha1'], basename((string) $r['file'], '.mp3')] as $s) {
+            foreach ([$r['sha1'], basename((string) $r['file'], '.mp3'), (string) $r['upload_sha1']] as $s) {
                 if (in_array($s, $sums, true)) {
                     $found[$s] = true;
                 }
@@ -518,11 +521,23 @@ HT);
     /** The file a song was made from, when the station has it, or null. */
     public function original(array $track): ?string
     {
-        $kept = $this->originalsDir() . '/' . $track['sha1'] . '.mp3';
+        return self::originalPath($this->root, $track);
+    }
+
+    /**
+     * Where a clip's original is under $root (its own copy in storage/originals, or the stored file itself when it was
+     * never processed), or null. Static so a list can ask for each row (round 87's Original button); needs `sha1` and `file`.
+     */
+    public static function originalPath(string $root, array $track): ?string
+    {
+        if (empty($track['sha1']) || empty($track['file'])) {
+            return null;
+        }
+        $kept = $root . '/storage/originals/' . $track['sha1'] . '.mp3';
         if (is_file($kept)) {
             return $kept;
         }
-        $media = $this->root . '/storage/media/' . $track['file'];
+        $media = $root . '/storage/media/' . $track['file'];
         return $track['file'] === $track['sha1'] . '.mp3' && is_file($media) ? $media : null;
     }
 

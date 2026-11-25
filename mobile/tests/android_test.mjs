@@ -613,6 +613,38 @@ try {
   await sleep(1000);
   url = await reopen();
   check("  signed out, then closed: the studio asks to sign in again", !!url && /signin\?next=studio/.test(url), url);
+
+  // round 87 (v1.11): the app opens the studio on the stream used last (the station keeps it on this phone)
+  console.log("The studio's stream, remembered (round 87)");
+  const remFx = helper("stream-fixture");
+  const mgr = helper("manager");
+  const onStream = async () => {
+    const r = await waitFor(async () => { const d = await evaluate("document.getElementById('studio') ? (document.getElementById('studio').dataset.stream || '') : null", 1000); return d === null || d === undefined ? false : { d }; }, 15);
+    return r ? r.d : null;
+  };
+  const switchTo = async (name, other) => {
+    await evaluate(`[...document.querySelectorAll('.streamswitch a')].find((a) => (a.textContent === ${JSON.stringify(name)}) !== ${other}).click()`);
+    await sleep(2000);
+  };
+  const reopenStudio = async () => { url = await reopen(); if (url && /signin/.test(url)) await signIn(mgr); return onStream(); };
+  try {
+    await signIn(mgr);
+    check("a manager's studio opens on the main stream, with the switch to the other", (await onStream()) === "" && await evaluate("!!document.querySelector('.streamswitch')"), await onStream());
+    await switchTo(remFx.name, false);
+    check("  the switch: the studio is on the other stream", (await onStream()) === remFx.stream, await onStream());
+    let on = await reopenStudio();
+    check("closed and opened again, the app opens the studio on that stream (the address names none)", on === remFx.stream && !((await evaluate("location.search")) || "").includes("stream="), `${on} ${url}`);
+    await switchTo(remFx.name, true);
+    on = await reopenStudio();
+    check("  the main stream picked again: opened again, it is on the main one", on === "", on);
+    await switchTo(remFx.name, false);
+    helper("stream-clean", String(remFx.id));
+    on = await reopenStudio();
+    check("  a stream used last that is gone: the studio opens on the main one", on === "", on);
+  } finally {
+    helper("stream-clean", String(remFx.id));
+    try { helper("cleanup", String(mgr.id)); } catch { /* left */ }
+  }
   console.log("Remembering the password");
   const phoneDj = helper("dj", "phone");
   await page.call("Network.clearBrowserCookies");
@@ -648,8 +680,9 @@ try {
 
   console.log("The station picker on the sign-in card (round 81)");
   // a second station: a stand-in that answers like one in /myradio/ on the PC, which the phone reaches through adb reverse
+  let standName = "Stand-in Radio";
   const stand = createServer((req, res) => {
-    if (req.url.startsWith("/myradio/api/nowplaying.php")) { res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }); res.end('{"station":{"name":"Stand-in Radio"}}'); return; }
+    if (req.url.startsWith("/myradio/api/nowplaying.php")) { res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }); res.end(JSON.stringify({ station: { name: standName } })); return; }
     if (req.url === "/") { res.writeHead(200, { "Content-Type": "text/html" }); res.end('<a href="/myradio/signin">Sign in</a>'); return; }
     res.writeHead(404); res.end("not found");
   });
@@ -683,12 +716,20 @@ try {
   url = await attach(new RegExp("^" + base.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")), 30);
   r = await waitFor(async () => { const x = await native("stations"); return x && x.ok && x; }, 15);
   check("picking a saved station opens it and makes it the default again", !!url && r && r.ok && r.value.current === base + "/", `${url} · ${JSON.stringify(r && r.value)}`);
+  // round 87: a station renamed since it was saved gets its new name when the app opens it
+  standName = "Stand-in Radio FM";
+  await native("switchStation", { base: STAND_BASE });
+  url = await attach(new RegExp("^" + STAND_BASE.replace(/[.*+?^${}()|[\]\/]/g, "\$&")), 30);
+  r = await waitFor(async () => { const x = await native("stations"); return x && x.ok && x.value.stations.some((y) => y.base === STAND_BASE && y.name === standName) && x; }, 20);
+  check("opening a saved station, the app asks it for its name and keeps a new one", !!url && !!r, JSON.stringify(r && r.value || null));
+  await native("switchStation", { base: base + "/" });
+  url = await attach(new RegExp("^" + base.replace(/[.*+?^${}()|[\]\/]/g, "\$&")), 30);
   await native("openSettings");
   url = await attach(START, 30);
   const names = () => evaluate(`({ shown: !document.getElementById("stationsCard").hidden, names: [...document.querySelectorAll("#stationList li b")].map((b) => b.textContent) })`);
   let lst = await waitFor(async () => { const x = await names(); return x && x.shown && x; }, 15);
-  check("the app's own page lists the saved stations", !!lst && lst.names.length === N + 1 && lst.names.includes("Stand-in Radio"), JSON.stringify(lst));
-  await evaluate(`[...document.querySelectorAll("#stationList li")].find((li) => li.querySelector("b").textContent === "Stand-in Radio").querySelector("button").click()`);
+  check("the app's own page lists the saved stations", !!lst && lst.names.length === N + 1 && lst.names.includes(standName), JSON.stringify(lst));
+  await evaluate(`[...document.querySelectorAll("#stationList li")].find((li) => li.querySelector("b").textContent === ${JSON.stringify(standName)}).querySelector("button").click()`);
   lst = await waitFor(async () => { const x = await names(); return x && x.names.length === N && x; }, 15);
   r = await native("stations");
   check("  Remove takes one off the list, the default stays", !!lst && r && r.ok && r.value.stations.length === N && r.value.current === base + "/", JSON.stringify(r));

@@ -631,6 +631,22 @@
   window.addEventListener("sw:skin", () => { overviewDirty = true; drawEq(); });
 
   // ---- apply to this song ---------------------------------------------------------------------
+  /** Follows a song being made again on the server (PrepQueue::redo) until it's in place; throws when it fails. */
+  async function followServer(job, title, name) {
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const j = await post({ action: "redo_status", ids: String(job) }).catch(() => ({ ok: false }));
+      const s = j.ok && j.jobs && j.jobs[0];
+      if (!s) continue; // a lost answer: ask again
+      if (s.state === "done") { say(`“${title}” is now prepared with “${name}”. Its next plays use the new copy.`); return; }
+      if (s.state === "failed" || s.state === "cancelled") throw new Error(s.error || "the server couldn’t prepare it");
+      const pct = s.progress === null || s.progress === undefined ? "" : " " + Math.round(s.progress * 100) + "%";
+      say(s.state === "queued" ? (s.waiting_for_node ? "Waiting for the server’s song prep…" : "Waiting its turn on the server…")
+        : s.state === "working" ? "Preparing on the server: " + (s.stage || "starting") + pct + " (you can leave this page; the server finishes it)"
+        : s.stage || "Putting it in place…");
+    }
+  }
+
   $("spApply").addEventListener("click", async () => {
     if (!song || !song.track.original || !window.SwPrep) return;
     const cur = presets.find((x) => x.id === presetId), name = (cur ? cur.name : "Audition chain") + (dirty ? " (changed)" : "");
@@ -638,6 +654,17 @@
     const btn = $("spApply");
     btn.disabled = true;
     try {
+      if (D.server) {
+        // round 87 (v1.14): the server makes it again from the original it keeps; this page only follows along
+        say("Sending it to the server…");
+        const q = await post({ action: "redo", id: String(song.track.id), master: JSON.stringify(saved()), level: D.level ? "1" : "0",
+          target: String(TARGET), preset: name, mastered: "1" });
+        if (q.ok) {
+          await followServer(q.job, song.track.title, name);
+          return;
+        }
+        if (!q.browser) throw new Error(q.error || "the server refused it");
+      }
       say("Preparing the whole song…");
       const blob = await (await fetch(D.origUrl + "?id=" + song.track.id, { credentials: "same-origin" })).blob();
       const p = await window.SwPrep.prepare(blob, (stage) => say("Preparing: " + stage), { master: saved(), level: D.level, target: TARGET });

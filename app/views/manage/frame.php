@@ -16,11 +16,19 @@ $rail = [
     'podcast' => ['manage/podcast', 'Podcast', 'dj'],
     'about' => ['manage/about', 'About', 'dj'], // last: the bottom of the rail (round 68)
 ];
-// The Download button of a clip (round 71): the processed MP3 as it plays on air. (`manage/download?id=..&version=original` gives the file
-// the clip was made from, when the station kept it; the Song prep screen and the Music library do not have a button for it.)
+// The Download button of a clip (round 71): the processed MP3 as it plays on air. Given the clip's row (with `sha1` and `file`),
+// an Original button follows it when the station kept the file the clip was made from (round 87; `manage/download?id=..&version=original`).
 $mayDownload = Auth::allows($me, 'download');
-$dl = function (int $id, string $what = 'clip') use ($mayDownload): string {
-    return $mayDownload ? '<a class="btn sm" href="' . h(App::url('manage/download') . '?id=' . $id) . '" download title="Download this ' . h($what) . ' as it plays on air (the processed MP3)">Download</a>' : '';
+$dl = function (int $id, string $what = 'clip', ?array $row = null) use ($mayDownload): string {
+    if (!$mayDownload) {
+        return '';
+    }
+    $url = App::url('manage/download') . '?id=' . $id;
+    $out = '<a class="btn sm" data-act="download" href="' . h($url) . '" download title="Download this ' . h($what) . ' as it plays on air (the processed MP3)">Download</a>';
+    if ($row !== null && \Stationwagon\Library::originalPath(SW_ROOT, $row) !== null) {
+        $out .= ' <a class="btn sm" data-act="original" href="' . h($url . '&version=original') . '" download title="Download the file this ' . h($what) . ' was made from, as it was uploaded (before mastering and levelling)">Original</a>';
+    }
+    return $out;
 };
 // A small POST form around one button; $fields are hidden inputs
 $post = function (string $route, string $label, array $fields = [], string $class = 'btn sm') use ($csrf): string {
